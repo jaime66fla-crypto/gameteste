@@ -17,6 +17,7 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check public/game.js
+          node --check public/server.js
       - name: Check essential browser game controls
         run: |
           node - <<'NODE'
@@ -29,5 +30,15 @@ jobs:
           for(const marker of ['VIEW_TILT','screenToWorldY','worldToScreenY','bindJoystick("moveStick"','bindJoystick("aimStick"','function drawBuildings','function drawVehicle']){
             if(!js.includes(marker))throw Error('Missing 2.5D feature: '+marker);
           }
-          console.log('Game structure checks passed');
+          const css=fs.readFileSync('public/style.css','utf8');
+          const server=fs.readFileSync('public/server.js','utf8');
+          for(const id of ['pauseBtn','fullscreenBtn','restartBtn','closeGameBtn','gameModal']){
+            if(!html.includes('id="'+id+'"'))throw Error('Missing game modal control: '+id);
+          }
+          for(const marker of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture','setPointerCapture','touchAim','touchMove','function shoot()','function updateEnemies','function connectMultiplayer']){
+            if(!js.includes(marker))throw Error('Missing input/game feature: '+marker);
+          }
+          if(!css.includes('touch-action:none'))throw Error('Joystick touch-action is missing');
+          if(!server.includes('/ws'))throw Error('Multiplayer websocket endpoint missing');
+          console.log('Game structure and mobile input checks passed');
           NODE
