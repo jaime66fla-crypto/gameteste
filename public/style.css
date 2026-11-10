@@ -194,3 +194,41 @@ body.modal-open{overflow:hidden}
 @media(max-width:1100px){
   .platform-desktop .controls-strip{font-size:.64rem;gap:9px}
 }
+
+/* Simplified main menu */
+.simple-menu{
+  min-height:100vh;
+  display:grid;
+  place-items:center;
+  background:linear-gradient(180deg,#13395d 0%,#0f2e4d 100%);
+}
+.simple-menu-inner{
+  width:min(920px,92vw);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:26px;
+  text-align:center;
+}
+.main-logo{
+  width:min(900px,88vw);
+  height:auto;
+  display:block;
+  object-fit:contain;
+  border-radius:18px;
+  box-shadow:0 28px 80px rgba(0,0,0,.22);
+}
+.main-play-btn{
+  margin:0;
+  min-width:190px;
+  padding:15px 28px;
+  font-size:1rem;
+  border-radius:12px;
+  box-shadow:0 12px 30px rgba(0,0,0,.22);
+}
+@media(max-width:700px){
+  .simple-menu-inner{gap:18px}
+  .main-logo{width:94vw;border-radius:12px}
+  .main-play-btn{min-width:170px;padding:13px 22px}
+}
