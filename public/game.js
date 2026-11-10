@@ -15,6 +15,73 @@ const weapons={
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0;
+
+let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
+function ensureAudio(){
+ if(!soundEnabled)return null;
+ if(!audioCtx){
+  audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+  audioMaster=audioCtx.createGain();audioMaster.gain.value=.42;audioMaster.connect(audioCtx.destination);
+ }
+ if(audioCtx.state==="suspended")audioCtx.resume().catch(()=>{});
+ return audioCtx;
+}
+function tone(freq=440,dur=.08,type="square",vol=.18,slide=1){
+ const ac=ensureAudio();if(!ac)return;
+ const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;
+ o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*slide),t+dur);
+ g.gain.setValueAtTime(Math.max(.0001,vol),t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+ o.connect(g);g.connect(audioMaster);o.start(t);o.stop(t+dur+.02);
+}
+function noise(dur=.08,vol=.12,filterFreq=1600){
+ const ac=ensureAudio();if(!ac)return;
+ const len=Math.max(1,Math.floor(ac.sampleRate*dur)),buf=ac.createBuffer(1,len,ac.sampleRate),data=buf.getChannelData(0);
+ for(let i=0;i<len;i++)data[i]=Math.random()*2-1;
+ const src=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain(),t=ac.currentTime;
+ src.buffer=buf;f.type="lowpass";f.frequency.value=filterFreq;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
+ src.connect(f);f.connect(g);g.connect(audioMaster);src.start(t);
+}
+function playSound(name){
+ if(!soundEnabled)return;
+ switch(name){
+  case "pistol": noise(.055,.12,2600);tone(160,.07,"square",.12,.55);break;
+  case "smg": noise(.035,.09,3200);tone(190,.045,"square",.08,.65);break;
+  case "shotgun": noise(.14,.22,1800);tone(105,.16,"sawtooth",.16,.45);break;
+  case "rifle": noise(.07,.14,3600);tone(220,.065,"square",.11,.5);break;
+  case "reload": tone(520,.035,"square",.08,1.05);setTimeout(()=>tone(330,.055,"square",.08,.9),180);break;
+  case "damage": noise(.09,.08,900);tone(82,.12,"sawtooth",.09,.65);break;
+  case "death": tone(120,.34,"sawtooth",.16,.28);break;
+  case "pickup": tone(520,.08,"sine",.08,1.35);setTimeout(()=>tone(760,.1,"sine",.07,1.15),70);break;
+  case "car": tone(125,.12,"sawtooth",.09,.8);break;
+  case "nitro": noise(.12,.06,1100);tone(180,.14,"sawtooth",.05,1.4);break;
+ }
+}
+function updateEngineSound(){
+ if(!soundEnabled||!player.inCar||paused||player.dead){
+  if(engineGain)engineGain.gain.setTargetAtTime(.0001,audioCtx?.currentTime||0,.05);
+  return;
+ }
+ const ac=ensureAudio();if(!ac)return;
+ if(!engineOsc){
+  engineOsc=ac.createOscillator();engineGain=ac.createGain();engineOsc.type="sawtooth";engineGain.gain.value=.0001;
+  engineOsc.connect(engineGain);engineGain.connect(audioMaster);engineOsc.start();
+ }
+ const speed=Math.abs(car.speed),freq=55+speed*.34;
+ engineOsc.frequency.setTargetAtTime(freq,ac.currentTime,.045);
+ engineGain.gain.setTargetAtTime(.025+Math.min(.075,speed/6500),ac.currentTime,.06);
+}
+function refreshSoundButton(){
+ const b=document.getElementById("soundBtn");if(b)b.textContent=soundEnabled?"Som ON":"Som OFF";
+}
+document.getElementById("soundBtn")?.addEventListener("click",()=>{
+ soundEnabled=!soundEnabled;localStorage.setItem("streetSound",soundEnabled?"on":"off");
+ if(soundEnabled)ensureAudio();else if(engineGain&&audioCtx)engineGain.gain.setTargetAtTime(.0001,audioCtx.currentTime,.03);
+ refreshSoundButton();
+});
+refreshSoundButton();
+addEventListener("pointerdown",()=>ensureAudio(),{once:true});
+addEventListener("keydown",()=>ensureAudio(),{once:true});
+
 const remotePlayers=new Map();
 const ranking=new Map();
 const enemies=[];
@@ -38,7 +105,7 @@ for(let i=0;i<34;i++){
 }
 function randomOpenPoint(){let x=500,y=440,tries=0;do{x=90+Math.random()*(W-180);y=90+Math.random()*(H-180);tries++}while((collides(x,y,30)||Math.hypot(x-player.x,y-player.y)<180)&&tries<100);return{x,y}}
 function spawnWeaponPickups(count=10){weaponPickups.length=0;const types=["smg","shotgun","rifle","pistol"];for(let i=0;i<count;i++){const p=randomOpenPoint();weaponPickups.push({x:p.x,y:p.y,type:types[Math.floor(Math.random()*types.length)],spin:Math.random()*6.28})}}
-function equipWeapon(type){const w=weapons[type];if(!w)return;player.weapon=type;player.maxAmmo=w.mag;player.ammo=w.mag;player.reserve=w.reserve;player.reloading=false;flash=.18}
+function equipWeapon(type){const w=weapons[type];if(!w)return;player.weapon=type;player.maxAmmo=w.mag;player.ammo=w.mag;player.reserve=w.reserve;player.reloading=false;flash=.18;playSound("pickup")}
 function updatePickups(dt){
  for(const p of weaponPickups){p.spin+=dt*2.2;if(!player.inCar&&Math.hypot(player.x-p.x,player.y-p.y)<34){equipWeapon(p.type);pickupRespawns.push({t:18,type:p.type});p.dead=true}}
  weaponPickups=weaponPickups.filter(p=>!p.dead);
@@ -51,7 +118,7 @@ function updateBushState(){player.hidden=!player.inCar&&!player.dead&&bushes.som
 function damagePlayer(amount){
  if(player.dead||player.inCar)return;
  player.health=Math.max(0,player.health-amount);
- flash=Math.max(flash,.7);
+ flash=Math.max(flash,.7);playSound("damage");
  if(navigator.vibrate&&selectedPlatform==="mobile")navigator.vibrate(45);
  if(player.health<=0)killPlayer();
 }
@@ -59,7 +126,7 @@ function killPlayer(){
  if(player.dead)return;
  player.dead=true;
  player.respawnT=3;
- player.health=0;
+ player.health=0;playSound("death");
  player.reloading=false;
  mouse.down=false;
  touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;
@@ -211,15 +278,16 @@ function setPauseState(value){
 function togglePause(){setPauseState(!paused)}
 function toggleCar(){
  if(!started||paused||player.dead)return;
+ playSound("car");
  if(player.inCar){player.inCar=false;player.x=car.x+Math.cos(car.angle+Math.PI/2)*58;player.y=car.y+Math.sin(car.angle+Math.PI/2)*58}
  else if(Math.hypot(player.x-car.x,player.y-car.y)<82){player.inCar=true;player.x=car.x;player.y=car.y}
 }
 function collides(x,y,r=20){if(x-r<0||y-r<0||x+r>W||y+r>H)return true;return buildings.some(b=>x+r>b.x&&x-r<b.x+b.w&&y+r>b.y&&y-r<b.y+b.h)}
-function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05}
+function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05;playSound("reload")}
 function shoot(){
  if(!started||paused||player.dead||player.inCar||player.reloading||player.shootCd>0)return;
  if(player.ammo<=0){startReload();return}
- const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;
+ const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  for(let i=0;i<w.pellets;i++){
   const a=player.angle+(Math.random()-.5)*w.spread,ox=player.x+Math.cos(a)*28,oy=player.y+Math.sin(a)*28;
   bullets.push({x:ox,y:oy,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,t:player.weapon==="rifle"?1.15:.9,damage:w.damage,color:w.color});
@@ -293,7 +361,7 @@ function update(dt){
  if(player.reloading){player.reloadT-=dt;if(player.reloadT<=0){const need=player.maxAmmo-player.ammo,take=Math.min(need,player.reserve);player.ammo+=take;player.reserve-=take;player.reloading=false}}
  if(player.inCar){
   const throttle=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0)-touchMove.y;let boost=1;
-  if(keys.shift&&car.nitro>0&&throttle>0){boost=1.42;car.nitro=Math.max(0,car.nitro-31*dt)}else car.nitro=Math.min(100,car.nitro+10*dt);
+  if(keys.shift&&car.nitro>0&&throttle>0){boost=1.42;if(car.nitro>96)playSound("nitro");car.nitro=Math.max(0,car.nitro-31*dt)}else car.nitro=Math.min(100,car.nitro+10*dt);
   car.speed+=throttle*car.acc*boost*dt;if(!throttle)car.speed*=Math.pow(.25,dt);car.speed=Math.max(-230,Math.min(car.max*boost,car.speed));
   const steer=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x;if(Math.abs(car.speed)>8)car.angle+=steer*car.turn*dt*(car.speed/car.max)*(keys[" "]?1.55:1);
   if(keys[" "])car.speed*=Math.pow(.34,dt);
@@ -314,6 +382,7 @@ function update(dt){
  updateBushState();updateBullets(dt);updateEnemies(dt);
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
  skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
+ updateEngineSound();
  const visibleWorldHeight=canvas.height/VIEW_TILT;const tx=player.x-canvas.width/2,ty=player.y-visibleWorldHeight/2;cam.x+=(Math.max(0,Math.min(W-canvas.width,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-visibleWorldHeight,ty))-cam.y)*Math.min(1,dt*5.5);netTimer+=dt;if(netTimer>=.067){netTimer=0;sendNetState()}
 }
 function road(){ctx.fillStyle="#263129";ctx.fillRect(0,0,W,H);ctx.fillStyle="#4b5255";for(const y of [390,900,1400])ctx.fillRect(0,y,W,100);for(const x of [535,1100,1660,2200])ctx.fillRect(x,0,90,H);ctx.strokeStyle="#d4c765";ctx.lineWidth=3;ctx.setLineDash([28,24]);ctx.beginPath();[440,950,1450].forEach(y=>{ctx.moveTo(0,y);ctx.lineTo(W,y)});[580,1145,1705,2245].forEach(x=>{ctx.moveTo(x,0);ctx.lineTo(x,H)});ctx.stroke();ctx.setLineDash([])}
