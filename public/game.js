@@ -357,14 +357,12 @@ function projectileHitsWall(x1,y1,x2,y2,layer=null){
  for(let i=1;i<=steps;i++){
   const t=i/steps,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
   if(x<0||y<0||x>W||y>H)return true;
-  if(layer===null){
-   if(buildings.some(b=>pointInBuilding(x,y,b,0)))return true;
-  }else{
-   const roof=buildings[layer];
-   if(!roof||!pointInBuilding(x,y,roof,0))return true;
-  }
+  if(layer===null&&buildings.some(b=>pointInBuilding(x,y,b,0)))return true;
  }
  return false;
+}
+function projectileOutOfWorld(x1,y1,x2,y2){
+ return x2<0||y2<0||x2>W||y2>H;
 }
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05;playSound("reload")}
 function shoot(){
@@ -571,19 +569,29 @@ function updateTraffic(dt){for(const t of traffic){
 function updateBullets(dt){
  for(const b of bullets){
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
-  if(projectileHitsWall(ox,oy,nx,ny,b.layer??null)){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
+  const playerShotFromRoof=b.layer!==null&&b.layer!==undefined;
+  const playerShotBlocked=playerShotFromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  if(playerShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
   b.x=nx;b.y=ny;
-  if(gameMode==="solo"){for(const e of enemies){if(!e.alive)continue;const sameLayer=(e.boss||e.roof===undefined)?b.layer===null:e.roof===b.layer;if(sameLayer&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage||1;b.t=0;if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
+  if(gameMode==="solo"){for(const e of enemies){
+   if(!e.alive)continue;
+   const enemyOnRoof=e.roof!==null&&e.roof!==undefined;
+   const canHitEnemy=playerShotFromRoof||!enemyOnRoof;
+   if(canHitEnemy&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+6){
+    e.hp-=b.damage||1;b.t=0;
+    if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}
+    hitMarks.push({x:e.x,y:e.y,t:.25});break
+   }
+  }}
   if(b.layer===null){for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}}
  }
  bullets=bullets.filter(b=>b.t>0);
  for(const b of enemyBullets){
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const fromRoof=b.layer!==null&&b.layer!==undefined;
-  const sameRoofShot=fromRoof&&player.roof===b.layer;
   const groundShot=b.layer===null||b.layer===undefined;
-  const wallLayer=sameRoofShot?b.layer:(groundShot?null:undefined);
-  if(wallLayer!==undefined&&projectileHitsWall(ox,oy,nx,ny,wallLayer)){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*70,vy:(Math.random()-.5)*70,t:.22});continue}
+  const enemyShotBlocked=fromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  if(enemyShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*70,vy:(Math.random()-.5)*70,t:.22});continue}
   b.x=nx;b.y=ny;
   const canHitPlayer=(groundShot&&player.roof===null)||(fromRoof&&(player.roof===b.layer||player.roof===null));
   if(canHitPlayer&&!player.inCar&&!player.dead&&Math.hypot(b.x-player.x,b.y-player.y)<player.r+5){
