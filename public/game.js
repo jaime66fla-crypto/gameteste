@@ -5,7 +5,7 @@ const VIEW_TILT=.78;
 function screenToWorldY(y){return cam.y+(y-canvas.height*(1-VIEW_TILT)/2)/VIEW_TILT;}
 function worldToScreenY(y){return (y-cam.y)*VIEW_TILT+canvas.height*(1-VIEW_TILT)/2;}
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
-const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,weapon:"pistol",carHitCd:0,hidden:false};
+const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0};
 const weapons={
  pistol:{name:"PISTOLA",mag:12,reserve:72,fire:.16,speed:980,spread:.025,pellets:1,damage:1,color:"#ffe36e"},
  smg:{name:"SMG",mag:30,reserve:120,fire:.075,speed:930,spread:.07,pellets:1,damage:1,color:"#7ee8ff"},
@@ -46,7 +46,37 @@ function updatePickups(dt){
  const ready=pickupRespawns.filter(r=>r.t<=0);pickupRespawns=pickupRespawns.filter(r=>r.t>0);
  for(const r of ready){const p=randomOpenPoint();weaponPickups.push({x:p.x,y:p.y,type:r.type,spin:Math.random()*6.28})}
 }
-function updateBushState(){player.hidden=!player.inCar&&bushes.some(b=>Math.hypot(player.x-b.x,player.y-b.y)<b.r*.72)}
+function updateBushState(){player.hidden=!player.inCar&&!player.dead&&bushes.some(b=>Math.hypot(player.x-b.x,player.y-b.y)<b.r*.72)}
+
+function damagePlayer(amount){
+ if(player.dead||player.inCar)return;
+ player.health=Math.max(0,player.health-amount);
+ flash=Math.max(flash,.7);
+ if(navigator.vibrate&&selectedPlatform==="mobile")navigator.vibrate(45);
+ if(player.health<=0)killPlayer();
+}
+function killPlayer(){
+ if(player.dead)return;
+ player.dead=true;
+ player.respawnT=3;
+ player.health=0;
+ player.reloading=false;
+ mouse.down=false;
+ touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;
+ for(const k of Object.keys(keys))keys[k]=false;
+}
+function respawnPlayer(){
+ const p=randomOpenPoint();
+ player.x=p.x;player.y=p.y;
+ player.health=player.maxHealth;
+ player.dead=false;
+ player.respawnT=0;
+ player.inCar=false;
+ player.ammo=player.maxAmmo;
+ player.reloading=false;
+ flash=.4;
+}
+
 
 addEventListener("keydown",e=>{
  const k=e.key.toLowerCase();keys[k]=true;
@@ -169,7 +199,7 @@ function connectMultiplayer(){
 }
 function sendNetState(force=false){
  if(gameMode!=="multi"||!socket||socket.readyState!==WebSocket.OPEN)return;
- const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills};
+ const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills,health:player.health,dead:player.dead};
  socket.send(JSON.stringify(msg));
 }
 function setPauseState(value){
@@ -180,14 +210,14 @@ function setPauseState(value){
 }
 function togglePause(){setPauseState(!paused)}
 function toggleCar(){
- if(!started||paused)return;
+ if(!started||paused||player.dead)return;
  if(player.inCar){player.inCar=false;player.x=car.x+Math.cos(car.angle+Math.PI/2)*58;player.y=car.y+Math.sin(car.angle+Math.PI/2)*58}
  else if(Math.hypot(player.x-car.x,player.y-car.y)<82){player.inCar=true;player.x=car.x;player.y=car.y}
 }
 function collides(x,y,r=20){if(x-r<0||y-r<0||x+r>W||y+r>H)return true;return buildings.some(b=>x+r>b.x&&x-r<b.x+b.w&&y+r>b.y&&y-r<b.y+b.h)}
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05}
 function shoot(){
- if(!started||paused||player.inCar||player.reloading||player.shootCd>0)return;
+ if(!started||paused||player.dead||player.inCar||player.reloading||player.shootCd>0)return;
  if(player.ammo<=0){startReload();return}
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;
  for(let i=0;i<w.pellets;i++){
@@ -213,7 +243,7 @@ function updateEnemies(dt){
    if(!collides(nx,e.y,e.r))e.x=nx;if(!collides(e.x,ny,e.r))e.y=ny;
   }
   e.shootCd-=dt;
-  if(canSee&&d<420&&e.shootCd<=0){e.shootCd=1.1+Math.random()*.8;if(!player.inCar){player.health=Math.max(0,player.health-8);flash=.35}}
+  if(canSee&&d<420&&e.shootCd<=0){e.shootCd=1.1+Math.random()*.8;if(!player.inCar)damagePlayer(8)}
  }
 }
 function drawEnemies(){
@@ -235,7 +265,7 @@ function updateTraffic(dt){for(const t of traffic){
  if(!player.inCar&&player.carHitCd<=0&&Math.hypot(player.x-t.x,player.y-t.y)<42){
   const push=62+Math.min(90,t.s*.55),px=Math.cos(t.a)*push,py=Math.sin(t.a)*push;
   const nx=player.x+px,ny=player.y+py;if(!collides(nx,player.y,player.r))player.x=nx;if(!collides(player.x,ny,player.r))player.y=ny;
-  player.health=Math.max(0,player.health-18);player.carHitCd=.85;flash=.8;
+  damagePlayer(18);player.carHitCd=.85;
   for(let i=0;i<8;i++)sparks.push({x:player.x,y:player.y,vx:(Math.random()-.5)*150,vy:(Math.random()-.5)*150,t:.35});
  }
  if(t.a===0&&t.x>W+60)t.x=-60;if(t.a===Math.PI&&t.x<-60)t.x=W+60;if(t.a===Math.PI/2&&t.y>H+60)t.y=-60;if(t.a===-Math.PI/2&&t.y<-60)t.y=H+60
@@ -253,6 +283,12 @@ function updateBullets(dt){
 }
 function update(dt){
  if(!started||paused)return;
+ if(player.dead){
+  player.respawnT=Math.max(0,player.respawnT-dt);
+  flash=Math.max(0,flash-dt*1.4);
+  if(player.respawnT<=0)respawnPlayer();
+  return;
+ }
  player.carHitCd=Math.max(0,player.carHitCd-dt);updateTraffic(dt);updateBushState();updatePickups(dt);flash=Math.max(0,flash-dt*2);player.shootCd=Math.max(0,player.shootCd-dt);
  if(player.reloading){player.reloadT-=dt;if(player.reloadT<=0){const need=player.maxAmmo-player.ammo,take=Math.min(need,player.reserve);player.ammo+=take;player.reserve-=take;player.reloading=false}}
  if(player.inCar){
@@ -318,7 +354,7 @@ function drawVehicle(x,y,a,c,w=62,h=32){
  ctx.restore()
 }
 function drawPlayer(){
- if(player.inCar)return;
+ if(player.inCar||player.dead)return;
  const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1,bob=moving?Math.sin(player.walk)*2:0,step=moving?Math.sin(player.walk)*5:0;
  ctx.save();ctx.translate(player.x,player.y);
  ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(5,13,19,8,0,0,Math.PI*2);ctx.fill();
@@ -356,8 +392,9 @@ function drawCrosshair(){
  if(player.inCar||!started)return;const x=mouse.x-cam.x,y=worldToScreenY(mouse.y);ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
 }
 function hud(){
- ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,92);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,91);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
- if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 13px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  "+weapons[player.weapon].name,35,96);if(player.hidden){ctx.fillStyle="#71e69a";ctx.font="800 10px system-ui";ctx.fillText("OCULTO NO ARBUSTO",150,43)}}
+ ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,128);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,127);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
+ ctx.fillStyle="#fff";ctx.font="800 11px system-ui";ctx.fillText("VIDA "+Math.ceil(player.health)+" / "+player.maxHealth,35,94);ctx.fillStyle="#263640";ctx.fillRect(35,102,200,9);ctx.fillStyle=player.health>55?"#65ff8b":player.health>25?"#ffd45c":"#ff626e";ctx.fillRect(35,102,200*(player.health/player.maxHealth),9);
+ if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 12px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  "+weapons[player.weapon].name,35,132);if(player.hidden){ctx.fillStyle="#71e69a";ctx.font="800 10px system-ui";ctx.fillText("OCULTO NO ARBUSTO",150,43)}}
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
  const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
  if(gameMode==="solo"){ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+enemies.filter(e=>e.alive).length,34,canvas.height-52)}
@@ -370,6 +407,7 @@ function hud(){
  }
  const mw=190,mh=120,mx=canvas.width-210,my=canvas.height-140;ctx.fillStyle="#061018e8";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,4,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,4.5,0,Math.PI*2);ctx.fill();
  const near=!player.inCar&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
+ if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 46px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-12);ctx.fillStyle="#ff9ba3";ctx.font="800 20px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+28);ctx.textAlign="left"}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
  if(flash>0){ctx.fillStyle="rgba(255,90,90,"+Math.min(.28,flash*.2)+")";ctx.fillRect(0,0,canvas.width,canvas.height)}
  drawCrosshair()
