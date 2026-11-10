@@ -194,7 +194,7 @@ function update(dt){
   const nx=player.x+dx/m*player.speed*run*dt,ny=player.y+dy/m*player.speed*run*dt;
   if(!collides(nx,player.y,player.r))player.x=nx;if(!collides(player.x,ny,player.r))player.y=ny;
   if(moving)player.walk+=dt*(run>1?13:9);
-  if(Math.hypot(touchAim.x,touchAim.y)>.12){player.angle=Math.atan2(touchAim.y,touchAim.x);mouse.x=player.x+touchAim.x*200;mouse.y=player.y+touchAim.y*200;}
+  if(Math.hypot(touchAim.x,touchAim.y)>.12){player.angle=Math.atan2(touchAim.y/VIEW_TILT,touchAim.x);mouse.x=player.x+touchAim.x*200;mouse.y=player.y+touchAim.y*200/VIEW_TILT;}
   else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
  }
@@ -219,15 +219,32 @@ function drawBuildings(){
   ctx.fillStyle="#233741";ctx.fillRect(b.x+shift+32,roofY+28,52,28);
  });
 }
-function drawTrees(){trees.forEach(t=>{ctx.fillStyle="#342b20";ctx.fillRect(t.x-3,t.y,6,13);ctx.fillStyle="#315e3b";ctx.beginPath();ctx.arc(t.x,t.y-5,12,0,Math.PI*2);ctx.fill()})}
+function drawTrees(){trees.forEach(t=>{
+ ctx.fillStyle="#0005";ctx.beginPath();ctx.ellipse(t.x+10,t.y+9,18,7,-.2,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#65442b";ctx.fillRect(t.x-4,t.y-28,8,34);
+ for(const [dx,dy,r,c] of [[-9,-32,14,"#285b3b"],[9,-38,15,"#36784c"],[0,-46,16,"#41915a"]]){
+  ctx.fillStyle=c;ctx.beginPath();ctx.arc(t.x+dx,t.y+dy,r,0,Math.PI*2);ctx.fill();
+ }
+})}
 function drawBushes(base=true){for(const b of bushes){ctx.save();ctx.globalAlpha=base?.82:.92;ctx.fillStyle=base?"#244d31":"#367447";for(let i=0;i<6;i++){const a=i*Math.PI/3,r=b.r*.42;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,b.r*.48,0,Math.PI*2);ctx.fill()}ctx.fillStyle=base?"#2d613b":"#438955";ctx.beginPath();ctx.arc(b.x,b.y,b.r*.58,0,Math.PI*2);ctx.fill();ctx.restore()}}
 function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018cc";ctx.beginPath();ctx.arc(0,0,22,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=3;ctx.beginPath();ctx.arc(0,0,18,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);ctx.fillStyle=w.color;ctx.fillRect(-13,-4,26,8);ctx.fillRect(4,3,6,9);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-27);ctx.textAlign="left"}}
-function drawVehicle(x,y,a,c,w=62,h=32){ctx.save();ctx.translate(x,y);ctx.rotate(a);ctx.fillStyle=c;ctx.fillRect(-w/2,-h/2,w,h);ctx.fillStyle="#17252b";ctx.fillRect(-5,-h/2+4,23,h-8);ctx.fillStyle="#eaf7ff";ctx.fillRect(w/2-6,-10,4,7);ctx.fillRect(w/2-6,3,4,7);ctx.restore()}
+function drawVehicle(x,y,a,c,w=62,h=32){
+ ctx.save();ctx.translate(x,y);ctx.rotate(a);
+ ctx.fillStyle="#0008";ctx.beginPath();ctx.ellipse(7,10,w*.65,h*.67,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#111820";ctx.fillRect(-w*.36,-h*.63,w*.23,h*.3);ctx.fillRect(w*.2,-h*.63,w*.23,h*.3);
+ ctx.fillRect(-w*.36,h*.33,w*.23,h*.3);ctx.fillRect(w*.2,h*.33,w*.23,h*.3);
+ ctx.fillStyle="#18242d";ctx.fillRect(-w/2+3,-h/2+7,w-6,h-3);
+ ctx.fillStyle=c;ctx.fillRect(-w/2,-h/2-7,w,h);
+ ctx.fillStyle="#253a49";ctx.fillRect(-w*.10,-h/2-5,w*.38,h-4);
+ ctx.fillStyle="#8eb9ce";ctx.fillRect(-w*.06,-h/2-3,w*.25,h-8);
+ ctx.fillStyle="#e9f7ff";ctx.fillRect(w/2-6,-h/2-3,4,7);ctx.fillRect(w/2-6,h/2-10,4,7);
+ ctx.restore()
+}
 function drawPlayer(){
  if(player.inCar)return;
- const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright,bob=moving?Math.sin(player.walk)*2:0,step=moving?Math.sin(player.walk)*5:0;
+ const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1,bob=moving?Math.sin(player.walk)*2:0,step=moving?Math.sin(player.walk)*5:0;
  ctx.save();ctx.translate(player.x,player.y);
- ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,11,18,9,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(5,13,19,8,0,0,Math.PI*2);ctx.fill();
  ctx.save();ctx.rotate(player.angle);
  ctx.fillStyle="#1c2430";ctx.beginPath();ctx.ellipse(-6,8+step,6,11,0,0,Math.PI*2);ctx.ellipse(7,8-step,6,11,0,0,Math.PI*2);ctx.fill();
  ctx.fillStyle="#e23b43";ctx.beginPath();ctx.ellipse(0,bob,17,14,0,0,Math.PI*2);ctx.fill();
