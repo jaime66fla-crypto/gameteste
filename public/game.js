@@ -58,6 +58,22 @@ canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();c
 canvas.addEventListener("mousedown",e=>{if(e.button===0){mouse.down=true;shoot()}});
 addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
+let selectedPlatform=matchMedia("(pointer:coarse)").matches?"mobile":"desktop";
+function setPlatform(platform){
+ selectedPlatform=platform;
+ document.body.classList.toggle("platform-mobile",platform==="mobile");
+ document.body.classList.toggle("platform-desktop",platform==="desktop");
+ document.getElementById("desktopPlatformBtn")?.classList.toggle("active",platform==="desktop");
+ document.getElementById("mobilePlatformBtn")?.classList.toggle("active",platform==="mobile");
+ const help=document.getElementById("controlHelp");
+ if(help)help.textContent=platform==="mobile"
+  ?"Analógico esquerdo mover • Analógico direito mirar e atirar • CARRO entrar/sair"
+  :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo";
+ if(platform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
+}
+document.getElementById("desktopPlatformBtn")?.addEventListener("click",()=>setPlatform("desktop"));
+document.getElementById("mobilePlatformBtn")?.addEventListener("click",()=>setPlatform("mobile"));
+setPlatform(selectedPlatform);
 document.getElementById("soloModeBtn").onclick=()=>setGameMode("solo");
 document.getElementById("multiModeBtn").onclick=()=>setGameMode("multi");
 function setGameMode(mode){
@@ -69,6 +85,7 @@ function setGameMode(mode){
 }
 setGameMode("solo");
 document.getElementById("startBtn").onclick=()=>{
+ if(selectedPlatform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
  playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";
  roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";
  started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();spawnWeaponPickups();
