@@ -40,7 +40,10 @@
           <span class="badge">MULTIPLAYER ONLINE</span>
           <h3>Bem-vindo à cidade</h3>
           <p>Qual plataforma você está usando?</p>
-          <div class="platform-picker"><button id="desktopPlatformBtn" class="platform-btn active">💻 PC</button><button id="mobilePlatformBtn" class="platform-btn">📱 Celular</button></div>
+          <div class="platform-picker">
+            <button id="desktopPlatformBtn" class="platform-btn active"><span>💻</span><strong>PC</strong><small>Teclado + mouse</small></button>
+            <button id="mobilePlatformBtn" class="platform-btn"><span>📱</span><strong>Celular</strong><small>Analógicos na tela</small></button>
+          </div>
           <p class="play-mode-label">Agora escolha como quer jogar.</p>
           <div class="mode-picker"><button id="soloModeBtn" class="mode-btn active">Modo Solo</button><button id="multiModeBtn" class="mode-btn">Multiplayer</button></div>
           <div class="lobby-fields"><input id="playerName" maxlength="18" placeholder="Seu nome" value="Jogador"><input id="roomCode" maxlength="24" placeholder="Código da sala" value="cidade-1"></div>
@@ -49,6 +52,26 @@
         </div>
       </div>
       <div class="controls-strip"><span><kbd>WASD</kbd> mover</span><span><kbd>MOUSE</kbd> mirar</span><span><kbd>CLIQUE</kbd> atirar</span><span><kbd>R</kbd> recarregar</span><span><kbd>E</kbd> veículo</span><span><kbd>SHIFT</kbd> correr / nitro</span><span><kbd>ESPAÇO</kbd> drift</span><span><kbd>P</kbd> pausar</span></div>
+      <div id="tutorialOverlay" class="tutorial-overlay hidden">
+        <div class="tutorial-card">
+          <span class="badge">TUTORIAL RÁPIDO</span>
+          <h3 id="tutorialTitle">Movimente-se</h3>
+          <p id="tutorialText">Use WASD para andar pela cidade.</p>
+          <div class="tutorial-dots"><i class="active"></i><i></i><i></i></div>
+          <button id="tutorialNextBtn" class="btn">Próximo</button>
+          <button id="tutorialSkipBtn" class="ghost tutorial-skip">Pular tutorial</button>
+        </div>
+      </div>
+      <div id="pauseOverlay" class="pause-overlay hidden">
+        <div class="pause-card">
+          <span class="badge">JOGO PAUSADO</span>
+          <h3>Street Prototype</h3>
+          <button id="resumeBtn" class="btn">Continuar</button>
+          <button id="controlsBtn" class="ghost">Ver controles</button>
+          <button id="pauseRestartBtn" class="ghost danger">Reiniciar partida</button>
+          <button id="pauseExitBtn" class="ghost">Sair para o menu</button>
+        </div>
+      </div>
     </div>
 
     <div class="mobile-controls" id="touchControls">
