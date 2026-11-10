@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#080b10">
+  <title>Street Prototype V2</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero">
+  <nav class="nav shell">
+    <div class="brand"><i></i> STREET <span>PROTOTYPE</span></div>
+    <div class="nav-actions"><span class="status"><b></b> WEB BUILD V2</span><a class="btn small" href="#game">Jogar agora</a></div>
+  </nav>
+  <div class="hero-grid shell">
+    <div>
+      <p class="eyebrow">MUNDO ABERTO 2D • DIRETO NO NAVEGADOR</p>
+      <h1>A cidade é<br><em>seu playground.</em></h1>
+      <p class="lead">Ande pelas ruas, entre no carro, acelere, derrape e explore uma cidade 2D direto no navegador.</p>
+      <div class="hero-actions"><a class="btn" href="#game">Entrar na cidade</a><a class="btn secondary" href="#features">Ver recursos</a></div>
+    </div>
+    <div class="poster"><div class="poster-road"></div><div class="poster-car"></div><div class="poster-copy"><small>STREET PROTOTYPE</small><strong>DRIVE.<br>EXPLORE.<br>REPEAT.</strong></div></div>
+  </div>
+</header>
+<main class="shell">
+  <section id="game" class="game-section">
+    <div class="section-head">
+      <div><p class="eyebrow">PLAYGROUND</p><h2>Street Prototype <span>V2</span></h2></div>
+      <div class="game-actions"><button id="pauseBtn" class="ghost">Pausar</button><button id="fullscreenBtn" class="ghost">Tela cheia</button><button id="restartBtn" class="ghost danger">Reiniciar</button></div>
+    </div>
+    <div class="game-wrap" id="gameWrap">
+      <canvas id="gameCanvas" width="1280" height="720" tabindex="0"></canvas>
+      <div id="startOverlay" class="start-overlay">
+        <div class="start-panel"><span class="badge">WEB BUILD V2</span><h3>Bem-vindo à cidade</h3><p>Comece a pé, encontre seu carro e explore o mapa.</p><button id="startBtn" class="btn">Começar jogo</button><small>WASD para mover • E para entrar no carro</small></div>
+      </div>
+      <div class="controls-strip"><span><kbd>WASD</kbd> mover</span><span><kbd>E</kbd> entrar / sair</span><span><kbd>SHIFT</kbd> correr / nitro</span><span><kbd>ESPAÇO</kbd> drift</span><span><kbd>P</kbd> pausar</span></div>
+    </div>
+    <div class="mobile-controls">
+      <div class="dpad"><button data-key="w">▲</button><div><button data-key="a">◀</button><button data-key="s">▼</button><button data-key="d">▶</button></div></div>
+      <div class="mobile-actions"><button data-action="e">E</button><button data-key=" ">DRIFT</button><button data-key="shift">NITRO</button></div>
+    </div>
+  </section>
+  <section id="features" class="features">
+    <article><b>01</b><h3>Exploração a pé</h3><p>Ande pelas quadras e entre no veículo quando estiver próximo.</p></article>
+    <article><b>02</b><h3>Direção</h3><p>Aceleração, ré, colisão, dano, drift e nitro.</p></article>
+    <article><b>03</b><h3>Cidade viva</h3><p>Trânsito, árvores, prédios, faixas e minimapa.</p></article>
+    <article><b>04</b><h3>Objetivo</h3><p>Chegue ao marcador amarelo para completar a missão.</p></article>
+  </section>
+</main>
+<footer><div class="shell">Street Prototype • Web Build V2</div></footer>
+<script src="game.js"></script>
+</body>
+</html>
