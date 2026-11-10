@@ -321,7 +321,7 @@ function spawnBoss(){
  if(bossSpawned||bossDefeated||gameMode!=="solo")return;
  bossSpawned=true;
  const p={x:2450,y:1550};
- enemies.push({x:p.x,y:p.y,r:30,hp:40,maxHp:40,angle:0,speed:58,shootCd:.7,alive:true,boss:true});
+ enemies.push({x:p.x,y:p.y,r:38,hp:60,maxHp:60,angle:0,speed:52,shootCd:.7,alive:true,boss:true});
  flash=1;playSound("death");
 }
 function getBoss(){return enemies.find(e=>e.boss&&e.alive)}
@@ -350,20 +350,60 @@ function updateEnemies(dt){
   }
  }
 }
+
+function drawBossTank(e){
+ const pulse=.5+.5*Math.sin(performance.now()/120);
+ ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);
+ // shadow
+ ctx.fillStyle="#0009";ctx.beginPath();ctx.ellipse(6,18,48,26,0,0,Math.PI*2);ctx.fill();
+ // tracks
+ ctx.fillStyle="#181b20";ctx.fillRect(-38,-30,20,60);ctx.fillRect(18,-30,20,60);
+ ctx.fillStyle="#2b3038";
+ for(let y=-25;y<=20;y+=10){ctx.fillRect(-35,y,14,6);ctx.fillRect(21,y,14,6)}
+ // armored body
+ ctx.fillStyle="#4a0f16";ctx.beginPath();ctx.ellipse(0,0,38,34,0,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#8b2832";ctx.lineWidth=4;ctx.stroke();
+ // spikes
+ ctx.fillStyle="#6b1820";
+ for(const a of [-2.5,-1.9,-1.2,-.55,.55,1.2,1.9,2.5]){
+  ctx.save();ctx.rotate(a);ctx.beginPath();ctx.moveTo(30,-4);ctx.lineTo(44,0);ctx.lineTo(30,4);ctx.fill();ctx.restore();
+ }
+ // turret
+ ctx.fillStyle="#661722";ctx.beginPath();ctx.arc(2,-2,25,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#a5323f";ctx.lineWidth=3;ctx.stroke();
+ // face visor
+ ctx.fillStyle="#1a0a0d";ctx.fillRect(-10,-12,20,13);
+ ctx.fillStyle="#ff2f42";ctx.shadowColor="#ff1e35";ctx.shadowBlur=10;ctx.fillRect(-7,-9,5,3);ctx.fillRect(3,-9,5,3);
+ ctx.shadowBlur=0;
+ // core
+ ctx.fillStyle="#22070a";ctx.beginPath();ctx.arc(-6,12,10,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#ff2d3f";ctx.shadowColor="#ff2d3f";ctx.shadowBlur=14+8*pulse;ctx.beginPath();ctx.arc(-6,12,6+1.5*pulse,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+ // dual side cannons
+ ctx.fillStyle="#2a1a1c";ctx.fillRect(18,-16,34,8);ctx.fillRect(18,8,34,8);
+ ctx.fillStyle="#7c2630";ctx.fillRect(26,-14,28,4);ctx.fillRect(26,10,28,4);
+ if(e.shootCd>.35){
+  ctx.fillStyle="#ff7b32";ctx.shadowColor="#ff4a1f";ctx.shadowBlur=14;
+  ctx.beginPath();ctx.moveTo(55,-12);ctx.lineTo(70,-18);ctx.lineTo(66,-10);ctx.lineTo(73,-8);ctx.lineTo(55,-6);ctx.closePath();ctx.fill();
+  ctx.beginPath();ctx.moveTo(55,10);ctx.lineTo(70,4);ctx.lineTo(66,12);ctx.lineTo(73,14);ctx.lineTo(55,16);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+ }
+ ctx.restore();
+ // local boss bar
+ const bw=150,by=e.y-62;
+ ctx.fillStyle="#0b0d10dd";ctx.fillRect(e.x-bw/2,by,bw,12);
+ ctx.fillStyle="#ff3045";ctx.fillRect(e.x-bw/2+2,by+2,(bw-4)*(e.hp/e.maxHp),8);
+ ctx.strokeStyle="#5d1d25";ctx.strokeRect(e.x-bw/2+.5,by+.5,bw-1,11);
+ ctx.fillStyle="#fff";ctx.font="900 12px system-ui";ctx.textAlign="center";ctx.fillText("GOLIAS",e.x,by-7);ctx.textAlign="left";
+}
+
 function drawEnemies(){
  if(gameMode!=="solo")return;
  for(const e of enemies){
   if(!e.alive)continue;
-  ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,e.boss?18:10,e.boss?30:17,e.boss?13:8,0,0,Math.PI*2);ctx.fill();ctx.rotate(e.angle);
-  ctx.fillStyle=e.boss?"#651515":"#7d2d2d";ctx.beginPath();ctx.ellipse(0,0,e.boss?28:16,e.boss?22:13,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(e.boss?4:2,e.boss?-8:-5,e.boss?14:9,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle=e.boss?"#111":"#20252c";ctx.fillRect(e.boss?20:14,e.boss?-6:-4,e.boss?34:20,e.boss?12:8);
-  if(e.boss){ctx.strokeStyle="#ff3b3b";ctx.lineWidth=4;ctx.strokeRect(-24,-20,48,40)}
-  ctx.restore();
-  const bw=e.boss?120:36,bh=e.boss?8:5;
-  ctx.fillStyle="#111";ctx.fillRect(e.x-bw/2,e.y-(e.boss?45:27),bw,bh);
-  ctx.fillStyle=e.boss?"#ff3232":"#ff5f5f";ctx.fillRect(e.x-bw/2,e.y-(e.boss?45:27),bw*(e.hp/e.maxHp),bh);
-  if(e.boss){ctx.fillStyle="#fff";ctx.font="900 12px system-ui";ctx.textAlign="center";ctx.fillText("BOSS",e.x,e.y-53);ctx.textAlign="left"}
+  if(e.boss){drawBossTank(e);continue}
+  ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,10,17,8,0,0,Math.PI*2);ctx.fill();ctx.rotate(e.angle);
+  ctx.fillStyle="#7d2d2d";ctx.beginPath();ctx.ellipse(0,0,16,13,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5,9,0,Math.PI*2);ctx.fill();ctx.fillStyle="#20252c";ctx.fillRect(14,-4,20,8);ctx.restore();
+  ctx.fillStyle="#111";ctx.fillRect(e.x-18,e.y-27,36,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-18,e.y-27,36*(e.hp/e.maxHp),5);
  }
 }
 function reportKill(){
@@ -516,12 +556,23 @@ function hud(){
  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,128);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,127);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
  ctx.fillStyle="#fff";ctx.font="800 11px system-ui";ctx.fillText("VIDA "+Math.ceil(player.health)+" / "+player.maxHealth,35,94);ctx.fillStyle="#263640";ctx.fillRect(35,102,200,9);ctx.fillStyle=player.health>55?"#65ff8b":player.health>25?"#ffd45c":"#ff626e";ctx.fillRect(35,102,200*(player.health/player.maxHealth),9);
  if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 12px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  "+weapons[player.weapon].name,35,132);if(player.hidden){ctx.fillStyle="#71e69a";ctx.font="800 10px system-ui";ctx.fillText("OCULTO NO ARBUSTO",150,43)}}
+
+ const bossTop=getBoss();
+ if(bossTop){
+  const bw=Math.min(620,canvas.width*.52),bx=(canvas.width-bw)/2,by=18;
+  ctx.fillStyle="#071018e8";ctx.fillRect(bx,by,bw,52);ctx.strokeStyle="#263845";ctx.strokeRect(bx+.5,by+.5,bw-1,51);
+  ctx.fillStyle="#fff";ctx.font="900 14px system-ui";ctx.fillText("VIDA",bx+14,by+20);
+  ctx.textAlign="center";ctx.fillText("GOLIAS",canvas.width/2,by+20);ctx.textAlign="left";
+  ctx.fillStyle="#263640";ctx.fillRect(bx+14,by+29,bw-28,11);
+  ctx.fillStyle="#ff3045";ctx.fillRect(bx+14,by+29,(bw-28)*(bossTop.hp/bossTop.maxHp),11);
+ }
+
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
  const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
  if(gameMode==="solo"){
   const boss=getBoss(),normalLeft=enemies.filter(e=>e.alive&&!e.boss).length;
   ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);
-  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("BOSS  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
+  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("GOLIAS  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
   else if(bossDefeated){ctx.fillStyle="#65ff8b";ctx.fillText("BOSS DERROTADO",34,canvas.height-52)}
   else{ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+normalLeft,34,canvas.height-52)}
  }
