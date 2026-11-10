@@ -39,3 +39,25 @@ footer{padding:18px 0}
  .section-head h2{font-size:2rem}
  .start-panel{padding:20px}
 }
+/* Landing page + game modal */
+body.modal-open{overflow:hidden}
+.landing-only{min-height:100vh;border-bottom:0}
+.landing-only .hero-grid{min-height:calc(100vh - 64px)}
+.game-modal{position:fixed;inset:0;z-index:1000;background:rgba(2,5,8,.88);backdrop-filter:blur(10px);display:none;padding:20px}
+.game-modal.show{display:grid;place-items:center}
+.game-modal-card{width:min(1380px,96vw);max-height:96vh;background:#090e14;border:1px solid #2c3b47;border-radius:18px;box-shadow:0 30px 120px #000c;padding:14px;overflow:auto}
+.game-modal-topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:2px 2px 12px}
+.game-modal-topbar>div:first-child{display:flex;align-items:center;gap:12px}
+.game-modal-topbar strong{font-size:1rem}
+.game-modal .game-wrap{max-width:none;margin:0}
+.game-modal .mobile-controls{margin-bottom:2px}
+@media(max-width:900px){
+ .landing-only .hero-grid{min-height:calc(100vh - 64px);padding:30px 0}
+ .game-modal{padding:8px}
+ .game-modal-card{width:100%;max-height:98vh;border-radius:12px;padding:9px}
+ .game-modal-topbar{align-items:flex-start;flex-direction:column}
+}
+@media(max-width:560px){
+ .game-modal-topbar .game-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}
+ .game-modal-topbar .ghost{width:100%}
+}
