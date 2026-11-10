@@ -346,6 +346,20 @@ function toggleCar(){
  else if(Math.hypot(player.x-car.x,player.y-car.y)<82){player.inCar=true;player.x=car.x;player.y=car.y}
 }
 function collides(x,y,r=20){if(x-r<0||y-r<0||x+r>W||y+r>H)return true;return buildings.some(b=>x+r>b.x&&x-r<b.x+b.w&&y+r>b.y&&y-r<b.y+b.h)}
+function projectileHitsWall(x1,y1,x2,y2,layer=null){
+ const dist=Math.hypot(x2-x1,y2-y1),steps=Math.max(1,Math.ceil(dist/8));
+ for(let i=1;i<=steps;i++){
+  const t=i/steps,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
+  if(x<0||y<0||x>W||y>H)return true;
+  if(layer===null){
+   if(buildings.some(b=>pointInBuilding(x,y,b,0)))return true;
+  }else{
+   const roof=buildings[layer];
+   if(!roof||!pointInBuilding(x,y,roof,0))return true;
+  }
+ }
+ return false;
+}
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05;playSound("reload")}
 function shoot(){
  if(!started||paused||player.dead||player.inCar||player.reloading||player.shootCd>0)return;
@@ -353,7 +367,7 @@ function shoot(){
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  for(let i=0;i<w.pellets;i++){
   const a=player.angle+(Math.random()-.5)*w.spread,ox=player.x+Math.cos(a)*28,oy=player.y+Math.sin(a)*28;
-  bullets.push({x:ox,y:oy,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,t:player.weapon==="rifle"?1.15:.9,damage:w.damage,color:w.color});
+  bullets.push({x:ox,y:oy,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,t:player.weapon==="rifle"?1.15:.9,damage:w.damage,color:w.color,layer:player.roof});
  }
  shells.push({x:player.x,y:player.y,vx:Math.cos(player.angle+Math.PI/2)*(50+Math.random()*35),vy:Math.sin(player.angle+Math.PI/2)*(50+Math.random()*35),t:.5});
  if(player.ammo===0&&player.reserve>0)setTimeout(()=>{if(started&&!paused)startReload()},180);
@@ -377,7 +391,7 @@ function updateEnemies(dt){
  for(const e of enemies){
   if(!e.alive)continue;
   const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;e.angle=Math.atan2(dy,dx);
-  const canSee=!player.hidden||d<(e.boss?220:125);
+  const canSee=player.roof===null&&(!player.hidden||d<(e.boss?220:125));
   if(canSee&&d>(e.boss?190:150)){
    const nx=e.x+dx/d*e.speed*dt,ny=e.y+dy/d*e.speed*dt;
    if(!collides(nx,e.y,e.r))e.x=nx;if(!collides(e.x,ny,e.r))e.y=ny;
@@ -389,7 +403,7 @@ function updateEnemies(dt){
     const shots=e.boss?3:1;
     for(let s=0;s<shots;s++){
      const spread=(Math.random()-.5)*(e.boss?.22:.08),a=e.angle+spread,speed=e.boss?470:420;
-     enemyBullets.push({x:e.x+Math.cos(a)*(e.boss?38:28),y:e.y+Math.sin(a)*(e.boss?38:28),vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:e.boss?1.45:1.25,damage:e.boss?12:8,boss:e.boss});
+     enemyBullets.push({x:e.x+Math.cos(a)*(e.boss?38:28),y:e.y+Math.sin(a)*(e.boss?38:28),vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:e.boss?1.45:1.25,damage:e.boss?12:8,boss:e.boss,layer:null});
     }
     noise(e.boss?.07:.04,e.boss?.08:.05,e.boss?1400:1800);tone(e.boss?95:130,e.boss?.08:.05,"square",e.boss?.06:.04,.7);
    }
@@ -468,16 +482,18 @@ function updateTraffic(dt){for(const t of traffic){
 }}
 function updateBullets(dt){
  for(const b of bullets){
-  b.x+=b.vx*dt;b.y+=b.vy*dt;b.t-=dt;
-  if(collides(b.x,b.y,3)){b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
-  if(gameMode==="solo"){for(const e of enemies){if(e.alive&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage||1;b.t=0;if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
-  for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}
+  const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
+  if(projectileHitsWall(ox,oy,nx,ny,b.layer??null)){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
+  b.x=nx;b.y=ny;
+  if(b.layer===null&&gameMode==="solo"){for(const e of enemies){if(e.alive&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage||1;b.t=0;if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
+  if(b.layer===null){for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}}
  }
  bullets=bullets.filter(b=>b.t>0);
  for(const b of enemyBullets){
-  b.x+=b.vx*dt;b.y+=b.vy*dt;b.t-=dt;
-  if(collides(b.x,b.y,3)){b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*70,vy:(Math.random()-.5)*70,t:.22});continue}
-  if(!player.inCar&&!player.dead&&Math.hypot(b.x-player.x,b.y-player.y)<player.r+5){
+  const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
+  if(projectileHitsWall(ox,oy,nx,ny,b.layer??null)){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*70,vy:(Math.random()-.5)*70,t:.22});continue}
+  b.x=nx;b.y=ny;
+  if(player.roof===null&&!player.inCar&&!player.dead&&Math.hypot(b.x-player.x,b.y-player.y)<player.r+5){
    damagePlayer(b.damage||8);b.t=0;
    hitMarks.push({x:player.x,y:player.y,t:.18});
   }
