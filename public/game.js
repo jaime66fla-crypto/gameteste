@@ -3,8 +3,10 @@ const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100};
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[];
-let socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1";
+let socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0;
 const remotePlayers=new Map();
+const ranking=new Map();
+const enemies=[];
 const mission={x:2440,y:1560,r:48};
 const buildings=[
 {x:80,y:70,w:360,h:240},{x:700,y:70,w:300,h:250},{x:1280,y:60,w:300,h:270},{x:1840,y:80,w:270,h:235},{x:2380,y:70,w:320,h:250},
@@ -28,7 +30,22 @@ canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();m
 canvas.addEventListener("mousedown",e=>{if(e.button===0){mouse.down=true;shoot()}});
 addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
-document.getElementById("startBtn").onclick=()=>{playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();connectMultiplayer()};
+document.getElementById("soloModeBtn").onclick=()=>setGameMode("solo");
+document.getElementById("multiModeBtn").onclick=()=>setGameMode("multi");
+function setGameMode(mode){
+ gameMode=mode;
+ document.getElementById("soloModeBtn").classList.toggle("active",mode==="solo");
+ document.getElementById("multiModeBtn").classList.toggle("active",mode==="multi");
+ document.getElementById("roomCode").style.display=mode==="multi"?"block":"none";
+ document.getElementById("startBtn").textContent=mode==="multi"?"Entrar na sala":"Jogar solo";
+}
+setGameMode("solo");
+document.getElementById("startBtn").onclick=()=>{
+ playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";
+ roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";
+ started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();
+ if(gameMode==="multi")connectMultiplayer(); else spawnEnemies();
+};
 document.getElementById("pauseBtn").onclick=togglePause;
 document.getElementById("restartBtn").onclick=()=>location.reload();
 document.getElementById("fullscreenBtn").onclick=()=>{const el=document.getElementById("gameWrap");document.fullscreenElement?document.exitFullscreen():el.requestFullscreen?.()};
@@ -43,16 +60,17 @@ function connectMultiplayer(){
    try{
     const m=JSON.parse(e.data);
     if(m.type==="welcome"){myId=m.id;return}
-    if(m.type==="state"&&m.id!==myId){remotePlayers.set(m.id,{...m,seen:performance.now()})}
-    if(m.type==="leave")remotePlayers.delete(m.id);
+    if(m.type==="state"&&m.id!==myId){remotePlayers.set(m.id,{...m,seen:performance.now()});ranking.set(m.id,{name:m.name||"Jogador",kills:m.kills||0})}
+    if(m.type==="ranking"){ranking.clear();for(const p of m.players||[])ranking.set(p.id,{name:p.name,kills:p.kills||0})}
+    if(m.type==="leave"){remotePlayers.delete(m.id);ranking.delete(m.id)}
    }catch(_){}
   };
   socket.onclose=()=>{remotePlayers.clear();setTimeout(()=>{if(started)connectMultiplayer()},1800)};
  }catch(_){}
 }
 function sendNetState(force=false){
- if(!socket||socket.readyState!==WebSocket.OPEN)return;
- const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1};
+ if(gameMode!=="multi"||!socket||socket.readyState!==WebSocket.OPEN)return;
+ const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills};
  socket.send(JSON.stringify(msg));
 }
 function togglePause(){if(!started)return;paused=!paused;document.getElementById("pauseBtn").textContent=paused?"Continuar":"Pausar"}
@@ -72,11 +90,44 @@ function shoot(){
  shells.push({x:player.x,y:player.y,vx:Math.cos(a+Math.PI/2)*(50+Math.random()*35),vy:Math.sin(a+Math.PI/2)*(50+Math.random()*35),t:.5});
  if(player.ammo===0&&player.reserve>0)setTimeout(()=>{if(started&&!paused)startReload()},180);
 }
+function spawnEnemies(){
+ enemies.length=0;
+ const pts=[[900,440],[1400,950],[2050,1450],[2400,950],[600,1450],[1700,440],[1150,1450]];
+ for(let i=0;i<pts.length;i++)enemies.push({x:pts[i][0],y:pts[i][1],r:16,hp:3,angle:0,speed:70,shootCd:Math.random()*1.5,alive:true});
+}
+function updateEnemies(dt){
+ if(gameMode!=="solo")return;
+ for(const e of enemies){
+  if(!e.alive)continue;
+  const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;e.angle=Math.atan2(dy,dx);
+  if(d>150){
+   const nx=e.x+dx/d*e.speed*dt,ny=e.y+dy/d*e.speed*dt;
+   if(!collides(nx,e.y,e.r))e.x=nx;if(!collides(e.x,ny,e.r))e.y=ny;
+  }
+  e.shootCd-=dt;
+  if(d<420&&e.shootCd<=0){e.shootCd=1.1+Math.random()*.8;if(!player.inCar){player.health=Math.max(0,player.health-8);flash=.35}}
+ }
+}
+function drawEnemies(){
+ if(gameMode!=="solo")return;
+ for(const e of enemies){
+  if(!e.alive)continue;
+  ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,10,17,8,0,0,Math.PI*2);ctx.fill();ctx.rotate(e.angle);
+  ctx.fillStyle="#7d2d2d";ctx.beginPath();ctx.ellipse(0,0,16,13,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5,9,0,Math.PI*2);ctx.fill();ctx.fillStyle="#20252c";ctx.fillRect(14,-4,20,8);ctx.restore();
+  ctx.fillStyle="#111";ctx.fillRect(e.x-18,e.y-27,36,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-18,e.y-27,36*(e.hp/3),5);
+ }
+}
+function reportKill(){
+ kills++;
+ if(gameMode==="multi"&&socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"kill",name:playerName}));
+}
 function updateTraffic(dt){for(const t of traffic){t.x+=Math.cos(t.a)*t.s*dt;t.y+=Math.sin(t.a)*t.s*dt;if(t.a===0&&t.x>W+60)t.x=-60;if(t.a===Math.PI&&t.x<-60)t.x=W+60;if(t.a===Math.PI/2&&t.y>H+60)t.y=-60;if(t.a===-Math.PI/2&&t.y<-60)t.y=H+60}}
 function updateBullets(dt){
  for(const b of bullets){
   b.x+=b.vx*dt;b.y+=b.vy*dt;b.t-=dt;
   if(collides(b.x,b.y,3)){b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
+  if(gameMode==="solo"){for(const e of enemies){if(e.alive&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp--;b.t=0;if(e.hp<=0){e.alive=false;reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
   for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}
  }
  bullets=bullets.filter(b=>b.t>0);
@@ -106,7 +157,7 @@ function update(dt){
   player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   if(mouse.down)shoot();
  }
- updateBullets(dt);
+ updateBullets(dt);updateEnemies(dt);
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
  skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
  const tx=player.x-canvas.width/2,ty=player.y-canvas.height/2;cam.x+=(Math.max(0,Math.min(W-canvas.width,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-canvas.height,ty))-cam.y)*Math.min(1,dt*5.5);netTimer+=dt;if(netTimer>=.067){netTimer=0;sendNetState()}
@@ -157,7 +208,15 @@ function hud(){
  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,92);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,91);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
  if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 13px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  PISTOLA",35,96)}
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
- const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-92,220,72);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-60);ctx.fillStyle="#65ff8b";ctx.fillText("ONLINE  "+(remotePlayers.size+1)+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-36);
+ const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
+ if(gameMode==="solo"){ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+enemies.filter(e=>e.alive).length,34,canvas.height-52)}
+ else{ctx.fillText("ONLINE  "+(remotePlayers.size+1)+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-76);ctx.fillStyle="#65ff8b";ctx.fillText("SEUS ABATES  "+kills,34,canvas.height-52)}
+ ctx.fillStyle="#9fb0bd";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-28);
+ if(gameMode==="multi"){
+  const rows=[{name:playerName,kills},...Array.from(ranking.values())].sort((a,b)=>b.kills-a.kills).slice(0,5);
+  const rw=210,rh=28+rows.length*22,rx2=canvas.width-rw-20,ry2=150;ctx.fillStyle="#061018dc";ctx.fillRect(rx2,ry2,rw,rh);ctx.fillStyle="#fff";ctx.font="900 12px system-ui";ctx.fillText("RANK DE ABATES",rx2+14,ry2+20);
+  rows.forEach((p,i)=>{ctx.fillStyle=i===0?"#ffd45c":"#dce7ee";ctx.font="700 11px system-ui";ctx.fillText((i+1)+". "+p.name,rx2+14,ry2+43+i*22);ctx.textAlign="right";ctx.fillText(String(p.kills),rx2+rw-14,ry2+43+i*22);ctx.textAlign="left"});
+ }
  const mw=190,mh=120,mx=canvas.width-210,my=canvas.height-140;ctx.fillStyle="#061018e8";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,4,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,4.5,0,Math.PI*2);ctx.fill();
  const near=!player.inCar&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
@@ -166,7 +225,7 @@ function hud(){
 }
 function render(){
  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.save();ctx.translate(-cam.x,-cam.y);
- road();drawBuildings();drawTrees();drawMission();drawTargets();
+ road();drawBuildings();drawTrees();drawMission();drawTargets();drawEnemies();
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health>40?"#65ff8b":"#d86770");drawPlayer();drawRemotePlayers();
  ctx.fillStyle="#ffe36e";bullets.forEach(b=>{ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
