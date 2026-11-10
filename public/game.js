@@ -1,5 +1,5 @@
 const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W=2800,H=1900;
-const keys={},cam={x:0,y:0},player={x:340,y:650,r:16,speed:190,inCar:false,angle:0},car={x:530,y:670,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
+const keys={},cam={x:0,y:0},player={x:480,y:440,r:16,speed:190,inCar:false,angle:0},car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[];
 const mission={x:2440,y:1560,r:48};
 const buildings=[
