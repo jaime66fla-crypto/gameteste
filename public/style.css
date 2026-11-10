@@ -145,3 +145,5 @@ body.modal-open{overflow:hidden}
  .tutorial-card h3,.pause-card h3{font-size:1.2rem}
  .tutorial-card p{font-size:.85rem;margin-bottom:8px}
 }
+
+#soundBtn{min-width:74px}
