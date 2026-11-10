@@ -33,6 +33,7 @@ const weapons={
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
+let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
 
 let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
 function ensureAudio(){
@@ -580,9 +581,20 @@ function updateEnemies(dt){
   if(canSee&&d>(e.boss?190:150))moveEnemyGround(e,player.x,player.y,dt);
   if(e.boss){
    const newPhase=e.hp<=e.maxHp*.5?2:1;
-   if(newPhase!==e.phase){e.phase=newPhase;flash=1;playSound("death")}
+   if(newPhase!==e.phase){
+    e.phase=newPhase;flash=1;playSound("death");
+    if(newPhase===2){
+     bossPhaseIntro=bossPhaseIntroTotal;
+     bossIntroBoss=e;
+     e.missileCd=1.2;
+     enemyBullets.length=0;
+     missiles.length=0;
+     tone(72,.45,"sawtooth",.18,.55);
+     setTimeout(()=>{if(soundEnabled){tone(96,.35,"square",.13,.7);noise(.22,.12,900)}},450);
+    }
+   }
    e.missileCd=(e.missileCd??2.4)-dt;
-   if(e.phase===2&&e.missileCd<=0){
+   if(e.phase===2&&bossPhaseIntro<=0&&e.missileCd<=0){
     e.missileCd=2.2+Math.random()*1.4;
     const count=2+Math.floor(Math.random()*3);
     for(let i=0;i<count;i++){
@@ -732,6 +744,21 @@ function updateBullets(dt){
 }
 function update(dt){
  if(!started||paused)return;
+ if(bossPhaseIntro>0&&bossIntroBoss?.alive){
+  bossPhaseIntro=Math.max(0,bossPhaseIntro-dt);
+  flash=Math.max(flash,.45+.35*Math.sin(performance.now()/90));
+  const z=getViewZoom(),visibleWorldWidth=canvas.width/z,visibleWorldHeight=canvas.height/(VIEW_TILT*z);
+  const tx=bossIntroBoss.x-visibleWorldWidth/2,ty=bossIntroBoss.y-visibleWorldHeight/2;
+  cam.x+=(Math.max(0,Math.min(W-visibleWorldWidth,tx))-cam.x)*Math.min(1,dt*4.8);
+  cam.y+=(Math.max(0,Math.min(H-visibleWorldHeight,ty))-cam.y)*Math.min(1,dt*4.8);
+  if(bossPhaseIntro<=0){
+   bossIntroBoss.missileCd=Math.max(.7,bossIntroBoss.missileCd||0);
+   bossIntroBoss=null;
+   flash=1;
+   tone(150,.16,"square",.14,.45);
+  }
+  return;
+ }
  if(player.dead){
   player.respawnT=Math.max(0,player.respawnT-dt);
   flash=Math.max(0,flash-dt*1.4);
@@ -879,8 +906,43 @@ function drawRemotePlayers(){
 }
 function drawTargets(){targets.forEach(t=>{if(t.hp<=0)return;ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(t.x,t.y+13,23,10,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=t.hp===3?"#ff725f":t.hp===2?"#ffb24b":"#ffe765";ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#341b1b";ctx.fillRect(t.x-5,t.y-11,10,22);ctx.fillRect(t.x-11,t.y-5,22,10)})}
 function drawMission(){if(missionDone)return;const p=.5+.5*Math.sin(performance.now()/260);ctx.strokeStyle="rgba(101,255,139,"+(.45+p*.45)+")";ctx.lineWidth=4;ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r+p*8,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#65ff8b22";ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r,0,Math.PI*2);ctx.fill()}
+function drawBossPhaseIntro(){
+ if(bossPhaseIntro<=0)return;
+ const elapsed=bossPhaseIntroTotal-bossPhaseIntro;
+ const p=Math.max(0,Math.min(1,elapsed/bossPhaseIntroTotal));
+ const pulse=.5+.5*Math.sin(performance.now()/85);
+ ctx.save();
+ ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle="rgba(4,0,3,"+(0.50+0.18*pulse)+")";
+ ctx.fillRect(0,0,canvas.width,canvas.height);
+ ctx.fillStyle="rgba(255,30,55,"+(0.06+0.10*pulse)+")";
+ ctx.fillRect(0,0,canvas.width,canvas.height);
+ const barH=Math.max(54,canvas.height*.09);
+ ctx.fillStyle="#05070bee";
+ ctx.fillRect(0,0,canvas.width,barH);
+ ctx.fillRect(0,canvas.height-barH,canvas.width,barH);
+ ctx.textAlign="center";
+ ctx.shadowColor="#ff2038";ctx.shadowBlur=28;
+ ctx.fillStyle="#ff3048";
+ ctx.font="900 "+Math.round(Math.min(86,canvas.height*.12))+"px system-ui";
+ ctx.fillText("FASE 2",canvas.width/2,canvas.height*.46);
+ ctx.shadowBlur=0;
+ ctx.fillStyle="#fff";
+ ctx.font="900 "+Math.round(Math.min(32,canvas.height*.045))+"px system-ui";
+ ctx.fillText("GOLIAS DESPERTOU",canvas.width/2,canvas.height*.54);
+ ctx.fillStyle="#ff9aa5";
+ ctx.font="800 "+Math.round(Math.min(18,canvas.height*.026))+"px system-ui";
+ ctx.fillText("ATAQUE DE MÍSSEIS LIBERADO",canvas.width/2,canvas.height*.59);
+ ctx.fillStyle="#2b1117";
+ const bw=Math.min(520,canvas.width*.52),bx=(canvas.width-bw)/2,by=canvas.height*.64;
+ ctx.fillRect(bx,by,bw,7);
+ ctx.fillStyle="#ff3048";
+ ctx.fillRect(bx,by,bw*p,7);
+ ctx.textAlign="left";
+ ctx.restore();
+}
 function drawCrosshair(){
- if(player.inCar||!started)return;const z=getViewZoom(),x=(mouse.x-cam.x)*z,y=worldToScreenY(mouse.y);ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
+ if(player.inCar||!started||bossPhaseIntro>0)return;const z=getViewZoom(),x=(mouse.x-cam.x)*z,y=worldToScreenY(mouse.y);ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
 }
 function hud(){
  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,128);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,127);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
@@ -923,6 +985,7 @@ function hud(){
  if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 46px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-12);ctx.fillStyle="#ff9ba3";ctx.font="800 20px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+28);ctx.textAlign="left"}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
  if(flash>0){ctx.fillStyle="rgba(255,90,90,"+Math.min(.28,flash*.2)+")";ctx.fillRect(0,0,canvas.width,canvas.height)}
+ drawBossPhaseIntro();
  drawCrosshair()
 }
 function render(){
