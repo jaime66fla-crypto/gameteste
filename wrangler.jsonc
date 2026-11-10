@@ -1,0 +1,8 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "floral-haze-1c57",
+  "compatibility_date": "2026-11-10",
+  "assets": {
+    "directory": "./public"
+  }
+}
