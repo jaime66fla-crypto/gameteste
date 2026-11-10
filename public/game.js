@@ -30,7 +30,7 @@ const weapons={
  rifle:{name:"RIFLE",mag:20,reserve:80,fire:.12,speed:1250,spread:.012,pellets:1,damage:2,color:"#b9ff7a"}
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
-let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],enemyBullets=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
+let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
 
 let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
@@ -381,8 +381,8 @@ function spawnEnemies(){
 function spawnBoss(){
  if(bossSpawned||bossDefeated||gameMode!=="solo")return;
  bossSpawned=true;
- const p={x:2450,y:1550};
- enemies.push({x:p.x,y:p.y,r:38,hp:60,maxHp:60,angle:0,speed:52,shootCd:.7,alive:true,boss:true});
+ const p=randomOpenPoint();
+ enemies.push({x:p.x,y:p.y,r:38,hp:60,maxHp:60,angle:0,speed:52,shootCd:.7,alive:true,boss:true,phase:1,missileCd:2.4});
  flash=1;playSound("death");
 }
 function getBoss(){return enemies.find(e=>e.boss&&e.alive)}
@@ -396,6 +396,21 @@ function updateEnemies(dt){
   if(canSee&&d>(e.boss?190:150)){
    const nx=e.x+dx/d*e.speed*dt,ny=e.y+dy/d*e.speed*dt;
    if(!collides(nx,e.y,e.r))e.x=nx;if(!collides(e.x,ny,e.r))e.y=ny;
+  }
+  if(e.boss){
+   const newPhase=e.hp<=e.maxHp*.5?2:1;
+   if(newPhase!==e.phase){e.phase=newPhase;flash=1;playSound("death")}
+   e.missileCd=(e.missileCd??2.4)-dt;
+   if(e.phase===2&&e.missileCd<=0){
+    e.missileCd=2.2+Math.random()*1.4;
+    const count=2+Math.floor(Math.random()*3);
+    for(let i=0;i<count;i++){
+     let tx=player.x+(Math.random()-.5)*520,ty=player.y+(Math.random()-.5)*420,tries=0;
+     while(collides(tx,ty,24)&&tries++<20){tx=player.x+(Math.random()-.5)*520;ty=player.y+(Math.random()-.5)*420}
+     tx=Math.max(60,Math.min(W-60,tx));ty=Math.max(60,Math.min(H-60,ty));
+     missiles.push({x:tx,y:ty,t:1.65,r:54,exploded:false});
+    }
+   }
   }
   e.shootCd-=dt;
   if(canSee&&d<(e.boss?600:420)&&e.shootCd<=0){
@@ -500,6 +515,17 @@ function updateBullets(dt){
   }
  }
  enemyBullets=enemyBullets.filter(b=>b.t>0);
+ for(const m of missiles){
+  m.t-=dt;
+  if(m.t<=0&&!m.exploded){
+   m.exploded=true;m.t=.35;
+   for(let i=0;i<18;i++)sparks.push({x:m.x,y:m.y,vx:(Math.random()-.5)*260,vy:(Math.random()-.5)*260,t:.5});
+   if(!player.dead&&!player.inCar&&player.roof===null&&Math.hypot(player.x-m.x,player.y-m.y)<m.r)killPlayer();
+   if(player.inCar&&Math.hypot(car.x-m.x,car.y-m.y)<m.r){car.health=0;car.speed=0;car.nitro=0;player.inCar=false;player.x=car.x+55;player.y=car.y}
+   playSound("death");
+  }
+ }
+ missiles=missiles.filter(m=>m.t>0);
  shells.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.vx*=.94;s.vy*=.94;s.t-=dt});shells=shells.filter(s=>s.t>0);
  hitMarks.forEach(h=>h.t-=dt);hitMarks=hitMarks.filter(h=>h.t>0);
 }
@@ -659,7 +685,7 @@ function hud(){
   const bw=Math.min(620,canvas.width*.52),bx=(canvas.width-bw)/2,by=18;
   ctx.fillStyle="#071018e8";ctx.fillRect(bx,by,bw,52);ctx.strokeStyle="#263845";ctx.strokeRect(bx+.5,by+.5,bw-1,51);
   ctx.fillStyle="#fff";ctx.font="900 14px system-ui";ctx.fillText("VIDA",bx+14,by+20);
-  ctx.textAlign="center";ctx.fillText("GOLIAS",canvas.width/2,by+20);ctx.textAlign="left";
+  ctx.textAlign="center";ctx.fillText("GOLIAS  •  FASE "+(bossTop.phase||1),canvas.width/2,by+20);ctx.textAlign="left";
   ctx.fillStyle="#263640";ctx.fillRect(bx+14,by+29,bw-28,11);
   ctx.fillStyle="#ff3045";ctx.fillRect(bx+14,by+29,(bw-28)*(bossTop.hp/bossTop.maxHp),11);
  }
@@ -669,7 +695,7 @@ function hud(){
  if(gameMode==="solo"){
   const boss=getBoss(),normalLeft=enemies.filter(e=>e.alive&&!e.boss).length;
   ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);
-  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("GOLIAS  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
+  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("GOLIAS FASE "+(boss.phase||1)+"  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
   else if(bossDefeated){ctx.fillStyle="#65ff8b";ctx.fillText("BOSS DERROTADO",34,canvas.height-52)}
   else{ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+normalLeft,34,canvas.height-52)}
  }
@@ -681,6 +707,9 @@ function hud(){
   rows.forEach((p,i)=>{ctx.fillStyle=i===0?"#ffd45c":"#dce7ee";ctx.font="700 11px system-ui";ctx.fillText((i+1)+". "+p.name,rx2+14,ry2+43+i*22);ctx.textAlign="right";ctx.fillText(String(p.kills),rx2+rw-14,ry2+43+i*22);ctx.textAlign="left"});
  }
  const mw=190,mh=120,mx=canvas.width-210,my=canvas.height-140;ctx.fillStyle="#061018e8";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,4,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,4.5,0,Math.PI*2);ctx.fill();
+ if(gameMode==="solo"){
+  for(const e of enemies){if(!e.alive)continue;ctx.fillStyle=e.boss?"#ff2d3f":"#ff8b8b";ctx.beginPath();ctx.arc(mx+e.x/W*mw,my+e.y/H*mh,e.boss?5:3,0,Math.PI*2);ctx.fill()}
+ }
  const near=!player.inCar&&car.health>0&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
  if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 46px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-12);ctx.fillStyle="#ff9ba3";ctx.font="800 20px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+28);ctx.textAlign="left"}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
@@ -693,6 +722,18 @@ function render(){
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health<=0?"#3a3a3a":car.health>40?"#65ff8b":"#d86770");if(car.health<=0){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(car.x+8,car.y-20,13,0,Math.PI*2);ctx.fill();ctx.fillStyle="#333";ctx.beginPath();ctx.arc(car.x+16,car.y-34,9,0,Math.PI*2);ctx.fill()}drawPlayer();drawRemotePlayers();drawBushes(false);
  bullets.forEach(b=>{ctx.fillStyle=b.color||"#ffe36e";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});
+ missiles.forEach(m=>{
+  ctx.save();
+  const p=Math.max(0,Math.min(1,m.t/1.65));
+  if(!m.exploded){
+   ctx.strokeStyle="#ff3045";ctx.lineWidth=3;ctx.setLineDash([8,6]);ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+   ctx.fillStyle="rgba(255,48,69,"+(0.10+0.18*(1-p))+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.fill();
+   ctx.fillStyle="#fff";ctx.font="900 10px system-ui";ctx.textAlign="center";ctx.fillText("MÍSSIL",m.x,m.y+3);ctx.textAlign="left";
+  }else{
+   ctx.fillStyle="rgba(255,92,28,"+(m.t/.35)+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r*(1.2-m.t/.7),0,Math.PI*2);ctx.fill();
+  }
+  ctx.restore();
+ });
  enemyBullets.forEach(b=>{
   const a=Math.atan2(b.vy,b.vx);
   ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);
