@@ -14,7 +14,7 @@ const weapons={
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
-let socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0;
+let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0;
 const remotePlayers=new Map();
 const ranking=new Map();
 const enemies=[];
@@ -83,7 +83,7 @@ function connectMultiplayer(){
   if(socket)socket.close();
   const proto=location.protocol==="https:"?"wss:":"ws:";
   socket=new WebSocket(proto+"//"+location.host+"/ws?room="+encodeURIComponent(roomCode));
-  socket.onopen=()=>sendNetState(true);
+  socket.onopen=()=>{connectionStatus="connected";reconnectAttempts=0;sendNetState(true)};
   socket.onmessage=e=>{
    try{
     const m=JSON.parse(e.data);
@@ -93,7 +93,8 @@ function connectMultiplayer(){
     if(m.type==="leave"){remotePlayers.delete(m.id);ranking.delete(m.id)}
    }catch(_){}
   };
-  socket.onclose=()=>{remotePlayers.clear();setTimeout(()=>{if(started)connectMultiplayer()},1800)};
+  socket.onerror=()=>{connectionStatus="error"};
+  socket.onclose=()=>{connectionStatus="offline";remotePlayers.clear();ranking.clear();if(started&&gameMode==="multi"&&reconnectAttempts++<3)setTimeout(()=>{if(started&&gameMode==="multi")connectMultiplayer()},1800)};
  }catch(_){}
 }
 function sendNetState(force=false){
@@ -284,7 +285,7 @@ function hud(){
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
  const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
  if(gameMode==="solo"){ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+enemies.filter(e=>e.alive).length,34,canvas.height-52)}
- else{ctx.fillText("ONLINE  "+(remotePlayers.size+1)+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-76);ctx.fillStyle="#65ff8b";ctx.fillText("SEUS ABATES  "+kills,34,canvas.height-52)}
+ else{ctx.fillText((connectionStatus==="connected"?"ONLINE":"DESCONECTADO")+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-76);ctx.fillStyle=connectionStatus==="connected"?"#65ff8b":"#ff8b8b";ctx.fillText(connectionStatus==="connected"?"SEUS ABATES  "+kills:"SERVIDOR MULTIPLAYER INDISPONÍVEL",34,canvas.height-52)}
  ctx.fillStyle="#9fb0bd";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-28);
  if(gameMode==="multi"){
   const rows=[{name:playerName,kills},...Array.from(ranking.values())].sort((a,b)=>b.kills-a.kills).slice(0,5);
