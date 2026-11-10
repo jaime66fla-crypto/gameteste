@@ -112,44 +112,49 @@ const buildings=[
 const ladders=buildings.map((b,i)=>({
  building:i,
  x:b.x+b.w*.5-18,
- y:b.y+b.h-8,
+ y:b.y+b.h+6,
  w:36,
- h:44
+ h:66
 }));
 function ladderForBuilding(index){return ladders.find(l=>l.building===index)}
 function pointInBuilding(x,y,b,pad=0){return x>b.x+pad&&x<b.x+b.w-pad&&y>b.y+pad&&y<b.y+b.h-pad}
 function tryRoofMovement(dx,dy,dt,run){
  const step=player.speed*run*dt,m=Math.hypot(dx,dy)||1;
  const vx=dx/m*step,vy=dy/m*step;
+
  if(player.roof!==null){
   const b=buildings[player.roof],l=ladderForBuilding(player.roof);
   const nx=player.x+vx,ny=player.y+vy;
-  const nearLadder=player.x>l.x-12&&player.x<l.x+l.w+12&&player.y>b.y+b.h-58;
-  if(nearLadder&&dy>0&&ny>=b.y+b.h-12){
+  const ladderCenter=l.x+l.w/2;
+  const exitZone=Math.abs(player.x-ladderCenter)<=30&&player.y>=b.y+b.h-68;
+  if(exitZone&&dy>0){
    player.roof=null;
-   player.x=l.x+l.w/2;
-   player.y=b.y+b.h+28;
+   player.x=ladderCenter;
+   player.y=b.y+b.h+34;
+   playSound("pickup");
    return;
   }
   player.x=Math.max(b.x+player.r,Math.min(b.x+b.w-player.r,nx));
   player.y=Math.max(b.y+player.r,Math.min(b.y+b.h-player.r,ny));
   return;
  }
- const nx=player.x+vx,ny=player.y+vy;
+
+ // Rooftops are never entered by crossing a building edge.
+ // The only valid entry is the ladder zone outside the south wall.
  for(let i=0;i<buildings.length;i++){
-  const b=buildings[i],l=ladderForBuilding(i);
-  const entering=pointInBuilding(nx,ny,b,-2)&&!pointInBuilding(player.x,player.y,b,-2);
-  if(entering){
-   const onLadder=player.x>l.x-28&&player.x<l.x+l.w+28&&player.y>=b.y+b.h-72&&dy<0;
-   if(onLadder){
-    player.roof=i;
-    player.x=l.x+l.w/2;
-    player.y=b.y+b.h-32;
-    playSound("pickup");
-   }
+  const b=buildings[i],l=ladderForBuilding(i),ladderCenter=l.x+l.w/2;
+  const inLadderX=Math.abs(player.x-ladderCenter)<=34;
+  const inLadderY=player.y>=b.y+b.h+6&&player.y<=b.y+b.h+70;
+  if(inLadderX&&inLadderY&&dy<-.18){
+   player.roof=i;
+   player.x=ladderCenter;
+   player.y=b.y+b.h-34;
+   playSound("pickup");
    return;
   }
  }
+
+ const nx=player.x+vx,ny=player.y+vy;
  if(!collides(nx,player.y,player.r))player.x=nx;
  if(!collides(player.x,ny,player.r))player.y=ny;
 }
@@ -607,11 +612,17 @@ function drawBuildings(){
 function drawLadders(){
  for(const l of ladders){
   ctx.save();
+  ctx.fillStyle="rgba(126,232,255,.12)";
+  ctx.fillRect(l.x-8,l.y-8,l.w+16,l.h+10);
+  ctx.strokeStyle="#7ee8ff";ctx.lineWidth=2;ctx.setLineDash([6,5]);
+  ctx.strokeRect(l.x-8,l.y-8,l.w+16,l.h+10);ctx.setLineDash([]);
   ctx.fillStyle="#2b3036";
-  ctx.fillRect(l.x,l.y-32,5,38);
-  ctx.fillRect(l.x+l.w-5,l.y-32,5,38);
-  ctx.fillStyle="#9aa5ad";
-  for(let y=l.y-28;y<l.y+2;y+=8)ctx.fillRect(l.x+4,y,l.w-8,3);
+  ctx.fillRect(l.x,l.y-42,5,l.h+44);
+  ctx.fillRect(l.x+l.w-5,l.y-42,5,l.h+44);
+  ctx.fillStyle="#c4d0d7";
+  for(let y=l.y-38;y<l.y+l.h;y+=9)ctx.fillRect(l.x+4,y,l.w-8,3);
+  ctx.fillStyle="#7ee8ff";ctx.font="900 9px system-ui";ctx.textAlign="center";
+  ctx.fillText("ESCADA",l.x+l.w/2,l.y+l.h+14);ctx.textAlign="left";
   ctx.restore();
  }
 }
@@ -710,7 +721,9 @@ function hud(){
  if(gameMode==="solo"){
   for(const e of enemies){if(!e.alive)continue;ctx.fillStyle=e.boss?"#ff2d3f":"#ff8b8b";ctx.beginPath();ctx.arc(mx+e.x/W*mw,my+e.y/H*mh,e.boss?5:3,0,Math.PI*2);ctx.fill()}
  }
- const near=!player.inCar&&car.health>0&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
+ const ladderNear=player.roof===null&&ladders.find(l=>Math.abs(player.x-(l.x+l.w/2))<=48&&player.y>=l.y-4&&player.y<=l.y+l.h+28);
+ if(ladderNear){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-120,canvas.height-142,240,36);ctx.fillStyle="#7ee8ff";ctx.font="900 12px system-ui";ctx.fillText("SUBA PELA ESCADA",canvas.width/2-78,canvas.height-118)}
+  const near=!player.inCar&&car.health>0&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
  if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 46px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-12);ctx.fillStyle="#ff9ba3";ctx.font="800 20px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+28);ctx.textAlign="left"}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
  if(flash>0){ctx.fillStyle="rgba(255,90,90,"+Math.min(.28,flash*.2)+")";ctx.fillRect(0,0,canvas.width,canvas.height)}
