@@ -39,11 +39,13 @@
         <div class="start-panel">
           <span class="badge">MULTIPLAYER ONLINE</span>
           <h3>Bem-vindo à cidade</h3>
-          <p>Escolha como quer jogar.</p>
+          <p>Qual plataforma você está usando?</p>
+          <div class="platform-picker"><button id="desktopPlatformBtn" class="platform-btn active">💻 PC</button><button id="mobilePlatformBtn" class="platform-btn">📱 Celular</button></div>
+          <p class="play-mode-label">Agora escolha como quer jogar.</p>
           <div class="mode-picker"><button id="soloModeBtn" class="mode-btn active">Modo Solo</button><button id="multiModeBtn" class="mode-btn">Multiplayer</button></div>
           <div class="lobby-fields"><input id="playerName" maxlength="18" placeholder="Seu nome" value="Jogador"><input id="roomCode" maxlength="24" placeholder="Código da sala" value="cidade-1"></div>
           <button id="startBtn" class="btn">Jogar solo</button>
-          <small>WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo</small>
+          <small id="controlHelp">WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo</small>
         </div>
       </div>
       <div class="controls-strip"><span><kbd>WASD</kbd> mover</span><span><kbd>MOUSE</kbd> mirar</span><span><kbd>CLIQUE</kbd> atirar</span><span><kbd>R</kbd> recarregar</span><span><kbd>E</kbd> veículo</span><span><kbd>SHIFT</kbd> correr / nitro</span><span><kbd>ESPAÇO</kbd> drift</span><span><kbd>P</kbd> pausar</span></div>
@@ -61,7 +63,7 @@
 const gameModal=document.getElementById('gameModal');
 document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',()=>{
   gameModal.classList.add('show');
-  if(screen.orientation?.lock)screen.orientation.lock('landscape').catch(()=>{});
+  if(document.body.classList.contains('platform-mobile')&&screen.orientation?.lock)screen.orientation.lock('landscape').catch(()=>{});
   gameModal.setAttribute('aria-hidden','false');
   document.body.classList.add('modal-open');
 }));
