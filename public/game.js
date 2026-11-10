@@ -408,7 +408,7 @@ function updateEnemies(dt){
      let tx=player.x+(Math.random()-.5)*520,ty=player.y+(Math.random()-.5)*420,tries=0;
      while(collides(tx,ty,24)&&tries++<20){tx=player.x+(Math.random()-.5)*520;ty=player.y+(Math.random()-.5)*420}
      tx=Math.max(60,Math.min(W-60,tx));ty=Math.max(60,Math.min(H-60,ty));
-     missiles.push({x:tx,y:ty,t:1.65,r:54,exploded:false});
+     missiles.push({x:tx,y:ty,t:1.65,total:1.65,r:54,exploded:false,startX:tx+(Math.random()-.5)*260,startY:ty-320-Math.random()*180});
     }
    }
   }
@@ -724,10 +724,33 @@ function render(){
  bullets.forEach(b=>{ctx.fillStyle=b.color||"#ffe36e";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});
  missiles.forEach(m=>{
   ctx.save();
-  const p=Math.max(0,Math.min(1,m.t/1.65));
+  const p=Math.max(0,Math.min(1,m.t/(m.total||1.65)));
   if(!m.exploded){
    ctx.strokeStyle="#ff3045";ctx.lineWidth=3;ctx.setLineDash([8,6]);ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
    ctx.fillStyle="rgba(255,48,69,"+(0.10+0.18*(1-p))+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r,0,Math.PI*2);ctx.fill();
+
+   const travel=1-p;
+   const mx=(m.startX??m.x)+(m.x-(m.startX??m.x))*travel;
+   const my=(m.startY??m.y)+(m.y-(m.startY??m.y))*travel;
+   const ang=Math.atan2(m.y-(m.startY??m.y),m.x-(m.startX??m.x));
+   const shadowScale=.45+.55*travel;
+   ctx.fillStyle="rgba(0,0,0,"+(0.18+0.32*travel)+")";ctx.beginPath();ctx.ellipse(m.x,m.y+6,18*shadowScale,8*shadowScale,0,0,Math.PI*2);ctx.fill();
+
+   for(let i=0;i<4;i++){
+    const back=18+i*10;
+    const sx=mx-Math.cos(ang)*back+(Math.random()-.5)*5;
+    const sy=my-Math.sin(ang)*back+(Math.random()-.5)*5;
+    ctx.fillStyle="rgba(180,190,198,"+(0.18-i*.025)+")";
+    ctx.beginPath();ctx.arc(sx,sy,7+i*2,0,Math.PI*2);ctx.fill();
+   }
+
+   ctx.save();ctx.translate(mx,my);ctx.rotate(ang);
+   ctx.fillStyle="#2a2f35";ctx.fillRect(-18,-5,30,10);
+   ctx.fillStyle="#6f7780";ctx.fillRect(-8,-7,18,14);
+   ctx.fillStyle="#d9dee3";ctx.beginPath();ctx.moveTo(13,0);ctx.lineTo(3,-8);ctx.lineTo(3,8);ctx.closePath();ctx.fill();
+   ctx.fillStyle="#ff8a2a";ctx.shadowColor="#ff5a1f";ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(-19,0);ctx.lineTo(-31,-7);ctx.lineTo(-31,7);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
+   ctx.restore();
+
    ctx.fillStyle="#fff";ctx.font="900 10px system-ui";ctx.textAlign="center";ctx.fillText("MÍSSIL",m.x,m.y+3);ctx.textAlign="left";
   }else{
    ctx.fillStyle="rgba(255,92,28,"+(m.t/.35)+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r*(1.2-m.t/.7),0,Math.PI*2);ctx.fill();
