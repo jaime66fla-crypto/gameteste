@@ -31,7 +31,7 @@ const weapons={
  rifle:{name:"RIFLE",mag:20,reserve:80,fire:.12,speed:1250,spread:.012,pellets:1,damage:2,color:"#b9ff7a"}
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
-let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
+let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
 let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
 
@@ -327,6 +327,21 @@ function connectMultiplayer(){
     const m=JSON.parse(e.data);
     if(m.type==="welcome"){myId=m.id;return}
     if(m.type==="state"&&m.id!==myId){remotePlayers.set(m.id,{...m,seen:performance.now()});ranking.set(m.id,{name:m.name||"Jogador",kills:m.kills||0})}
+    if(m.type==="shot"&&m.id!==myId){
+     remoteBullets.push({
+      x:Number(m.x)||0,y:Number(m.y)||0,vx:Number(m.vx)||0,vy:Number(m.vy)||0,
+      t:Number(m.t)||1,damage:Number(m.damage)||1,color:String(m.color||"#7ee8ff"),
+      layer:m.layer===null?null:Number(m.layer),ownerId:m.id
+     });
+     const wp=String(m.weapon||"pistol");playSound(weapons[wp]?wp:"pistol");
+    }
+    if(m.type==="hit"&&m.targetId===myId&&!player.dead){
+     const before=player.health;
+     damagePlayer(Math.max(1,Math.min(50,Number(m.damage)||1)));
+     if(before>0&&player.dead&&socket?.readyState===WebSocket.OPEN){
+      socket.send(JSON.stringify({type:"killed",killerId:m.attackerId||null}));
+     }
+    }
     if(m.type==="ranking"){ranking.clear();for(const p of m.players||[])ranking.set(p.id,{name:p.name,kills:p.kills||0})}
     if(m.type==="leave"){remotePlayers.delete(m.id);ranking.delete(m.id)}
    }catch(_){}
@@ -337,7 +352,7 @@ function connectMultiplayer(){
 }
 function sendNetState(force=false){
  if(gameMode!=="multi"||!socket||socket.readyState!==WebSocket.OPEN)return;
- const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills,health:player.health,dead:player.dead};
+ const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills,health:player.health,dead:player.dead,roof:player.roof};
  socket.send(JSON.stringify(msg));
 }
 function setPauseState(value){
@@ -373,7 +388,11 @@ function shoot(){
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  for(let i=0;i<w.pellets;i++){
   const a=player.angle+(Math.random()-.5)*w.spread,ox=player.x+Math.cos(a)*28,oy=player.y+Math.sin(a)*28;
-  bullets.push({x:ox,y:oy,vx:Math.cos(a)*w.speed,vy:Math.sin(a)*w.speed,t:player.weapon==="rifle"?1.15:.9,damage:w.damage,color:w.color,layer:player.roof});
+  const bt=player.weapon==="rifle"?1.15:.9,bvx=Math.cos(a)*w.speed,bvy=Math.sin(a)*w.speed;
+  bullets.push({x:ox,y:oy,vx:bvx,vy:bvy,t:bt,damage:w.damage,color:w.color,layer:player.roof});
+  if(gameMode==="multi"&&socket?.readyState===WebSocket.OPEN){
+   socket.send(JSON.stringify({type:"shot",weapon:player.weapon,x:ox,y:oy,vx:bvx,vy:bvy,t:bt,damage:w.damage,color:w.color,layer:player.roof}));
+  }
  }
  shells.push({x:player.x,y:player.y,vx:Math.cos(player.angle+Math.PI/2)*(50+Math.random()*35),vy:Math.sin(player.angle+Math.PI/2)*(50+Math.random()*35),t:.5});
  if(player.ammo===0&&player.reserve>0)setTimeout(()=>{if(started&&!paused)startReload()},180);
@@ -726,9 +745,29 @@ function updateBullets(dt){
     hitMarks.push({x:e.x,y:e.y,t:.25});break
    }
   }}
+  if(gameMode==="multi"&&b.t>0){
+   for(const [id,p] of remotePlayers){
+    if(p.dead||p.inCar)continue;
+    const pRoof=p.roof===null||p.roof===undefined?null:Number(p.roof);
+    const canHitRemote=(b.layer===null&&pRoof===null)||(b.layer!==null&&(pRoof===b.layer||pRoof===null));
+    if(canHitRemote&&Math.hypot(b.x-p.x,b.y-p.y)<22){
+     b.t=0;hitMarks.push({x:p.x,y:p.y,t:.25});
+     if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"hit",targetId:id,damage:b.damage||1}));
+     break;
+    }
+   }
+  }
   if(b.layer===null){for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}}
  }
  bullets=bullets.filter(b=>b.t>0);
+ for(const b of remoteBullets){
+  const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
+  const fromRoof=b.layer!==null&&b.layer!==undefined;
+  const blocked=fromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  if(blocked){b.t=0;continue}
+  b.x=nx;b.y=ny;
+ }
+ remoteBullets=remoteBullets.filter(b=>b.t>0);
  for(const b of enemyBullets){
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const fromRoof=b.layer!==null&&b.layer!==undefined;
@@ -916,7 +955,8 @@ function drawRemotePlayers(){
    if(p.shooting){ctx.fillStyle="#ffd45c";ctx.beginPath();ctx.moveTo(40,0);ctx.lineTo(52,-6);ctx.lineTo(52,6);ctx.closePath();ctx.fill()}
    ctx.restore();
   }
-  ctx.save();ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#dff5ff";ctx.fillText(p.name||"Jogador",p.x,p.y-28);ctx.restore();
+  ctx.save();ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#dff5ff";ctx.fillText(p.name||"Jogador",p.x,p.y-34);
+  const hp=Math.max(0,Math.min(100,Number(p.health??100)));ctx.fillStyle="#111";ctx.fillRect(p.x-18,p.y-27,36,4);ctx.fillStyle="#65ff8b";ctx.fillRect(p.x-18,p.y-27,36*hp/100,4);ctx.restore();
  }
 }
 function drawTargets(){targets.forEach(t=>{if(t.hp<=0)return;ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(t.x,t.y+13,23,10,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=t.hp===3?"#ff725f":t.hp===2?"#ffb24b":"#ffe765";ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#341b1b";ctx.fillRect(t.x-5,t.y-11,10,22);ctx.fillRect(t.x-11,t.y-5,22,10)})}
@@ -1009,6 +1049,7 @@ function render(){
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health<=0?"#3a3a3a":car.health>40?"#65ff8b":"#d86770");if(car.health<=0){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(car.x+8,car.y-20,13,0,Math.PI*2);ctx.fill();ctx.fillStyle="#333";ctx.beginPath();ctx.arc(car.x+16,car.y-34,9,0,Math.PI*2);ctx.fill()}drawPlayer();drawRemotePlayers();drawBushes(false);
  bullets.forEach(b=>{ctx.fillStyle=b.color||"#ffe36e";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});
+ remoteBullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.strokeStyle=b.color||"#7ee8ff";ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-12,0);ctx.lineTo(5,0);ctx.stroke();ctx.restore()});
  missiles.forEach(m=>{
   ctx.save();
   const p=Math.max(0,Math.min(1,m.t/(m.total||1.65)));
