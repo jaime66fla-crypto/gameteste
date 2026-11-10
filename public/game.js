@@ -607,14 +607,29 @@ function updateEnemies(dt){
   }
   e.shootCd-=dt;
   if(canSee&&d<(e.boss?600:420)&&e.shootCd<=0){
-   e.shootCd=e.boss?.55+Math.random()*.35:1.1+Math.random()*.8;
+   e.shootCd=e.boss?(e.phase===2?.72:.55+Math.random()*.35):1.1+Math.random()*.8;
    if(!player.inCar){
-    const shots=e.boss?3:1;
-    for(let s=0;s<shots;s++){
-     const spread=(Math.random()-.5)*(e.boss?.22:.08),a=e.angle+spread,speed=e.boss?470:420;
-     enemyBullets.push({x:e.x+Math.cos(a)*(e.boss?38:28),y:e.y+Math.sin(a)*(e.boss?38:28),vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:e.boss?1.45:1.25,damage:e.boss?12:8,boss:e.boss,layer:null,targetLayer:player.roof});
+    if(e.boss&&e.phase===2){
+     // Phase 2: perfect lock on the player's current position.
+     // Standing still guarantees a hit; moving after the shot is fired lets the player dodge.
+     const sx=e.x+Math.cos(e.angle)*38,sy=e.y+Math.sin(e.angle)*38;
+     const tx=player.x,ty=player.y;
+     const dd=Math.hypot(tx-sx,ty-sy)||1,speed=560;
+     const vx=(tx-sx)/dd*speed,vy=(ty-sy)/dd*speed;
+     enemyBullets.push({
+      x:sx,y:sy,vx,vy,
+      t:Math.max(1.1,dd/speed+.28),
+      damage:18,boss:true,phase2:true,layer:null,targetLayer:player.roof
+     });
+     noise(.085,.09,1500);tone(88,.10,"square",.075,.62);
+    }else{
+     const shots=e.boss?3:1;
+     for(let s=0;s<shots;s++){
+      const spread=(Math.random()-.5)*(e.boss?.22:.08),a=e.angle+spread,speed=e.boss?470:420;
+      enemyBullets.push({x:e.x+Math.cos(a)*(e.boss?38:28),y:e.y+Math.sin(a)*(e.boss?38:28),vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:e.boss?1.45:1.25,damage:e.boss?12:8,boss:e.boss,layer:null,targetLayer:player.roof});
+     }
+     noise(e.boss?.07:.04,e.boss?.08:.05,e.boss?1400:1800);tone(e.boss?95:130,e.boss?.08:.05,"square",e.boss?.06:.04,.7);
     }
-    noise(e.boss?.07:.04,e.boss?.08:.05,e.boss?1400:1800);tone(e.boss?95:130,e.boss?.08:.05,"square",e.boss?.06:.04,.7);
    }
   }
  }
@@ -1032,7 +1047,7 @@ function render(){
  enemyBullets.forEach(b=>{
   const a=Math.atan2(b.vy,b.vx);
   ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);
-  ctx.strokeStyle=b.boss?"#ff00aa":"#ff3b3b";ctx.lineWidth=b.boss?6:4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(4,0);ctx.stroke();
+  ctx.strokeStyle=b.phase2?"#ffcf33":b.boss?"#ff00aa":"#ff3b3b";ctx.lineWidth=b.phase2?7:b.boss?6:4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(b.phase2?-20:-14,0);ctx.lineTo(4,0);ctx.stroke();
   ctx.fillStyle="#fff3a3";ctx.beginPath();ctx.arc(5,0,4.5,0,Math.PI*2);ctx.fill();
   ctx.shadowColor="#ff3b3b";ctx.shadowBlur=12;ctx.fillStyle="#ff6565";ctx.beginPath();ctx.arc(5,0,3,0,Math.PI*2);ctx.fill();ctx.restore();
  });
