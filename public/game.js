@@ -488,11 +488,93 @@ function updateSniperEnemy(e,dt){
  }
 }
 
+function updatePistolEnemy(e,dt){
+ // Player is on a roof: normal soldiers seek that building's ladder and climb.
+ if(player.roof!==null){
+  if(e.roof===null){
+   e.targetRoof=player.roof;
+   const l=ladderForBuilding(e.targetRoof),b=buildings[e.targetRoof];
+   if(!l||!b)return;
+   const lx=l.x+l.w/2,ly=l.y+l.h*.45;
+   e.angle=Math.atan2(ly-e.y,lx-e.x);
+   if(Math.hypot(e.x-lx,e.y-ly)>20){
+    moveEnemyGround(e,lx,ly,dt);
+   }else{
+    e.roof=e.targetRoof;
+    e.x=lx;e.y=b.y+b.h-34;
+   }
+   return;
+  }
+
+  // If the soldier is on a different roof, descend first.
+  if(e.roof!==player.roof){
+   const b=buildings[e.roof],l=ladderForBuilding(e.roof);
+   const lx=l.x+l.w/2,ly=b.y+b.h-30;
+   e.angle=Math.atan2(ly-e.y,lx-e.x);
+   if(Math.hypot(e.x-lx,e.y-ly)>16){
+    moveEnemyOnRoof(e,lx,ly,dt);
+   }else{
+    e.roof=null;
+    e.x=lx;e.y=b.y+b.h+38;
+    e.targetRoof=player.roof;
+   }
+   return;
+  }
+
+  const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;
+  e.angle=Math.atan2(dy,dx);
+  if(d>145)moveEnemyOnRoof(e,player.x,player.y,dt);
+  e.shootCd-=dt;
+  if(!player.dead&&!player.inCar&&d<430&&e.shootCd<=0){
+   e.shootCd=1.1+Math.random()*.8;
+   const a=e.angle+(Math.random()-.5)*.08,speed=420;
+   enemyBullets.push({
+    x:e.x+Math.cos(a)*28,y:e.y+Math.sin(a)*28,
+    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:1.25,damage:8,
+    boss:false,layer:e.roof,targetLayer:player.roof
+   });
+   noise(.04,.05,1800);tone(130,.05,"square",.04,.7);
+  }
+  return;
+ }
+
+ // Player returned to ground: soldier leaves the rooftop by its ladder.
+ if(e.roof!==null){
+  const b=buildings[e.roof],l=ladderForBuilding(e.roof);
+  const lx=l.x+l.w/2,ly=b.y+b.h-30;
+  e.angle=Math.atan2(ly-e.y,lx-e.x);
+  if(Math.hypot(e.x-lx,e.y-ly)>16){
+   moveEnemyOnRoof(e,lx,ly,dt);
+  }else{
+   e.roof=null;e.targetRoof=null;
+   e.x=lx;e.y=b.y+b.h+38;
+  }
+  return;
+ }
+
+ const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;
+ e.angle=Math.atan2(dy,dx);
+ const canSee=!player.hidden||d<125;
+ if(canSee&&d>150)moveEnemyGround(e,player.x,player.y,dt);
+ e.shootCd-=dt;
+ if(canSee&&!player.inCar&&!player.dead&&d<420&&e.shootCd<=0){
+  e.shootCd=1.1+Math.random()*.8;
+  const a=e.angle+(Math.random()-.5)*.08,speed=420;
+  enemyBullets.push({
+   x:e.x+Math.cos(a)*28,y:e.y+Math.sin(a)*28,
+   vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:1.25,damage:8,
+   boss:false,layer:null,targetLayer:null
+  });
+  noise(.04,.05,1800);tone(130,.05,"square",.04,.7);
+ }
+}
+
 function updateEnemies(dt){
  if(gameMode!=="solo")return;
  for(const e of enemies){
   if(!e.alive)continue;
   if(!e.boss&&e.type==="sniper"){updateSniperEnemy(e,dt);continue}
+  if(!e.boss&&e.type==="pistol"){updatePistolEnemy(e,dt);continue}
   const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;e.angle=Math.atan2(dy,dx);
   const canSee=player.roof===null&&(!player.hidden||d<(e.boss?220:125));
   if(canSee&&d>(e.boss?190:150))moveEnemyGround(e,player.x,player.y,dt);
