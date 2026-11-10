@@ -1,0 +1,41 @@
+name: Validate browser game
+on:
+  push:
+    branches: [feature/visual-25d]
+  pull_request:
+    paths:
+      - 'public/**'
+      - '.github/workflows/validate-game.yml'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check public/game.js
+      - name: Check essential browser game controls
+        run: |
+          node - <<'NODE'
+          const fs=require('node:fs');
+          const js=fs.readFileSync('public/game.js','utf8');
+          const html=fs.readFileSync('public/index.html','utf8');
+          for(const id of ['gameCanvas','moveStick','aimStick','startBtn','soloModeBtn','multiModeBtn']){
+            if(!html.includes('id="'+id+'"'))throw Error('Missing UI element: '+id);
+          }
+          for(const marker of ['VIEW_TILT','screenToWorldY','worldToScreenY','bindJoystick("moveStick"','bindJoystick("aimStick"','function drawBuildings','function drawVehicle']){
+            if(!js.includes(marker))throw Error('Missing 2.5D feature: '+marker);
+          }
+          const css=fs.readFileSync('public/style.css','utf8');
+          for(const id of ['pauseBtn','fullscreenBtn','restartBtn','closeGameBtn','gameModal']){
+            if(!html.includes('id="'+id+'"'))throw Error('Missing game modal control: '+id);
+          }
+          for(const marker of ['pointerdown','pointermove','pointerup','pointercancel','lostpointercapture','setPointerCapture','touchAim','touchMove','function shoot()','function updateEnemies','function connectMultiplayer']){
+            if(!js.includes(marker))throw Error('Missing input/game feature: '+marker);
+          }
+          if(!css.includes('touch-action:none'))throw Error('Joystick touch-action is missing');
+          console.log('Game structure and mobile input checks passed');
+          NODE
