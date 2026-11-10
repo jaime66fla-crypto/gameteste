@@ -400,12 +400,26 @@ function spawnBoss(){
 }
 function getBoss(){return enemies.find(e=>e.boss&&e.alive)}
 
+const SNIPER_RANGE=W*.80;
 function nearestRoofForEnemy(e){
- let best=null,bestD=Infinity;
+ let best=null,bestScore=Infinity;
  for(let i=0;i<ladders.length;i++){
-  const l=ladders[i],lx=l.x+l.w/2,ly=l.y+l.h*.45;
-  const d=Math.hypot(e.x-lx,e.y-ly);
-  if(d<bestD){bestD=d;best=i}
+  const l=ladders[i],b=buildings[i],lx=l.x+l.w/2,ly=l.y+l.h*.45;
+  const walkDist=Math.hypot(e.x-lx,e.y-ly);
+  const roofX=b.x+b.w*.5,roofY=b.y+b.h*.5;
+  const playerDist=Math.hypot(player.x-roofX,player.y-roofY);
+  const canShoot=playerDist<=SNIPER_RANGE;
+  const score=(canShoot?0:100000)+playerDist*.65+walkDist*.35;
+  if(score<bestScore){bestScore=score;best=i}
+ }
+ return best;
+}
+function bestSniperRoof(e){
+ let best=e.roof,bestDist=Infinity;
+ for(let i=0;i<buildings.length;i++){
+  const b=buildings[i],cx=b.x+b.w*.5,cy=b.y+b.h*.5;
+  const d=Math.hypot(player.x-cx,player.y-cy);
+  if(d<=SNIPER_RANGE&&d<bestDist){bestDist=d;best=i}
  }
  return best;
 }
@@ -425,30 +439,49 @@ function updateSniperEnemy(e,dt){
  if(e.roof===null){
   if(e.targetRoof===null)e.targetRoof=nearestRoofForEnemy(e);
   const l=ladderForBuilding(e.targetRoof),b=buildings[e.targetRoof];
-  if(!l||!b)return;
+  if(!l||!b){e.targetRoof=nearestRoofForEnemy(e);return}
   const lx=l.x+l.w/2,ly=l.y+l.h*.45;
   e.angle=Math.atan2(ly-e.y,lx-e.x);
   if(Math.hypot(e.x-lx,e.y-ly)>20){
    moveEnemyGround(e,lx,ly,dt);
   }else{
-   e.roof=e.targetRoof;e.climbing=false;
+   e.roof=e.targetRoof;e.climbing=false;e.descending=false;
    e.x=lx;e.y=b.y+b.h-34;
   }
   return;
  }
- const b=buildings[e.roof];
- const centerX=b.x+b.w*.5,centerY=b.y+b.h*.5;
+
+ const b=buildings[e.roof],l=ladderForBuilding(e.roof);
  const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;
  e.angle=Math.atan2(dy,dx);
+
+ // If the player leaves the sniper's effective 80% map range,
+ // walk to the ladder, descend and relocate to a better rooftop.
+ if(d>SNIPER_RANGE||e.descending){
+  e.descending=true;
+  const lx=l.x+l.w/2,ly=b.y+b.h-30;
+  e.angle=Math.atan2(ly-e.y,lx-e.x);
+  if(Math.hypot(e.x-lx,e.y-ly)>16){
+   moveEnemyOnRoof(e,lx,ly,dt);
+  }else{
+   const oldRoof=e.roof;
+   e.roof=null;e.descending=false;
+   e.x=lx;e.y=b.y+b.h+38;
+   e.targetRoof=bestSniperRoof(e);
+   if(e.targetRoof===oldRoof)e.targetRoof=nearestRoofForEnemy(e);
+  }
+  return;
+ }
+
+ const centerX=b.x+b.w*.5,centerY=b.y+b.h*.5;
  if(Math.hypot(e.x-centerX,e.y-centerY)>58)moveEnemyOnRoof(e,centerX,centerY,dt);
  e.shootCd-=dt;
- const sameRoof=player.roof===e.roof;
- if(!player.inCar&&!player.dead&&d<760&&e.shootCd<=0){
+ if(!player.inCar&&!player.dead&&d<=SNIPER_RANGE&&e.shootCd<=0){
   e.shootCd=2.0+Math.random()*.8;
-  const a=e.angle+(Math.random()-.5)*.025,speed=760;
+  const a=e.angle+(Math.random()-.5)*.025,speed=900;
   enemyBullets.push({
    x:e.x+Math.cos(a)*32,y:e.y+Math.sin(a)*32,
-   vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:1.5,damage:22,
+   vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:SNIPER_RANGE/speed+.35,damage:22,
    boss:false,sniper:true,layer:e.roof,targetLayer:player.roof
   });
   noise(.045,.05,2600);tone(210,.06,"square",.05,.55);
