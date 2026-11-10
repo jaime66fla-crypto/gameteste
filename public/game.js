@@ -1,4 +1,5 @@
 const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W=2800,H=1900;
+const touchMove={x:0,y:0},touchAim={x:0,y:0};
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,weapon:"pistol",carHitCd:0,hidden:false};
 const weapons={
@@ -174,23 +175,24 @@ function update(dt){
  player.carHitCd=Math.max(0,player.carHitCd-dt);updateTraffic(dt);updateBushState();updatePickups(dt);flash=Math.max(0,flash-dt*2);player.shootCd=Math.max(0,player.shootCd-dt);
  if(player.reloading){player.reloadT-=dt;if(player.reloadT<=0){const need=player.maxAmmo-player.ammo,take=Math.min(need,player.reserve);player.ammo+=take;player.reserve-=take;player.reloading=false}}
  if(player.inCar){
-  const throttle=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0);let boost=1;
+  const throttle=(keys.w||keys.arrowup?1:0)-(keys.s||keys.arrowdown?1:0)-touchMove.y;let boost=1;
   if(keys.shift&&car.nitro>0&&throttle>0){boost=1.42;car.nitro=Math.max(0,car.nitro-31*dt)}else car.nitro=Math.min(100,car.nitro+10*dt);
   car.speed+=throttle*car.acc*boost*dt;if(!throttle)car.speed*=Math.pow(.25,dt);car.speed=Math.max(-230,Math.min(car.max*boost,car.speed));
-  const steer=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0);if(Math.abs(car.speed)>8)car.angle+=steer*car.turn*dt*(car.speed/car.max)*(keys[" "]?1.55:1);
+  const steer=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x;if(Math.abs(car.speed)>8)car.angle+=steer*car.turn*dt*(car.speed/car.max)*(keys[" "]?1.55:1);
   if(keys[" "])car.speed*=Math.pow(.34,dt);
   const ox=car.x,oy=car.y;car.x+=Math.cos(car.angle)*car.speed*dt;car.y+=Math.sin(car.angle)*car.speed*dt;
   if(collides(car.x,car.y,27)){car.x=ox;car.y=oy;car.speed*=-.24;car.health=Math.max(0,car.health-7);flash=.5;for(let i=0;i<10;i++)sparks.push({x:car.x,y:car.y,vx:(Math.random()-.5)*190,vy:(Math.random()-.5)*190,t:.45})}
   if((keys[" "]||Math.abs(steer)>.25)&&Math.abs(car.speed)>125)skids.push({x:car.x-Math.cos(car.angle)*25,y:car.y-Math.sin(car.angle)*25,a:car.angle,t:1});
   player.x=car.x;player.y=car.y;
  }else{
-  const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0),dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);
+  const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x,dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
   const moving=dx!==0||dy!==0,m=Math.hypot(dx,dy)||1,run=keys.shift?1.55:1;
   const nx=player.x+dx/m*player.speed*run*dt,ny=player.y+dy/m*player.speed*run*dt;
   if(!collides(nx,player.y,player.r))player.x=nx;if(!collides(player.x,ny,player.r))player.y=ny;
   if(moving)player.walk+=dt*(run>1?13:9);
-  player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
-  if(mouse.down)shoot();
+  if(Math.hypot(touchAim.x,touchAim.y)>.12){player.angle=Math.atan2(touchAim.y,touchAim.x);mouse.x=player.x+touchAim.x*200;mouse.y=player.y+touchAim.y*200;}
+  else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
+  if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
  }
  updateBushState();updateBullets(dt);updateEnemies(dt);
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
@@ -272,3 +274,20 @@ function render(){
 let last=performance.now();function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
 for(const btn of document.querySelectorAll("[data-key]")){const k=btn.dataset.key;const down=e=>{e.preventDefault();keys[k]=true},up=e=>{e.preventDefault();keys[k]=false};btn.addEventListener("pointerdown",down);btn.addEventListener("pointerup",up);btn.addEventListener("pointercancel",up);btn.addEventListener("pointerleave",up)}
 for(const btn of document.querySelectorAll('[data-action="e"]'))btn.addEventListener("click",toggleCar);
+function bindJoystick(id,axis){
+ const el=document.getElementById(id);if(!el)return;
+ const knob=el.querySelector(".stick-knob");let active=null;
+ const reset=()=>{axis.x=0;axis.y=0;knob.style.left="50%";knob.style.top="50%";active=null};
+ el.addEventListener("pointerdown",e=>{e.preventDefault();active=e.pointerId;el.setPointerCapture(active);move(e)});
+ function move(e){if(e.pointerId!==active)return;const r=el.getBoundingClientRect(),radius=r.width*.34;
+  const dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),scale=Math.min(1,radius/(len||1));
+  axis.x=dx*scale/radius;axis.y=dy*scale/radius;
+  knob.style.left=(50+axis.x*34)+"%";knob.style.top=(50+axis.y*34)+"%";
+ }
+ el.addEventListener("pointermove",move);
+ el.addEventListener("pointerup",e=>{if(e.pointerId===active)reset()});
+ el.addEventListener("pointercancel",reset);
+ el.addEventListener("lostpointercapture",reset);
+}
+bindJoystick("moveStick",touchMove);bindJoystick("aimStick",touchAim);
+document.querySelector('[data-action="reload"]')?.addEventListener("click",startReload);
