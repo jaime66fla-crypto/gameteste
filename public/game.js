@@ -31,7 +31,7 @@ const weapons={
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],enemyBullets=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
-let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0;
+let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
 
 let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
 function ensureAudio(){
@@ -313,27 +313,39 @@ function shoot(){
  if(player.ammo===0&&player.reserve>0)setTimeout(()=>{if(started&&!paused)startReload()},180);
 }
 function spawnEnemies(){
- enemies.length=0;
- const pts=[[900,440],[1400,950],[2050,1450],[2400,950],[600,1450],[1700,440],[1150,1450]];
- for(let i=0;i<pts.length;i++)enemies.push({x:pts[i][0],y:pts[i][1],r:16,hp:3,angle:0,speed:70,shootCd:Math.random()*1.5,alive:true});
+ enemies.length=0;bossSpawned=false;bossDefeated=false;
+ const pts=[[900,440],[1400,950],[2050,1450],[2400,950],[600,1450],[1700,440],[1150,1450],[2520,1450],[850,950],[1980,440]];
+ for(let i=0;i<pts.length;i++)enemies.push({x:pts[i][0],y:pts[i][1],r:16,hp:3,maxHp:3,angle:0,speed:70,shootCd:Math.random()*1.5,alive:true,boss:false});
 }
+function spawnBoss(){
+ if(bossSpawned||bossDefeated||gameMode!=="solo")return;
+ bossSpawned=true;
+ const p={x:2450,y:1550};
+ enemies.push({x:p.x,y:p.y,r:30,hp:40,maxHp:40,angle:0,speed:58,shootCd:.7,alive:true,boss:true});
+ flash=1;playSound("death");
+}
+function getBoss(){return enemies.find(e=>e.boss&&e.alive)}
+
 function updateEnemies(dt){
  if(gameMode!=="solo")return;
  for(const e of enemies){
   if(!e.alive)continue;
   const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;e.angle=Math.atan2(dy,dx);
-  const canSee=!player.hidden||d<125;
-  if(canSee&&d>150){
+  const canSee=!player.hidden||d<(e.boss?220:125);
+  if(canSee&&d>(e.boss?190:150)){
    const nx=e.x+dx/d*e.speed*dt,ny=e.y+dy/d*e.speed*dt;
    if(!collides(nx,e.y,e.r))e.x=nx;if(!collides(e.x,ny,e.r))e.y=ny;
   }
   e.shootCd-=dt;
-  if(canSee&&d<420&&e.shootCd<=0){
-   e.shootCd=1.1+Math.random()*.8;
+  if(canSee&&d<(e.boss?600:420)&&e.shootCd<=0){
+   e.shootCd=e.boss?.55+Math.random()*.35:1.1+Math.random()*.8;
    if(!player.inCar){
-    const spread=(Math.random()-.5)*.08,a=e.angle+spread,speed=420;
-    enemyBullets.push({x:e.x+Math.cos(a)*28,y:e.y+Math.sin(a)*28,vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:1.25,damage:8});
-    noise(.04,.05,1800);tone(130,.05,"square",.04,.7);
+    const shots=e.boss?3:1;
+    for(let s=0;s<shots;s++){
+     const spread=(Math.random()-.5)*(e.boss?.22:.08),a=e.angle+spread,speed=e.boss?470:420;
+     enemyBullets.push({x:e.x+Math.cos(a)*(e.boss?38:28),y:e.y+Math.sin(a)*(e.boss?38:28),vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:e.boss?1.45:1.25,damage:e.boss?12:8,boss:e.boss});
+    }
+    noise(e.boss?.07:.04,e.boss?.08:.05,e.boss?1400:1800);tone(e.boss?95:130,e.boss?.08:.05,"square",e.boss?.06:.04,.7);
    }
   }
  }
@@ -342,10 +354,16 @@ function drawEnemies(){
  if(gameMode!=="solo")return;
  for(const e of enemies){
   if(!e.alive)continue;
-  ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,10,17,8,0,0,Math.PI*2);ctx.fill();ctx.rotate(e.angle);
-  ctx.fillStyle="#7d2d2d";ctx.beginPath();ctx.ellipse(0,0,16,13,0,0,Math.PI*2);ctx.fill();
-  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5,9,0,Math.PI*2);ctx.fill();ctx.fillStyle="#20252c";ctx.fillRect(14,-4,20,8);ctx.restore();
-  ctx.fillStyle="#111";ctx.fillRect(e.x-18,e.y-27,36,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-18,e.y-27,36*(e.hp/3),5);
+  ctx.save();ctx.translate(e.x,e.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,e.boss?18:10,e.boss?30:17,e.boss?13:8,0,0,Math.PI*2);ctx.fill();ctx.rotate(e.angle);
+  ctx.fillStyle=e.boss?"#651515":"#7d2d2d";ctx.beginPath();ctx.ellipse(0,0,e.boss?28:16,e.boss?22:13,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(e.boss?4:2,e.boss?-8:-5,e.boss?14:9,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle=e.boss?"#111":"#20252c";ctx.fillRect(e.boss?20:14,e.boss?-6:-4,e.boss?34:20,e.boss?12:8);
+  if(e.boss){ctx.strokeStyle="#ff3b3b";ctx.lineWidth=4;ctx.strokeRect(-24,-20,48,40)}
+  ctx.restore();
+  const bw=e.boss?120:36,bh=e.boss?8:5;
+  ctx.fillStyle="#111";ctx.fillRect(e.x-bw/2,e.y-(e.boss?45:27),bw,bh);
+  ctx.fillStyle=e.boss?"#ff3232":"#ff5f5f";ctx.fillRect(e.x-bw/2,e.y-(e.boss?45:27),bw*(e.hp/e.maxHp),bh);
+  if(e.boss){ctx.fillStyle="#fff";ctx.font="900 12px system-ui";ctx.textAlign="center";ctx.fillText("BOSS",e.x,e.y-53);ctx.textAlign="left"}
  }
 }
 function reportKill(){
@@ -366,7 +384,7 @@ function updateBullets(dt){
  for(const b of bullets){
   b.x+=b.vx*dt;b.y+=b.vy*dt;b.t-=dt;
   if(collides(b.x,b.y,3)){b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
-  if(gameMode==="solo"){for(const e of enemies){if(e.alive&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage||1;b.t=0;if(e.hp<=0){e.alive=false;reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
+  if(gameMode==="solo"){for(const e of enemies){if(e.alive&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+4){e.hp-=b.damage||1;b.t=0;if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}hitMarks.push({x:e.x,y:e.y,t:.25});break}}}
   for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}
  }
  bullets=bullets.filter(b=>b.t>0);
@@ -413,6 +431,7 @@ function update(dt){
   if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
  }
  updateBushState();updateBullets(dt);updateEnemies(dt);
+ if(gameMode==="solo"&&!bossSpawned&&!bossDefeated&&enemies.filter(e=>e.alive&&!e.boss).length===0)spawnBoss();
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
  skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
  updateEngineSound();
@@ -499,7 +518,13 @@ function hud(){
  if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 12px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  "+weapons[player.weapon].name,35,132);if(player.hidden){ctx.fillStyle="#71e69a";ctx.font="800 10px system-ui";ctx.fillText("OCULTO NO ARBUSTO",150,43)}}
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
  const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
- if(gameMode==="solo"){ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+enemies.filter(e=>e.alive).length,34,canvas.height-52)}
+ if(gameMode==="solo"){
+  const boss=getBoss(),normalLeft=enemies.filter(e=>e.alive&&!e.boss).length;
+  ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);
+  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("BOSS  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
+  else if(bossDefeated){ctx.fillStyle="#65ff8b";ctx.fillText("BOSS DERROTADO",34,canvas.height-52)}
+  else{ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+normalLeft,34,canvas.height-52)}
+ }
  else{ctx.fillText((connectionStatus==="connected"?"ONLINE":"DESCONECTADO")+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-76);ctx.fillStyle=connectionStatus==="connected"?"#65ff8b":"#ff8b8b";ctx.fillText(connectionStatus==="connected"?"SEUS ABATES  "+kills:"SERVIDOR MULTIPLAYER INDISPONÍVEL",34,canvas.height-52)}
  ctx.fillStyle="#9fb0bd";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-28);
  if(gameMode==="multi"){
@@ -523,7 +548,7 @@ function render(){
  enemyBullets.forEach(b=>{
   const a=Math.atan2(b.vy,b.vx);
   ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);
-  ctx.strokeStyle="#ff3b3b";ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(4,0);ctx.stroke();
+  ctx.strokeStyle=b.boss?"#ff00aa":"#ff3b3b";ctx.lineWidth=b.boss?6:4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(4,0);ctx.stroke();
   ctx.fillStyle="#fff3a3";ctx.beginPath();ctx.arc(5,0,4.5,0,Math.PI*2);ctx.fill();
   ctx.shadowColor="#ff3b3b";ctx.shadowBlur=12;ctx.fillStyle="#ff6565";ctx.beginPath();ctx.arc(5,0,3,0,Math.PI*2);ctx.fill();ctx.restore();
  });
