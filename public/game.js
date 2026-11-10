@@ -335,12 +335,8 @@ function connectMultiplayer(){
      });
      const wp=String(m.weapon||"pistol");playSound(weapons[wp]?wp:"pistol");
     }
-    if(m.type==="hit"&&m.targetId===myId&&!player.dead){
-     const before=player.health;
-     damagePlayer(Math.max(1,Math.min(50,Number(m.damage)||1)));
-     if(before>0&&player.dead&&socket?.readyState===WebSocket.OPEN){
-      socket.send(JSON.stringify({type:"killed",killerId:m.attackerId||null}));
-     }
+    if(m.type==="hit"&&m.targetId===myId){
+     // Legacy compatibility only. Damage is resolved from received projectile collision.
     }
     if(m.type==="ranking"){ranking.clear();for(const p of m.players||[])ranking.set(p.id,{name:p.name,kills:p.kills||0})}
     if(m.type==="leave"){remotePlayers.delete(m.id);ranking.delete(m.id)}
@@ -746,16 +742,7 @@ function updateBullets(dt){
    }
   }}
   if(gameMode==="multi"&&b.t>0){
-   for(const [id,p] of remotePlayers){
-    if(p.dead||p.inCar)continue;
-    const pRoof=p.roof===null||p.roof===undefined?null:Number(p.roof);
-    const canHitRemote=(b.layer===null&&pRoof===null)||(b.layer!==null&&(pRoof===b.layer||pRoof===null));
-    if(canHitRemote&&Math.hypot(b.x-p.x,b.y-p.y)<22){
-     b.t=0;hitMarks.push({x:p.x,y:p.y,t:.25});
-     if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"hit",targetId:id,damage:b.damage||1}));
-     break;
-    }
-   }
+   // PvP damage is resolved on the receiving client from the replicated projectile.
   }
   if(b.layer===null){for(const t of targets){if(t.hp>0&&Math.hypot(b.x-t.x,b.y-t.y)<t.r+4){t.hp--;b.t=0;hitMarks.push({x:t.x,y:t.y,t:.25});for(let i=0;i<5;i++)sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*120,vy:(Math.random()-.5)*120,t:.35});break}}}
  }
@@ -766,6 +753,19 @@ function updateBullets(dt){
   const blocked=fromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
   if(blocked){b.t=0;continue}
   b.x=nx;b.y=ny;
+
+  if(gameMode==="multi"&&!player.dead&&!player.inCar&&b.ownerId!==myId){
+   const playerLayer=player.roof===null?null:Number(player.roof);
+   const canHitLocal=(b.layer===null&&playerLayer===null)||(b.layer!==null&&(playerLayer===b.layer||playerLayer===null));
+   if(canHitLocal&&Math.hypot(b.x-player.x,b.y-player.y)<player.r+7){
+    const before=player.health;
+    damagePlayer(Math.max(1,Number(b.damage)||1));
+    b.t=0;hitMarks.push({x:player.x,y:player.y,t:.25});
+    if(before>0&&player.dead&&socket?.readyState===WebSocket.OPEN){
+     socket.send(JSON.stringify({type:"killed",killerId:b.ownerId||null}));
+    }
+   }
+  }
  }
  remoteBullets=remoteBullets.filter(b=>b.t>0);
  for(const b of enemyBullets){
@@ -1049,7 +1049,7 @@ function render(){
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health<=0?"#3a3a3a":car.health>40?"#65ff8b":"#d86770");if(car.health<=0){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(car.x+8,car.y-20,13,0,Math.PI*2);ctx.fill();ctx.fillStyle="#333";ctx.beginPath();ctx.arc(car.x+16,car.y-34,9,0,Math.PI*2);ctx.fill()}drawPlayer();drawRemotePlayers();drawBushes(false);
  bullets.forEach(b=>{ctx.fillStyle=b.color||"#ffe36e";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});
- remoteBullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.strokeStyle=b.color||"#7ee8ff";ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-12,0);ctx.lineTo(5,0);ctx.stroke();ctx.restore()});
+ remoteBullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.shadowColor=b.color||"#7ee8ff";ctx.shadowBlur=12;ctx.strokeStyle=b.color||"#7ee8ff";ctx.lineWidth=6;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-18,0);ctx.lineTo(7,0);ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(8,0,3,0,Math.PI*2);ctx.fill();ctx.restore()});
  missiles.forEach(m=>{
   ctx.save();
   const p=Math.max(0,Math.min(1,m.t/(m.total||1.65)));
