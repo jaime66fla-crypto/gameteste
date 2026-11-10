@@ -28,7 +28,9 @@ const weapons={
  pistol:{name:"PISTOLA",mag:12,reserve:72,fire:.16,speed:980,spread:.025,pellets:1,damage:1,color:"#ffe36e"},
  smg:{name:"SMG",mag:30,reserve:120,fire:.075,speed:930,spread:.07,pellets:1,damage:1,color:"#7ee8ff"},
  shotgun:{name:"ESCOPETA",mag:6,reserve:36,fire:.62,speed:820,spread:.34,pellets:7,damage:1,color:"#ffbd69"},
- rifle:{name:"RIFLE",mag:20,reserve:80,fire:.12,speed:1250,spread:.012,pellets:1,damage:2,color:"#b9ff7a"}
+ rifle:{name:"RIFLE",mag:20,reserve:80,fire:.12,speed:1250,spread:.012,pellets:1,damage:2,color:"#b9ff7a"},
+ lmg:{name:"METRALHADORA LEVE",mag:60,reserve:240,fire:.06,speed:970,spread:.085,pellets:1,damage:1,color:"#ffd36a"},
+ sawedoff:{name:"ESCOPETA CERRADA",mag:2,reserve:40,fire:.78,speed:760,spread:.52,pellets:10,damage:1,color:"#ff8f5a"}
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
@@ -67,6 +69,8 @@ function playSound(name){
   case "smg": noise(.035,.09,3200);tone(190,.045,"square",.08,.65);break;
   case "shotgun": noise(.14,.22,1800);tone(105,.16,"sawtooth",.16,.45);break;
   case "rifle": noise(.07,.14,3600);tone(220,.065,"square",.11,.5);break;
+  case "lmg": noise(.055,.13,2600);tone(145,.055,"square",.09,.58);break;
+  case "sawedoff": noise(.18,.26,1500);tone(88,.19,"sawtooth",.18,.38);break;
   case "reload": tone(520,.035,"square",.08,1.05);setTimeout(()=>tone(330,.055,"square",.08,.9),180);break;
   case "damage": noise(.09,.08,900);tone(82,.12,"sawtooth",.09,.65);break;
   case "death": tone(120,.34,"sawtooth",.16,.28);break;
@@ -174,7 +178,7 @@ for(let i=0;i<34;i++){
  bushes.push({x,y,r:34+Math.random()*12});
 }
 function randomOpenPoint(){let x=500,y=440,tries=0;do{x=90+Math.random()*(W-180);y=90+Math.random()*(H-180);tries++}while((collides(x,y,30)||Math.hypot(x-player.x,y-player.y)<180)&&tries<100);return{x,y}}
-function spawnWeaponPickups(count=10){weaponPickups.length=0;const types=["smg","shotgun","rifle","pistol"];for(let i=0;i<count;i++){const p=randomOpenPoint();weaponPickups.push({x:p.x,y:p.y,type:types[Math.floor(Math.random()*types.length)],spin:Math.random()*6.28})}}
+function spawnWeaponPickups(count=14){weaponPickups.length=0;const types=["smg","shotgun","rifle","pistol","lmg","sawedoff"];for(let i=0;i<count;i++){const p=randomOpenPoint();weaponPickups.push({x:p.x,y:p.y,type:types[Math.floor(Math.random()*types.length)],spin:Math.random()*6.28})}}
 function equipWeapon(type){const w=weapons[type];if(!w)return;player.weapon=type;player.maxAmmo=w.mag;player.ammo=w.mag;player.reserve=w.reserve;player.reloading=false;flash=.18;playSound("pickup")}
 function updatePickups(dt){
  for(const p of weaponPickups){p.spin+=dt*2.2;if(!player.inCar&&Math.hypot(player.x-p.x,player.y-p.y)<34){equipWeapon(p.type);pickupRespawns.push({t:18,type:p.type});p.dead=true}}
@@ -410,14 +414,14 @@ function projectileHitsWall(x1,y1,x2,y2,layer=null){
 function projectileOutOfWorld(x1,y1,x2,y2){
  return x2<0||y2<0||x2>W||y2>H;
 }
-function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=player.weapon==="shotgun"?1.35:1.05;playSound("reload")}
+function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=(player.weapon==="shotgun"||player.weapon==="sawedoff")?1.35:player.weapon==="lmg"?1.65:1.05;playSound("reload")}
 function shoot(){
  if(!started||paused||player.dead||player.inCar||player.reloading||player.shootCd>0)return;
  if(player.ammo<=0){startReload();return}
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  for(let i=0;i<w.pellets;i++){
   const a=player.angle+(Math.random()-.5)*w.spread,ox=player.x+Math.cos(a)*28,oy=player.y+Math.sin(a)*28;
-  const bt=player.weapon==="rifle"?1.15:.9,bvx=Math.cos(a)*w.speed,bvy=Math.sin(a)*w.speed;
+  const bt=player.weapon==="rifle"?1.15:player.weapon==="sawedoff"?.58:.9,bvx=Math.cos(a)*w.speed,bvy=Math.sin(a)*w.speed;
   bullets.push({x:ox,y:oy,vx:bvx,vy:bvy,t:bt,damage:w.damage,color:w.color,layer:player.roof});
   if(gameMode==="multi"&&socket?.readyState===WebSocket.OPEN){
    socket.send(JSON.stringify({type:"shot",weapon:player.weapon,x:ox,y:oy,vx:bvx,vy:bvy,t:bt,damage:w.damage,color:w.color,layer:player.roof}));
