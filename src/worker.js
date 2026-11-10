@@ -40,14 +40,36 @@ export class GameRoom {
    const prev=this.players.get(meta.id)||{name:String(data.name||"Jogador").slice(0,18),kills:0};
    prev.kills=(prev.kills||0)+1;this.players.set(meta.id,prev);this.broadcastRanking();return;
   }
+  if (data.type === "shot") {
+   const safe={type:"shot",id:meta.id,weapon:String(data.weapon||"pistol").slice(0,12),
+    x:Number(data.x)||0,y:Number(data.y)||0,vx:Number(data.vx)||0,vy:Number(data.vy)||0,
+    t:Math.max(.05,Math.min(3,Number(data.t)||1)),damage:Math.max(1,Math.min(10,Number(data.damage)||1)),
+    color:String(data.color||"#7ee8ff").slice(0,16),layer:data.layer===null?null:Number(data.layer)};
+   const out=JSON.stringify(safe);for(const [id,peer] of this.sessions)if(id!==meta.id){try{peer.send(out)}catch{}}return;
+  }
+  if (data.type === "hit") {
+   const targetId=String(data.targetId||"");if(!this.sessions.has(targetId))return;
+   const out=JSON.stringify({type:"hit",targetId,attackerId:meta.id,damage:Math.max(1,Math.min(10,Number(data.damage)||1))});
+   try{this.sessions.get(targetId).send(out)}catch{} return;
+  }
+  if (data.type === "killed") {
+   const killerId=String(data.killerId||"");
+   if(killerId&&this.players.has(killerId)){
+    const kp=this.players.get(killerId);kp.kills=(kp.kills||0)+1;this.players.set(killerId,kp);this.broadcastRanking();
+   }
+   return;
+  }
   if (data.type !== "state") return;
   const safe = {
    type:"state", id:meta.id,
    name:String(data.name || "Jogador").slice(0,18),
    x:Number(data.x)||0, y:Number(data.y)||0, angle:Number(data.angle)||0,
-   inCar:!!data.inCar, shooting:!!data.shooting, kills:Number(data.kills)||0
+   inCar:!!data.inCar, shooting:!!data.shooting, kills:Number(data.kills)||0,
+   health:Math.max(0,Math.min(100,Number(data.health)||0)),dead:!!data.dead,
+   roof:data.roof===null?null:Number(data.roof)
   };
-  this.players.set(meta.id,{name:safe.name,kills:safe.kills});
+  const prev=this.players.get(meta.id)||{};this.players.set(meta.id,{...prev,name:safe.name,kills:prev.kills??safe.kills});
+  safe.kills=(this.players.get(meta.id)?.kills)||0;
   const out = JSON.stringify(safe);
   for (const [id, peer] of this.sessions) if (id !== meta.id) {
    try { peer.send(out); } catch {}
