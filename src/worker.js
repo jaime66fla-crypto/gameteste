@@ -14,6 +14,7 @@ export class GameRoom {
  constructor(ctx, env) {
   this.ctx = ctx;
   this.sessions = new Map();
+  this.players = new Map();
   for (const ws of ctx.getWebSockets()) {
    const data = ws.deserializeAttachment();
    if (data?.id) this.sessions.set(data.id, ws);
@@ -35,24 +36,34 @@ export class GameRoom {
   if (!meta?.id) return;
   let data;
   try { data = JSON.parse(typeof message === "string" ? message : new TextDecoder().decode(message)); } catch { return; }
+  if (data.type === "kill") {
+   const prev=this.players.get(meta.id)||{name:String(data.name||"Jogador").slice(0,18),kills:0};
+   prev.kills=(prev.kills||0)+1;this.players.set(meta.id,prev);this.broadcastRanking();return;
+  }
   if (data.type !== "state") return;
   const safe = {
    type:"state", id:meta.id,
    name:String(data.name || "Jogador").slice(0,18),
    x:Number(data.x)||0, y:Number(data.y)||0, angle:Number(data.angle)||0,
-   inCar:!!data.inCar, shooting:!!data.shooting
+   inCar:!!data.inCar, shooting:!!data.shooting, kills:Number(data.kills)||0
   };
+  this.players.set(meta.id,{name:safe.name,kills:safe.kills});
   const out = JSON.stringify(safe);
   for (const [id, peer] of this.sessions) if (id !== meta.id) {
    try { peer.send(out); } catch {}
   }
+ }
+ broadcastRanking(){
+  const players=[...this.players.entries()].map(([id,p])=>({id,name:p.name||"Jogador",kills:p.kills||0})).sort((a,b)=>b.kills-a.kills);
+  const out=JSON.stringify({type:"ranking",players});
+  for(const peer of this.sessions.values()){try{peer.send(out)}catch{}}
  }
  webSocketClose(ws) { this.drop(ws); }
  webSocketError(ws) { this.drop(ws); }
  drop(ws) {
   const meta = ws.deserializeAttachment();
   if (!meta?.id) return;
-  this.sessions.delete(meta.id);
+  this.sessions.delete(meta.id);this.players.delete(meta.id);this.broadcastRanking();
   const out = JSON.stringify({type:"leave", id:meta.id});
   for (const peer of this.sessions.values()) { try { peer.send(out); } catch {} }
  }
