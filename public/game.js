@@ -1,5 +1,22 @@
 const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W=2800,H=1900;
 const touchMove={x:0,y:0},touchAim={x:0,y:0};
+
+function resizeGameCanvas(){
+ const wrap=document.getElementById("gameWrap");
+ if(!wrap)return;
+ const rect=wrap.getBoundingClientRect();
+ if(rect.width<2||rect.height<2)return;
+ const dpr=Math.min(window.devicePixelRatio||1,2);
+ const w=Math.max(640,Math.floor(rect.width*dpr));
+ const h=Math.max(360,Math.floor(rect.height*dpr));
+ if(canvas.width!==w||canvas.height!==h){
+  canvas.width=w;
+  canvas.height=h;
+ }
+}
+addEventListener("resize",resizeGameCanvas);
+document.addEventListener("fullscreenchange",()=>setTimeout(resizeGameCanvas,50));
+
 // 2.5D visual projection: world physics remains in the original XY plane.
 const VIEW_TILT=.78;
 function screenToWorldY(y){return cam.y+(y-canvas.height*(1-VIEW_TILT)/2)/VIEW_TILT;}
@@ -189,7 +206,7 @@ document.getElementById("startBtn").onclick=()=>{
  localStorage.setItem("streetPlayerName",(document.getElementById("playerName")?.value||"Jogador").trim());
  playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";
  roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";
- started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();spawnWeaponPickups();
+ started=true;document.getElementById("startOverlay").classList.add("hidden");resizeGameCanvas();canvas.focus();spawnWeaponPickups();
  if(gameMode==="multi")connectMultiplayer(); else spawnEnemies();
  if(!localStorage.getItem("streetTutorialDone"))startTutorial();
 };
