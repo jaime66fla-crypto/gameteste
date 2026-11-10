@@ -58,9 +58,10 @@ canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();c
 canvas.addEventListener("mousedown",e=>{if(e.button===0){mouse.down=true;shoot()}});
 addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
-let selectedPlatform=matchMedia("(pointer:coarse)").matches?"mobile":"desktop";
+let selectedPlatform=localStorage.getItem("streetPlatform")|| (matchMedia("(pointer:coarse)").matches?"mobile":"desktop");
 function setPlatform(platform){
  selectedPlatform=platform;
+ localStorage.setItem("streetPlatform",platform);
  document.body.classList.toggle("platform-mobile",platform==="mobile");
  document.body.classList.toggle("platform-desktop",platform==="desktop");
  document.getElementById("desktopPlatformBtn")?.classList.toggle("active",platform==="desktop");
@@ -75,6 +76,8 @@ document.getElementById("desktopPlatformBtn")?.addEventListener("click",()=>setP
 document.getElementById("mobilePlatformBtn")?.addEventListener("click",()=>setPlatform("mobile"));
 setPlatform(selectedPlatform);
 document.getElementById("soloModeBtn").onclick=()=>setGameMode("solo");
+const savedName=localStorage.getItem("streetPlayerName");
+if(savedName&&document.getElementById("playerName"))document.getElementById("playerName").value=savedName;
 document.getElementById("multiModeBtn").onclick=()=>setGameMode("multi");
 function setGameMode(mode){
  gameMode=mode;
@@ -86,14 +89,64 @@ function setGameMode(mode){
 setGameMode("solo");
 document.getElementById("startBtn").onclick=()=>{
  if(selectedPlatform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
+ localStorage.setItem("streetPlayerName",(document.getElementById("playerName")?.value||"Jogador").trim());
  playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";
  roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";
  started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();spawnWeaponPickups();
  if(gameMode==="multi")connectMultiplayer(); else spawnEnemies();
+ if(!localStorage.getItem("streetTutorialDone"))startTutorial();
 };
 document.getElementById("pauseBtn").onclick=togglePause;
+document.getElementById("resumeBtn")?.addEventListener("click",()=>setPauseState(false));
+document.getElementById("controlsBtn")?.addEventListener("click",()=>{setPauseState(false);startTutorial(true)});
+document.getElementById("pauseRestartBtn")?.addEventListener("click",()=>location.reload());
+document.getElementById("pauseExitBtn")?.addEventListener("click",()=>location.reload());
 document.getElementById("restartBtn").onclick=()=>location.reload();
 document.getElementById("fullscreenBtn").onclick=()=>{const el=document.getElementById("gameWrap");document.fullscreenElement?document.exitFullscreen():el.requestFullscreen?.()};
+
+
+const tutorialSteps={
+ desktop:[
+  {title:"Movimente-se",text:"Use WASD para andar pela cidade."},
+  {title:"Mire e atire",text:"Mova o mouse para mirar e clique para atirar."},
+  {title:"Use veículos",text:"Aproxime-se de um carro e pressione E para entrar ou sair."}
+ ],
+ mobile:[
+  {title:"Movimente-se",text:"Use o analógico esquerdo para andar pela cidade."},
+  {title:"Mire e atire",text:"Puxe o analógico direito para mirar. Ao afastar do centro, você atira."},
+  {title:"Use veículos",text:"Aproxime-se de um carro e toque em CARRO para entrar ou sair."}
+ ]
+};
+let tutorialIndex=0;
+function renderTutorial(){
+ const steps=tutorialSteps[selectedPlatform]||tutorialSteps.desktop,step=steps[tutorialIndex];
+ document.getElementById("tutorialTitle").textContent=step.title;
+ document.getElementById("tutorialText").textContent=step.text;
+ document.querySelectorAll(".tutorial-dots i").forEach((el,i)=>el.classList.toggle("active",i===tutorialIndex));
+ document.getElementById("tutorialNextBtn").textContent=tutorialIndex===steps.length-1?"Começar":"Próximo";
+}
+function startTutorial(force=false){
+ tutorialIndex=0;
+ const overlay=document.getElementById("tutorialOverlay");
+ if(!overlay)return;
+ overlay.classList.remove("hidden");
+ paused=true;
+ document.getElementById("pauseBtn").textContent="Continuar";
+ renderTutorial();
+ if(force)overlay.dataset.force="1"; else delete overlay.dataset.force;
+}
+function finishTutorial(){
+ document.getElementById("tutorialOverlay")?.classList.add("hidden");
+ localStorage.setItem("streetTutorialDone","1");
+ paused=false;
+ document.getElementById("pauseBtn").textContent="Pausar";
+ canvas.focus();
+}
+document.getElementById("tutorialNextBtn")?.addEventListener("click",()=>{
+ const steps=tutorialSteps[selectedPlatform]||tutorialSteps.desktop;
+ if(tutorialIndex<steps.length-1){tutorialIndex++;renderTutorial()}else finishTutorial();
+});
+document.getElementById("tutorialSkipBtn")?.addEventListener("click",finishTutorial);
 
 function connectMultiplayer(){
  try{
@@ -119,7 +172,13 @@ function sendNetState(force=false){
  const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1,kills};
  socket.send(JSON.stringify(msg));
 }
-function togglePause(){if(!started)return;paused=!paused;document.getElementById("pauseBtn").textContent=paused?"Continuar":"Pausar"}
+function setPauseState(value){
+ if(!started)return;
+ paused=value;
+ document.getElementById("pauseBtn").textContent=paused?"Continuar":"Pausar";
+ document.getElementById("pauseOverlay")?.classList.toggle("hidden",!paused);
+}
+function togglePause(){setPauseState(!paused)}
 function toggleCar(){
  if(!started||paused)return;
  if(player.inCar){player.inCar=false;player.x=car.x+Math.cos(car.angle+Math.PI/2)*58;player.y=car.y+Math.sin(car.angle+Math.PI/2)*58}
