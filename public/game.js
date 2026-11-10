@@ -2,7 +2,9 @@ const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100};
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
-let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[];\nlet socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1";\nconst remotePlayers=new Map();
+let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[];
+let socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1";
+const remotePlayers=new Map();
 const mission={x:2440,y:1560,r:48};
 const buildings=[
 {x:80,y:70,w:360,h:240},{x:700,y:70,w:300,h:250},{x:1280,y:60,w:300,h:270},{x:1840,y:80,w:270,h:235},{x:2380,y:70,w:320,h:250},
