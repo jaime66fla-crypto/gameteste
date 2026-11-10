@@ -2,7 +2,7 @@ const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100};
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100};
-let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[];
+let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],shells=[],hitMarks=[];\nlet socket=null,myId=null,netTimer=0,playerName="Jogador",roomCode="cidade-1";\nconst remotePlayers=new Map();
 const mission={x:2440,y:1560,r:48};
 const buildings=[
 {x:80,y:70,w:360,h:240},{x:700,y:70,w:300,h:250},{x:1280,y:60,w:300,h:270},{x:1840,y:80,w:270,h:235},{x:2380,y:70,w:320,h:250},
@@ -26,11 +26,33 @@ canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();m
 canvas.addEventListener("mousedown",e=>{if(e.button===0){mouse.down=true;shoot()}});
 addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
-document.getElementById("startBtn").onclick=()=>{started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus()};
+document.getElementById("startBtn").onclick=()=>{playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";started=true;document.getElementById("startOverlay").classList.add("hidden");canvas.focus();connectMultiplayer()};
 document.getElementById("pauseBtn").onclick=togglePause;
 document.getElementById("restartBtn").onclick=()=>location.reload();
 document.getElementById("fullscreenBtn").onclick=()=>{const el=document.getElementById("gameWrap");document.fullscreenElement?document.exitFullscreen():el.requestFullscreen?.()};
 
+function connectMultiplayer(){
+ try{
+  if(socket)socket.close();
+  const proto=location.protocol==="https:"?"wss:":"ws:";
+  socket=new WebSocket(proto+"//"+location.host+"/ws?room="+encodeURIComponent(roomCode));
+  socket.onopen=()=>sendNetState(true);
+  socket.onmessage=e=>{
+   try{
+    const m=JSON.parse(e.data);
+    if(m.type==="welcome"){myId=m.id;return}
+    if(m.type==="state"&&m.id!==myId){remotePlayers.set(m.id,{...m,seen:performance.now()})}
+    if(m.type==="leave")remotePlayers.delete(m.id);
+   }catch(_){}
+  };
+  socket.onclose=()=>{remotePlayers.clear();setTimeout(()=>{if(started)connectMultiplayer()},1800)};
+ }catch(_){}
+}
+function sendNetState(force=false){
+ if(!socket||socket.readyState!==WebSocket.OPEN)return;
+ const msg={type:"state",name:playerName,x:player.x,y:player.y,angle:player.angle,inCar:player.inCar,shooting:player.shootCd>.1};
+ socket.send(JSON.stringify(msg));
+}
 function togglePause(){if(!started)return;paused=!paused;document.getElementById("pauseBtn").textContent=paused?"Continuar":"Pausar"}
 function toggleCar(){
  if(!started||paused)return;
@@ -85,7 +107,7 @@ function update(dt){
  updateBullets(dt);
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
  skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
- const tx=player.x-canvas.width/2,ty=player.y-canvas.height/2;cam.x+=(Math.max(0,Math.min(W-canvas.width,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-canvas.height,ty))-cam.y)*Math.min(1,dt*5.5)
+ const tx=player.x-canvas.width/2,ty=player.y-canvas.height/2;cam.x+=(Math.max(0,Math.min(W-canvas.width,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-canvas.height,ty))-cam.y)*Math.min(1,dt*5.5);netTimer+=dt;if(netTimer>=.067){netTimer=0;sendNetState()}
 }
 function road(){ctx.fillStyle="#263129";ctx.fillRect(0,0,W,H);ctx.fillStyle="#4b5255";for(const y of [390,900,1400])ctx.fillRect(0,y,W,100);for(const x of [535,1100,1660,2200])ctx.fillRect(x,0,90,H);ctx.strokeStyle="#d4c765";ctx.lineWidth=3;ctx.setLineDash([28,24]);ctx.beginPath();[440,950,1450].forEach(y=>{ctx.moveTo(0,y);ctx.lineTo(W,y)});[580,1145,1705,2245].forEach(x=>{ctx.moveTo(x,0);ctx.lineTo(x,H)});ctx.stroke();ctx.setLineDash([])}
 function drawBuildings(){buildings.forEach((b,i)=>{ctx.fillStyle=i%3===0?"#273139":i%3===1?"#303b42":"#26343a";ctx.fillRect(b.x,b.y,b.w,b.h);ctx.strokeStyle="#52616a";ctx.lineWidth=4;ctx.strokeRect(b.x,b.y,b.w,b.h);ctx.fillStyle="#1c252a";for(let x=b.x+28;x<b.x+b.w-20;x+=67)for(let y=b.y+28;y<b.y+b.h-20;y+=58)ctx.fillRect(x,y,29,22)})}
@@ -106,6 +128,24 @@ function drawPlayer(){
  if(player.shootCd>.10){ctx.fillStyle="#ffd45c";ctx.beginPath();ctx.moveTo(46,bob);ctx.lineTo(58,-6+bob);ctx.lineTo(58,6+bob);ctx.closePath();ctx.fill()}
  ctx.restore();ctx.restore()
 }
+function drawRemotePlayers(){
+ const now=performance.now();
+ for(const [id,p] of remotePlayers){
+  if(now-p.seen>6000){remotePlayers.delete(id);continue}
+  if(p.inCar){drawVehicle(p.x,p.y,p.angle||0,"#42b9ff",58,30)}
+  else{
+   ctx.save();ctx.translate(p.x,p.y);ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(0,11,18,9,0,0,Math.PI*2);ctx.fill();ctx.rotate(p.angle||0);
+   ctx.fillStyle="#38a6ff";ctx.beginPath();ctx.ellipse(0,0,17,14,0,0,Math.PI*2);ctx.fill();
+   ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5,10,0,Math.PI*2);ctx.fill();
+   ctx.fillStyle="#151a21";ctx.beginPath();ctx.arc(-1,-8,10,Math.PI,Math.PI*2);ctx.fill();
+   ctx.fillStyle="#d7b08c";ctx.fillRect(9,-8,16,5);ctx.fillRect(9,4,16,5);
+   ctx.fillStyle="#252d33";ctx.fillRect(17,-4,22,8);
+   if(p.shooting){ctx.fillStyle="#ffd45c";ctx.beginPath();ctx.moveTo(40,0);ctx.lineTo(52,-6);ctx.lineTo(52,6);ctx.closePath();ctx.fill()}
+   ctx.restore();
+  }
+  ctx.save();ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#dff5ff";ctx.fillText(p.name||"Jogador",p.x,p.y-28);ctx.restore();
+ }
+}
 function drawTargets(){targets.forEach(t=>{if(t.hp<=0)return;ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(t.x,t.y+13,23,10,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=t.hp===3?"#ff725f":t.hp===2?"#ffb24b":"#ffe765";ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#341b1b";ctx.fillRect(t.x-5,t.y-11,10,22);ctx.fillRect(t.x-11,t.y-5,22,10)})}
 function drawMission(){if(missionDone)return;const p=.5+.5*Math.sin(performance.now()/260);ctx.strokeStyle="rgba(101,255,139,"+(.45+p*.45)+")";ctx.lineWidth=4;ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r+p*8,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#65ff8b22";ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r,0,Math.PI*2);ctx.fill()}
 function drawCrosshair(){
@@ -115,7 +155,7 @@ function hud(){
  ctx.setTransform(1,0,0,1,0,0);ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,92);ctx.strokeStyle="#273b49";ctx.strokeRect(20.5,20.5,249,91);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
  if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 13px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  PISTOLA",35,96)}
  const rx=canvas.width-248;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
- const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-68,180,48);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-39);
+ const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-92,220,72);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-60);ctx.fillStyle="#65ff8b";ctx.fillText("ONLINE  "+(remotePlayers.size+1)+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-36);
  const mw=190,mh=120,mx=canvas.width-210,my=canvas.height-140;ctx.fillStyle="#061018e8";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,4,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,4.5,0,Math.PI*2);ctx.fill();
  const near=!player.inCar&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
@@ -126,7 +166,7 @@ function render(){
  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.save();ctx.translate(-cam.x,-cam.y);
  road();drawBuildings();drawTrees();drawMission();drawTargets();
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
- traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health>40?"#65ff8b":"#d86770");drawPlayer();
+ traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health>40?"#65ff8b":"#d86770");drawPlayer();drawRemotePlayers();
  ctx.fillStyle="#ffe36e";bullets.forEach(b=>{ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
  sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});hitMarks.forEach(h=>{ctx.strokeStyle="#fff";ctx.beginPath();ctx.moveTo(h.x-8,h.y-8);ctx.lineTo(h.x+8,h.y+8);ctx.moveTo(h.x+8,h.y-8);ctx.lineTo(h.x-8,h.y+8);ctx.stroke()});
  ctx.restore();hud()
