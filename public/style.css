@@ -123,3 +123,25 @@ body.modal-open{overflow:hidden}
  .platform-mobile .start-panel{max-height:94%;overflow:auto;padding:10px}
  .platform-mobile .platform-picker,.platform-mobile .mode-picker{margin:5px 0}
 }
+
+/* UX polish: platform cards, tutorial and pause menu */
+.platform-btn{display:grid;grid-template-columns:42px 1fr;grid-template-areas:"icon title" "icon desc";align-items:center;text-align:left;gap:1px 10px;min-height:66px}
+.platform-btn span{grid-area:icon;font-size:1.7rem}
+.platform-btn strong{grid-area:title;font-size:.98rem}
+.platform-btn small{grid-area:desc;color:#8fa0ad;font-size:.72rem;font-weight:700}
+.platform-btn.active small{color:#073c4b}
+.tutorial-overlay,.pause-overlay{position:absolute;inset:0;z-index:8;display:grid;place-items:center;background:rgba(2,5,8,.72);backdrop-filter:blur(5px)}
+.tutorial-overlay.hidden,.pause-overlay.hidden{display:none}
+.tutorial-card,.pause-card{width:min(380px,88%);background:#0a1118f2;border:1px solid #344653;border-radius:18px;padding:24px;text-align:center;box-shadow:0 22px 70px #000a}
+.tutorial-card h3,.pause-card h3{margin:9px 0 8px;font-size:1.55rem}
+.tutorial-card p{color:#a9b8c4;line-height:1.5;margin:0 0 16px}
+.tutorial-dots{display:flex;justify-content:center;gap:7px;margin:8px 0 10px}
+.tutorial-dots i{width:7px;height:7px;border-radius:50%;background:#43515d}
+.tutorial-dots i.active{background:var(--accent)}
+.tutorial-card .btn,.pause-card .btn{width:100%;margin-top:8px}
+.tutorial-skip,.pause-card .ghost{width:100%;margin-top:8px}
+@media(max-height:520px){
+ .tutorial-card,.pause-card{padding:14px;width:min(350px,82%)}
+ .tutorial-card h3,.pause-card h3{font-size:1.2rem}
+ .tutorial-card p{font-size:.85rem;margin-bottom:8px}
+}
