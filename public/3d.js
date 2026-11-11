@@ -202,7 +202,9 @@ function makeSoldier(color=0x28313a){
 const player=makeSoldier(0x344154);player.position.set(4,0,8);world.add(player);
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
-enemies[1].position.set(-12,6.35,-13);world.add(enemies[1]);
+enemies[1].position.set(-12,0,-13);world.add(enemies[1]);
+enemies[0].userData.role='soldier';
+enemies[1].userData.role='sniper';
 
 const cars=[];
 const vehicleSmoke=[];
@@ -520,23 +522,114 @@ function addHealthBar(enemy){
  const hp=new THREE.Mesh(new THREE.PlaneGeometry(1.7,.10),new THREE.MeshBasicMaterial({color:0xff5264,side:THREE.DoubleSide}));
  bg.position.y=3.5;hp.position.set(0,3.5,.012);enemy.add(bg);enemy.add(hp);enemy.userData.hpBar=hp;
 }
-for(const e of enemies){e.userData.hp=3;e.userData.alive=true;addHealthBar(e)}
+for(const e of enemies){
+ e.userData.hp=e.userData.role==='sniper'?2.4:3;
+ e.userData.maxHp=e.userData.hp;
+ e.userData.alive=true;
+ e.userData.state='patrol';
+ e.userData.alertTimer=0;
+ e.userData.fireCd=Math.random()*.8;
+ e.userData.patrolAngle=Math.random()*Math.PI*2;
+ e.userData.home=e.position.clone();
+ e.userData.climb=null;
+ e.userData.targetLadder=null;
+ addHealthBar(e);
+}
 
+function enemyLineOfSight(e){
+ const a=e.position.clone();a.y+=1.55;
+ const b=player.position.clone();b.y+=1.5;
+ return !segmentHitsBuilding(a,b);
+}
+function moveEnemyGround(e,tx,tz,speed,dt){
+ const dx=tx-e.position.x,dz=tz-e.position.z,d=Math.hypot(dx,dz)||1;
+ const mx=dx/d,mz=dz/d;
+ const nx=e.position.x+mx*speed*dt,nz=e.position.z+mz*speed*dt;
+ let blockedMove=false;
+ for(const b of buildings){
+  const bx=Math.abs(nx-b.position.x),bz=Math.abs(nz-b.position.z);
+  if(bx<b.userData.w/2+.55&&bz<b.userData.d/2+.55){blockedMove=true;break}
+ }
+ if(!blockedMove){e.position.x=nx;e.position.z=nz}
+ e.rotation.y=Math.atan2(dx,dz);
+ const gait=Math.sin(t*9+e.position.x);
+ e.userData.legs[0].rotation.x=gait*.45;e.userData.legs[1].rotation.x=-gait*.45;
+}
+function nearestLadderForEnemy(e){
+ let best=null,bestD=Infinity;
+ for(const l of ladders){
+  const d=Math.hypot(e.position.x-l.x,e.position.z-l.z);
+  if(d<bestD){best=l;bestD=d}
+ }
+ return best;
+}
+function beginEnemyClimb(e,l){
+ e.userData.climb={ladder:l,t:0,total:1.55,startY:e.position.y,endY:buildings[l.building].userData.h+.45};
+ e.position.x=l.x;e.position.z=l.z+.25;e.userData.state='climb';
+}
+function updateEnemyClimb(e,dt){
+ const c=e.userData.climb;if(!c)return false;
+ c.t=Math.min(c.total,c.t+dt);
+ const p=c.t/c.total,ease=p*p*(3-2*p);
+ e.position.y=THREE.MathUtils.lerp(c.startY,c.endY,ease);
+ e.rotation.y=Math.PI;
+ const gait=Math.sin(c.t*15);
+ e.userData.legs[0].rotation.x=gait*.7;e.userData.legs[1].rotation.x=-gait*.7;
+ if(c.t>=c.total){e.position.y=c.endY;e.userData.climb=null;e.userData.state='attack'}
+ return true;
+}
+function enemyFire(e){
+ const origin=e.position.clone();origin.y+=1.75;
+ const target=player.position.clone();target.y+=1.4;
+ if(segmentHitsBuilding(origin,target))return;
+ const dir=target.sub(origin).normalize();
+ const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.7,6),new THREE.MeshBasicMaterial({color:e.userData.role==='sniper'?0xff5c5c:0xff9b5c,transparent:true,opacity:.9}));
+ mesh.rotation.x=Math.PI/2;mesh.position.copy(origin);world.add(mesh);
+ bullets.push({mesh,dir,speed:e.userData.role==='sniper'?48:35,life:1.2,damage:0,color:0xff6b5c,enemyShot:true});
+ spawnMuzzle(origin);
+}
 function updateEnemies3D(dt){
  for(const e of enemies){
   if(!e.userData.alive)continue;
+  if(updateEnemyClimb(e,dt))continue;
+
   const dx=player.position.x-e.position.x,dz=player.position.z-e.position.z,d=Math.hypot(dx,dz)||1;
-  e.rotation.y=Math.atan2(dx,dz);
-  if(d>8&&e.position.y<2){
-   const side=Math.sin(t*1.8+e.position.x)*.55;
-   const fx=dx/d,fz=dz/d,sx=-fz,sz=fx;
-   const mx=fx*.7+sx*side,mz=fz*.7+sz*side;
-   const nx=e.position.x+mx*2.1*dt,nz=e.position.z+mz*2.1*dt;
-   if(!blocked(nx,nz)){e.position.x=nx;e.position.z=nz}
-   const gait=Math.sin(t*8+e.position.x);
-   e.userData.legs[0].rotation.x=gait*.4;e.userData.legs[1].rotation.x=-gait*.4;
+  const los=enemyLineOfSight(e);
+  e.userData.fireCd=Math.max(0,e.userData.fireCd-dt);
+
+  if(los&&d<34){e.userData.alertTimer=4;e.userData.state='alert'}
+  else e.userData.alertTimer=Math.max(0,e.userData.alertTimer-dt);
+
+  if(e.userData.role==='sniper'){
+   if(e.position.y<2){
+    if(!e.userData.targetLadder)e.userData.targetLadder=nearestLadderForEnemy(e);
+    const l=e.userData.targetLadder;
+    if(l){
+     const ld=Math.hypot(e.position.x-l.x,e.position.z-l.z);
+     if(ld>1.1)moveEnemyGround(e,l.x,l.z,2.25,dt);
+     else beginEnemyClimb(e,l);
+    }
+   }else{
+    e.rotation.y=Math.atan2(dx,dz);
+    if(los&&d<42&&e.userData.fireCd<=0){enemyFire(e);e.userData.fireCd=1.65+Math.random()*.8}
+   }
+  }else{
+   if(e.userData.alertTimer>0){
+    if(los&&d<11){
+     e.rotation.y=Math.atan2(dx,dz);
+     if(e.userData.fireCd<=0){enemyFire(e);e.userData.fireCd=.75+Math.random()*.45}
+    }else{
+     moveEnemyGround(e,player.position.x,player.position.z,2.4,dt);
+    }
+   }else{
+    const r=5.5;
+    const tx=e.userData.home.x+Math.cos(t*.32+e.userData.patrolAngle)*r;
+    const tz=e.userData.home.z+Math.sin(t*.32+e.userData.patrolAngle)*r;
+    moveEnemyGround(e,tx,tz,1.15,dt);
+    e.userData.state='patrol';
+   }
   }
-  if(e.userData.hpBar)e.userData.hpBar.scale.x=Math.max(0,e.userData.hp/3);
+  if(e.userData.hpBar)e.userData.hpBar.scale.x=Math.max(0,e.userData.hp/e.userData.maxHp);
  }
 }
 
@@ -556,6 +649,16 @@ function updateBullets3D(dt){
   const old=b.mesh.position.clone();
   const next=old.clone().addScaledVector(b.dir,b.speed*dt);
   b.life-=dt;
+
+  if(b.enemyShot){
+   const center=player.position.clone();center.y+=1.4;
+   const seg=next.clone().sub(old),len2=seg.lengthSq();
+   let q=old.clone();
+   if(len2>0){const th=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);q=old.clone().addScaledVector(seg,th)}
+   if(q.distanceTo(center)<.9){spawnImpact(center,0xff5544,5);b.life=0;statusEl.textContent='Você foi atingido • inimigos agora atacam com linha de visão';continue}
+   if(segmentHitsBuilding(old,next)){b.mesh.position.copy(next);spawnImpact(next,b.color,4);b.life=0;continue}
+   b.mesh.position.copy(next);continue;
+  }
 
   let enemyHit=null,enemyHitDist=Infinity;
   for(const e of enemies){
