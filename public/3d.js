@@ -18,6 +18,11 @@ const aimKnob=document.getElementById('aimKnob');
 const actionBtn=document.getElementById('actionBtn');
 const mobileMove={x:0,y:0,active:false};
 const mobileAim={x:0,y:0,active:false,firing:false};
+let cameraYaw=0;
+let cameraPitch=.38;
+let cameraRightDrag=false;
+let cameraLastX=0;
+let cameraLastY=0;
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true;
@@ -605,12 +610,33 @@ function fire(){
  updateHud();
 }
 
+addEventListener('contextmenu',e=>e.preventDefault());
+addEventListener('pointerdown',e=>{
+ if(e.button===2){
+  cameraRightDrag=true;
+  cameraLastX=e.clientX;
+  cameraLastY=e.clientY;
+  return;
+ }
+ if(e.button===0){
+  updateAimFromPointer();
+  fire();
+ }
+});
+addEventListener('pointerup',e=>{if(e.button===2)cameraRightDrag=false});
 addEventListener('pointermove',e=>{
+ if(cameraRightDrag){
+  const dx=e.clientX-cameraLastX,dy=e.clientY-cameraLastY;
+  cameraLastX=e.clientX;
+  cameraLastY=e.clientY;
+  cameraYaw-=dx*.006;
+  cameraPitch=THREE.MathUtils.clamp(cameraPitch+dy*.004,-.05,.95);
+  return;
+ }
  pointer.x=e.clientX/innerWidth*2-1;
  pointer.y=-(e.clientY/innerHeight)*2+1;
  updateAimFromPointer();
 });
-addEventListener('pointerdown',e=>{if(e.button===0){updateAimFromPointer();fire()}});
 
 function addHealthBar(enemy){
  const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.16),new THREE.MeshBasicMaterial({color:0x301318,side:THREE.DoubleSide}));
@@ -927,25 +953,23 @@ function updateBullets3D(dt){
 
 function updateThirdPersonCamera(dt,targetObj){
  const focus=targetObj||player;
- const yaw=focus.rotation.y||0;
  const isCar=targetObj&&targetObj!==player;
  const dist=isCar?12.5:9.2;
- const height=isCar?6.8:5.6;
- const lookHeight=isCar?1.3:1.8;
+ const lookHeight=isCar?1.35:1.8;
 
- const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+ const cp=Math.cos(cameraPitch),sp=Math.sin(cameraPitch);
+ const orbit=new THREE.Vector3(
+  Math.sin(cameraYaw)*cp,
+  sp,
+  Math.cos(cameraYaw)*cp
+ ).multiplyScalar(dist);
+
  const desired=focus.position.clone()
-   .add(new THREE.Vector3(0,height,0))
-   .addScaledVector(forward,-dist);
+   .add(new THREE.Vector3(0,lookHeight+1.2,0))
+   .sub(orbit);
 
- // leve deslocamento lateral para dar sensação mais GTA
- const right=new THREE.Vector3(forward.z,0,-forward.x);
- desired.addScaledVector(right,isCar?.8:.55);
-
- camera.position.lerp(desired,1-Math.exp(-dt*6.5));
- const lookAt=focus.position.clone()
-   .add(new THREE.Vector3(0,lookHeight,0))
-   .addScaledVector(forward,isCar?3.8:2.8);
+ camera.position.lerp(desired,1-Math.exp(-dt*7));
+ const lookAt=focus.position.clone().add(new THREE.Vector3(0,lookHeight,0));
  camera.lookAt(lookAt);
 }
 let last=performance.now();
