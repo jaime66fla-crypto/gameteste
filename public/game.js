@@ -129,6 +129,12 @@ refreshSoundButton();
 addEventListener("pointerdown",()=>ensureAudio(),{once:true});
 addEventListener("keydown",()=>ensureAudio(),{once:true});
 
+// Shared street geometry keeps asphalt, crossings, foliage and minimap aligned.
+const streets={horizontal:[440,950,1450],vertical:[580,1145,1705,2245],width:160,sidewalk:24};
+function inStreet(x,y,padding=0){
+ const half=streets.width/2+padding;
+ return streets.horizontal.some(c=>Math.abs(y-c)<half)||streets.vertical.some(c=>Math.abs(x-c)<half);
+}
 const remotePlayers=new Map();
 const ranking=new Map();
 const enemies=[];
@@ -198,11 +204,12 @@ const traffic=[
 const targets=[
 {x:860,y:440,r:20,hp:3},{x:1420,y:950,r:20,hp:3},{x:2020,y:1450,r:20,hp:3},{x:2420,y:950,r:20,hp:3},{x:580,y:1450,r:20,hp:3}
 ];
-const trees=[];for(let x=470;x<W;x+=250)for(let y=330;y<H;y+=330)trees.push({x:x+Math.random()*50,y:y+Math.random()*55});
+const trees=[];for(let x=470;x<W;x+=250)for(let y=330;y<H;y+=330){const t={x:x+Math.random()*50,y:y+Math.random()*55};if(!inStreet(t.x,t.y,28)&&!collides(t.x,t.y,20))trees.push(t);}
 const bushes=[];
 for(let i=0;i<34;i++){
  let x,y,tries=0;
- do{x=110+Math.random()*(W-220);y=110+Math.random()*(H-220);tries++}while(collides(x,y,34)&&tries<80);
+ do{x=110+Math.random()*(W-220);y=110+Math.random()*(H-220);tries++}while((collides(x,y,34)||inStreet(x,y,48))&&tries<80);
+ if(collides(x,y,34)||inStreet(x,y,48))continue;
  bushes.push({x,y,r:34+Math.random()*12});
 }
 function randomOpenPoint(){let x=500,y=440,tries=0;do{x=90+Math.random()*(W-180);y=90+Math.random()*(H-180);tries++}while((collides(x,y,30)||Math.hypot(x-player.x,y-player.y)<180)&&tries<100);return{x,y}}
@@ -1073,7 +1080,8 @@ function update(dt){
 }
 function road(){
  ctx.fillStyle="#101923";ctx.fillRect(0,0,W,H);
- const roadsY=[390,900,1400],roadsX=[535,1100,1660,2200];
+ const width=streets.width,swSize=streets.sidewalk;
+ const roadsY=streets.horizontal.map(c=>c-width/2),roadsX=streets.vertical.map(c=>c-width/2);
 
  // Ground blocks: blue-gray concrete with subtle grime.
  ctx.fillStyle="#25303b";ctx.fillRect(0,0,W,H);
@@ -1090,35 +1098,35 @@ function road(){
  // Sidewalk slabs around roads.
  const sw="#4d5661";
  ctx.fillStyle=sw;
- for(const y of roadsY){ctx.fillRect(0,y-24,W,24);ctx.fillRect(0,y+100,W,24)}
- for(const x of roadsX){ctx.fillRect(x-24,0,24,H);ctx.fillRect(x+90,0,24,H)}
+ for(const y of roadsY){ctx.fillRect(0,y-swSize,W,swSize);ctx.fillRect(0,y+width,W,swSize)}
+ for(const x of roadsX){ctx.fillRect(x-swSize,0,swSize,H);ctx.fillRect(x+width,0,swSize,H)}
  ctx.strokeStyle="rgba(205,214,221,.22)";ctx.lineWidth=1;
  for(const y of roadsY){
-  for(let x=0;x<W;x+=54){ctx.beginPath();ctx.moveTo(x,y-24);ctx.lineTo(x,y);ctx.moveTo(x,y+100);ctx.lineTo(x,y+124);ctx.stroke()}
+  for(let x=0;x<W;x+=54){ctx.beginPath();ctx.moveTo(x,y-swSize);ctx.lineTo(x,y);ctx.moveTo(x,y+width);ctx.lineTo(x,y+width+swSize);ctx.stroke()}
  }
  for(const x of roadsX){
-  for(let y=0;y<H;y+=54){ctx.beginPath();ctx.moveTo(x-24,y);ctx.lineTo(x,y);ctx.moveTo(x+90,y);ctx.lineTo(x+114,y);ctx.stroke()}
+  for(let y=0;y<H;y+=54){ctx.beginPath();ctx.moveTo(x-swSize,y);ctx.lineTo(x,y);ctx.moveTo(x+width,y);ctx.lineTo(x+width+swSize,y);ctx.stroke()}
  }
 
  // Curbs.
  ctx.strokeStyle="#9ba3a8";ctx.lineWidth=2;ctx.globalAlpha=.72;
- for(const y of roadsY){ctx.beginPath();ctx.moveTo(0,y-2);ctx.lineTo(W,y-2);ctx.moveTo(0,y+102);ctx.lineTo(W,y+102);ctx.stroke()}
- for(const x of roadsX){ctx.beginPath();ctx.moveTo(x-2,0);ctx.lineTo(x-2,H);ctx.moveTo(x+92,0);ctx.lineTo(x+92,H);ctx.stroke()}
+ for(const y of roadsY){ctx.beginPath();ctx.moveTo(0,y-2);ctx.lineTo(W,y-2);ctx.moveTo(0,y+width+2);ctx.lineTo(W,y+width+2);ctx.stroke()}
+ for(const x of roadsX){ctx.beginPath();ctx.moveTo(x-2,0);ctx.lineTo(x-2,H);ctx.moveTo(x+width+2,0);ctx.lineTo(x+width+2,H);ctx.stroke()}
  ctx.globalAlpha=1;
 
  // Dark asphalt.
- const asphalt=ctx.createLinearGradient(0,390,0,500);
+ const asphalt=ctx.createLinearGradient(0,roadsY[0],0,roadsY[0]+width);
  asphalt.addColorStop(0,"#1c2330");asphalt.addColorStop(.5,"#28303b");asphalt.addColorStop(1,"#171e28");
  ctx.fillStyle=asphalt;
- for(const y of roadsY)ctx.fillRect(0,y,W,100);
- for(const x of roadsX)ctx.fillRect(x,0,90,H);
+ for(const y of roadsY)ctx.fillRect(0,y,W,width);
+ for(const x of roadsX)ctx.fillRect(x,0,width,H);
 
  // Asphalt aggregate/noise.
  ctx.save();ctx.globalAlpha=.22;
  for(let i=0;i<1050;i++){
   const horiz=i%2===0,lane=horiz?roadsY[(i*7)%3]:roadsX[(i*11)%4];
-  const px=horiz?((i*137)%W):lane+((i*19)%84)+3;
-  const py=horiz?lane+((i*23)%94)+3:((i*149)%H);
+  const px=horiz?((i*137)%W):lane+((i*19)%(width-6))+3;
+  const py=horiz?lane+((i*23)%(width-6))+3:((i*149)%H);
   ctx.fillStyle=i%5===0?"#74808a":"#090d12";
   ctx.fillRect(px,py,1+(i%2),1);
  }
@@ -1126,26 +1134,38 @@ function road(){
 
  // Faded lane markers.
  ctx.strokeStyle="rgba(190,166,76,.68)";ctx.lineWidth=3;ctx.setLineDash([24,22]);ctx.beginPath();
- [440,950,1450].forEach(y=>{ctx.moveTo(0,y);ctx.lineTo(W,y)});
- [580,1145,1705,2245].forEach(x=>{ctx.moveTo(x,0);ctx.lineTo(x,H)});
+ for(const y of streets.horizontal){
+  let from=0;
+  for(const x of streets.vertical){ctx.moveTo(from,y);ctx.lineTo(x-width/2-8,y);from=x+width/2+8;}
+  ctx.moveTo(from,y);ctx.lineTo(W,y);
+ }
+ for(const x of streets.vertical){
+  let from=0;
+  for(const y of streets.horizontal){ctx.moveTo(x,from);ctx.lineTo(x,y-width/2-8);from=y+width/2+8;}
+  ctx.moveTo(x,from);ctx.lineTo(x,H);
+ }
  ctx.stroke();ctx.setLineDash([]);
 
- // Crosswalks.
+ // Crossings span both lanes, outside each clear intersection.
  ctx.fillStyle="rgba(218,220,214,.56)";
- const crossings=[[620,390],[1185,900],[1745,1400],[2200,1018]];
- for(const [cx,cy] of crossings){for(let k=-4;k<=4;k++)ctx.fillRect(cx+k*10,cy+7,6,34)}
+ for(const x of streets.vertical)for(const y of streets.horizontal){
+  for(let k=-width/2+12;k<width/2-6;k+=14){
+   ctx.fillRect(x+k,y-width/2-30,7,24);
+   ctx.fillRect(x+width/2+6,y+k,24,7);
+  }
+ }
 
  // Patches, cracks and worn asphalt.
  ctx.fillStyle="rgba(5,9,13,.22)";
  for(let i=0;i<24;i++){
-  const x=80+(i*223)%2660,y=roadsY[i%3]+14+(i*29)%68;
+  const x=80+(i*223)%2660,y=roadsY[i%3]+14+(i*29)%(width-28);
   ctx.beginPath();ctx.ellipse(x,y,16+(i%4)*8,5+(i%3)*3,.18,0,Math.PI*2);ctx.fill();
  }
  ctx.strokeStyle="rgba(4,8,11,.86)";ctx.lineWidth=1.6;
  for(let i=0;i<52;i++){
   const horiz=i%3!==0;
-  const x=horiz?50+(i*157)%2700:roadsX[i%4]+12+((i*13)%62);
-  const y=horiz?roadsY[i%3]+12+((i*31)%74):40+(i*151)%1800;
+  const x=horiz?50+(i*157)%2700:roadsX[i%4]+12+((i*13)%(width-24));
+  const y=horiz?roadsY[i%3]+12+((i*31)%(width-24)):40+(i*151)%1800;
   ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+10,y-7);ctx.lineTo(x+21,y+2);ctx.lineTo(x+31,y-5);ctx.stroke();
   if(i%4===0){ctx.beginPath();ctx.moveTo(x+14,y-4);ctx.lineTo(x+10,y+7);ctx.stroke()}
  }
@@ -1687,6 +1707,10 @@ function hud(){
  // Smaller minimap.
  const mw=132,mh=82,mx=canvas.width-mw-18,my=canvas.height-mh-18;
  ctx.fillStyle="#061018d0";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";
+ ctx.fillStyle="#202c38";
+ for(const y of streets.horizontal)ctx.fillRect(mx,my+(y-streets.width/2)/H*mh,mw,streets.width/H*mh);
+ for(const x of streets.vertical)ctx.fillRect(mx+(x-streets.width/2)/W*mw,my,streets.width/W*mw,mh);
+ ctx.fillStyle="#344048";
  buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));
  if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,3,0,Math.PI*2);ctx.fill()}
  ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,3.3,0,Math.PI*2);ctx.fill();
@@ -1715,7 +1739,7 @@ function drawWorldLighting(){
 
  ctx.save();ctx.globalCompositeOperation="screen";
  // Street lamps at intersections and road edges.
- const lamps=[[625,360],[790,360],[625,870],[1190,870],[1740,1370],[2210,990],[1320,1370],[2310,360]];
+ const lamps=streets.vertical.flatMap(x=>streets.horizontal.map(y=>[x+streets.width/2+12,y-streets.width/2-12]));
  for(const [x,y] of lamps){
   ctx.fillStyle="#202a34";ctx.fillRect(x-2,y-2,4,34);ctx.fillStyle="#b7c0c8";ctx.fillRect(x-7,y-4,14,4);
   const cone=ctx.createRadialGradient(x,y+18,2,x,y+45,105);cone.addColorStop(0,"rgba(255,213,154,.38)");cone.addColorStop(.45,"rgba(255,165,92,.13)");cone.addColorStop(1,"rgba(255,140,70,0)");
