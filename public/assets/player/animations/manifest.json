@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "frameSize": 96,
+  "frameCount": 8,
+  "directions": [
+    "east",
+    "south-east",
+    "south",
+    "south-west",
+    "west",
+    "north-west",
+    "north",
+    "north-east"
+  ],
+  "animations": {
+    "walk": {
+      "1": {
+        "file": "walk-south-east.png",
+        "fps": 10
+      },
+      "0": {
+        "file": "walk-east.png",
+        "fps": 10
+      },
+      "2": {
+        "file": "walk-south.png",
+        "fps": 10
+      },
+      "3": {
+        "file": "walk-south-west.png",
+        "fps": 10
+      },
+      "4": {
+        "file": "walk-west.png",
+        "fps": 10
+      },
+      "5": {
+        "file": "walk-north-west.png",
+        "fps": 10
+      },
+      "6": {
+        "file": "walk-north.png",
+        "fps": 10
+      },
+      "7": {
+        "file": "walk-north-east.png",
+        "fps": 10
+      }
+    },
+    "run": {
+      "1": {
+        "file": "run-south-east.png",
+        "fps": 14
+      },
+      "0": {
+        "file": "run-east.png",
+        "fps": 14
+      },
+      "2": {
+        "file": "run-south.png",
+        "fps": 14
+      },
+      "3": {
+        "file": "run-south-west.png",
+        "fps": 14
+      },
+      "4": {
+        "file": "run-west.png",
+        "fps": 14
+      },
+      "5": {
+        "file": "run-north-west.png",
+        "fps": 14
+      },
+      "6": {
+        "file": "run-north.png",
+        "fps": 14
+      },
+      "7": {
+        "file": "run-north-east.png",
+        "fps": 14
+      }
+    }
+  }
+}
