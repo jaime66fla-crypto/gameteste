@@ -220,7 +220,7 @@ function makeSoldier(color=0x28313a){
  g.userData.legs=legs;g.userData.gun=gun;g.userData.weaponParts={receiver,barrel};return g;
 }
 
-const player=makeSoldier(0x344154);player.position.set(4,0,8);world.add(player);
+const player=makeSoldier(0x344154);player.scale.setScalar(.8);player.position.set(4,0,8);world.add(player);
 player.userData.hp=100;player.userData.maxHp=100;
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
@@ -600,7 +600,7 @@ function fire(){
  ammo.mag--;
  shotCooldown=weapon.cooldown;
  const origin=new THREE.Vector3();
- player.getWorldPosition(origin);origin.y+=1.78;
+ player.getWorldPosition(origin);origin.y+=1.45;
  const forward=new THREE.Vector3(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y));
  origin.addScaledVector(forward,1.05);
  const target=aimPoint.clone();
@@ -813,7 +813,7 @@ function updateBossMissiles(dt){
 }
 function enemyFire(e){
  const origin=e.position.clone();origin.y+=1.75;
- const target=player.position.clone();target.y+=1.4;
+ const target=player.position.clone();target.y+=1.15;
  if(segmentHitsBuilding(origin,target))return;
  const dir=target.sub(origin).normalize();
  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.7,6),new THREE.MeshBasicMaterial({color:e.userData.role==='sniper'?0xff5c5c:0xff9b5c,transparent:true,opacity:.9}));
@@ -901,7 +901,7 @@ function updateBullets3D(dt){
   b.life-=dt;
 
   if(b.enemyShot){
-   const center=player.position.clone();center.y+=1.4;
+   const center=player.position.clone();center.y+=1.15;
    const seg=next.clone().sub(old),len2=seg.lengthSq();
    let q=old.clone();
    if(len2>0){const th=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);q=old.clone().addScaledVector(seg,th)}
@@ -954,8 +954,8 @@ function updateBullets3D(dt){
 function updateThirdPersonCamera(dt,targetObj){
  const focus=targetObj||player;
  const isCar=targetObj&&targetObj!==player;
- const dist=isCar?12.5:9.2;
- const lookHeight=isCar?1.35:1.8;
+ const dist=isCar?12.5:8.6;
+ const lookHeight=isCar?1.35:1.45;
 
  const horizontal=Math.cos(cameraPitch)*dist;
  const height=Math.max(2.2,Math.sin(cameraPitch)*dist+(isCar?3.6:3.0));
@@ -994,7 +994,7 @@ function frame(now){
   player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8
  }
  shotCooldown=Math.max(0,shotCooldown-dt);
- if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.5,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
+ if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.2,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
  if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
