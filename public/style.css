@@ -389,3 +389,29 @@ body.modal-open{overflow:hidden}
 }
 .weapon-card:hover .weapon-art{transform:translateY(-2px);border-color:#4e6472}
 .weapon-card:hover .weapon-art:after{filter:drop-shadow(0 0 10px var(--accentGun))}
+
+.weapon-card p{margin-bottom:14px}
+.weapon-stat-row{
+  display:grid;
+  grid-template-columns:auto auto;
+  align-items:center;
+  gap:5px 10px;
+  margin-top:9px;
+  color:#607789;
+  font-size:9px;
+  text-transform:uppercase;
+}
+.weapon-stat-row>span{font-weight:800;letter-spacing:.05em}
+.weapon-stat-row>strong{
+  justify-self:end;
+  color:#dce8ef;
+  font-size:10px;
+  letter-spacing:.03em;
+}
+.weapon-stat-row>b{
+  grid-column:1/-1;
+  height:5px;
+  border-radius:5px;
+  background:linear-gradient(90deg,var(--accent2) var(--v),#18303e var(--v));
+  box-shadow:0 0 10px #24d9ff14;
+}
