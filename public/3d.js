@@ -239,23 +239,26 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  player.add(model);
  player.userData.avatar=model;
  player.userData.avatarBones={};
+ const mixamoMap={
+  'mixamorig:leftarm':'upperArmL',
+  'mixamorig:rightarm':'upperArmR',
+  'mixamorig:leftforearm':'foreArmL',
+  'mixamorig:rightforearm':'foreArmR',
+  'mixamorig:leftupleg':'thighL',
+  'mixamorig:rightupleg':'thighR',
+  'mixamorig:leftleg':'calfL',
+  'mixamorig:rightleg':'calfR',
+  'mixamorig:spine':'spine',
+  'mixamorig:spine1':'spine1',
+  'mixamorig:spine2':'spine2',
+  'mixamorig:leftshoulder':'shoulderL',
+  'mixamorig:rightshoulder':'shoulderR'
+ };
  model.traverse(function(child){
-  if(child.isBone){
-   const n=(child.name||'').toLowerCase();
-   const side=n.includes('left')||n.includes('_l')||n.endsWith('l')?'left':n.includes('right')||n.includes('_r')||n.endsWith('r')?'right':'';
-   const save=(key)=>{player.userData.avatarBones[key]={bone:child,base:child.rotation.clone()}};
-   if((n.includes('upperarm')||n.includes('upper_arm')||n.includes('arm'))&&!n.includes('fore')&&!n.includes('hand')){
-    if(side==='left')save('upperArmL'); else if(side==='right')save('upperArmR');
-   }else if(n.includes('forearm')||n.includes('lowerarm')){
-    if(side==='left')save('foreArmL'); else if(side==='right')save('foreArmR');
-   }else if(n.includes('thigh')||n.includes('upleg')||n.includes('upperleg')){
-    if(side==='left')save('thighL'); else if(side==='right')save('thighR');
-   }else if(n.includes('calf')||n.includes('leg')||n.includes('lowerleg')){
-    if(side==='left')save('calfL'); else if(side==='right')save('calfR');
-   }else if(n.includes('spine')&&!player.userData.avatarBones.spine){
-    save('spine');
-   }
-  }
+  if(!child.isBone)return;
+  const n=(child.name||'').toLowerCase();
+  const key=mixamoMap[n];
+  if(key)player.userData.avatarBones[key]={bone:child,base:child.rotation.clone()};
  });
  if(model.animations&&model.animations.length>0){
   const mixer=new THREE.AnimationMixer(model);
@@ -315,11 +318,13 @@ function updateProceduralAvatar(dt,moving=false,running=false){
   const o=bones[key];if(!o)return;
   o.bone.rotation[axis]=THREE.MathUtils.lerp(o.bone.rotation[axis],o.base[axis]+offset+val,1-Math.exp(-dt*10));
  };
- // Corrige a T-pose: braços relaxados junto ao corpo.
- apply('upperArmL','z',moving?s*.18:0,-1.02);
- apply('upperArmR','z',moving?-s*.18:0,1.02);
- apply('upperArmL','x',moving?-s*.34:0,.08);
- apply('upperArmR','x',moving?s*.34:0,.08);
+ // Mixamo: converte a T-pose em postura relaxada e adiciona balanço de caminhada.
+ apply('shoulderL','z',0,-.12);
+ apply('shoulderR','z',0,.12);
+ apply('upperArmL','z',moving?s*.14:0,-1.18);
+ apply('upperArmR','z',moving?-s*.14:0,1.18);
+ apply('upperArmL','x',moving?-s*.30:0,.10);
+ apply('upperArmR','x',moving?s*.30:0,.10);
  apply('foreArmL','x',moving?Math.max(0,-s)*.28:.12,.18);
  apply('foreArmR','x',moving?Math.max(0,s)*.28:.12,.18);
  apply('thighL','x',s*amp,0);
