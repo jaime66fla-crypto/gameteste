@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js';
+import { FBXLoader } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/loaders/FBXLoader.js';
 
 const canvas=document.getElementById('view');
 const statusEl=document.getElementById('status');
@@ -96,7 +97,7 @@ const buildingSpots=sourceBuildings.map(([x,y,w,d])=>[
 const buildings=[];
 const ladders=[];
 const buildingVisuals=[];
-for(let i=0;i<buildingSpots.length;i++){
+for(let i=0;i&lt;buildingSpots.length;i++){
  const [x,y,w,d]=buildingSpots[i]; const h=5.5+(i%4)*.85;
  const facadeColor=i%4===0?0x626b68:i%4===1?0x737773:i%4===2?0x666c72:0x756d63;
  const b=box(w,h,d,facadeColor,x,y);b.userData={index:i,w,h,d};buildings.push(b);
@@ -106,7 +107,7 @@ for(let i=0;i<buildingSpots.length;i++){
 
  // Rooftop props: HVAC, ducts, water tanks and vents vary per building.
  const propCount=1+(i%3);
- for(let k=0;k<propCount;k++){
+ for(let k=0;k&lt;propCount;k++){
   const px=x-w*.24+k*Math.max(2.2,w*.22),pz=y+(k%2?d*.16:-d*.14);
   const ac=box(1.7+.2*(k%2),.8+.15*(i%2),1.4,0x41494a,px,pz,h+.42);visual.extras.push(ac);
   const vent=new THREE.Mesh(new THREE.CylinderGeometry(.26,.32,1.05,10),mat(0x667071,.55,.2));vent.position.set(px+.65,h+1.25,pz-.45);vent.castShadow=true;world.add(vent);visual.extras.push(vent);
@@ -130,7 +131,7 @@ for(let i=0;i<buildingSpots.length;i++){
  for(const side of [-1,1]){
   const z=y+side*(d/2+.06);
   const count=Math.max(2,Math.floor(w/3.2));
-  for(let k=0;k<count;k++){
+  for(let k=0;k&lt;count;k++){
    const wx=x-w*.36+(count===1?0:k*(w*.72/(count-1)));
    const win=new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.45,w/count*.58),1.05,.10),winMat);
    win.position.set(wx,3.0,z);world.add(win);visual.extras.push(win);
@@ -139,7 +140,7 @@ for(let i=0;i<buildingSpots.length;i++){
  for(const side of [-1,1]){
   const xx=x+side*(w/2+.055);
   const count=Math.max(2,Math.floor(d/3.3));
-  for(let k=0;k<count;k++){
+  for(let k=0;k&lt;count;k++){
    const wz=y-d*.34+(count===1?0:k*(d*.68/(count-1)));
    const win=new THREE.Mesh(new THREE.BoxGeometry(.10,1.0,Math.min(1.35,d/count*.58)),winMat);
    win.position.set(xx,3.0,wz);world.add(win);visual.extras.push(win);
@@ -148,13 +149,13 @@ for(let i=0;i<buildingSpots.length;i++){
 
  const ladder=new THREE.Group();
  for(const sx of [-.42,.42]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.11,h+1,.11),mat(0xaab0a7,.55,.15));rail.position.set(sx,(h+1)/2,0);ladder.add(rail)}
- for(let yy=.5;yy<h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(.98,.08,.09),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
+ for(let yy=.5;yy&lt;h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(.98,.08,.09),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
  ladder.position.set(x,0,y+d/2+.16);world.add(ladder);ladders.push({building:i,group:ladder,x,z:y+d/2+.16,h});
 }
 
 const stripeMat=mat(0xc9b34f,.8,0);
-for(const z of streetZ)for(let x=-MAP_W/2+3;x<MAP_W/2-2;x+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(2.7,.09,.16),stripeMat);s.position.set(x,.11,z);world.add(s)}
-for(const x of streetX)for(let z=-MAP_H/2+3;z<MAP_H/2-2;z+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(.16,.09,2.7),stripeMat);s.position.set(x,.11,z);world.add(s)}
+for(const z of streetZ)for(let x=-MAP_W/2+3;x&lt;MAP_W/2-2;x+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(2.7,.09,.16),stripeMat);s.position.set(x,.11,z);world.add(s)}
+for(const x of streetX)for(let z=-MAP_H/2+3;z&lt;MAP_H/2-2;z+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(.16,.09,2.7),stripeMat);s.position.set(x,.11,z);world.add(s)}
 
 function zoneLabel(text,x,z){
  const cv=document.createElement('canvas');cv.width=512;cv.height=96;
@@ -177,14 +178,14 @@ zoneLabel('PRAÇA',0,2.5);
 
 // Aeroporto / pista
 addZonePad(49,-41,38,15,0x3b4143);
-for(let x=34;x<65;x+=6){const s=new THREE.Mesh(new THREE.BoxGeometry(3,.10,.28),mat(0xe8e6ce,.75,0));s.position.set(x,.15,-41);world.add(s)}
+for(let x=34;x&lt;65;x+=6){const s=new THREE.Mesh(new THREE.BoxGeometry(3,.10,.28),mat(0xe8e6ce,.75,0));s.position.set(x,.15,-41);world.add(s)}
 box(11,4.2,6.5,0x59656a,61,-31);box(7,2.5,5,0x4c565b,45,-31);
 zoneLabel('AEROPORTO',49,-41);
 
 // Porto com água e docas
 addZonePad(-57,39,29,20,0x274e5c);
 for(const x of [-67,-60,-53,-46]){const dock=box(2,.45,12,0x715844,x,34,.08);dock.receiveShadow=true}
-for(let i=0;i<5;i++)box(3.2,1.6,2.2,i%2?0x7a4d3a:0x3f6674,-66+i*4.1,44,.05);
+for(let i=0;i&lt;5;i++)box(3.2,1.6,2.2,i%2?0x7a4d3a:0x3f6674,-66+i*4.1,44,.05);
 zoneLabel('PORTO',-57,39);
 
 // Distrito industrial
@@ -222,6 +223,39 @@ function makeSoldier(color=0x28313a){
 
 const player=makeSoldier(0x344154);player.scale.setScalar(.68);player.position.set(4,0,8);world.add(player);
 player.userData.hp=100;player.userData.maxHp=100;
+
+// Avatar loader for Erika Archer
+const fbxLoader=new FBXLoader();
+fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
+ model.traverse(function(child){
+  if(child.isMesh){child.castShadow=true;child.receiveShadow=true}
+ });
+ const bb=new THREE.Box3().setFromObject(model);
+ const height=bb.max.y-bb.min.y;
+ if(height>0){const s=2.05/height;model.scale.setScalar(s)}
+ const center=new THREE.Vector3();bb.getCenter(center);
+ model.position.set(-center.x,Math.max(0,-bb.min.y*model.scale.y),-center.z);
+ model.rotation.y=Math.PI;
+ player.add(model);
+ player.userData.avatar=model;
+ if(model.animations&&model.animations.length&gt;0){
+  const mixer=new THREE.AnimationMixer(model);
+  player.userData.avatarMixer=mixer;
+  player.userData.avatarActions={};
+  model.animations.forEach(function(clip){
+   const action=mixer.clipAction(clip);
+   player.userData.avatarActions[clip.name.toLowerCase()]=action;
+   action.play();
+  });
+ }
+ statusEl.textContent='Erika Archer carregada • avatar 3D ativo';
+ player.children.forEach(function(child){
+  if(child!==player.userData.avatar&&child.isMesh)child.visible=false;
+ });
+},undefined,function(){
+ statusEl.textContent='Avatar externo indisponível • usando personagem padrão';
+});
+
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
 enemies[1].position.set(-12,0,-13);world.add(enemies[1]);
@@ -251,7 +285,7 @@ function spawnVehicleSmoke(car,intensity=1){
  pos.y=.9;
  const smoke=new THREE.Mesh(
   smokeGeo,
-  new THREE.MeshBasicMaterial({color:intensity>1.4?0x202426:0x5a5f61,transparent:true,opacity:.34,depthWrite:false})
+  new THREE.MeshBasicMaterial({color:intensity&gt;1.4?0x202426:0x5a5f61,transparent:true,opacity:.34,depthWrite:false})
  );
  smoke.position.copy(pos);
  smoke.scale.setScalar(.65+Math.random()*.35);
@@ -267,19 +301,19 @@ function spawnVehicleSmoke(car,intensity=1){
 function updateVehicleSmoke(dt){
  for(const car of cars){
   const u=car.userData;
-  if(u.health<60){
+  if(u.health&lt;60){
    u.smokeTimer=(u.smokeTimer||0)-dt;
    const severity=THREE.MathUtils.clamp((60-u.health)/60,0,1);
    const interval=u.broken?.08:THREE.MathUtils.lerp(.34,.13,severity);
-   if(u.smokeTimer<=0){spawnVehicleSmoke(car,u.broken?1.8:1+severity);u.smokeTimer=interval}
+   if(u.smokeTimer&lt;=0){spawnVehicleSmoke(car,u.broken?1.8:1+severity);u.smokeTimer=interval}
   }
  }
- for(let i=vehicleSmoke.length-1;i>=0;i--){
+ for(let i=vehicleSmoke.length-1;i&gt;=0;i--){
   const p=vehicleSmoke[i];p.life-=dt;
   p.mesh.position.addScaledVector(p.drift,dt);
   const grow=1+p.grow*dt;p.mesh.scale.multiplyScalar(grow);
   p.mesh.material.opacity=Math.max(0,.34*(p.life/p.maxLife));
-  if(p.life<=0){world.remove(p.mesh);p.mesh.material.dispose();vehicleSmoke.splice(i,1)}
+  if(p.life&lt;=0){world.remove(p.mesh);p.mesh.material.dispose();vehicleSmoke.splice(i,1)}
  }
 }
 function makeCar(x,y,rot=0){
@@ -294,11 +328,11 @@ makeCar(-9,-33,0);makeCar(31,22,Math.PI/2);makeCar(51,-15,Math.PI/2);makeCar(-30
 let activeCar=null;
 function nearestCar(){
  let best=null,bestD=Infinity;
- for(const car of cars){const d=Math.hypot(player.position.x-car.position.x,player.position.z-car.position.z);if(d<2.8&&d<bestD){best=car;bestD=d}}
+ for(const car of cars){const d=Math.hypot(player.position.x-car.position.x,player.position.z-car.position.z);if(d&lt;2.8&&d&lt;bestD){best=car;bestD=d}}
  return best;
 }
 function toggleVehicle(){
- if(player.position.y>1||climbState)return false;
+ if(player.position.y&gt;1||climbState)return false;
  if(activeCar){
   const side=new THREE.Vector3(Math.cos(activeCar.rotation.y),0,-Math.sin(activeCar.rotation.y)).multiplyScalar(2.2);
   player.position.copy(activeCar.position).add(side);player.position.y=0;player.visible=true;activeCar=null;
@@ -309,14 +343,14 @@ function toggleVehicle(){
  return false;
 }
 function carBlocked(nx,nz){
- for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.userData.w/2+1.7&&dz<b.userData.d/2+1.15)return true}
+ for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx&lt;b.userData.w/2+1.7&&dz&lt;b.userData.d/2+1.15)return true}
  return false;
 }
 function damageCar(car,amount){
  const u=car.userData;
  u.health=Math.max(0,u.health-amount);
- if(u.health<=60&&!u.broken)statusEl.textContent='Veículo danificado • '+Math.ceil(u.health)+'% • fumaça no motor';
- if(u.health<=0){
+ if(u.health&lt;=60&&!u.broken)statusEl.textContent='Veículo danificado • '+Math.ceil(u.health)+'% • fumaça no motor';
+ if(u.health&lt;=0){
   u.broken=true;u.speed=0;
   u.body.material.color.setHex(0x242628);u.top.material.color.setHex(0x303437);
   statusEl.textContent='Veículo destruído • motor desligado • E para sair';
@@ -333,18 +367,18 @@ function updateVehicle(dt){
  if(!throttle)u.speed*=Math.pow(.22,dt);
  u.speed=THREE.MathUtils.clamp(u.speed,-6,max);
  const turnFactor=THREE.MathUtils.clamp(Math.abs(u.speed)/7,0,1);
- car.rotation.y+=steer*1.7*turnFactor*dt*(u.speed>=0?1:-1);
+ car.rotation.y+=steer*1.7*turnFactor*dt*(u.speed&gt;=0?1:-1);
  const fx=Math.sin(car.rotation.y),fz=Math.cos(car.rotation.y);
  const nx=car.position.x+fx*u.speed*dt,nz=car.position.z+fz*u.speed*dt;
  if(carBlocked(nx,nz)){
-  if(Math.abs(u.speed)>7)damageCar(car,Math.min(38,Math.abs(u.speed)*2.2));
+  if(Math.abs(u.speed)&gt;7)damageCar(car,Math.min(38,Math.abs(u.speed)*2.2));
   u.speed*=-.22;
  }else{car.position.x=nx;car.position.z=nz}
  for(const wheel of u.wheels)wheel.rotation.x-=u.speed*dt*2.6;
  for(const e of enemies){
-  if(!e.userData.alive||e.position.y>2)continue;
+  if(!e.userData.alive||e.position.y&gt;2)continue;
   const d=Math.hypot(e.position.x-car.position.x,e.position.z-car.position.z);
-  if(d<2.1&&Math.abs(u.speed)>4){e.userData.hp=0;e.userData.alive=false;e.visible=false;kills3D++;u.speed*=.72;statusEl.textContent='Atropelamento • Kills '+kills3D}
+  if(d&lt;2.1&&Math.abs(u.speed)&gt;4){e.userData.hp=0;e.userData.alive=false;e.visible=false;kills3D++;u.speed*=.72;statusEl.textContent='Atropelamento • Kills '+kills3D}
  }
  player.position.copy(car.position);player.position.y=0;player.rotation.y=car.rotation.y;
  return true;
@@ -355,14 +389,14 @@ function nearLadder(){
  let best=null,bestD=Infinity;
  for(const l of ladders){
   const d=Math.hypot(player.position.x-l.x,player.position.z-l.z);
-  if(d<1.6&&d<bestD){best=l;bestD=d}
+  if(d&lt;1.6&&d&lt;bestD){best=l;bestD=d}
  }
  return best;
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState)return false;
  const b=buildings[l.building];
- climbState={ladder:l,dir,t:0,total:1.35,startY:player.position.y,endY:dir==="up"?b.userData.h+.45:0};
+ climbState={ladder:l,dir,t:0,total:1.35,startY:player.position.y,endY:dir==='up'?b.userData.h+.45:0};
  player.position.x=l.x;player.position.z=l.z+.35;
  return true;
 }
@@ -374,13 +408,13 @@ function updateClimb(dt){
  player.rotation.y=Math.PI;
  const gait=Math.sin(s.t*16);
  player.userData.legs[0].rotation.x=gait*.7;player.userData.legs[1].rotation.x=-gait*.7;
- if(s.t>=s.total){player.position.y=s.endY;climbState=null}
+ if(s.t&gt;=s.total){player.position.y=s.endY;climbState=null}
  return true;
 }
 
 
 const keys=new Set();let t=0;
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y&lt;1)startClimb('up');else startClimb('down')}}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
 function bindStick(el,knob,state,onMove){
@@ -403,24 +437,24 @@ function bindStick(el,knob,state,onMove){
 bindStick(moveStick,moveKnob,mobileMove);
 bindStick(aimStick,aimKnob,mobileAim,state=>{
  const mag=Math.hypot(state.x,state.y);
- if(mag>.12){
+ if(mag&gt;.12){
   const ang=Math.atan2(state.x,-state.y);
   player.rotation.y=ang;
   const origin=player.position.clone();
   aimPoint.set(origin.x+Math.sin(ang)*20,origin.y+1.5,origin.z+Math.cos(ang)*20);
  }
- state.firing=mag>.58;
+ state.firing=mag&gt;.58;
 });
 actionBtn?.addEventListener('pointerdown',e=>{
  e.preventDefault();
- if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}
+ if(!toggleVehicle()){if(player.position.y&lt;1)startClimb('up');else startClimb('down')}
 });
 
 function onRoof(){
- if(player.position.y<1)return null;
+ if(player.position.y&lt;1)return null;
  for(const b of buildings){
   const dx=Math.abs(player.position.x-b.position.x),dz=Math.abs(player.position.z-b.position.z);
-  if(dx<b.userData.w/2-.45&&dz<b.userData.d/2-.45&&Math.abs(player.position.y-(b.userData.h+.45))<1)return b;
+  if(dx&lt;b.userData.w/2-.45&&dz&lt;b.userData.d/2-.45&&Math.abs(player.position.y-(b.userData.h+.45))&lt;1)return b;
  }
  return null;
 }
@@ -428,19 +462,19 @@ function blocked(nx,nz){
  const roof=onRoof();
  if(roof){
   const dx=Math.abs(nx-roof.position.x),dz=Math.abs(nz-roof.position.z);
-  return dx>roof.userData.w/2-.6||dz>roof.userData.d/2-.6;
+  return dx&gt;roof.userData.w/2-.6||dz&gt;roof.userData.d/2-.6;
  }
- for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.userData.w/2+.55&&dz<b.userData.d/2+.55)return true}
+ for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx&lt;b.userData.w/2+.55&&dz&lt;b.userData.d/2+.55)return true}
  return false;
 }
 function updateBuildingVisibility(){
- for(let i=0;i<buildings.length;i++){
+ for(let i=0;i&lt;buildings.length;i++){
   const b=buildings[i],v=buildingVisuals[i];
   const toPlayer=new THREE.Vector3(player.position.x-b.position.x,0,player.position.z-b.position.z);
   const toCamera=new THREE.Vector3(camera.position.x-b.position.x,0,camera.position.z-b.position.z);
-  const playerBehind=toPlayer.dot(toCamera)<0;
-  const near=Math.hypot(toPlayer.x,toPlayer.z)<Math.max(b.userData.w,b.userData.d)*1.15;
-  const fade=playerBehind&&near&&player.position.y<1.5;
+  const playerBehind=toPlayer.dot(toCamera)&lt;0;
+  const near=Math.hypot(toPlayer.x,toPlayer.z)&lt;Math.max(b.userData.w,b.userData.d)*1.15;
+  const fade=playerBehind&&near&&player.position.y&lt;1.5;
   const all=[v.body,...v.extras];
   for(const obj of all){
    if(!obj.material)continue;
@@ -452,7 +486,7 @@ function updateBuildingVisibility(){
 function bulletHitsBuilding(pos){
  for(const b of buildings){
   const dx=Math.abs(pos.x-b.position.x),dz=Math.abs(pos.z-b.position.z);
-  if(dx<b.userData.w/2&&dz<b.userData.d/2&&pos.y>=0&&pos.y<=b.userData.h+.6)return true;
+  if(dx&lt;b.userData.w/2&&dz&lt;b.userData.d/2&&pos.y&gt;=0&&pos.y&lt;=b.userData.h+.6)return true;
  }
  return false;
 }
@@ -464,6 +498,7 @@ function resize(){
 }
 addEventListener('resize',resize);resize();
 statusEl.textContent='PISTOLA • 1-4 troca arma • clique atira • E veículo/escada';
+
 
 
 
@@ -528,7 +563,7 @@ function spawnMuzzle(origin){
  flash.position.copy(origin);world.add(flash);muzzleFx.push({light,flash,t:.07});
 }
 function spawnImpact(pos,color=0xffd58a,count=5){
- for(let i=0;i<count;i++){
+ for(let i=0;i&lt;count;i++){
   const m=new THREE.Mesh(new THREE.SphereGeometry(.055,6,4),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.9}));
   m.position.copy(pos);world.add(m);
   impactFx.push({m,v:new THREE.Vector3((Math.random()-.5)*4,Math.random()*3.5,(Math.random()-.5)*4),t:.28});
@@ -536,15 +571,18 @@ function spawnImpact(pos,color=0xffd58a,count=5){
 }
 function updateWeaponFx(dt){
  for(const f of muzzleFx){f.t-=dt;f.flash.scale.multiplyScalar(1.12);f.flash.material.opacity=Math.max(0,f.t/.07);f.light.intensity=8*Math.max(0,f.t/.07)}
- for(let i=muzzleFx.length-1;i>=0;i--)if(muzzleFx[i].t<=0){scene.remove(muzzleFx[i].light);world.remove(muzzleFx[i].flash);muzzleFx.splice(i,1)}
+ for(let i=muzzleFx.length-1;i&gt;=0;i--)if(muzzleFx[i].t&lt;=0){scene.remove(muzzleFx[i].light);world.remove(muzzleFx[i].flash);muzzleFx.splice(i,1)}
  for(const p of impactFx){p.t-=dt;p.v.y-=8*dt;p.m.position.addScaledVector(p.v,dt);p.m.material.opacity=Math.max(0,p.t/.28)}
- for(let i=impactFx.length-1;i>=0;i--)if(impactFx[i].t<=0){world.remove(impactFx[i].m);impactFx.splice(i,1)}
+ for(let i=impactFx.length-1;i&gt;=0;i--)if(impactFx[i].t&lt;=0){world.remove(impactFx[i].m);impactFx.splice(i,1)}
 }
 
 function makeTracer(origin,target,weapon){
  const dir=target.clone().sub(origin).normalize();
  const spread=weapon.spread||0;
- dir.x+=(Math.random()-.5)*spread;dir.y+=(Math.random()-.5)*spread*.55;dir.z+=(Math.random()-.5)*spread;dir.normalize();
+ dir.x+=(Math.random()-.5)*spread;
+ dir.y+=(Math.random()-.5)*spread*.55;
+ dir.z+=(Math.random()-.5)*spread;
+ dir.normalize();
  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.9,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.95}));
  mesh.rotation.x=Math.PI/2;
  mesh.position.copy(origin);mesh.castShadow=false;world.add(mesh);
@@ -555,7 +593,7 @@ function topSurfaceAt(x,z){
  let y=0;
  for(const b of buildings){
   const dx=Math.abs(x-b.position.x),dz=Math.abs(z-b.position.z);
-  if(dx<=b.userData.w/2&&dz<=b.userData.d/2)y=Math.max(y,b.userData.h+.45);
+  if(dx&lt;=b.userData.w/2&&dz&lt;=b.userData.d/2)y=Math.max(y,b.userData.h+.45);
  }
  return y;
 }
@@ -565,7 +603,7 @@ function nearestAliveEnemyToRay(){
   if(!e.userData.alive)continue;
   const p=e.position.clone();p.y+=1.55;
   const d=raycaster.ray.distanceToPoint(p);
-  if(d<bestD){best=e;bestD=d}
+  if(d&lt;bestD){best=e;bestD=d}
  }
  return best;
 }
@@ -573,25 +611,26 @@ function updateAimFromPointer(){
  raycaster.setFromCamera(pointer,camera);
  const enemy=nearestAliveEnemyToRay();
  if(enemy){
-  aimPoint.copy(enemy.position);aimPoint.y+=1.55;
+  aimPoint.copy(enemy.position);
+  aimPoint.y+=1.55;
  }else{
   const roof=onRoof();
   const aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-(roof?roof.userData.h+.45:0));
   if(raycaster.ray.intersectPlane(aimPlane,aimPoint)){
    const surface=topSurfaceAt(aimPoint.x,aimPoint.z);
-   if(surface>aimPoint.y+.2)aimPoint.y=surface+.05;
+   if(surface&gt;aimPoint.y+.2)aimPoint.y=surface+.05;
   }
  }
  const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
- if(Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
+ if(Math.hypot(dx,dz)&gt;.01)player.rotation.y=Math.atan2(dx,dz);
 }
 
 function fire(){
- if(shotCooldown>0||climbState||activeCar)return;
+ if(shotCooldown&gt;0||climbState||activeCar)return;
  const weapon=weapons3D[currentWeapon];
  const ammo=ammoState[currentWeapon];
- if(ammo.mag<=0){
-  if(ammo.reserve<=0){statusEl.textContent='Sem munição • troque de arma';return}
+ if(ammo.mag&lt;=0){
+  if(ammo.reserve&lt;=0){statusEl.textContent='Sem munição • troque de arma';return}
   const size=currentWeapon==='pistol'?12:currentWeapon==='smg'?30:currentWeapon==='rifle'?20:8;
   const load=Math.min(size,ammo.reserve);ammo.mag=load;ammo.reserve-=load;updateHud();
   statusEl.textContent='Recarregado • '+weapon.label;
@@ -606,7 +645,7 @@ function fire(){
  const target=aimPoint.clone();
  spawnMuzzle(origin);
  recoilKick=Math.min(.55,recoilKick+weapon.recoil);
- for(let i=0;i<weapon.pellets;i++)makeTracer(origin,target,weapon);
+ for(let i=0;i&lt;weapon.pellets;i++)makeTracer(origin,target,weapon);
  updateHud();
 }
 
@@ -671,7 +710,7 @@ function moveEnemyGround(e,tx,tz,speed,dt){
  let blockedMove=false;
  for(const b of buildings){
   const bx=Math.abs(nx-b.position.x),bz=Math.abs(nz-b.position.z);
-  if(bx<b.userData.w/2+.55&&bz<b.userData.d/2+.55){blockedMove=true;break}
+  if(bx&lt;b.userData.w/2+.55&&bz&lt;b.userData.d/2+.55){blockedMove=true;break}
  }
  if(!blockedMove){e.position.x=nx;e.position.z=nz}
  e.rotation.y=Math.atan2(dx,dz);
@@ -682,7 +721,7 @@ function nearestLadderForEnemy(e){
  let best=null,bestD=Infinity;
  for(const l of ladders){
   const d=Math.hypot(e.position.x-l.x,e.position.z-l.z);
-  if(d<bestD){best=l;bestD=d}
+  if(d&lt;bestD){best=l;bestD=d}
  }
  return best;
 }
@@ -698,11 +737,11 @@ function updateEnemyClimb(e,dt){
  e.rotation.y=Math.PI;
  const gait=Math.sin(c.t*15);
  e.userData.legs[0].rotation.x=gait*.7;e.userData.legs[1].rotation.x=-gait*.7;
- if(c.t>=c.total){e.position.y=c.endY;e.userData.climb=null;e.userData.state='attack'}
+ if(c.t&gt;=c.total){e.position.y=c.endY;e.userData.climb=null;e.userData.state='attack'}
  return true;
 }
 function bossPhase(e){
- return e.userData.hp<=e.userData.maxHp*.5?2:1;
+ return e.userData.hp&lt;=e.userData.maxHp*.5?2:1;
 }
 function spawnBossMissile(e){
  const angle=Math.random()*Math.PI*2;
@@ -728,7 +767,7 @@ function spawnBossMissile(e){
 }
 function bossHitkillAt(pos){
  const target=activeCar?activeCar.position:player.position;
- if(Math.hypot(target.x-pos.x,target.z-pos.z)<=2.35){
+ if(Math.hypot(target.x-pos.x,target.z-pos.z)&lt;=2.35){
   if(activeCar){damageCar(activeCar,999);activeCar=null;player.visible=true}
   player.userData.hp=100;
   player.position.set(4,0,8);
@@ -737,7 +776,7 @@ function bossHitkillAt(pos){
  }
 }
 function spawnExplosionBurst(pos,scale=1){
- for(let i=0;i<24;i++){
+ for(let i=0;i&lt;24;i++){
   const m=new THREE.Mesh(
    new THREE.SphereGeometry(.08+Math.random()*.08,6,4),
    new THREE.MeshBasicMaterial({color:i%3===0?0xfff0a8:(i%2?0xff8a33:0xff3d20),transparent:true,opacity:.95})
@@ -764,16 +803,16 @@ function startBossDeathCutscene(){
  statusEl.textContent='GOLIAS DERROTADO • explosão final';
 }
 function updateBossDeathFx(dt){
- for(let i=bossDeathFx.length-1;i>=0;i--){
+ for(let i=bossDeathFx.length-1;i&gt;=0;i--){
   const f=bossDeathFx[i];f.t-=dt;
   if(f.mesh){
    f.v.y-=7*dt;f.mesh.position.addScaledVector(f.v,dt);
    f.mesh.scale.multiplyScalar(1+f.grow*dt);
    f.mesh.material.opacity=Math.max(0,f.t/f.max);
-   if(f.t<=0){world.remove(f.mesh);f.mesh.material.dispose();bossDeathFx.splice(i,1)}
+   if(f.t&lt;=0){world.remove(f.mesh);f.mesh.material.dispose();bossDeathFx.splice(i,1)}
   }else if(f.light){
    f.light.intensity=18*Math.max(0,f.t/f.max);
-   if(f.t<=0){scene.remove(f.light);bossDeathFx.splice(i,1)}
+   if(f.t&lt;=0){scene.remove(f.light);bossDeathFx.splice(i,1)}
   }
  }
 }
@@ -786,10 +825,10 @@ function updateBossCutscene(dt){
  const ang=p*Math.PI*.8;
  camera.position.set(focus.x+Math.cos(ang)*radius,focus.y+14,focus.z+Math.sin(ang)*radius);
  camera.lookAt(focus);
- if(bossCutscene.t>.55&&bossCutscene.t<.62)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(1.5,1.0,-.8)),.8);
- if(bossCutscene.t>1.1&&bossCutscene.t<1.17)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(-1.2,1.4,.9)),.9);
- if(bossCutscene.t>1.7&&bossCutscene.t<1.77)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(0,2.0,0)),1.5);
- if(p>=1){
+ if(bossCutscene.t&gt;.55&&bossCutscene.t&lt;.62)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(1.5,1.0,-.8)),.8);
+ if(bossCutscene.t&gt;1.1&&bossCutscene.t&lt;1.17)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(-1.2,1.4,.9)),.9);
+ if(bossCutscene.t&gt;1.7&&bossCutscene.t&lt;1.77)spawnExplosionBurst(focus.clone().add(new THREE.Vector3(0,2.0,0)),1.5);
+ if(p&gt;=1){
   bossCutscene.active=false;
   golias.visible=false;
   statusEl.textContent='GOLIAS DERROTADO • área liberada';
@@ -797,12 +836,12 @@ function updateBossCutscene(dt){
  return true;
 }
 function updateBossMissiles(dt){
- for(let i=bossWarnings.length-1;i>=0;i--){
+ for(let i=bossWarnings.length-1;i&gt;=0;i--){
   const w=bossWarnings[i];w.t-=dt;
   w.mesh.material.opacity=.35+.4*Math.abs(Math.sin(t*10));
   const p=1-Math.max(0,w.t)/w.max;
   w.missile.position.lerpVectors(w.missile.position,w.target,Math.min(1,p*.09));
-  if(w.t<=0){
+  if(w.t&lt;=0){
    bossHitkillAt(w.target);
    spawnImpact(w.target.clone().add(new THREE.Vector3(0,.25,0)),0xff4b2b,18);
    world.remove(w.mesh);
@@ -830,44 +869,44 @@ function updateEnemies3D(dt){
   const los=enemyLineOfSight(e);
   e.userData.fireCd=Math.max(0,e.userData.fireCd-dt);
 
-  if(los&&d<34){e.userData.alertTimer=4;e.userData.state='alert'}
+  if(los&&d&lt;34){e.userData.alertTimer=4;e.userData.state='alert'}
   else e.userData.alertTimer=Math.max(0,e.userData.alertTimer-dt);
 
   if(e.userData.role==='boss'){
    e.userData.phase=bossPhase(e);
    e.rotation.y=Math.atan2(dx,dz);
-   if(d>12)moveEnemyGround(e,player.position.x,player.position.z,e.userData.phase===2?2.0:1.45,dt);
-   if(los&&d<30&&e.userData.fireCd<=0){
+   if(d&gt;12)moveEnemyGround(e,player.position.x,player.position.z,e.userData.phase===2?2.0:1.45,dt);
+   if(los&&d&lt;30&&e.userData.fireCd&lt;=0){
     enemyFire(e);
     e.userData.fireCd=e.userData.phase===2 ? .65 : .9;
    }
    if(e.userData.phase===2){
     e.userData.missileCd=Math.max(0,e.userData.missileCd-dt);
-    if(e.userData.missileCd<=0){
+    if(e.userData.missileCd&lt;=0){
      spawnBossMissile(e);
-     if(Math.random()>.45)spawnBossMissile(e);
+     if(Math.random()&gt;.45)spawnBossMissile(e);
      e.userData.missileCd=3.2+Math.random()*1.6;
      statusEl.textContent='GOLIAS • FASE 2 • MÍSSEIS INCOMING';
     }
    }
   }else if(e.userData.role==='sniper'){
-   if(e.position.y<2){
+   if(e.position.y&lt;2){
     if(!e.userData.targetLadder)e.userData.targetLadder=nearestLadderForEnemy(e);
     const l=e.userData.targetLadder;
     if(l){
      const ld=Math.hypot(e.position.x-l.x,e.position.z-l.z);
-     if(ld>1.1)moveEnemyGround(e,l.x,l.z,2.25,dt);
+     if(ld&gt;1.1)moveEnemyGround(e,l.x,l.z,2.25,dt);
      else beginEnemyClimb(e,l);
     }
    }else{
     e.rotation.y=Math.atan2(dx,dz);
-    if(los&&d<42&&e.userData.fireCd<=0){enemyFire(e);e.userData.fireCd=1.65+Math.random()*.8}
+    if(los&&d&lt;42&&e.userData.fireCd&lt;=0){enemyFire(e);e.userData.fireCd=1.65+Math.random()*.8}
    }
   }else{
-   if(e.userData.alertTimer>0){
-    if(los&&d<11){
+   if(e.userData.alertTimer&gt;0){
+    if(los&&d&lt;11){
      e.rotation.y=Math.atan2(dx,dz);
-     if(e.userData.fireCd<=0){enemyFire(e);e.userData.fireCd=.75+Math.random()*.45}
+     if(e.userData.fireCd&lt;=0){enemyFire(e);e.userData.fireCd=.75+Math.random()*.45}
     }else{
      moveEnemyGround(e,player.position.x,player.position.z,2.4,dt);
     }
@@ -885,11 +924,11 @@ function updateEnemies3D(dt){
 
 function segmentHitsBuilding(a,bp){
  const steps=Math.max(1,Math.ceil(a.distanceTo(bp)/.45));
- for(let i=1;i<=steps;i++){
+ for(let i=1;i&lt;=steps;i++){
   const p=a.clone().lerp(bp,i/steps);
   for(const building of buildings){
    const dx=Math.abs(p.x-building.position.x),dz=Math.abs(p.z-building.position.z);
-   if(dx<building.userData.w/2&&dz<building.userData.d/2&&p.y>=0&&p.y<=building.userData.h+.6)return true;
+   if(dx&lt;building.userData.w/2&&dz&lt;building.userData.d/2&&p.y&gt;=0&&p.y&lt;=building.userData.h+.6)return true;
   }
  }
  return false;
@@ -904,11 +943,11 @@ function updateBullets3D(dt){
    const center=player.position.clone();center.y+=1.15;
    const seg=next.clone().sub(old),len2=seg.lengthSq();
    let q=old.clone();
-   if(len2>0){const th=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);q=old.clone().addScaledVector(seg,th)}
-   if(q.distanceTo(center)<.9){
+   if(len2&gt;0){const th=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);q=old.clone().addScaledVector(seg,th)}
+   if(q.distanceTo(center)&lt;.9){
     spawnImpact(center,0xff5544,5);b.life=0;
     player.userData.hp=Math.max(0,player.userData.hp-(b.sniperShot?35:14));
-    if(player.userData.hp<=0){player.userData.hp=100;player.position.set(4,0,8);statusEl.textContent='Você morreu • respawn';}
+    if(player.userData.hp&lt;=0){player.userData.hp=100;player.position.set(4,0,8);statusEl.textContent='Você morreu • respawn'}
     else statusEl.textContent='Você foi atingido';
     updateHud();continue
    }
@@ -922,14 +961,14 @@ function updateBullets3D(dt){
    const center=e.position.clone();center.y+=1.5;
    const seg=next.clone().sub(old),len2=seg.lengthSq();
    let q=old.clone();
-   if(len2>0){
+   if(len2&gt;0){
     const tHit=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);
     q=old.clone().addScaledVector(seg,tHit);
    }
    const d=q.distanceTo(center);
-   if(d<1.0){
+   if(d&lt;1.0){
     const along=old.distanceTo(q);
-    if(along<enemyHitDist){enemyHit=e;enemyHitDist=along}
+    if(along&lt;enemyHitDist){enemyHit=e;enemyHitDist=along}
    }
   }
 
@@ -941,14 +980,14 @@ function updateBullets3D(dt){
   b.mesh.position.copy(next);
   if(enemyHit){
    enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b,weapons3D[currentWeapon]?.impact||5);b.life=0;
-   if(enemyHit.userData.hp<=0){
+   if(enemyHit.userData.hp&lt;=0){
     enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;
     if(enemyHit.userData.role==='boss'){startBossDeathCutscene();statusEl.textContent='GOLIAS DERROTADO • Boss eliminado';}
     else statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D;
    }
   }
  }
- for(let i=bullets.length-1;i>=0;i--){if(bullets[i].life<=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
+ for(let i=bullets.length-1;i&gt;=0;i--){if(bullets[i].life&lt;=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
 }
 
 function updateThirdPersonCamera(dt,targetObj){
@@ -972,6 +1011,7 @@ function updateThirdPersonCamera(dt,targetObj){
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
+ if(player.userData.avatarMixer)player.userData.avatarMixer.update(dt);
  if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
@@ -994,7 +1034,7 @@ function frame(now){
   player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8
  }
  shotCooldown=Math.max(0,shotCooldown-dt);
- if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.2,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
+ if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag&gt;.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.2,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
  if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
