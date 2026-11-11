@@ -1360,57 +1360,109 @@ function road(){
   ctx.strokeStyle="#343b42";ctx.lineWidth=1;for(let a=0;a<4;a++){const ang=a*Math.PI/2;ctx.beginPath();ctx.moveTo(mx-Math.cos(ang)*6,my-Math.sin(ang)*6);ctx.lineTo(mx+Math.cos(ang)*6,my+Math.sin(ang)*6);ctx.stroke()}
  }
 }
+function buildingKind(i,b){
+ if(b.x>=3225)return "port";
+ if(b.x>=1780&&b.y<1900)return "industrial";
+ if(i%7===0||i%7===3)return "house";
+ if(i%7===1||i%7===5)return "townhouse";
+ if(i%7===2)return "shop";
+ return "apartment";
+}
 function drawBuildings(only=null){
  for(const i of only===null?buildings.map((_,i)=>i):[only]){
-  const b=buildings[i],h=buildingHeight(i);
+  const b=buildings[i],kind=buildingKind(i,b);
+  const baseH=buildingHeight(i);
+  const h=kind==="house"?72+(i%3)*10:kind==="townhouse"?92+(i%2)*12:kind==="shop"?78+(i%3)*8:kind==="industrial"?68+(i%3)*12:kind==="port"?58+(i%2)*10:baseH;
   ctx.save();ctx.translate(b.x,b.y);undoProjection(ctx);
   const point=(x,y,z=0)=>{const p=projectVector(x,y);return [p.x,p.y-z]};
   const poly=(points,color,stroke=null)=>{ctx.beginPath();points.forEach((p,k)=>k?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fillStyle=color;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}};
   const A=point(0,0),B=point(b.w,0),C=point(b.w,b.h),D=point(0,b.h);
   const ar=point(0,0,h),br=point(b.w,0,h),cr=point(b.w,b.h,h),dr=point(0,b.h,h);
   poly([A,B,C,D].map(p=>[p[0]+32,p[1]+20]),"rgba(0,0,0,.26)");
-  // Fade a blocking building so the operator remains visible behind its walls.
-  const foot=projectVector(player.x-b.x,player.y-b.y);
-  const silhouette=[ar,br,B,C,D,dr];
+  const foot=projectVector(player.x-b.x,player.y-b.y),silhouette=[ar,br,B,C,D,dr];
   const intersects=insidePolygon(foot.x,foot.y,silhouette)||insidePolygon(foot.x,foot.y-38,silhouette);
   if(started&&!player.inCar&&player.roof!==i&&intersects&&player.x+player.y<b.x+b.w+b.y+b.h)ctx.globalAlpha=.25;
-  const masonry=[['#726a5b','#58584d'],['#777b72','#555e59'],['#846f60','#63564e'],['#686e72','#4d575b']][i%4];
-  poly([D,C,cr,dr],masonry[0],'#292f2d');poly([B,C,cr,br],masonry[1],'#292f2d');
-  // Facade-local quads follow both isometric walls and rise vertically.
+  const palettes={
+   house:[["#b58c68","#8b6a50"],["#9f815f","#795f48"],["#a56f5d","#7d5146"]],
+   townhouse:[["#8e8f84","#6d7068"],["#8b776b","#685b53"],["#7e8a89","#5f6968"]],
+   shop:[["#707f89","#52616b"],["#8c7865","#66584b"],["#6d7c72","#4f5d55"]],
+   apartment:[["#777b72","#555e59"],["#846f60","#63564e"],["#686e72","#4d575b"]],
+   industrial:[["#6d716f","#505654"],["#77746c","#595750"]],
+   port:[["#5f6b70","#414d52"],["#71675d","#504943"]]
+  };
+  const pal=palettes[kind][i%palettes[kind].length];
+  poly([D,C,cr,dr],pal[0],"#292f2d");poly([B,C,cr,br],pal[1],"#292f2d");
   function facade(side,u,v,w,height,color,outline){
    const at=(q,z)=>side===0?point(q,b.h,z):point(b.w,q,z);
    poly([at(u,v),at(u+w,v),at(u+w,v+height),at(u,v+height)],color,outline);
   }
-  for(let side=0;side<2;side++){
-   const span=side===0?b.w:b.h;
-   for(let z=8,row=0;z<h-5;z+=12,row++){
-    facade(side,0,z,span,1,'rgba(25,30,27,.18)');
-    for(let u=12+(row%2)*22;u<span;u+=44)facade(side,u,z,1,12,'rgba(25,30,27,.14)');
+  if(kind==="house"){
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    facade(side,0,0,span,8,"#4c4036");
+    for(let u=34;u<span-34;u+=92){
+     facade(side,u,28,42,32,(u+i)%3?"#7091a0":"#d0b06f","#e0ded1");
+     facade(side,u+18,28,2,32,"rgba(30,45,50,.6)");
+    }
    }
-   for(let u=27,n=0;u<span-34;u+=68,n++){
-    const z=h*.50,lit=(n+i+side)%5===0;
-    facade(side,u-4,z-4,38,40,'#303b3b');
-    facade(side,u,z,30,32,lit?'#b5a16e':'#3d555c','#9a9b89');
-    facade(side,u+14,z,2,32,'#202f33');facade(side,u,z+15,30,2,'#202f33');
-    facade(side,u-5,z-7,40,4,'#99998a');
+   facade(0,b.w*.5-20,5,40,48,"#4d382d","#d0b79a");
+   // pitched roof
+   const ridge=Math.min(42,b.h*.22);
+   poly([ar,br,point(b.w,b.h*.5,h+ridge),point(0,b.h*.5,h+ridge)],i%2?"#7d4c3c":"#695043","#3e342f");
+   poly([dr,cr,point(b.w,b.h*.5,h+ridge),point(0,b.h*.5,h+ridge)],i%2?"#6a4035":"#5a473d","#3e342f");
+  }else if(kind==="townhouse"){
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    for(let u=24;u<span-30;u+=72){
+     facade(side,u,30,32,34,(u+i)%4===0?"#b8a56d":"#496771","#aeb2a6");
+     facade(side,u+14,30,2,34,"#26363a");
+    }
    }
-   facade(side,0,0,span,9,'#3c413a');facade(side,0,h-8,span,8,'#9b9d8b');
-   for(let n=0;n<7;n++)facade(side,8+(n*47+i*13)%(span-32),12+(n*17)%29,20,4,'rgba(32,40,33,.19)');
+   facade(0,b.w*.5-18,5,36,52,"#3a342f","#b8aa95");
+   poly([ar,br,cr,dr],i%2?"#655f55":"#707168","#94988b");
+   poly([point(12,12,h+3),point(b.w-12,12,h+3),point(b.w-12,b.h-12,h+3),point(12,b.h-12,h+3)],"#4a514d","#353b39");
+  }else if(kind==="shop"){
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    facade(side,0,0,span,18,"#343b3c");
+    for(let u=18;u<span-48;u+=78)facade(side,u,22,56,36,"#4f7681","#a6b6b5");
+   }
+   facade(0,16,4,b.w-32,18,i%2?"#9a5b38":"#3d6479","#d5c7ad");
+   facade(0,b.w*.5-19,4,38,50,"#2c3433","#b9b9aa");
+   poly([ar,br,cr,dr],"#555d5a","#8b9289");
+   for(let x=30;x<b.w-30;x+=65)poly([point(x,20,h+3),point(x+34,20,h+3),point(x+34,48,h+18),point(x,48,h+18)],"#727a75","#3a403d");
+  }else if(kind==="industrial"||kind==="port"){
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    facade(side,0,0,span,12,"#343936");
+    for(let u=20;u<span-48;u+=82)facade(side,u,18,58,28,"#3f5960","#8b9693");
+    for(let u=14;u<span-20;u+=36)facade(side,u,52,2,Math.max(8,h-58),"rgba(30,35,34,.3)");
+   }
+   facade(0,b.w*.5-42,3,84,48,kind==="port"?"#304852":"#424743","#a1a89e");
+   poly([ar,br,cr,dr],kind==="port"?"#4c5558":"#5b605b","#858b84");
+   for(let x=26;x<b.w-25;x+=74){
+    const vh=14+(x+i)%3*5;
+    poly([point(x,24,h+2),point(x+42,24,h+2),point(x+42,52,h+vh),point(x,52,h+vh)],"#3e4746","#818984");
+   }
+   if(kind==="industrial"){
+    const sx=b.w*.72,sy=b.h*.3;
+    ctx.fillStyle="#626963";ctx.beginPath();ctx.arc(...point(sx,sy,h+25),16,0,Math.PI*2);ctx.fill();
+    ctx.strokeStyle="#2e3533";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(...point(sx,sy,h+25));ctx.lineTo(...point(sx,sy,h+70));ctx.stroke();
+   }
+  }else{
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    for(let z=24;z<h-16;z+=38)for(let u=24;u<span-34;u+=64)facade(side,u,z,34,26,(u+z+i)%5===0?"#b6a672":"#3d555c","#90998f");
+    facade(side,0,0,span,9,"#3c413a");facade(side,0,h-8,span,8,"#9b9d8b");
+   }
+   facade(0,b.w*.5-17,8,34,53,"#26332f","#aaa896");
+   poly([ar,br,cr,dr],i%2?"#666d69":"#747971","#a1a594");
+   const inset=10;poly([point(inset,inset,h+2),point(b.w-inset,inset,h+2),point(b.w-inset,b.h-inset,h+2),point(inset,b.h-inset,h+2)],"#4a5553","#343d3a");
+   for(let n=0;n<2;n++){
+    const vx=b.w*(.2+n*.42),vy=b.h*.3;
+    poly([point(vx,vy,h+3),point(vx+46,vy,h+3),point(vx+46,vy+30,h+20),point(vx,vy+30,h+20)],"#59625e","#39413e");
+   }
   }
-  facade(0,b.w*.5-17,8,34,53,'#26332f','#aaa896');
-  facade(0,b.w*.5+8,30,3,4,'#d6bb79');
-  // Raised roof cap, inset parapet, seams and ventilation units.
-  poly([ar,br,cr,dr],i%2?'#666d69':'#747971','#a1a594');
-  const inset=10;
-  poly([point(inset,inset,h+2),point(b.w-inset,inset,h+2),point(b.w-inset,b.h-inset,h+2),point(inset,b.h-inset,h+2)],'#4a5553','#343d3a');
-  ctx.strokeStyle='rgba(174,184,164,.14)';ctx.lineWidth=1;
-  for(let x=35;x<b.w-10;x+=42){ctx.beginPath();ctx.moveTo(...point(x,12,h+2));ctx.lineTo(...point(x,b.h-12,h+2));ctx.stroke()}
-  for(let y=35;y<b.h-10;y+=42){ctx.beginPath();ctx.moveTo(...point(12,y,h+2));ctx.lineTo(...point(b.w-12,y,h+2));ctx.stroke()}
-  const vx=b.w*.25,vy=b.h*.30;
-  poly([point(vx,vy+28,h+3),point(vx+44,vy+28,h+3),point(vx+44,vy+28,h+24),point(vx,vy+28,h+24)],'#3c4643');
-  poly([point(vx+44,vy,h+3),point(vx+44,vy+28,h+3),point(vx+44,vy+28,h+24),point(vx+44,vy,h+24)],'#303c3b');
-  poly([point(vx,vy,h+24),point(vx+44,vy,h+24),point(vx+44,vy+28,h+24),point(vx,vy+28,h+24)],'#8a9388','#434f48');
-  for(let q=6;q<40;q+=7){ctx.beginPath();ctx.moveTo(...point(vx+q,vy+4,h+25));ctx.lineTo(...point(vx+q,vy+24,h+25));ctx.strokeStyle='#48544e';ctx.stroke()}
   ctx.restore();
  }
 }
