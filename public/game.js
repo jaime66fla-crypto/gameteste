@@ -769,7 +769,7 @@ function drawEnemies(){
 
   ctx.strokeStyle="#d1a884";ctx.lineWidth=5;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(9,-2);ctx.lineTo(22,-7);ctx.lineTo(31,-3);ctx.stroke();ctx.beginPath();ctx.moveTo(9,7);ctx.lineTo(22,9);ctx.lineTo(31,4);ctx.stroke();
 
-  drawWeaponModel(e.type==="sniper"?"rifle":"pistol",31,0,e.type==="sniper"?.64:.56,false);
+  drawWeaponModel(e.type==="sniper"?"rifle":"pistol",25,-.5,e.type==="sniper"?.38:.32,false);
   ctx.strokeStyle=e.type==="sniper"?"#73ff9b":"#ff5959";ctx.lineWidth=1;ctx.globalAlpha=.55;ctx.beginPath();ctx.moveTo(48,0);ctx.lineTo(e.type==="sniper"?118:83,0);ctx.stroke();ctx.globalAlpha=1;
   ctx.restore();
 
@@ -1013,7 +1013,7 @@ function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
  const metal=ctx.createLinearGradient(-45,-10,45,10);metal.addColorStop(0,"#a3adb5");metal.addColorStop(.35,"#55616a");metal.addColorStop(1,"#1b2329");
  const dark=ctx.createLinearGradient(0,-10,0,20);dark.addColorStop(0,"#3a444c");dark.addColorStop(1,"#151b20");
  const wood=ctx.createLinearGradient(-20,0,35,0);wood.addColorStop(0,"#865336");wood.addColorStop(1,"#482c20");
- ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(5,16,(type==="rifle"||type==="shotgun"||type==="lmg")?43:30,7,0,0,Math.PI*2);ctx.fill();
+ if(scale>.48){ctx.fillStyle="#0005";ctx.beginPath();ctx.ellipse(5,16,(type==="rifle"||type==="shotgun"||type==="lmg")?43:30,7,0,0,Math.PI*2);ctx.fill();}
  if(type==="pistol"){
   ctx.fillStyle=metal;ctx.roundRect(-25,-10,45,16,4);ctx.fill();ctx.fillStyle=dark;ctx.beginPath();ctx.moveTo(2,5);ctx.lineTo(15,5);ctx.lineTo(10,28);ctx.lineTo(-4,23);ctx.closePath();ctx.fill();
   ctx.strokeStyle="#171d22";ctx.lineWidth=4;ctx.beginPath();ctx.arc(-1,8,9,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#171d22";ctx.fillRect(-22,-5,13,5);
@@ -1034,61 +1034,82 @@ function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
  if(muzzle){const tip=(type==="rifle"||type==="shotgun"||type==="lmg")?56:47;ctx.fillStyle=w.color;ctx.shadowColor=w.color;ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(tip,0);ctx.lineTo(tip+13,-7);ctx.lineTo(tip+13,7);ctx.closePath();ctx.fill();ctx.shadowBlur=0}
  ctx.restore();
 }
-function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018dd";ctx.beginPath();ctx.arc(0,0,29,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);drawWeaponModel(p.type,0,0,.56,false);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-34);ctx.textAlign="left"}}
+function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018dd";ctx.beginPath();ctx.arc(0,0,29,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);drawWeaponModel(p.type,0,-2,.48,false);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-34);ctx.textAlign="left"}}
 function drawVehicle(x,y,a,c,w=62,h=32){
  ctx.save();ctx.translate(x,y);ctx.rotate(a);
- // soft contact shadow
- ctx.fillStyle="#0008";ctx.beginPath();ctx.ellipse(6,10,w*.66,h*.62,0,0,Math.PI*2);ctx.fill();
 
- // wheels, slightly visible from top
- ctx.fillStyle="#0b0f13";
- const ww=w*.18,wh=h*.23;
- ctx.roundRect(-w*.34,-h*.62,ww,wh,3);ctx.roundRect(w*.17,-h*.62,ww,wh,3);
- ctx.roundRect(-w*.34,h*.39,ww,wh,3);ctx.roundRect(w*.17,h*.39,ww,wh,3);ctx.fill();
+ // contact shadow
+ ctx.fillStyle="#0009";ctx.beginPath();ctx.ellipse(2,8,w*.55,h*.54,0,0,Math.PI*2);ctx.fill();
 
- // body silhouette
- const body=ctx.createLinearGradient(0,-h*.55,0,h*.55);
- body.addColorStop(0,"#d9efe0");body.addColorStop(.16,c);body.addColorStop(.58,c);body.addColorStop(1,"#173022");
+ // tyres
+ ctx.fillStyle="#090d10";
+ const tw=w*.16,th=h*.23;
+ ctx.roundRect(-w*.34,-h*.57,tw,th,3);ctx.roundRect(w*.18,-h*.57,tw,th,3);
+ ctx.roundRect(-w*.34,h*.34,tw,th,3);ctx.roundRect(w*.18,h*.34,tw,th,3);ctx.fill();
+
+ // sporty silhouette
+ const body=ctx.createLinearGradient(0,-h*.5,0,h*.5);
+ body.addColorStop(0,"#dbe8ec");body.addColorStop(.13,c);body.addColorStop(.7,c);body.addColorStop(1,"#243239");
  ctx.fillStyle=body;
  ctx.beginPath();
- ctx.roundRect(-w*.5,-h*.5,w,h,9);
- ctx.fill();
+ ctx.moveTo(-w*.48,-h*.28);
+ ctx.quadraticCurveTo(-w*.42,-h*.48,-w*.23,-h*.49);
+ ctx.lineTo(w*.22,-h*.49);
+ ctx.quadraticCurveTo(w*.43,-h*.45,w*.49,-h*.26);
+ ctx.lineTo(w*.49,h*.26);
+ ctx.quadraticCurveTo(w*.43,h*.45,w*.22,h*.49);
+ ctx.lineTo(-w*.23,h*.49);
+ ctx.quadraticCurveTo(-w*.42,h*.48,-w*.48,h*.28);
+ ctx.closePath();ctx.fill();
 
- // front/rear bumpers
- ctx.fillStyle="#182126";ctx.fillRect(-w*.5+3,-h*.43,6,h*.86);ctx.fillRect(w*.5-9,-h*.43,6,h*.86);
+ // bonnet + boot
+ ctx.fillStyle="rgba(255,255,255,.09)";
+ ctx.roundRect(w*.18,-h*.34,w*.22,h*.68,4);ctx.fill();
+ ctx.fillStyle="rgba(0,0,0,.12)";
+ ctx.roundRect(-w*.43,-h*.33,w*.20,h*.66,4);ctx.fill();
 
- // bonnet and roof panels
- ctx.fillStyle="rgba(255,255,255,.10)";
- ctx.roundRect(w*.16,-h*.38,w*.22,h*.76,5);ctx.fill();
- ctx.fillStyle="#23343e";
- ctx.roundRect(-w*.15,-h*.39,w*.34,h*.78,6);ctx.fill();
-
- // glass cabin with light reflection
- const glass=ctx.createLinearGradient(-w*.1,-h*.35,w*.15,h*.35);
- glass.addColorStop(0,"#9ad2e4");glass.addColorStop(.35,"#5f94a7");glass.addColorStop(1,"#223a46");
+ // cabin
+ const glass=ctx.createLinearGradient(-w*.16,-h*.33,w*.16,h*.33);
+ glass.addColorStop(0,"#a7d3df");glass.addColorStop(.35,"#5d8795");glass.addColorStop(1,"#243842");
  ctx.fillStyle=glass;
- ctx.roundRect(-w*.10,-h*.32,w*.25,h*.64,4);ctx.fill();
- ctx.fillStyle="rgba(255,255,255,.22)";ctx.fillRect(-w*.075,-h*.28,w*.035,h*.49);
+ ctx.beginPath();
+ ctx.moveTo(-w*.14,-h*.34);ctx.lineTo(w*.16,-h*.34);
+ ctx.quadraticCurveTo(w*.25,-h*.30,w*.28,-h*.18);
+ ctx.lineTo(w*.28,h*.18);ctx.quadraticCurveTo(w*.25,h*.30,w*.16,h*.34);
+ ctx.lineTo(-w*.14,h*.34);ctx.quadraticCurveTo(-w*.22,h*.28,-w*.24,h*.17);
+ ctx.lineTo(-w*.24,-h*.17);ctx.quadraticCurveTo(-w*.22,-h*.28,-w*.14,-h*.34);
+ ctx.closePath();ctx.fill();
 
- // centre divider + mirrors
- ctx.fillStyle="#1c272d";ctx.fillRect(w*.015,-h*.32,3,h*.64);
- ctx.fillStyle="#202a30";ctx.roundRect(-w*.08,-h*.57,10,5,2);ctx.roundRect(-w*.08,h*.42,10,5,2);ctx.fill();
+ // windshield divisions
+ ctx.strokeStyle="#1b2a31";ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(-w*.20,-h*.27);ctx.lineTo(w*.22,-h*.27);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(-w*.20,h*.27);ctx.lineTo(w*.22,h*.27);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(w*.01,-h*.32);ctx.lineTo(w*.01,h*.32);ctx.stroke();
 
- // lights
- ctx.shadowBlur=10;
- ctx.shadowColor="#e8fbff";ctx.fillStyle="#e8fbff";
- ctx.roundRect(w*.5-8,-h*.35,5,7,2);ctx.roundRect(w*.5-8,h*.15,5,7,2);ctx.fill();
- ctx.shadowColor="#ff5d62";ctx.fillStyle="#ff5d62";
- ctx.roundRect(-w*.5+4,-h*.35,4,7,2);ctx.roundRect(-w*.5+4,h*.15,4,7,2);ctx.fill();
+ // mirrors
+ ctx.fillStyle="#1a242a";ctx.roundRect(-w*.07,-h*.58,9,4,2);ctx.roundRect(-w*.07,h*.46,9,4,2);ctx.fill();
+
+ // grille / bumpers
+ ctx.fillStyle="#11181d";ctx.fillRect(w*.43,-h*.19,5,h*.38);ctx.fillRect(-w*.48,-h*.18,4,h*.36);
+ ctx.fillStyle="#4f5d65";ctx.fillRect(w*.44,-h*.10,4,h*.20);
+
+ // headlights / tail lights
+ ctx.shadowBlur=9;
+ ctx.shadowColor="#eafcff";ctx.fillStyle="#eafcff";
+ ctx.roundRect(w*.39,-h*.31,7,6,2);ctx.roundRect(w*.39,h*.14,7,6,2);ctx.fill();
+ ctx.shadowColor="#ff535a";ctx.fillStyle="#ff535a";
+ ctx.roundRect(-w*.46,-h*.30,5,6,2);ctx.roundRect(-w*.46,h*.13,5,6,2);ctx.fill();
  ctx.shadowBlur=0;
 
- // subtle body outline
- ctx.strokeStyle="rgba(220,240,245,.38)";ctx.lineWidth=1.2;ctx.strokeRect(-w*.5+1,-h*.5+1,w-2,h-2);
+ // body highlight
+ ctx.strokeStyle="rgba(230,245,250,.30)";ctx.lineWidth=1;ctx.beginPath();
+ ctx.moveTo(-w*.35,-h*.4);ctx.lineTo(w*.28,-h*.4);ctx.stroke();
 
- // headlights projection
- ctx.fillStyle="rgba(255,230,165,.15)";
- ctx.beginPath();ctx.moveTo(w*.5,-h*.27);ctx.lineTo(w*.5+88,-h*.50);ctx.lineTo(w*.5+88,-h*.10);ctx.closePath();ctx.fill();
- ctx.beginPath();ctx.moveTo(w*.5,h*.27);ctx.lineTo(w*.5+88,h*.50);ctx.lineTo(w*.5+88,h*.10);ctx.closePath();ctx.fill();
+ // headlight beams
+ ctx.fillStyle="rgba(255,230,170,.13)";
+ ctx.beginPath();ctx.moveTo(w*.48,-h*.20);ctx.lineTo(w*.48+76,-h*.46);ctx.lineTo(w*.48+76,-h*.04);ctx.closePath();ctx.fill();
+ ctx.beginPath();ctx.moveTo(w*.48,h*.20);ctx.lineTo(w*.48+76,h*.46);ctx.lineTo(w*.48+76,h*.04);ctx.closePath();ctx.fill();
+
  ctx.restore();
 }
 function drawPlayer(){
@@ -1129,7 +1150,7 @@ function drawPlayer(){
  ctx.beginPath();ctx.moveTo(9,-2+bob);ctx.lineTo(22,-7+bob);ctx.lineTo(31,-3+bob);ctx.stroke();
  ctx.beginPath();ctx.moveTo(9,7+bob);ctx.lineTo(22,9+bob);ctx.lineTo(31,4+bob);ctx.stroke();
 
- drawWeaponModel(player.weapon,31,bob,.60,player.shootCd>.10);
+ drawWeaponModel(player.weapon,25,bob-.5,.34,player.shootCd>.10);
  ctx.restore();ctx.restore();
 }
 function drawRemotePlayers(){
@@ -1147,7 +1168,7 @@ function drawRemotePlayers(){
    ctx.fillStyle="#d7b08c";ctx.fillRect(-3,-11,8,6);ctx.beginPath();ctx.ellipse(1,-16,9.5,10.5,0,0,Math.PI*2);ctx.fill();
    ctx.fillStyle="#29343c";ctx.beginPath();ctx.arc(0,-19,11,Math.PI,Math.PI*2);ctx.fill();
    ctx.strokeStyle="#d7b08c";ctx.lineWidth=5;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(9,-2);ctx.lineTo(22,-7);ctx.lineTo(31,-3);ctx.stroke();ctx.beginPath();ctx.moveTo(9,7);ctx.lineTo(22,9);ctx.lineTo(31,4);ctx.stroke();
-   drawWeaponModel(p.weapon||"pistol",31,0,.60,!!p.shooting);
+   drawWeaponModel(p.weapon||"pistol",25,-.5,.34,!!p.shooting);
    ctx.restore();
   }
   ctx.save();ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#dff5ff";ctx.fillText(p.name||"Jogador",rxp,ryp-38);
