@@ -11,7 +11,7 @@ const model=new FBXLoader().parse(file.buffer.slice(file.byteOffset,file.byteOff
 THREE.TextureLoader.prototype.load=originalTextureLoad;
 loadAvatar(model);
 const bones=a.player.userData.avatarBones,gun=a.player.userData.gun;
-assert.equal(Object.keys(bones).length,15);
+assert.equal(Object.keys(bones).length,18);
 assert.equal(model.rotation.y,0,'Erika must face the +Z gameplay forward axis');
 assert.equal(gun.parent,bones.spine2.bone,'Resting weapon must be mounted on the spine');
 assert(!a.player.userData.avatarMixer,'Static FBX clips must not suppress pose animation');
@@ -34,3 +34,5 @@ a.setTime(200);a.updateProceduralAvatar(1,true);a.updateWeaponPose();
 assert.equal(gun.parent,bones.spine2.bone);
 assert.equal(a.player.userData.weaponPose,'rest');
 console.log('PASS: real FBX facing; right-hand gun attachment; two-hand shooting pose in three headings; automatic return to back mount.');
+
+export {a,model,bones,gun};

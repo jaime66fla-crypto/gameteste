@@ -14,7 +14,7 @@ let avatarLoaded;
 const context={THREE,FBXLoader:class{load(_url,onLoad){avatarLoaded=onLoad}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:()=>({getContext:()=>({fillRect(){},strokeRect(){},fillText(){}})}),addEventListener(){}},addEventListener(type,fn){globalListeners[type]=fn},innerWidth:1280,innerHeight:720,devicePixelRatio:1,performance:{now:()=>0},requestAnimationFrame(){},console};
 vm.createContext(context);
 const source=fs.readFileSync(new URL('../public/3d.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-vm.runInContext(source+`\nglobalThis.api={traceAimRay,mobileAimDirection,updateAimFromPointer,updateThirdPersonCamera,fire,updateBullets3D,frame,buildings,enemies,bullets,player,camera,pointer,mobileAim,ammoState,get aimPoint(){return aimPoint},setYaw:y=>cameraYaw=y,setPitch:p=>cameraPitch=p,get keys(){return keys},get ready(){return isWeaponReady()},updateWeaponPose,updateProceduralAvatar,setTime:time=>t=time,resetShot:()=>shotCooldown=0};`,context);
+vm.runInContext(source+`\nglobalThis.api={traceAimRay,mobileAimDirection,updateAimFromPointer,updateThirdPersonCamera,fire,updateBullets3D,frame,buildings,enemies,bullets,player,camera,pointer,mobileAim,ammoState,get aimPoint(){return aimPoint},setYaw:y=>cameraYaw=y,setPitch:p=>cameraPitch=p,get keys(){return keys},get locomotion(){return locomotion},get ready(){return isWeaponReady()},updateWeaponPose,updateProceduralAvatar,setTime:time=>t=time,resetShot:()=>shotCooldown=0};`,context);
 const a=context.api,V=THREE.Vector3;
 a.buildings.length=0;a.enemies.length=0;
 const enemy=(z,x=0)=>{const e=new THREE.Group();e.position.set(x,0,z);e.userData={alive:true,hp:3};a.enemies.push(e);return e};

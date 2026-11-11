@@ -232,6 +232,7 @@ player.userData.weaponParts.receiver.position.set(.22,0,0);
 player.userData.weaponParts.barrel.position.set(.85,0,0);
 player.userData.gun.rotation.y=-Math.PI/2;
 player.userData.hp=100;player.userData.maxHp=100;
+const locomotion={velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}};
 
 // Avatar loader for Erika Archer
 const fbxLoader=new FBXLoader();
@@ -250,6 +251,9 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  player.userData.avatarBaseY=model.position.y;
  player.userData.avatarBones={};
  const mixamoMap={
+  'mixamorig:hips':'hips',
+  'mixamorig:leftfoot':'footL',
+  'mixamorig:rightfoot':'footR',
   'mixamorig:leftarm':'upperArmL',
   'mixamorig:rightarm':'upperArmR',
   'mixamorig:leftforearm':'foreArmL',
@@ -273,7 +277,7 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   const n='mixamorig:'+normalize(bone?.name);
   const key=mixamoMap[n];
   if(key&&!player.userData.avatarBones[key]){
-   player.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone()};
+   player.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone(),basePosition:bone.position.clone(),baseModelPosition:player.worldToLocal(bone.getWorldPosition(new THREE.Vector3())),baseModelQuaternion:player.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(bone.getWorldQuaternion(new THREE.Quaternion()))};
   }
  };
  model.traverse(function(child){
@@ -331,9 +335,10 @@ function rotateJointToward(joint,tip,target){
  joint.quaternion.copy(parentRotation.multiply(worldRotation));
  player.updateMatrixWorld(true);
 }
-function solveArm(side,target,pole){
+function solveArm(side,target,pole){return solveLimb('upperArm'+side,'foreArm'+side,'hand'+side,target,pole)}
+function solveLimb(upperKey,lowerKey,endKey,target,pole){
  const bones=player.userData.avatarBones;
- const upper=bones?.['upperArm'+side]?.bone,lower=bones?.['foreArm'+side]?.bone,hand=bones?.['hand'+side]?.bone;
+ const upper=bones?.[upperKey]?.bone,lower=bones?.[lowerKey]?.bone,hand=bones?.[endKey]?.bone;
  if(!upper||!lower||!hand)return;
  player.updateMatrixWorld(true);
  const shoulder=upper.getWorldPosition(new THREE.Vector3());
@@ -415,49 +420,81 @@ function setAvatarMotion(kind,force=false){
  }
 }
 function updateProceduralAvatar(dt,moving=false,running=false){
- const avatar=player.userData.avatar;
- const bones=player.userData.avatarBones;
- if(!avatar||!bones)return;
- if(player.userData.avatarActiveAction)return;
+ const avatar=player.userData.avatar,bones=player.userData.avatarBones;
+ if(!avatar||!bones||player.userData.avatarActiveAction)return;
  const climbing=!!player.userData.climbing;
-
- // Este FBX esta em bind pose. Forca uma pose relaxada via quaternion
- // e anima por cima dela, sem depender de clips internos.
- const speed=climbing?11:running?11.5:moving?7.2:2.2;
- const legAmp=climbing?.7:running?.72:moving?.48:0;
- const armAmp=running?.34:moving?.24:.025;
- const s=Math.sin(t*speed),c2=Math.cos(t*speed);
- const alpha=1-Math.exp(-dt*12);
- const tmpEuler=new THREE.Euler();
- const tmpQ=new THREE.Quaternion();
- const targetQ=new THREE.Quaternion();
-
+ const gait=locomotion;
+ const fade=1-Math.exp(-dt*10);
+ gait.blend=THREE.MathUtils.lerp(gait.blend,moving?1:0,fade);
+ gait.run=THREE.MathUtils.lerp(gait.run,running?1:0,fade);
+ const stride=THREE.MathUtils.lerp(1.55,2.4,gait.run);
+ // Advance only by measured travel, so feet stop cycling against a wall.
+ if(!climbing)gait.phase=(gait.phase+gait.speed*dt/stride*Math.PI*2)%(Math.PI*2);
+ const phase=climbing?t*11:gait.phase;
+ const s=Math.sin(phase),double=Math.cos(phase*2),weight=gait.blend;
+ const alpha=1-Math.exp(-dt*16);
+ const tmpEuler=new THREE.Euler(),tmpQ=new THREE.Quaternion(),targetQ=new THREE.Quaternion();
  const pose=(key,rx=0,ry=0,rz=0)=>{
-  const o=bones[key];if(!o)return;
-  tmpEuler.set(rx,ry,rz,'XYZ');
-  tmpQ.setFromEuler(tmpEuler);
-  targetQ.copy(o.baseQuaternion||o.bone.quaternion).multiply(tmpQ);
-  o.bone.quaternion.slerp(targetQ,alpha);
+  const joint=bones[key];if(!joint)return;
+  tmpQ.setFromEuler(tmpEuler.set(rx,ry,rz,'XYZ'));
+  targetQ.copy(joint.baseQuaternion).multiply(tmpQ);
+  joint.bone.quaternion.slerp(targetQ,alpha);
  };
-
- // Ombros e bracos: tira da T-pose e deixa os cotovelos levemente dobrados.
- pose('shoulderL',0,0,-.08);
- pose('shoulderR',0,0,.08);
- pose('upperArmL',climbing?-1.2+s*.3:1.28,0,moving&&!climbing?-s*armAmp:0);
- pose('upperArmR',climbing?-1.2-s*.3:1.28,0,moving&&!climbing?s*armAmp:0);
- pose('foreArmL',climbing?-.6+s*.25:moving?Math.max(0,-s)*.38:.16,0,-.12);
- pose('foreArmR',climbing?-.6-s*.25:moving?Math.max(0,s)*.38:.16,0,.12);
-
- // Pernas e tronco.
- pose('thighL',s*legAmp,0,0);
- pose('thighR',-s*legAmp,0,0);
- pose('calfL',Math.max(0,-s)*legAmp*.78,0,0);
- pose('calfR',Math.max(0,s)*legAmp*.78,0,0);
- pose('spine',0,0,moving?s*.035:Math.sin(t*2.2)*.012);
- pose('spine1',0,moving?s*.018:0,0);
- pose('spine2',0,moving?-s*.016:0,0);
-
- avatar.position.y=(player.userData.avatarBaseY||0)+(climbing?Math.abs(s)*.035:moving?Math.abs(c2)*(running?.05:.028):Math.sin(t*2.2)*.008);
+ const localVelocity=gait.direction.clone().applyQuaternion(player.quaternion.clone().invert());
+ const armSwing=weight*THREE.MathUtils.lerp(.22,.42,gait.run);
+ pose('shoulderL',0,0,-.06);pose('shoulderR',0,0,.06);
+ pose('upperArmL',climbing?-1.2+s*.3:1.28,0,climbing?0:-s*armSwing);
+ pose('upperArmR',climbing?-1.2-s*.3:1.28,0,climbing?0:s*armSwing);
+ pose('foreArmL',climbing?-.6+s*.25:.16+Math.max(0,-s)*armSwing,0,-.1);
+ pose('foreArmR',climbing?-.6-s*.25:.16+Math.max(0,s)*armSwing,0,.1);
+ const hipTwist=s*.055*weight,hipSway=s*.035*weight;
+ pose('hips',weight*(.025+gait.run*.055),hipTwist,hipSway);
+ pose('spine',weight*(.025+gait.run*.035),-hipTwist*.55,-hipSway*.75+Math.sin(t*2)*.008);
+ pose('spine1',0,-hipTwist*.25,0);pose('spine2',0,-hipTwist*.2,0);
+ if(bones.hips){
+  const hip=bones.hips;
+  hip.bone.position.copy(hip.basePosition);
+  hip.bone.position.y-=(climbing?0:weight*(.145+gait.run*.035))/(player.scale.y*avatar.scale.y);
+ }
+ avatar.position.y=(player.userData.avatarBaseY||0)+(climbing?Math.abs(s)*.025:
+  (1-double)*(.012+gait.run*.012)*weight+Math.sin(t*2)*.004*(1-weight));
+ for(const [side,offset] of [['L',0],['R',.5]]){
+  const cycle=(phase/(Math.PI*2)+offset)%1;
+  const stance=THREE.MathUtils.lerp(.62,.46,gait.run);
+  const swing=cycle>stance?(cycle-stance)/(1-stance):0;
+  const hipAngle=cycle<=stance?THREE.MathUtils.lerp(.5,-.42,cycle/stance):THREE.MathUtils.lerp(-.42,.5,THREE.MathUtils.smoothstep(swing,0,1));
+  const knee=cycle<=stance?.08+Math.sin(cycle/stance*Math.PI)*.12:.1+Math.sin(swing*Math.PI)*(.9+gait.run*.35);
+  pose('thigh'+side,climbing?(side==='L'?s:-s)*.7:hipAngle*localVelocity.z*weight,0,climbing?0:hipAngle*localVelocity.x*weight);
+  // Mixamo leg X points toward -world-X: negative rotation flexes the knee.
+  pose('calf'+side,climbing?-Math.max(0,side==='L'?-s:s)*.65:-knee*weight);
+  pose('foot'+side,0,0,0);
+  const foot=bones['foot'+side];
+  if(climbing||weight<.025||!foot){gait.planted[side]=null;continue}
+  player.updateMatrixWorld(true);
+  const neutral=player.localToWorld(foot.baseModelPosition.clone());
+  const reach=stride*stance*.5;
+  let target;
+  if(cycle<=stance){
+   if(!gait.planted[side]||gait.planted[side].distanceTo(neutral)>stride*.85){
+    gait.planted[side]=neutral.clone().addScaledVector(gait.direction,reach-stride*cycle);
+   }
+   target=gait.planted[side].clone();target.y=neutral.y;
+  }else{
+   gait.planted[side]=null;
+   target=neutral.clone().addScaledVector(gait.direction,THREE.MathUtils.lerp(-reach,reach,THREE.MathUtils.smoothstep(swing,0,1)));
+   target.y+=Math.sin(swing*Math.PI)*(.15+gait.run*.13);
+  }
+  const current=foot.bone.getWorldPosition(new THREE.Vector3());
+  target.lerpVectors(current,target,weight);
+  const hip=bones['thigh'+side].bone.getWorldPosition(new THREE.Vector3());
+  const pole=hip.clone().add(new THREE.Vector3(0,-.2,.7).applyQuaternion(player.quaternion));
+  solveLimb('thigh'+side,'calf'+side,'foot'+side,target,pole);
+  // Keep the sole level in stance; add a small toe lift during the swing.
+  const rotation=player.getWorldQuaternion(new THREE.Quaternion()).multiply(foot.baseModelQuaternion);
+  rotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.sin(swing*Math.PI)*.18,0,0)));
+  const local=foot.bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation);
+  foot.bone.quaternion.slerp(local,weight);
+ }
 }
 
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
@@ -605,6 +642,7 @@ function setClimbAvatar(active){
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState||activeCar)return false;
+ locomotion.velocity.set(0,0,0);locomotion.speed=0;
  const b=buildings[l.building];
  const goingUp=dir==='up';
  if(goingUp&&player.position.y>1)return false;
@@ -1305,25 +1343,38 @@ function frame(now){
  let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
      inputY=((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0);
  const len=Math.hypot(inputX,inputY);
- const avatarRunning=!!len&&keys.has('shift');
- setAvatarMotion(len?(avatarRunning?'run':'walk'):'idle');
- if(len){
-  inputX/=len;inputY/=len;
-  const camForward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
-  const camRight=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
-  const move=camForward.multiplyScalar(inputY).add(camRight.multiplyScalar(inputX)).normalize();
-  const dx=move.x,dz=move.z;
-  const speed=keys.has('shift')?10:6;
-  const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;
-  if(!blocked(nx,player.position.z))player.position.x=nx;
-  if(!blocked(player.position.x,nz))player.position.z=nz;
-  if(!isWeaponReady())player.rotation.y=Math.atan2(dx,dz);
-  const gait=Math.sin(t*(keys.has('shift')?14:10));
-  player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55;
- }else{
-  player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8
+ const startPosition=player.position.clone();
+ const inputMagnitude=Math.min(1,len);
+ const requestedRun=inputMagnitude>0&&keys.has('shift');
+ const targetVelocity=new THREE.Vector3();
+ if(inputMagnitude>.08){
+  const forward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
+  const right=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
+  targetVelocity.copy(forward.multiplyScalar(inputY/len).addScaledVector(right,inputX/len));
+  targetVelocity.multiplyScalar((requestedRun?5.2:2.6)*inputMagnitude);
  }
- updateProceduralAvatar(dt,!!len,avatarRunning);
+ locomotion.velocity.lerp(targetVelocity,1-Math.exp(-dt*(inputMagnitude>.08?9:13)));
+ if(locomotion.velocity.length()<.025)locomotion.velocity.set(0,0,0);
+ const nx=player.position.x+locomotion.velocity.x*dt,nz=player.position.z+locomotion.velocity.z*dt;
+ if(!blocked(nx,player.position.z))player.position.x=nx;else locomotion.velocity.x=0;
+ if(!blocked(player.position.x,nz))player.position.z=nz;else locomotion.velocity.z=0;
+ const actual=player.position.clone().sub(startPosition);actual.y=0;
+ locomotion.speed=dt>0?actual.length()/dt:0;
+ const moved=locomotion.speed>.025;
+ if(moved){
+  locomotion.direction.copy(actual).normalize();
+  if(!isWeaponReady()){
+   const targetYaw=Math.atan2(actual.x,actual.z);
+   const difference=Math.atan2(Math.sin(targetYaw-player.rotation.y),Math.cos(targetYaw-player.rotation.y));
+   player.rotation.y+=difference*(1-Math.exp(-dt*14));
+  }
+ }
+ const avatarRunning=moved&&requestedRun;
+ setAvatarMotion(moved?(avatarRunning?'run':'walk'):'idle');
+ const fallbackStep=Math.sin(locomotion.phase);
+ player.userData.legs[0].rotation.x=moved?fallbackStep*.5:player.userData.legs[0].rotation.x*Math.exp(-dt*12);
+ player.userData.legs[1].rotation.x=moved?-fallbackStep*.5:player.userData.legs[1].rotation.x*Math.exp(-dt*12);
+ updateProceduralAvatar(dt,moved,avatarRunning);
  shotCooldown=Math.max(0,shotCooldown-dt);
  updateThirdPersonCamera(dt,player);
  updateAimFromPointer();
@@ -1331,7 +1382,6 @@ function frame(now){
  if(mobileAim.firing||desktopFiring)fire();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
- updateWeaponPose();
  updateAimFromPointer();
  updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
