@@ -270,10 +270,22 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
    action.setLoop(THREE.LoopRepeat,Infinity);
    player.userData.avatarActions[clip.name.toLowerCase()]=action;
   });
+  const primaryClip=model.animations.find(c=>/mixamo|take/i.test(c.name))||model.animations[0];
+  if(primaryClip){
+   const primaryAction=mixer.clipAction(primaryClip);
+   primaryAction.enabled=true;
+   primaryAction.setLoop(THREE.LoopRepeat,Infinity);
+   primaryAction.play();
+   primaryAction.paused=true;
+   primaryAction.time=Math.min(primaryClip.duration*.18,.35);
+   player.userData.avatarPrimaryAction=primaryAction;
+   player.userData.avatarPrimaryClip=primaryClip;
+  }
  }
  player.userData.avatarAnimState='';
  setAvatarMotion('idle',true);
- statusEl.textContent='Erika Archer carregada • avatar 3D ativo';
+ const clipInfo=player.userData.avatarPrimaryClip?.name?(' • clip '+player.userData.avatarPrimaryClip.name):'';
+ statusEl.textContent='Erika Archer carregada • avatar 3D ativo'+clipInfo;
  player.children.forEach(function(child){
   if(child!==player.userData.avatar&&child.isMesh)child.visible=false;
  });
@@ -298,6 +310,22 @@ function setAvatarMotion(kind,force=false){
  if(!player.userData.avatar)return;
  if(!force&&player.userData.avatarAnimState===kind)return;
  player.userData.avatarAnimState=kind;
+
+ const primary=player.userData.avatarPrimaryAction;
+ const clip=player.userData.avatarPrimaryClip;
+ if(primary&&clip){
+  primary.enabled=true;
+  primary.play();
+  if(kind==='idle'){
+   primary.paused=true;
+   primary.time=Math.min(clip.duration*.18,.35);
+  }else{
+   primary.paused=false;
+   primary.timeScale=kind==='run'?1.45:kind==='climb'?.72:1.0;
+  }
+  return;
+ }
+
  const actions=player.userData.avatarActions||{};
  const next=findAvatarAction(kind);
  if(next){
@@ -309,6 +337,7 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  const avatar=player.userData.avatar;
  const bones=player.userData.avatarBones;
  if(!avatar||!bones)return;
+ if(player.userData.avatarPrimaryAction)return;
 
  // Este FBX esta em bind pose. Forca uma pose relaxada via quaternion
  // e anima por cima dela, sem depender de clips internos.
