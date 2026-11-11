@@ -389,27 +389,90 @@ let climbState=null;
 function nearLadder(){
  let best=null,bestD=Infinity;
  for(const l of ladders){
-  const d=Math.hypot(player.position.x-l.x,player.position.z-l.z);
-  if(d<1.6&&d<bestD){best=l;bestD=d}
+  const b=buildings[l.building];
+  const onTop=player.position.y>1;
+  const targetZ=onTop?l.z-.65:l.z+.75;
+  const d=Math.hypot(player.position.x-l.x,player.position.z-targetZ);
+  if(d<2.15&&d<bestD){best=l;bestD=d}
  }
  return best;
 }
+function setClimbAvatar(active){
+ const actions=player.userData.avatarActions;
+ if(!actions)return;
+ const list=Object.entries(actions);
+ const climb=list.find(([name])=>name.includes('climb')||name.includes('ladder'));
+ if(active&&climb){
+  for(const [,a] of list)a.stop();
+  climb[1].reset().play();
+ }else if(!active){
+  for(const [,a] of list)a.stop();
+  const idle=actions.idle||list[0]?.[1];
+  idle?.reset().play();
+ }
+}
 function startClimb(dir){
- const l=nearLadder();if(!l||climbState)return false;
+ const l=nearLadder();if(!l||climbState||activeCar)return false;
  const b=buildings[l.building];
- climbState={ladder:l,dir,t:0,total:1.35,startY:player.position.y,endY:dir==='up'?b.userData.h+.45:0};
- player.position.x=l.x;player.position.z=l.z+.35;
+ const goingUp=dir==='up';
+ if(goingUp&&player.position.y>1)return false;
+ if(!goingUp&&player.position.y<1)return false;
+ const height=b.userData.h+.45;
+ climbState={
+  ladder:l,dir,t:0,total:Math.max(1.8,height/3.1),
+  startY:goingUp?0:height,endY:goingUp?height:0,
+  startZ:goingUp?l.z+.72:l.z-.58,
+  endZ:goingUp?l.z-.72:l.z+.78
+ };
+ player.position.x=l.x;
+ player.position.z=climbState.startZ;
+ player.position.y=climbState.startY;
+ player.rotation.y=goingUp?Math.PI:0;
+ player.userData.climbing=true;
+ setClimbAvatar(true);
+ statusEl.textContent=goingUp?'Subindo escada…':'Descendo escada…';
  return true;
 }
 function updateClimb(dt){
  if(!climbState)return false;
- const s=climbState;s.t=Math.min(s.total,s.t+dt);
- const p=s.t/s.total,ease=p*p*(3-2*p);
- player.position.y=THREE.MathUtils.lerp(s.startY,s.endY,ease);
- player.rotation.y=Math.PI;
- const gait=Math.sin(s.t*16);
- player.userData.legs[0].rotation.x=gait*.7;player.userData.legs[1].rotation.x=-gait*.7;
- if(s.t>=s.total){player.position.y=s.endY;climbState=null}
+ const s=climbState;
+ s.t=Math.min(s.total,s.t+dt);
+ const p=s.t/s.total;
+ const travel=THREE.MathUtils.smoothstep(p,0,1);
+ player.position.x=s.ladder.x;
+ player.position.y=THREE.MathUtils.lerp(s.startY,s.endY,travel);
+ const edgeBlend=THREE.MathUtils.smoothstep(p,.84,1);
+ player.position.z=THREE.MathUtils.lerp(s.startZ,s.endZ,edgeBlend);
+ player.rotation.y=s.dir==='up'?Math.PI:0;
+
+ const cycle=Math.sin(s.t*11);
+ if(player.userData.legs?.length>=2){
+  player.userData.legs[0].rotation.x=cycle*.82;
+  player.userData.legs[1].rotation.x=-cycle*.82;
+ }
+ if(player.userData.gun)player.userData.gun.rotation.z=cycle*.05;
+ if(player.userData.avatar){
+  player.userData.avatar.position.y=Math.abs(Math.sin(s.t*11))*.035;
+  player.userData.avatar.rotation.z=cycle*.025;
+ }
+
+ if(s.t>=s.total){
+  player.position.y=s.endY;
+  player.position.z=s.endZ;
+  if(player.userData.legs?.length>=2){
+   player.userData.legs[0].rotation.x=0;
+   player.userData.legs[1].rotation.x=0;
+  }
+  if(player.userData.gun)player.userData.gun.rotation.z=0;
+  if(player.userData.avatar){
+   player.userData.avatar.position.y=0;
+   player.userData.avatar.rotation.z=0;
+  }
+  player.userData.climbing=false;
+  setClimbAvatar(false);
+  statusEl.textContent=s.dir==='up'?'Telhado alcançado • E na escada para descer':'No solo • E na escada para subir';
+  climbState=null;
+ }
  return true;
 }
 
