@@ -402,7 +402,7 @@ function setPlatform(platform){
  document.getElementById("mobilePlatformBtn")?.classList.toggle("active",platform==="mobile");
  const help=document.getElementById("controlHelp");
  if(help)help.textContent=platform==="mobile"
-  ?"Analógico esquerdo mover • Analógico direito mirar e atirar • CARRO entrar/sair"
+  ?"Analógico esquerdo mover • Analógico direito mirar e atirar • GRANADA lançar • CARRO entrar/sair"
   :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo";
  if(platform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
 }
