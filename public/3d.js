@@ -291,7 +291,7 @@ function resize(){
  camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
-statusEl.textContent='Protótipo 3D ativo • Clique para atirar • E sobe/desce escadas';
+statusEl.textContent='Protótipo 3D ativo • Combate vertical • Clique atira • E escadas';
 
 
 
@@ -310,20 +310,47 @@ function makeTracer(origin,target){
  bullets.push({mesh,dir,speed:38,life:1.1});
 }
 
+function topSurfaceAt(x,z){
+ let y=0;
+ for(const b of buildings){
+  const dx=Math.abs(x-b.position.x),dz=Math.abs(z-b.position.z);
+  if(dx<=b.userData.w/2&&dz<=b.userData.d/2)y=Math.max(y,b.userData.h+.45);
+ }
+ return y;
+}
+function nearestAliveEnemyToRay(){
+ let best=null,bestD=.95;
+ for(const e of enemies){
+  if(!e.userData.alive)continue;
+  const p=e.position.clone();p.y+=1.55;
+  const d=raycaster.ray.distanceToPoint(p);
+  if(d<bestD){best=e;bestD=d}
+ }
+ return best;
+}
 function updateAimFromPointer(){
  raycaster.setFromCamera(pointer,camera);
- if(raycaster.ray.intersectPlane(groundPlane,aimPoint)){
-  const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
-  if(Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
+ const enemy=nearestAliveEnemyToRay();
+ if(enemy){
+  aimPoint.copy(enemy.position);aimPoint.y+=1.55;
+ }else{
+  const roof=onRoof();
+  const aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-(roof?roof.userData.h+.45:0));
+  if(raycaster.ray.intersectPlane(aimPlane,aimPoint)){
+   const surface=topSurfaceAt(aimPoint.x,aimPoint.z);
+   if(surface>aimPoint.y+.2)aimPoint.y=surface+.05;
+  }
  }
+ const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
+ if(Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
 }
 
 function fire(){
- if(shotCooldown>0)return;
+ if(shotCooldown>0||climbState)return;
  shotCooldown=.18;
  const origin=new THREE.Vector3();
- player.getWorldPosition(origin);origin.y+=1.75;
- const target=aimPoint.clone();target.y=1.15;
+ player.getWorldPosition(origin);origin.y+=1.78;
+ const target=aimPoint.clone();
  makeTracer(origin,target);
 }
 
@@ -359,19 +386,49 @@ function updateEnemies3D(dt){
  }
 }
 
+function segmentHitsBuilding(a,bp){
+ const steps=Math.max(1,Math.ceil(a.distanceTo(bp)/.45));
+ for(let i=1;i<=steps;i++){
+  const p=a.clone().lerp(bp,i/steps);
+  for(const building of buildings){
+   const dx=Math.abs(p.x-building.position.x),dz=Math.abs(p.z-building.position.z);
+   if(dx<building.userData.w/2&&dz<building.userData.d/2&&p.y>=0&&p.y<=building.userData.h+.6)return true;
+  }
+ }
+ return false;
+}
 function updateBullets3D(dt){
  for(const b of bullets){
   const old=b.mesh.position.clone();
-  b.mesh.position.addScaledVector(b.dir,b.speed*dt);b.life-=dt;
-  if(bulletHitsBuilding(b.mesh.position)){b.life=0;continue}
+  const next=old.clone().addScaledVector(b.dir,b.speed*dt);
+  b.life-=dt;
+
+  let enemyHit=null,enemyHitDist=Infinity;
   for(const e of enemies){
    if(!e.userData.alive)continue;
-   const p=e.position.clone();p.y+=1.5;
-   if(b.mesh.position.distanceTo(p)<1.05){
-    e.userData.hp--;b.life=0;
-    if(e.userData.hp<=0){e.userData.alive=false;e.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
-    break;
+   const center=e.position.clone();center.y+=1.5;
+   const seg=next.clone().sub(old),len2=seg.lengthSq();
+   let q=old.clone();
+   if(len2>0){
+    const tHit=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);
+    q=old.clone().addScaledVector(seg,tHit);
    }
+   const d=q.distanceTo(center);
+   if(d<1.0){
+    const along=old.distanceTo(q);
+    if(along<enemyHitDist){enemyHit=e;enemyHitDist=along}
+   }
+  }
+
+  const buildingBlocked=segmentHitsBuilding(old,next);
+  if(buildingBlocked){
+   b.mesh.position.copy(next);b.life=0;continue;
+  }
+
+  b.mesh.position.copy(next);
+  if(enemyHit){
+   enemyHit.userData.hp--;b.life=0;
+   if(enemyHit.userData.hp<=0){enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
   }
  }
  for(let i=bullets.length-1;i>=0;i--){if(bullets[i].life<=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
