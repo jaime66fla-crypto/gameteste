@@ -49,6 +49,7 @@ const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],damageChunks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
 let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
+let bossDeathIntro=0,bossDeathIntroTotal=4.8,bossDeathScene=null;
 
 let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
 function ensureAudio(){
@@ -733,6 +734,75 @@ function updateEnemies(dt){
  }
 }
 
+function triggerBossDeath(e){
+ if(!e||bossDeathIntro>0||bossDefeated)return;
+ bossDefeated=true;bossSpawned=false;
+ bossDeathIntro=bossDeathIntroTotal;
+ bossDeathScene={x:e.x,y:e.y,angle:e.angle||0,t:0,burst:0};
+ enemyBullets.length=0;missiles.length=0;
+ flash=1;
+ for(let i=0;i<18;i++)sparks.push({x:e.x+(Math.random()-.5)*44,y:e.y+(Math.random()-.5)*36,vx:(Math.random()-.5)*220,vy:(Math.random()-.5)*220,t:.65});
+ tone(82,.35,"sawtooth",.18,.48);noise(.25,.18,900);
+}
+function drawBossDeathWorld(){
+ if(!bossDeathScene||bossDeathIntro<=0)return;
+ const s=bossDeathScene,p=1-bossDeathIntro/bossDeathIntroTotal;
+ ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.angle);
+ // Ground shadow and wreck silhouette.
+ ctx.fillStyle="rgba(0,0,0,.68)";ctx.beginPath();ctx.ellipse(10,20,54+18*p,26+8*p,0,0,Math.PI*2);ctx.fill();
+ ctx.rotate(p*.18);
+ ctx.fillStyle="#321016";ctx.beginPath();ctx.ellipse(0,5,40,31,0,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="#70242e";ctx.lineWidth=4;ctx.stroke();
+ ctx.fillStyle="#171a1e";ctx.fillRect(-37,-25,19,52);ctx.fillRect(18,-25,19,52);
+ // Broken turret drops and tilts.
+ ctx.save();ctx.translate(10*p,12*p);ctx.rotate(.45*p);
+ ctx.fillStyle="#4b151d";ctx.beginPath();ctx.arc(2,-4,23,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#1b1013";ctx.fillRect(16,-11,38,8);ctx.restore();
+ // Core flickers before final detonation.
+ const flicker=.45+.55*Math.sin(performance.now()/55);
+ if(p<.72){ctx.shadowColor="#ff354b";ctx.shadowBlur=18+18*flicker;ctx.fillStyle="#ff3348";ctx.beginPath();ctx.arc(-5,10,5+3*flicker,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0}
+ // Smoke plumes.
+ for(let i=0;i<5;i++){
+  const age=Math.max(0,p-i*.08),r=10+age*34;
+  if(age<=0)continue;
+  ctx.fillStyle="rgba(43,48,55,"+(0.42-age*.25)+")";ctx.beginPath();ctx.arc(-16+i*9,-18-age*36,r,0,Math.PI*2);ctx.fill();
+ }
+ ctx.restore();
+
+ // Multi-stage explosions.
+ const blasts=[.12,.32,.52,.73];
+ for(let i=0;i<blasts.length;i++){
+  const age=p-blasts[i];if(age<0||age>.22)continue;
+  const q=age/.22,r=20+q*70;
+  const g=ctx.createRadialGradient(s.x+(i-1.5)*14,s.y+(i%2?-10:7),2,s.x+(i-1.5)*14,s.y+(i%2?-10:7),r);
+  g.addColorStop(0,"rgba(255,255,210,"+(1-q)+")");g.addColorStop(.25,"rgba(255,180,55,"+(.9-q*.6)+")");g.addColorStop(.65,"rgba(255,64,30,"+(.55-q*.4)+")");g.addColorStop(1,"rgba(255,40,20,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(s.x+(i-1.5)*14,s.y+(i%2?-10:7),r,0,Math.PI*2);ctx.fill();
+ }
+}
+function drawBossDeathOverlay(){
+ if(bossDeathIntro<=0||!bossDeathScene)return;
+ const p=1-bossDeathIntro/bossDeathIntroTotal;
+ ctx.save();ctx.setTransform(1,0,0,1,0,0);
+ const fadeIn=Math.min(1,p/.16),fadeOut=Math.min(1,(1-p)/.12),alpha=Math.min(fadeIn,fadeOut);
+ ctx.fillStyle="rgba(3,5,8,"+(0.18+0.18*alpha)+")";ctx.fillRect(0,0,canvas.width,canvas.height);
+ if(p>.63){
+  ctx.textAlign="center";
+  ctx.shadowColor="#ff3b4d";ctx.shadowBlur=22;
+  ctx.fillStyle="rgba(255,255,255,"+Math.min(1,(p-.63)/.12)+")";
+  ctx.font="900 "+Math.round(Math.min(56,canvas.height*.075))+"px system-ui";
+  ctx.fillText("GOLIAS ELIMINADO",canvas.width/2,canvas.height*.45);
+  ctx.shadowBlur=0;
+  ctx.fillStyle="rgba(255,120,105,"+Math.min(1,(p-.7)/.12)+")";
+  ctx.font="800 "+Math.round(Math.min(18,canvas.height*.026))+"px system-ui";
+  ctx.fillText("AMEAÇA NEUTRALIZADA",canvas.width/2,canvas.height*.50);
+ }
+ if(p>.84){
+  ctx.fillStyle="rgba(220,235,245,"+Math.min(1,(p-.84)/.10)+")";
+  ctx.font="700 "+Math.round(Math.min(13,canvas.height*.018))+"px system-ui";
+  ctx.fillText("CONTROLE DEVOLVIDO AO JOGADOR",canvas.width/2,canvas.height*.56);
+ }
+ ctx.textAlign="left";ctx.restore();
+}
 function drawBossTank(e){
  const pulse=.5+.5*Math.sin(performance.now()/120);
  ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);
@@ -826,7 +896,7 @@ function updateBullets(dt){
    const canHitEnemy=playerShotFromRoof||!enemyOnRoof;
    if(canHitEnemy&&Math.hypot(b.x-e.x,b.y-e.y)<e.r+6){
     e.hp-=b.damage||1;b.t=0;
-    if(e.hp<=0){e.alive=false;if(e.boss){bossDefeated=true;bossSpawned=false;flash=1;playSound("pickup")}reportKill()}
+    if(e.hp<=0){e.alive=false;if(e.boss)triggerBossDeath(e);reportKill()}
     hitMarks.push({x:e.x,y:e.y,t:.25});break
    }
   }}
@@ -887,6 +957,24 @@ function updateBullets(dt){
 }
 function update(dt){
  if(!started||paused)return;
+ if(bossDeathIntro>0&&bossDeathScene){
+  bossDeathIntro=Math.max(0,bossDeathIntro-dt);bossDeathScene.t+=dt;
+  const p=1-bossDeathIntro/bossDeathIntroTotal;
+  const z=getViewZoom(),visibleWorldWidth=canvas.width/z,visibleWorldHeight=canvas.height/(VIEW_TILT*z);
+  const tx=bossDeathScene.x-visibleWorldWidth/2,ty=bossDeathScene.y-visibleWorldHeight/2;
+  cam.x+=(Math.max(0,Math.min(W-visibleWorldWidth,tx))-cam.x)*Math.min(1,dt*5.2);
+  cam.y+=(Math.max(0,Math.min(H-visibleWorldHeight,ty))-cam.y)*Math.min(1,dt*5.2);
+  if((p>.14&&bossDeathScene.burst<1)||(p>.34&&bossDeathScene.burst<2)||(p>.55&&bossDeathScene.burst<3)||(p>.74&&bossDeathScene.burst<4)){
+   bossDeathScene.burst++;
+   const count=10+bossDeathScene.burst*4;
+   for(let i=0;i<count;i++)sparks.push({x:bossDeathScene.x+(Math.random()-.5)*65,y:bossDeathScene.y+(Math.random()-.5)*50,vx:(Math.random()-.5)*300,vy:(Math.random()-.5)*300,t:.55});
+   flash=Math.max(flash,.8);noise(.18,.16,850);tone(70+bossDeathScene.burst*18,.16,"sawtooth",.11,.55);
+  }
+  sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
+  flash=Math.max(0,flash-dt*1.4);
+  if(bossDeathIntro<=0){bossDeathScene=null;flash=0;playSound("pickup")}
+  return;
+ }
  if(bossPhaseIntro>0&&bossIntroBoss?.alive){
   bossPhaseIntro=Math.max(0,bossPhaseIntro-dt);
   flash=Math.max(flash,.45+.35*Math.sin(performance.now()/90));
@@ -1585,7 +1673,7 @@ function drawWorldLighting(){
 }
 function render(){
  ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,canvas.width,canvas.height);ctx.save();const z=getViewZoom();ctx.translate(viewOffsetX(),viewOffsetY());ctx.scale(z,z*VIEW_TILT);ctx.transform(1,0,VIEW_SKEW,1,0,0);ctx.translate(-cam.x,-cam.y);
- road();drawBuildings();drawLadders();drawTrees();drawBushes(true);drawWeaponPickups();drawMission();drawTargets();drawEnemies();
+ road();drawBuildings();drawLadders();drawTrees();drawBushes(true);drawWeaponPickups();drawMission();drawTargets();drawEnemies();drawBossDeathWorld();
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health<=0?"#3a3a3a":car.health>40?"#65ff8b":"#d86770");drawWorldLighting();if(car.health<=0){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(car.x+8,car.y-20,13,0,Math.PI*2);ctx.fill();ctx.fillStyle="#333";ctx.beginPath();ctx.arc(car.x+16,car.y-34,9,0,Math.PI*2);ctx.fill()}drawPlayer();drawRemotePlayers();drawBushes(false);
  bullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);const col=b.color||"#ffe36e";ctx.shadowColor=col;ctx.shadowBlur=10;ctx.strokeStyle=col;ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(4,0);ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle="#fff8d2";ctx.beginPath();ctx.arc(5,0,2.4,0,Math.PI*2);ctx.fill();ctx.restore()});
@@ -1634,7 +1722,7 @@ function render(){
  });
  ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
  sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.save();ctx.globalAlpha=Math.max(.15,Math.min(1,h.t/.25));ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.shadowColor="#ff4d5a";ctx.shadowBlur=8;ctx.beginPath();ctx.moveTo(h.x-9,h.y-9);ctx.lineTo(h.x-3,h.y-3);ctx.moveTo(h.x+9,h.y-9);ctx.lineTo(h.x+3,h.y-3);ctx.moveTo(h.x-9,h.y+9);ctx.lineTo(h.x-3,h.y+3);ctx.moveTo(h.x+9,h.y+9);ctx.lineTo(h.x+3,h.y+3);ctx.stroke();ctx.restore()});
- ctx.restore();hud()
+ ctx.restore();hud();drawBossDeathOverlay()
 }
 let last=performance.now();function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
 for(const btn of document.querySelectorAll("[data-key]")){const k=btn.dataset.key;const down=e=>{e.preventDefault();keys[k]=true},up=e=>{e.preventDefault();keys[k]=false};btn.addEventListener("pointerdown",down);btn.addEventListener("pointerup",up);btn.addEventListener("pointercancel",up);btn.addEventListener("pointerleave",up)}
