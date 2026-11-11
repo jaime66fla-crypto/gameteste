@@ -149,8 +149,9 @@ const ladders=buildings.map((b,i)=>({
 function ladderForBuilding(index){return ladders.find(l=>l.building===index)}
 function pointInBuilding(x,y,b,pad=0){return x>b.x+pad&&x<b.x+b.w-pad&&y>b.y+pad&&y<b.y+b.h-pad}
 function tryRoofMovement(dx,dy,dt,run){
- const step=player.speed*run*dt,m=Math.hypot(dx,dy)||1;
- const vx=dx/m*step,vy=dy/m*step;
+ const magnitude=Math.hypot(dx,dy);
+  const step=player.speed*run*dt*Math.min(1,magnitude);
+  const vx=magnitude?dx/magnitude*step:0,vy=magnitude?dy/magnitude*step:0;
 
  if(player.roof!==null){
   const b=buildings[player.roof],l=ladderForBuilding(player.roof);
@@ -173,9 +174,9 @@ function tryRoofMovement(dx,dy,dt,run){
  // The only valid entry is the ladder zone outside the south wall.
  for(let i=0;i<buildings.length;i++){
   const b=buildings[i],l=ladderForBuilding(i),ladderCenter=l.x+l.w/2;
-  const inLadderX=Math.abs(player.x-ladderCenter)<=34;
-  const inLadderY=player.y>=b.y+b.h+6&&player.y<=b.y+b.h+70;
-  if(inLadderX&&inLadderY&&dy<-.18){
+  const inLadderX=Math.abs(player.x-ladderCenter)<=Math.max(16,l.w*.6);
+  const inLadderY=player.y>=b.y+b.h+player.r&&player.y<=b.y+b.h+player.r+20;
+  if(inLadderX&&inLadderY&&dy<-.35){
    player.roof=i;
    player.x=ladderCenter;
    player.y=b.y+b.h-34;
@@ -184,9 +185,12 @@ function tryRoofMovement(dx,dy,dt,run){
   }
  }
 
- const nx=player.x+vx,ny=player.y+vy;
- if(!collides(nx,player.y,player.r))player.x=nx;
- if(!collides(player.x,ny,player.r))player.y=ny;
+ const segments=Math.max(1,Math.ceil(Math.hypot(vx,vy)/Math.max(4,player.r*.45)));
+  for(let i=0;i<segments;i++){
+   const sx=vx/segments,sy=vy/segments;
+   if(!collides(player.x+sx,player.y,player.r))player.x+=sx;
+   if(!collides(player.x,player.y+sy,player.r))player.y+=sy;
+  }
 }
 
 const traffic=[
@@ -1764,10 +1768,13 @@ function bindJoystick(id,axis){
  const el=document.getElementById(id);if(!el)return;
  const knob=el.querySelector(".stick-knob");let active=null;
  const reset=()=>{axis.x=0;axis.y=0;knob.style.left="50%";knob.style.top="50%";active=null};
- el.addEventListener("pointerdown",e=>{e.preventDefault();active=e.pointerId;el.setPointerCapture(active);move(e)});
+ el.style.touchAction="none";
+  el.addEventListener("pointerdown",e=>{if(active!==null)return;e.preventDefault();active=e.pointerId;el.setPointerCapture(active);move(e)});
  function move(e){if(e.pointerId!==active)return;const r=el.getBoundingClientRect(),radius=r.width*.34;
   const dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),len=Math.hypot(dx,dy),scale=Math.min(1,radius/(len||1));
-  axis.x=dx*scale/radius;axis.y=dy*scale/radius;
+  const deadzone=.12,rawX=dx*scale/radius,rawY=dy*scale/radius;
+   const strength=Math.hypot(rawX,rawY),adjusted=strength<=deadzone?0:(strength-deadzone)/(1-deadzone);
+   axis.x=strength?rawX/strength*adjusted:0;axis.y=strength?rawY/strength*adjusted:0;
   knob.style.left=(50+axis.x*34)+"%";knob.style.top=(50+axis.y*34)+"%";
  }
  el.addEventListener("pointermove",move);
