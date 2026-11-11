@@ -1,4 +1,4 @@
-const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W=2800,H=1900;
+const canvas=document.getElementById("gameCanvas"),ctx=canvas.getContext("2d"),W=4000,H=2800;
 const touchMove={x:0,y:0},touchAim={x:0,y:0};
 
 function resizeGameCanvas(){
@@ -227,7 +227,7 @@ addEventListener("pointerdown",()=>ensureAudio(),{once:true});
 addEventListener("keydown",()=>ensureAudio(),{once:true});
 
 // Shared street geometry keeps asphalt, crossings, foliage and minimap aligned.
-const streets={horizontal:[440,950,1450],vertical:[580,1145,1705,2245],width:160,sidewalk:24};
+const streets={horizontal:[440,950,1450,2050,2520],vertical:[580,1145,1705,2245,2900,3500],width:160,sidewalk:24};
 function inStreet(x,y,padding=0){
  const half=streets.width/2+padding;
  return streets.horizontal.some(c=>Math.abs(y-c)<half)||streets.vertical.some(c=>Math.abs(x-c)<half);
@@ -235,12 +235,15 @@ function inStreet(x,y,padding=0){
 const remotePlayers=new Map();
 const ranking=new Map();
 const enemies=[];
-const mission={x:2480,y:1605,r:48};
+const mission={x:3650,y:2380,r:48};
 const buildings=[
 {x:80,y:70,w:360,h:240},{x:700,y:70,w:300,h:250},{x:1280,y:60,w:300,h:270},{x:1840,y:80,w:270,h:235},{x:2380,y:70,w:320,h:250},
 {x:80,y:570,w:350,h:250},{x:710,y:570,w:300,h:240},{x:1270,y:570,w:300,h:250},{x:1840,y:570,w:270,h:245},{x:2380,y:570,w:320,h:250},
 {x:80,y:1070,w:350,h:230},{x:710,y:1070,w:300,h:230},{x:1270,y:1070,w:300,h:230},{x:1840,y:1070,w:270,h:230},{x:2380,y:1070,w:320,h:230},
-{x:80,y:1580,w:350,h:230},{x:710,y:1580,w:300,h:230},{x:1270,y:1580,w:300,h:230}];
+{x:80,y:1580,w:350,h:230},{x:710,y:1580,w:300,h:230},{x:1270,y:1580,w:300,h:230},
+{x:80,y:2180,w:350,h:230},{x:710,y:2180,w:300,h:230},{x:1270,y:2180,w:300,h:230},{x:1840,y:2180,w:270,h:230},
+{x:2380,y:120,w:330,h:260},{x:2380,y:570,w:330,h:250},{x:2380,y:1070,w:330,h:230},
+{x:3020,y:120,w:310,h:260},{x:3020,y:570,w:310,h:250},{x:3020,y:1070,w:310,h:230}];
 
 const ladders=buildings.map((b,i)=>({
  building:i,
@@ -297,9 +300,9 @@ function tryRoofMovement(dx,dy,dt,run){
 }
 
 const traffic=[
-{x:100,y:440,a:0,s:95,c:"#f06b6b"},{x:2500,y:950,a:Math.PI,s:115,c:"#69a7ff"},{x:1145,y:140,a:Math.PI/2,s:82,c:"#ffd35f"},{x:1705,y:1650,a:-Math.PI/2,s:90,c:"#d77cff"}];
+{x:100,y:440,a:0,s:95,c:"#f06b6b"},{x:3820,y:950,a:Math.PI,s:115,c:"#69a7ff"},{x:1145,y:140,a:Math.PI/2,s:82,c:"#ffd35f"},{x:1705,y:2650,a:-Math.PI/2,s:90,c:"#d77cff"},{x:2900,y:1880,a:Math.PI/2,s:88,c:"#8bd6a6"},{x:3500,y:2230,a:-Math.PI/2,s:104,c:"#e7a45f"}];
 const targets=[
-{x:860,y:440,r:20,hp:3},{x:1420,y:950,r:20,hp:3},{x:2020,y:1450,r:20,hp:3},{x:2420,y:950,r:20,hp:3},{x:580,y:1450,r:20,hp:3}
+{x:860,y:440,r:20,hp:3},{x:1420,y:950,r:20,hp:3},{x:2020,y:1450,r:20,hp:3},{x:3120,y:950,r:20,hp:3},{x:580,y:2050,r:20,hp:3},{x:3500,y:1450,r:20,hp:3},{x:2900,y:2520,r:20,hp:3}
 ];
 const trees=[];for(let x=470;x<W;x+=250)for(let y=330;y<H;y+=330){const t={x:x+Math.random()*50,y:y+Math.random()*55};if(!inStreet(t.x,t.y,28)&&!collides(t.x,t.y,20))trees.push(t);}
 const bushes=[];
@@ -1229,7 +1232,7 @@ function road(){
  // Asphalt aggregate/noise.
  ctx.save();ctx.globalAlpha=.22;
  for(let i=0;i<1050;i++){
-  const horiz=i%2===0,lane=horiz?roadsY[(i*7)%3]:roadsX[(i*11)%4];
+  const horiz=i%2===0,lane=horiz?roadsY[(i*7)%roadsY.length]:roadsX[(i*11)%roadsX.length];
   const px=horiz?((i*137)%W):lane+((i*19)%(width-6))+3;
   const py=horiz?lane+((i*23)%(width-6))+3:((i*149)%H);
   ctx.fillStyle=i%5===0?"#74808a":"#090d12";
@@ -1256,44 +1259,44 @@ function road(){
  // Residential / greener west side.
  ctx.fillStyle="rgba(52,88,56,.22)";ctx.fillRect(0,0,560,H);
  for(let i=0;i<28;i++){
-  const gx=70+(i*83)%430,gy=120+(i*137)%1650;
+  const gx=70+(i*83)%430,gy=120+(i*137)%(H-240);
   ctx.fillStyle=i%3===0?"rgba(55,110,65,.45)":"rgba(42,82,50,.35)";
   ctx.beginPath();ctx.arc(gx,gy,8+(i%4)*3,0,Math.PI*2);ctx.fill();
  }
 
  // Industrial sector east-center.
- ctx.fillStyle="rgba(92,84,68,.22)";ctx.fillRect(1780,0,520,1450);
- for(const [tx,ty,r] of [[1960,360,46],[2070,360,39],[1975,760,42],[2110,760,48]]){
+ ctx.fillStyle="rgba(92,84,68,.22)";ctx.fillRect(1780,0,1420,1850);
+ for(const [tx,ty,r] of [[1960,360,46],[2070,360,39],[1975,760,42],[2110,760,48],[2620,360,44],[2760,760,50],[3040,1220,46]]){
   ctx.fillStyle="#74766f";ctx.beginPath();ctx.arc(tx,ty,r,0,Math.PI*2);ctx.fill();
   ctx.strokeStyle="#9a9b90";ctx.lineWidth=5;ctx.stroke();
   ctx.fillStyle="#4d5250";ctx.beginPath();ctx.arc(tx,ty,r*.55,0,Math.PI*2);ctx.fill();
  }
 
  // Port / container yards on far east.
- ctx.fillStyle="rgba(58,72,78,.34)";ctx.fillRect(2325,0,475,1450);
+ ctx.fillStyle="rgba(58,72,78,.34)";ctx.fillRect(3225,0,775,1850);
  const containerColors=["#7a503b","#596f78","#5e6948","#6d4d58"];
  for(let i=0;i<28;i++){
-  const cx=2360+(i%5)*76,cy=360+Math.floor(i/5)*64;
+  const cx=3290+(i%7)*82,cy=280+Math.floor(i/7)*72;
   ctx.fillStyle=containerColors[i%containerColors.length];ctx.fillRect(cx,cy,58,24);
   ctx.strokeStyle="rgba(20,25,28,.55)";ctx.strokeRect(cx+.5,cy+.5,57,23);
  }
  // Quays and piers.
- ctx.fillStyle="#5f6462";ctx.fillRect(2675,120,105,970);
- ctx.fillRect(2580,120,80,410);ctx.fillRect(2580,660,80,370);
+ ctx.fillStyle="#5f6462";ctx.fillRect(3860,120,120,1420);
+ ctx.fillRect(3720,120,95,560);ctx.fillRect(3720,820,95,520);
  ctx.strokeStyle="#b18b51";ctx.lineWidth=6;
- for(const y of [210,510,790,1020]){ctx.beginPath();ctx.moveTo(2640,y);ctx.lineTo(2770,y-95);ctx.stroke()}
+ for(const y of [240,560,920,1260]){ctx.beginPath();ctx.moveTo(3790,y);ctx.lineTo(3960,y-110);ctx.stroke()}
 
  // Airport carved out in south-east.
- ctx.fillStyle="#59605f";ctx.fillRect(1750,1510,1030,360);
- ctx.fillStyle="#2f3538";ctx.fillRect(1830,1688,850,105);
- ctx.strokeStyle="#d8d0a2";ctx.lineWidth=3;ctx.setLineDash([34,22]);ctx.beginPath();ctx.moveTo(1870,1740);ctx.lineTo(2640,1740);ctx.stroke();ctx.setLineDash([]);
+ ctx.fillStyle="#59605f";ctx.fillRect(2360,1940,1540,760);
+ ctx.fillStyle="#2f3538";ctx.fillRect(2480,2290,1260,130);
+ ctx.strokeStyle="#d8d0a2";ctx.lineWidth=3;ctx.setLineDash([34,22]);ctx.beginPath();ctx.moveTo(2530,2355);ctx.lineTo(3690,2355);ctx.stroke();ctx.setLineDash([]);
  ctx.strokeStyle="#d6d9d0";ctx.lineWidth=3;
- for(const x of [1880,2010,2140,2270,2400,2530]){ctx.beginPath();ctx.moveTo(x,1701);ctx.lineTo(x,1715);ctx.moveTo(x,1765);ctx.lineTo(x,1779);ctx.stroke()}
+ for(const x of [2560,2740,2920,3100,3280,3460,3640]){ctx.beginPath();ctx.moveTo(x,2308);ctx.lineTo(x,2324);ctx.moveTo(x,2386);ctx.lineTo(x,2402);ctx.stroke()}
  // Taxiway / apron.
- ctx.fillStyle="#3f4649";ctx.fillRect(1960,1560,710,92);ctx.fillRect(2480,1560,190,225);
- ctx.strokeStyle="rgba(232,193,84,.65)";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(1990,1606);ctx.lineTo(2600,1606);ctx.stroke();
+ ctx.fillStyle="#3f4649";ctx.fillRect(2520,2070,1080,110);ctx.fillRect(3460,2070,280,350);
+ ctx.strokeStyle="rgba(232,193,84,.65)";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(2570,2125);ctx.lineTo(3650,2125);ctx.stroke();
  // Simple aircraft silhouette.
- ctx.save();ctx.translate(2425,1605);ctx.fillStyle="#c7ced2";
+ ctx.save();ctx.translate(3360,2125);ctx.fillStyle="#c7ced2";
  ctx.fillRect(-45,-5,90,10);ctx.fillRect(-7,-36,14,72);
  ctx.beginPath();ctx.moveTo(45,-5);ctx.lineTo(64,0);ctx.lineTo(45,5);ctx.closePath();ctx.fill();
  ctx.fillRect(-22,-24,44,5);ctx.restore();
@@ -1330,14 +1333,14 @@ function road(){
  // Patches, cracks and worn asphalt.
  ctx.fillStyle="rgba(5,9,13,.22)";
  for(let i=0;i<24;i++){
-  const x=80+(i*223)%2660,y=roadsY[i%3]+14+(i*29)%(width-28);
+  const x=80+(i*223)%(W-140),y=roadsY[i%roadsY.length]+14+(i*29)%(width-28);
   ctx.beginPath();ctx.ellipse(x,y,16+(i%4)*8,5+(i%3)*3,.18,0,Math.PI*2);ctx.fill();
  }
  ctx.strokeStyle="rgba(4,8,11,.86)";ctx.lineWidth=1.6;
  for(let i=0;i<52;i++){
   const horiz=i%3!==0;
-  const x=horiz?50+(i*157)%2700:roadsX[i%4]+12+((i*13)%(width-24));
-  const y=horiz?roadsY[i%3]+12+((i*31)%(width-24)):40+(i*151)%1800;
+  const x=horiz?50+(i*157)%(W-100):roadsX[i%roadsX.length]+12+((i*13)%(width-24));
+  const y=horiz?roadsY[i%roadsY.length]+12+((i*31)%(width-24)):40+(i*151)%(H-80);
   ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+10,y-7);ctx.lineTo(x+21,y+2);ctx.lineTo(x+31,y-5);ctx.stroke();
   if(i%4===0){ctx.beginPath();ctx.moveTo(x+14,y-4);ctx.lineTo(x+10,y+7);ctx.stroke()}
  }
@@ -1345,7 +1348,7 @@ function road(){
  // Old tire marks.
  ctx.globalAlpha=.26;ctx.strokeStyle="#020406";ctx.lineWidth=4;
  for(let i=0;i<15;i++){
-  const x=160+(i*229)%2500,y=[418,968,1418][i%3];
+  const x=160+(i*229)%(W-260),y=roadsY[i%roadsY.length]-22;
   ctx.beginPath();ctx.moveTo(x,y);ctx.quadraticCurveTo(x+28,y+(i%2?10:-8),x+68,y+(i%2?3:-3));ctx.stroke();
  }
  ctx.globalAlpha=1;
@@ -1795,9 +1798,9 @@ function hud(){
  buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));
  ctx.save();ctx.font="700 5px system-ui";ctx.fillStyle="#b7c8d2";ctx.textAlign="center";
  ctx.fillText("CENTRO",mx+1435/W*mw,my+1180/H*mh);
- ctx.fillText("IND.",mx+2020/W*mw,my+780/H*mh);
- ctx.fillText("PORTO",mx+2550/W*mw,my+760/H*mh);
- ctx.fillText("AEROP.",mx+2280/W*mw,my+1690/H*mh);
+ ctx.fillText("IND.",mx+2700/W*mw,my+980/H*mh);
+ ctx.fillText("PORTO",mx+3620/W*mw,my+820/H*mh);
+ ctx.fillText("AEROP.",mx+3200/W*mw,my+2380/H*mh);
  ctx.restore();
  if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,3,0,Math.PI*2);ctx.fill()}
  ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,3.3,0,Math.PI*2);ctx.fill();
@@ -1845,7 +1848,7 @@ function drawWorldLighting(){
  // Ambient mist/smoke patches.
  ctx.save();ctx.globalAlpha=.11;
  for(let i=0;i<12;i++){
-  const x=180+(i*239)%2500,y=210+(i*173)%1450,r=34+(i%4)*18;
+  const x=180+(i*239)%(W-360),y=210+(i*173)%(H-420),r=34+(i%4)*18;
   const g=ctx.createRadialGradient(x,y,2,x,y,r);g.addColorStop(0,"rgba(190,205,220,.55)");g.addColorStop(1,"rgba(190,205,220,0)");
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
  }
