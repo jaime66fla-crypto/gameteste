@@ -689,3 +689,110 @@ body.modal-open{overflow:hidden}
 .weapon-svg{width:100%;height:100%;display:block;filter:drop-shadow(0 10px 12px #0007)}
 .realistic-art:before{display:none!important}
 .realistic-art:after{display:none!important}
+
+
+/* V5.2 launcher aligned with cinematic night city */
+.launcher-screen{
+  background:
+    radial-gradient(circle at 78% 30%,rgba(49,112,164,.20),transparent 24%),
+    radial-gradient(circle at 22% 78%,rgba(255,157,77,.08),transparent 20%),
+    linear-gradient(135deg,#07101a 0%,#0c1723 48%,#060b12 100%);
+}
+.launcher-screen:before{
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px),
+    linear-gradient(12deg,transparent 48%,rgba(255,255,255,.018) 49%,transparent 50%);
+  background-size:56px 56px,56px 56px,180px 180px;
+  opacity:.42;
+}
+.launcher-screen:after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(circle at 78% 18%,rgba(255,196,121,.12),transparent 9%),
+    radial-gradient(circle at 72% 64%,rgba(255,162,83,.07),transparent 11%),
+    linear-gradient(180deg,rgba(4,9,15,.08),rgba(4,9,15,.34));
+  mix-blend-mode:screen;
+}
+.launcher-nav{background:linear-gradient(180deg,rgba(5,11,18,.58),rgba(5,11,18,.18));backdrop-filter:blur(10px)}
+.brand-mark{background:linear-gradient(145deg,#7ee8ff,#4fb5d2);color:#031018;box-shadow:0 0 26px #24d9ff35}
+.launcher-brand strong{color:#eef8ff}.launcher-brand small{color:#748da0}
+.launcher-kicker{color:#7ee8ff;text-shadow:0 0 14px #24d9ff35}
+.launcher-copy h1{color:#f3f6f8;text-shadow:0 10px 35px #0008}
+.launcher-copy h1 em{-webkit-text-stroke:1.2px #bcd7e688}
+.launcher-copy p{color:#9dafbd}
+.launcher-buttons .btn{
+  background:linear-gradient(135deg,#7ee8ff,#52c8ee);
+  color:#031018;box-shadow:0 12px 32px #24d9ff26;border:1px solid #b9f3ff44
+}
+.launcher-buttons .btn:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.launcher-secondary,.launcher-link{
+  background:linear-gradient(180deg,rgba(13,25,37,.88),rgba(7,14,22,.9));
+  border-color:#5f748322;
+}
+.launcher-secondary:hover,.launcher-link:hover{border-color:#7ee8ff66;background:#102333}
+.launcher-status span:first-child{color:#9ed8e6}.launcher-status i{background:#7ee8ff;box-shadow:0 0 12px #24d9ff}
+
+.launcher-showcase{
+  background:
+    radial-gradient(circle at 50% 40%,rgba(73,128,164,.16),transparent 33%),
+    linear-gradient(180deg,rgba(12,24,36,.95),rgba(6,12,18,.98));
+  border-color:#6d829022;
+  box-shadow:0 34px 90px #000b,inset 0 0 0 1px #ffffff05;
+}
+.showcase-grid{
+  background-image:
+    linear-gradient(rgba(255,255,255,.055) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.055) 1px,transparent 1px);
+  background-size:38px 38px;
+}
+.showcase-glow{
+  background:radial-gradient(circle,rgba(255,184,105,.24),rgba(36,217,255,.09) 42%,transparent 70%);
+  filter:blur(24px);
+}
+.showcase-badge{
+  background:linear-gradient(180deg,rgba(10,20,29,.92),rgba(7,13,20,.96));
+  border-color:#9ab0bd22;box-shadow:0 16px 34px #0007
+}
+.showcase-badge b{color:#7ee8ff}
+.launcher-card{
+  background:linear-gradient(180deg,rgba(13,24,34,.92),rgba(7,14,21,.96))!important;
+  border-color:#60758522!important;
+  box-shadow:0 14px 34px #0005;
+}
+.launcher-card:hover{border-color:#7ee8ff55!important;transform:translateY(-2px)}
+.launcher-card .card-icon{color:#7ee8ff!important}
+
+.launcher-panel{background:rgba(3,8,13,.82)!important;backdrop-filter:blur(14px)}
+.launcher-panel-card{
+  background:linear-gradient(180deg,#0d1721f7,#071019f7)!important;
+  border-color:#60758533!important;
+  box-shadow:0 30px 90px #000c!important;
+}
+.update-list article,.weapon-card,.character-preview-wrap{
+  background:linear-gradient(180deg,#0d1923,#08121a)!important;
+  border-color:#536a7a2b!important;
+}
+.weapon-art,.realistic-art{box-shadow:inset 0 -20px 32px #0006,0 12px 24px #0004!important}
+.character-preview-wrap{
+  background:
+    radial-gradient(circle at 50% 55%,rgba(255,181,95,.09),transparent 26%),
+    radial-gradient(circle at 50% 52%,rgba(36,217,255,.10),transparent 43%),
+    #08121a!important;
+}
+.start-panel,.tutorial-card,.pause-card{
+  background:linear-gradient(180deg,rgba(12,24,35,.96),rgba(6,13,20,.97))!important;
+  border-color:#5f748333!important;
+  box-shadow:0 24px 70px #000b!important;
+}
+.platform-btn,.mode-btn,.ghost{
+  background:linear-gradient(180deg,#111e29,#0a141d)!important;
+  border-color:#51687855!important;
+}
+.platform-btn.active{
+  background:linear-gradient(135deg,#7ee8ff,#4fc6eb)!important;color:#031018!important
+}
+.mode-btn.active{
+  background:linear-gradient(135deg,#7ee8ff,#4fc6eb)!important;color:#031018!important;border-color:#7ee8ff!important
+}
+.game-modal-topbar{background:linear-gradient(180deg,#09131ce8,#071018e8)}
