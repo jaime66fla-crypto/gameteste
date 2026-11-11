@@ -93,61 +93,122 @@ let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempt
 let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
 let bossDeathIntro=0,bossDeathIntroTotal=4.8,bossDeathScene=null;
 
-let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off",engineOsc=null,engineGain=null;
+let audioCtx=null,audioMaster=null,soundEnabled=localStorage.getItem("streetSound")!=="off";
+let engineOsc=null,engineOsc2=null,engineGain=null,engineFilter=null,stepPhase=0,ambientTimer=0;
 function ensureAudio(){
  if(!soundEnabled)return null;
  if(!audioCtx){
   audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-  audioMaster=audioCtx.createGain();audioMaster.gain.value=.42;audioMaster.connect(audioCtx.destination);
+  audioMaster=audioCtx.createGain();
+  const comp=audioCtx.createDynamicsCompressor();
+  comp.threshold.value=-10;comp.knee.value=12;comp.ratio.value=4;comp.attack.value=.003;comp.release.value=.18;
+  audioMaster.gain.value=.48;audioMaster.connect(comp);comp.connect(audioCtx.destination);
  }
  if(audioCtx.state==="suspended")audioCtx.resume().catch(()=>{});
  return audioCtx;
 }
-function tone(freq=440,dur=.08,type="square",vol=.18,slide=1){
- const ac=ensureAudio();if(!ac)return;
- const o=ac.createOscillator(),g=ac.createGain(),t=ac.currentTime;
- o.type=type;o.frequency.setValueAtTime(freq,t);o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*slide),t+dur);
- g.gain.setValueAtTime(Math.max(.0001,vol),t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
- o.connect(g);g.connect(audioMaster);o.start(t);o.stop(t+dur+.02);
+function spatialNodes(x=null,y=null,vol=1){
+ const ac=ensureAudio();if(!ac)return null;
+ const gain=ac.createGain(),pan=ac.createStereoPanner?ac.createStereoPanner():null;
+ let distance=0,p=0;
+ if(Number.isFinite(x)&&Number.isFinite(y)){
+  distance=Math.hypot(x-player.x,y-player.y);
+  const max=1150;vol*=Math.max(.045,1-distance/max);
+  p=Math.max(-.82,Math.min(.82,(x-player.x)/650));
+ }
+ gain.gain.value=Math.max(.0001,vol);
+ if(pan){pan.pan.value=p;gain.connect(pan);pan.connect(audioMaster)}else gain.connect(audioMaster);
+ return {ac,gain,pan,distance};
 }
-function noise(dur=.08,vol=.12,filterFreq=1600){
- const ac=ensureAudio();if(!ac)return;
- const len=Math.max(1,Math.floor(ac.sampleRate*dur)),buf=ac.createBuffer(1,len,ac.sampleRate),data=buf.getChannelData(0);
- for(let i=0;i<len;i++)data[i]=Math.random()*2-1;
- const src=ac.createBufferSource(),f=ac.createBiquadFilter(),g=ac.createGain(),t=ac.currentTime;
- src.buffer=buf;f.type="lowpass";f.frequency.value=filterFreq;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(.0001,t+dur);
- src.connect(f);f.connect(g);g.connect(audioMaster);src.start(t);
+function tone(freq=440,dur=.08,type="square",vol=.18,slide=1,x=null,y=null,delay=0){
+ const n=spatialNodes(x,y,vol);if(!n)return;
+ const {ac,gain}=n,o=ac.createOscillator(),t=ac.currentTime+delay;
+ o.type=type;o.frequency.setValueAtTime(Math.max(30,freq),t);
+ o.frequency.exponentialRampToValueAtTime(Math.max(30,freq*slide),t+dur);
+ gain.gain.setValueAtTime(Math.max(.0001,gain.gain.value),t);
+ gain.gain.exponentialRampToValueAtTime(.0001,t+dur);
+ o.connect(gain);o.start(t);o.stop(t+dur+.025);
 }
-function playSound(name){
+function noise(dur=.08,vol=.12,filterFreq=1600,x=null,y=null,filterType="lowpass",delay=0){
+ const n=spatialNodes(x,y,vol);if(!n)return;
+ const {ac,gain}=n,len=Math.max(1,Math.floor(ac.sampleRate*dur)),buf=ac.createBuffer(1,len,ac.sampleRate),data=buf.getChannelData(0);
+ for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*(1-i/len*.28);
+ const src=ac.createBufferSource(),f=ac.createBiquadFilter(),t=ac.currentTime+delay;
+ src.buffer=buf;f.type=filterType;f.frequency.value=filterFreq;f.Q.value=.65;
+ gain.gain.setValueAtTime(Math.max(.0001,gain.gain.value),t);gain.gain.exponentialRampToValueAtTime(.0001,t+dur);
+ src.connect(f);f.connect(gain);src.start(t);src.stop(t+dur+.02);
+}
+function gunshot(kind,x=null,y=null,scale=1){
+ const v=.82+Math.random()*.18,pitch=.94+Math.random()*.12;
+ const cfg={
+  pistol:[2450,.10,.14,122,.12],
+  smg:[3150,.065,.10,155,.07],
+  shotgun:[1450,.20,.22,78,.22],
+  rifle:[3900,.11,.16,108,.14],
+  lmg:[2600,.075,.14,118,.085],
+  sawedoff:[1200,.24,.25,66,.26]
+ }[kind]||[2400,.08,.12,120,.1];
+ noise(cfg[1],cfg[2]*v*scale,cfg[0],x,y,"lowpass");
+ noise(cfg[1]*.45,cfg[2]*.55*v*scale,6200,x,y,"highpass");
+ tone(cfg[3]*pitch,cfg[4],kind==="rifle"?"triangle":"sawtooth",cfg[2]*.44*v*scale,.42,x,y);
+ tone((kind==="shotgun"||kind==="sawedoff")?52:72,cfg[4]*1.35,"sine",cfg[2]*.36*v*scale,.72,x,y,.012);
+ // short reflection gives outdoor shots more body without audio files
+ noise(cfg[1]*.8,cfg[2]*.18*v*scale,1100,x,y,"lowpass",.055+Math.random()*.035);
+}
+function playSound(name,opts={}){
  if(!soundEnabled)return;
+ const x=opts.x??null,y=opts.y??null,s=opts.vol??1;
  switch(name){
-  case "pistol": noise(.055,.12,2600);tone(160,.07,"square",.12,.55);break;
-  case "smg": noise(.035,.09,3200);tone(190,.045,"square",.08,.65);break;
-  case "shotgun": noise(.14,.22,1800);tone(105,.16,"sawtooth",.16,.45);break;
-  case "rifle": noise(.07,.14,3600);tone(220,.065,"square",.11,.5);break;
-  case "lmg": noise(.055,.13,2600);tone(145,.055,"square",.09,.58);break;
-  case "sawedoff": noise(.18,.26,1500);tone(88,.19,"sawtooth",.18,.38);break;
-  case "reload": tone(520,.035,"square",.08,1.05);setTimeout(()=>tone(330,.055,"square",.08,.9),180);break;
-  case "damage": noise(.09,.08,900);tone(82,.12,"sawtooth",.09,.65);break;
-  case "death": tone(120,.34,"sawtooth",.16,.28);break;
-  case "pickup": tone(520,.08,"sine",.08,1.35);setTimeout(()=>tone(760,.1,"sine",.07,1.15),70);break;
-  case "car": tone(125,.12,"sawtooth",.09,.8);break;
-  case "nitro": noise(.12,.06,1100);tone(180,.14,"sawtooth",.05,1.4);break;
+  case "pistol":case "smg":case "shotgun":case "rifle":case "lmg":case "sawedoff":gunshot(name,x,y,s);break;
+  case "reload":
+   noise(.025,.035*s,5200,x,y,"highpass");tone(720,.025,"triangle",.05*s,.72,x,y,.025);tone(410,.045,"triangle",.055*s,.82,x,y,.19);break;
+  case "damage": noise(.10,.09*s,780,x,y);tone(68,.15,"sawtooth",.08*s,.62,x,y);break;
+  case "death": tone(105,.42,"sawtooth",.13*s,.24,x,y);noise(.18,.055*s,520,x,y);break;
+  case "pickup": tone(520,.07,"sine",.07*s,1.25,x,y);tone(760,.09,"sine",.055*s,1.12,x,y,.07);break;
+  case "car": tone(92,.10,"triangle",.07*s,.82,x,y);noise(.045,.025*s,1300,x,y);break;
+  case "nitro": noise(.20,.075*s,1450,x,y);tone(125,.22,"sawtooth",.045*s,1.65,x,y);break;
+  case "step": noise(.035,.026*s,850,x,y);tone(82,.025,"sine",.018*s,.7,x,y);break;
+  case "stepRoof": noise(.03,.023*s,2100,x,y,"bandpass");tone(145,.025,"triangle",.015*s,.82,x,y);break;
+  case "impact": noise(.045,.045*s,2800,x,y,"bandpass");tone(115,.045,"triangle",.03*s,.65,x,y);break;
+  case "missileLaunch": noise(.38,.065*s,900,x,y);tone(95,.42,"sawtooth",.055*s,1.7,x,y);break;
+  case "missileIncoming": tone(760,.17,"sine",.035*s,1.45,x,y);break;
+  case "explosion":
+   noise(.34,.30*s,1050,x,y);noise(.16,.13*s,4200,x,y,"highpass");
+   tone(58,.38,"sine",.22*s,.42,x,y);tone(92,.22,"sawtooth",.10*s,.34,x,y,.018);break;
+  case "skid": noise(.12,.035*s,3900,x,y,"bandpass");break;
  }
 }
+function updateFootsteps(moving,run){
+ if(!moving||player.inCar||player.dead){stepPhase=0;return}
+ stepPhase+=run>1?1.55:1;
+ if(stepPhase>=7.8){stepPhase=0;playSound(player.roof!==null?"stepRoof":"step",{x:player.x,y:player.y,vol:run>1?1.35:1})}
+}
+function updateAmbientSound(dt){
+ if(!started||paused||player.dead)return;
+ ambientTimer-=dt;if(ambientTimer>0)return;
+ ambientTimer=3.5+Math.random()*5.5;
+ const a=Math.random()*Math.PI*2,d=520+Math.random()*520,x=player.x+Math.cos(a)*d,y=player.y+Math.sin(a)*d;
+ if(Math.random()<.55)noise(.35,.018,700,x,y);else tone(170+Math.random()*70,.45,"sine",.009,.92,x,y);
+}
 function updateEngineSound(){
- if(!soundEnabled||!player.inCar||paused||player.dead){
-  if(engineGain)engineGain.gain.setTargetAtTime(.0001,audioCtx?.currentTime||0,.05);
+ if(!soundEnabled||!player.inCar||paused||player.dead||car.health<=0){
+  if(engineGain&&audioCtx)engineGain.gain.setTargetAtTime(.0001,audioCtx.currentTime,.06);
   return;
  }
  const ac=ensureAudio();if(!ac)return;
  if(!engineOsc){
-  engineOsc=ac.createOscillator();engineGain=ac.createGain();engineOsc.type="sawtooth";engineGain.gain.value=.0001;
-  engineOsc.connect(engineGain);engineGain.connect(audioMaster);engineOsc.start();
+  engineOsc=ac.createOscillator();engineOsc2=ac.createOscillator();engineGain=ac.createGain();engineFilter=ac.createBiquadFilter();
+  engineOsc.type="sawtooth";engineOsc2.type="triangle";engineFilter.type="lowpass";engineFilter.Q.value=.75;engineGain.gain.value=.0001;
+  engineOsc.connect(engineFilter);engineOsc2.connect(engineFilter);engineFilter.connect(engineGain);engineGain.connect(audioMaster);
+  engineOsc.start();engineOsc2.start();
  }
- const speed=Math.abs(car.speed),freq=55+speed*.34;
- engineOsc.frequency.setTargetAtTime(freq,ac.currentTime,.045);
- engineGain.gain.setTargetAtTime(.025+Math.min(.075,speed/6500),ac.currentTime,.06);
+ const speed=Math.abs(car.speed),throttle=(keys.w||keys.arrowup||touchMove.y<-.18)?1:0;
+ const rpm=Math.min(1,speed/Math.max(1,car.max)),base=43+rpm*92+throttle*14;
+ engineOsc.frequency.setTargetAtTime(base,ac.currentTime,.055);
+ engineOsc2.frequency.setTargetAtTime(base*2.03,ac.currentTime,.055);
+ engineFilter.frequency.setTargetAtTime(500+rpm*1800+throttle*500,ac.currentTime,.08);
+ engineGain.gain.setTargetAtTime(.028+rpm*.058+throttle*.018,ac.currentTime,.07);
+ if((keys[" "]||Math.abs(touchMove.x)>.75)&&speed>150&&Math.random()<.08)playSound("skid",{x:car.x,y:car.y});
 }
 function refreshSoundButton(){
  const b=document.getElementById("soundBtn");if(b)b.textContent=soundEnabled?"Som ON":"Som OFF";
@@ -754,11 +815,12 @@ function updateEnemies(dt){
    if(e.phase===2&&bossPhaseIntro<=0&&e.missileCd<=0){
     e.missileCd=2.2+Math.random()*1.4;
     const count=2+Math.floor(Math.random()*3);
+    playSound("missileLaunch",{x:e.x,y:e.y,vol:1.15});
     for(let i=0;i<count;i++){
      let tx=player.x+(Math.random()-.5)*520,ty=player.y+(Math.random()-.5)*420,tries=0;
      while(collides(tx,ty,24)&&tries++<20){tx=player.x+(Math.random()-.5)*520;ty=player.y+(Math.random()-.5)*420}
      tx=Math.max(60,Math.min(W-60,tx));ty=Math.max(60,Math.min(H-60,ty));
-     missiles.push({x:tx,y:ty,t:1.65,total:1.65,r:54,exploded:false,startX:tx+(Math.random()-.5)*260,startY:ty-320-Math.random()*180});
+     missiles.push({x:tx,y:ty,t:1.65,total:1.65,r:54,exploded:false,startX:tx+(Math.random()-.5)*260,startY:ty-320-Math.random()*180});if(i===0)playSound("missileIncoming",{x:tx,y:ty,vol:1.15});
     }
    }
   }
@@ -949,7 +1011,7 @@ function updateBullets(dt){
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const playerShotFromRoof=b.layer!==null&&b.layer!==undefined;
   const playerShotBlocked=playerShotFromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
-  if(playerShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});continue}
+  if(playerShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});if(Math.random()<.55)playSound("impact",{x:b.x,y:b.y,vol:.7});continue}
   b.x=nx;b.y=ny;
   if(gameMode==="solo"){for(const e of enemies){
    if(!e.alive)continue;
@@ -1011,7 +1073,7 @@ function updateBullets(dt){
    for(let i=0;i<18;i++)sparks.push({x:m.x,y:m.y,vx:(Math.random()-.5)*260,vy:(Math.random()-.5)*260,t:.5});
    if(!player.dead&&!player.inCar&&player.roof===null&&Math.hypot(player.x-m.x,player.y-m.y)<m.r)killPlayer();
    if(player.inCar&&Math.hypot(car.x-m.x,car.y-m.y)<m.r){car.health=0;car.speed=0;car.nitro=0;player.inCar=false;player.x=car.x+55;player.y=car.y}
-   playSound("death");
+   playSound("explosion",{x:m.x,y:m.y,vol:1.2});
   }
  }
  missiles=missiles.filter(m=>m.t>0);
@@ -1092,7 +1154,7 @@ function update(dt){
   const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x,dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
   const moving=dx!==0||dy!==0,m=Math.hypot(dx,dy)||1,run=keys.shift?1.55:1;
   const move=screenAlignedInput(dx,dy);tryRoofMovement(move.x,move.y,dt,run);
-  if(moving)player.walk+=dt*(run>1?13:9);
+  if(moving)player.walk+=dt*(run>1?13:9);updateFootsteps(moving,run);
   if(Math.hypot(touchAim.x,touchAim.y)>.12){const aim=unprojectVector(touchAim.x,touchAim.y),wx=aim.x,wy=aim.y;player.angle=Math.atan2(wy,wx);mouse.x=player.x+wx*200;mouse.y=player.y+wy*200;mouse.layer=player.roof;}
   else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
@@ -1101,7 +1163,7 @@ function update(dt){
  if(gameMode==="solo"&&!bossSpawned&&!bossDefeated&&enemies.filter(e=>e.alive&&!e.boss).length===0)spawnBoss();
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
  skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);damageChunks.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(.055,dt);p.vy*=Math.pow(.055,dt);p.vy+=70*dt;p.rot+=p.spin*dt;p.t-=dt});damageChunks=damageChunks.filter(p=>p.t>0);
- updateEngineSound();
+ updateEngineSound();updateAmbientSound(dt);
  followCamera(player.x,player.y,dt,5.5,buildingHeight(player.roof));
  if(selectedPlatform!=="mobile"&&mouse.screenX!==null)updatePointerAim(mouse.screenX,mouse.screenY);
  netTimer+=dt;if(netTimer>=.033){netTimer=0;sendNetState()}
