@@ -326,8 +326,9 @@ function setAvatarMotion(kind,force=false){
   primary.enabled=true;
   primary.play();
   if(kind==='idle'){
-   primary.paused=true;
-   primary.time=Math.min(clip.duration*.18,.35);
+   primary.paused=false;
+   primary.timeScale=0;
+   primary.time=Math.max(.01,clip.duration*.52);
   }else{
    primary.paused=false;
    primary.timeScale=kind==='run'?1.45:kind==='climb'?.72:1.0;
