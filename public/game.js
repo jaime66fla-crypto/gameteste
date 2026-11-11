@@ -178,10 +178,14 @@ function playSound(name,opts={}){
   case "skid": noise(.12,.035*s,3900,x,y,"bandpass");break;
  }
 }
-function updateFootsteps(moving,run){
+function updateFootsteps(moving,run,dt){
  if(!moving||player.inCar||player.dead){stepPhase=0;return}
- stepPhase+=run>1?1.55:1;
- if(stepPhase>=7.8){stepPhase=0;playSound(player.roof!==null?"stepRoof":"step",{x:player.x,y:player.y,vol:run>1?1.35:1})}
+ stepPhase+=dt;
+ const interval=run>1?.27:.39;
+ if(stepPhase>=interval){
+  stepPhase%=interval;
+  playSound(player.roof!==null?"stepRoof":"step",{x:player.x,y:player.y,vol:run>1?1.35:1});
+ }
 }
 function updateAmbientSound(dt){
  if(!started||paused||player.dead)return;
@@ -550,12 +554,23 @@ function ensurePlayerNotStuck(){
   player.x=p.x;player.y=p.y;
  }
 }
-function projectileHitsWall(x1,y1,x2,y2,layer=null){
+function projectileHitsWall(x1,y1,x2,y2,layer=null,targetLayer=null,originX=x1,originY=y1,visualRange=300){
  const dist=Math.hypot(x2-x1,y2-y1),steps=Math.max(1,Math.ceil(dist/8));
+ const sourceHeight=buildingHeight(layer),targetHeight=buildingHeight(targetLayer);
  for(let i=1;i<=steps;i++){
   const t=i/steps,x=x1+(x2-x1)*t,y=y1+(y2-y1)*t;
   if(x<0||y<0||x>W||y>H)return true;
-  if(layer===null&&buildings.some(b=>pointInBuilding(x,y,b,0)))return true;
+  const traveled=Math.hypot(x-originX,y-originY);
+  const ht=Math.min(1,traveled/Math.max(1,visualRange));
+  const projectileHeight=sourceHeight+(targetHeight-sourceHeight)*ht;
+  for(let bi=0;bi<buildings.length;bi++){
+   const b=buildings[bi];
+   if(!pointInBuilding(x,y,b,0))continue;
+   // A shot may travel above the rooftop it was fired from, but walls and
+   // other rooftops block it whenever their physical height reaches the shot.
+   if(bi===layer&&projectileHeight>=buildingHeight(bi)-4)continue;
+   if(projectileHeight<=buildingHeight(bi)+4)return true;
+  }
  }
  return false;
 }
@@ -1010,7 +1025,7 @@ function updateBullets(dt){
  for(const b of bullets){
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const playerShotFromRoof=b.layer!==null&&b.layer!==undefined;
-  const playerShotBlocked=playerShotFromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  const playerShotBlocked=projectileHitsWall(ox,oy,nx,ny,b.layer,b.targetLayer,b.visualX??ox,b.visualY??oy,b.visualRange||300);
   if(playerShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*80,vy:(Math.random()-.5)*80,t:.25});if(Math.random()<.55)playSound("impact",{x:b.x,y:b.y,vol:.7});continue}
   b.x=nx;b.y=ny;
   if(gameMode==="solo"){for(const e of enemies){
@@ -1033,7 +1048,7 @@ function updateBullets(dt){
   if(b.visualX===undefined){b.visualX=b.x;b.visualY=b.y;b.visualRange=Math.hypot(player.x-b.x,player.y-b.y);b.targetLayer=player.roof}
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const fromRoof=b.layer!==null&&b.layer!==undefined;
-  const blocked=fromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  const blocked=projectileHitsWall(ox,oy,nx,ny,b.layer,b.targetLayer,b.visualX??ox,b.visualY??oy,b.visualRange||300);
   if(blocked){b.t=0;continue}
   b.x=nx;b.y=ny;
 
@@ -1052,11 +1067,11 @@ function updateBullets(dt){
  }
  remoteBullets=remoteBullets.filter(b=>b.t>0);
  for(const b of enemyBullets){
-  if(b.visualX===undefined){b.visualX=b.x;b.visualY=b.y;b.visualRange=Math.hypot(player.x-b.x,player.y-b.y)}
+  if(b.visualX===undefined){b.visualX=b.x;b.visualY=b.y;b.visualRange=Math.max(40,Math.hypot(player.x-b.x,player.y-b.y))}
   const ox=b.x,oy=b.y,nx=b.x+b.vx*dt,ny=b.y+b.vy*dt;b.t-=dt;
   const fromRoof=b.layer!==null&&b.layer!==undefined;
   const groundShot=b.layer===null||b.layer===undefined;
-  const enemyShotBlocked=fromRoof?projectileOutOfWorld(ox,oy,nx,ny):projectileHitsWall(ox,oy,nx,ny,null);
+  const enemyShotBlocked=projectileHitsWall(ox,oy,nx,ny,b.layer,b.targetLayer,b.visualX??ox,b.visualY??oy,b.visualRange||300);
   if(enemyShotBlocked){b.x=nx;b.y=ny;b.t=0;sparks.push({x:b.x,y:b.y,vx:(Math.random()-.5)*70,vy:(Math.random()-.5)*70,t:.22});continue}
   b.x=nx;b.y=ny;
   const canHitPlayer=(groundShot&&player.roof===null)||(fromRoof&&(player.roof===b.layer||player.roof===null));
@@ -1154,7 +1169,7 @@ function update(dt){
   const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x,dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
   const moving=dx!==0||dy!==0,m=Math.hypot(dx,dy)||1,run=keys.shift?1.55:1;
   const move=screenAlignedInput(dx,dy);tryRoofMovement(move.x,move.y,dt,run);
-  if(moving)player.walk+=dt*(run>1?13:9);updateFootsteps(moving,run);
+  if(moving)player.walk+=dt*(run>1?13:9);updateFootsteps(moving,run,dt);
   if(Math.hypot(touchAim.x,touchAim.y)>.12){const aim=unprojectVector(touchAim.x,touchAim.y),wx=aim.x,wy=aim.y;player.angle=Math.atan2(wy,wx);mouse.x=player.x+wx*200;mouse.y=player.y+wy*200;mouse.layer=player.roof;}
   else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
