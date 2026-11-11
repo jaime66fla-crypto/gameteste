@@ -232,21 +232,22 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  });
  const bb=new THREE.Box3().setFromObject(model);
  const height=bb.max.y-bb.min.y;
- if(height>0){const s=2.05/height;model.scale.setScalar(s)}
+ if(height>0){const s=2.05/(height*player.scale.y);model.scale.setScalar(s)}
  const center=new THREE.Vector3();bb.getCenter(center);
- model.position.set(-center.x,Math.max(0,-bb.min.y*model.scale.y),-center.z);
+ model.position.set(-center.x*model.scale.x,-bb.min.y*model.scale.y,-center.z*model.scale.z);
  model.rotation.y=Math.PI;
  player.add(model);
  player.userData.avatar=model;
- if(model.animations&&model.animations.length&gt;0){
+ if(model.animations&&model.animations.length>0){
   const mixer=new THREE.AnimationMixer(model);
   player.userData.avatarMixer=mixer;
   player.userData.avatarActions={};
   model.animations.forEach(function(clip){
    const action=mixer.clipAction(clip);
    player.userData.avatarActions[clip.name.toLowerCase()]=action;
-   action.play();
   });
+  const idle=player.userData.avatarActions.idle||Object.values(player.userData.avatarActions)[0];
+  idle?.play();
  }
  statusEl.textContent='Erika Archer carregada • avatar 3D ativo';
  player.children.forEach(function(child){
