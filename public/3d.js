@@ -238,17 +238,38 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  model.rotation.y=Math.PI;
  player.add(model);
  player.userData.avatar=model;
+ player.userData.avatarBones={};
+ model.traverse(function(child){
+  if(child.isBone){
+   const n=(child.name||'').toLowerCase();
+   const side=n.includes('left')||n.includes('_l')||n.endsWith('l')?'left':n.includes('right')||n.includes('_r')||n.endsWith('r')?'right':'';
+   const save=(key)=>{player.userData.avatarBones[key]={bone:child,base:child.rotation.clone()}};
+   if((n.includes('upperarm')||n.includes('upper_arm')||n.includes('arm'))&&!n.includes('fore')&&!n.includes('hand')){
+    if(side==='left')save('upperArmL'); else if(side==='right')save('upperArmR');
+   }else if(n.includes('forearm')||n.includes('lowerarm')){
+    if(side==='left')save('foreArmL'); else if(side==='right')save('foreArmR');
+   }else if(n.includes('thigh')||n.includes('upleg')||n.includes('upperleg')){
+    if(side==='left')save('thighL'); else if(side==='right')save('thighR');
+   }else if(n.includes('calf')||n.includes('leg')||n.includes('lowerleg')){
+    if(side==='left')save('calfL'); else if(side==='right')save('calfR');
+   }else if(n.includes('spine')&&!player.userData.avatarBones.spine){
+    save('spine');
+   }
+  }
+ });
  if(model.animations&&model.animations.length>0){
   const mixer=new THREE.AnimationMixer(model);
   player.userData.avatarMixer=mixer;
   player.userData.avatarActions={};
   model.animations.forEach(function(clip){
    const action=mixer.clipAction(clip);
+   action.enabled=true;
+   action.setLoop(THREE.LoopRepeat,Infinity);
    player.userData.avatarActions[clip.name.toLowerCase()]=action;
   });
-  const idle=player.userData.avatarActions.idle||Object.values(player.userData.avatarActions)[0];
-  idle?.play();
  }
+ player.userData.avatarAnimState='';
+ setAvatarMotion('idle',true);
  statusEl.textContent='Erika Archer carregada • avatar 3D ativo';
  player.children.forEach(function(child){
   if(child!==player.userData.avatar&&child.isMesh)child.visible=false;
@@ -256,6 +277,58 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
 },undefined,function(){
  statusEl.textContent='Avatar externo indisponível • usando personagem padrão';
 });
+
+function findAvatarAction(kind){
+ const actions=player.userData.avatarActions||{};
+ const entries=Object.entries(actions);
+ const keys=kind==='run'?['run','running','sprint']:
+  kind==='walk'?['walk','walking','locomotion']:
+  kind==='climb'?['climb','ladder']:
+  ['idle','breath','stand'];
+ for(const key of keys){
+  const hit=entries.find(([name])=>name.includes(key));
+  if(hit)return hit[1];
+ }
+ return null;
+}
+function setAvatarMotion(kind,force=false){
+ if(!player.userData.avatar)return;
+ if(!force&&player.userData.avatarAnimState===kind)return;
+ player.userData.avatarAnimState=kind;
+ const actions=player.userData.avatarActions||{};
+ const next=findAvatarAction(kind);
+ if(next){
+  for(const a of Object.values(actions))if(a!==next)a.fadeOut(.16);
+  next.reset().fadeIn(.16).play();
+ }
+}
+function updateProceduralAvatar(dt,moving=false,running=false){
+ const avatar=player.userData.avatar;
+ const bones=player.userData.avatarBones;
+ if(!avatar||!bones)return;
+ const hasClip=!!findAvatarAction(player.userData.avatarAnimState||'idle');
+ if(hasClip)return;
+ const speed=running?11:moving?7:2.2;
+ const amp=running?.72:moving?.48:.05;
+ const s=Math.sin(t*speed),c2=Math.cos(t*speed);
+ const apply=(key,axis,val,offset=0)=>{
+  const o=bones[key];if(!o)return;
+  o.bone.rotation[axis]=THREE.MathUtils.lerp(o.bone.rotation[axis],o.base[axis]+offset+val,1-Math.exp(-dt*10));
+ };
+ // Corrige a T-pose: braços relaxados junto ao corpo.
+ apply('upperArmL','z',moving?s*.18:0,-1.02);
+ apply('upperArmR','z',moving?-s*.18:0,1.02);
+ apply('upperArmL','x',moving?-s*.34:0,.08);
+ apply('upperArmR','x',moving?s*.34:0,.08);
+ apply('foreArmL','x',moving?Math.max(0,-s)*.28:.12,.18);
+ apply('foreArmR','x',moving?Math.max(0,s)*.28:.12,.18);
+ apply('thighL','x',s*amp,0);
+ apply('thighR','x',-s*amp,0);
+ apply('calfL','x',Math.max(0,-s)*amp*.72,0);
+ apply('calfR','x',Math.max(0,s)*amp*.72,0);
+ apply('spine','z',moving?s*.035:Math.sin(t*2.2)*.012,0);
+ avatar.position.y=moving?Math.abs(c2)*(running?.045:.025):Math.sin(t*2.2)*.008;
+}
 
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
@@ -398,18 +471,7 @@ function nearLadder(){
  return best;
 }
 function setClimbAvatar(active){
- const actions=player.userData.avatarActions;
- if(!actions)return;
- const list=Object.entries(actions);
- const climb=list.find(([name])=>name.includes('climb')||name.includes('ladder'));
- if(active&&climb){
-  for(const [,a] of list)a.stop();
-  climb[1].reset().play();
- }else if(!active){
-  for(const [,a] of list)a.stop();
-  const idle=actions.idle||list[0]?.[1];
-  idle?.reset().play();
- }
+ setAvatarMotion(active?'climb':'idle',true);
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState||activeCar)return false;
@@ -1081,6 +1143,8 @@ function frame(now){
  let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
      inputY=((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0);
  const len=Math.hypot(inputX,inputY);
+ const avatarRunning=!!len&&keys.has('shift');
+ setAvatarMotion(len?(avatarRunning?'run':'walk'):'idle');
  if(len){
   inputX/=len;inputY/=len;
   const camForward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
@@ -1097,6 +1161,7 @@ function frame(now){
  }else{
   player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8
  }
+ updateProceduralAvatar(dt,!!len,avatarRunning);
  shotCooldown=Math.max(0,shotCooldown-dt);
  if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.2,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
