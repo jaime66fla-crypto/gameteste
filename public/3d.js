@@ -220,7 +220,7 @@ function makeSoldier(color=0x28313a){
  g.userData.legs=legs;g.userData.gun=gun;g.userData.weaponParts={receiver,barrel};return g;
 }
 
-const player=makeSoldier(0x344154);player.scale.setScalar(.8);player.position.set(4,0,8);world.add(player);
+const player=makeSoldier(0x344154);player.scale.setScalar(.68);player.position.set(4,0,8);world.add(player);
 player.userData.hp=100;player.userData.maxHp=100;
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
