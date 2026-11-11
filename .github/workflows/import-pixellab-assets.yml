@@ -1,0 +1,46 @@
+name: Import PixelLab operator assets
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/import-pixellab-assets.yml'
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download completed PixelLab artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rm -rf /tmp/pixellab
+          mkdir -p /tmp/pixellab
+          gh run download 43029225162 -R "${{ github.repository }}" -n pixellab-operator-3 -D /tmp/pixellab
+
+      - name: Copy runtime animation sheets
+        run: |
+          mkdir -p public/assets/player/animations
+          cp /tmp/pixellab/manifest.json public/assets/player/animations/manifest.json
+          cp /tmp/pixellab/walk-*.png public/assets/player/animations/
+          cp /tmp/pixellab/run-*.png public/assets/player/animations/
+
+      - name: Commit imported assets
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/assets/player/animations
+          if git diff --cached --quiet; then
+            echo "PixelLab assets already imported."
+            exit 0
+          fi
+          git commit -m "Import PixelLab walk and run animation sheets"
+          git push
