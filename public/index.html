@@ -25,7 +25,7 @@
 
     <div class="launcher-main">
       <section class="launcher-copy">
-        <span class="launcher-kicker">WEB BUILD • V5.3</span>
+        <span class="launcher-kicker">WEB BUILD • 3D</span>
         <h1>DOMINE<br><em>A CIDADE</em></h1>
         <p>Combate 2.5D, veículos, telhados, soldados, snipers e um boss em duas fases. Monte seu personagem e veja as novidades antes de entrar.</p>
         <div class="launcher-buttons">
@@ -34,7 +34,7 @@
         </div>
         <div class="launcher-status">
           <span><i></i> Build online</span>
-          <span>Solo + Multiplayer</span>
+          <span>MODO 3D / 2.5D</span>
           <span>PC + Mobile</span>
         </div>
       </section>
@@ -245,11 +245,8 @@ function updateRotateOverlay(){
   overlay.classList.toggle('show',show);
   overlay.setAttribute('aria-hidden',show?'false':'true');
 }
-document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',async()=>{
-  gameModal.classList.add('show');
-  gameModal.setAttribute('aria-hidden','false');
-  document.body.classList.add('modal-open');
-  await forceMobileLandscape();
+document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',()=>{
+  window.location.href='/3d.html';
 }));
 document.getElementById('closeGameBtn').addEventListener('click',()=>{
   gameModal.classList.remove('show');
