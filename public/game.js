@@ -96,6 +96,7 @@ const weapons={
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
 let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],damageChunks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],grenadeProjectiles=[],grenadeBlasts=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
+let bossSpawnIntro=0,bossSpawnIntroTotal=3.8,bossSpawnIntroBoss=null,bossIntroSeen=false;
 let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
 let bossDeathIntro=0,bossDeathIntroTotal=4.8,bossDeathScene=null;
 
@@ -650,7 +651,7 @@ function updateGrenades(dt){
 }
 
 function spawnEnemies(){
- enemies.length=0;bossSpawned=false;bossDefeated=false;
+ enemies.length=0;bossSpawned=false;bossDefeated=false;bossIntroSeen=false;bossSpawnIntro=0;bossSpawnIntroBoss=null;
  const pts=[[900,440],[1400,950],[2050,1450],[2400,950],[600,1450],[1700,440],[1150,1450],[2520,1450],[850,950],[1980,440]];
  for(let i=0;i<pts.length;i++){
   const sniper=i%4===1;
@@ -667,8 +668,17 @@ function spawnBoss(){
  if(bossSpawned||bossDefeated||gameMode!=="solo")return;
  bossSpawned=true;
  const p=randomOpenPoint();
- enemies.push({x:p.x,y:p.y,r:38,hp:60,maxHp:60,angle:0,speed:52,shootCd:.7,alive:true,boss:true,phase:1,missileCd:2.4});
+ const boss={x:p.x,y:p.y,r:38,hp:60,maxHp:60,angle:0,speed:52,shootCd:.7,alive:true,boss:true,phase:1,missileCd:2.4};
+ enemies.push(boss);
  flash=1;playSound("death");
+ if(!bossIntroSeen){
+  bossIntroSeen=true;
+  bossSpawnIntro=bossSpawnIntroTotal;
+  bossSpawnIntroBoss=boss;
+  enemyBullets.length=0;missiles.length=0;
+  tone(54,.52,"sawtooth",.18,.48,boss.x,boss.y);
+  setTimeout(()=>{if(soundEnabled&&bossSpawnIntro>0){noise(.28,.16,720,boss.x,boss.y);tone(82,.34,"square",.12,.72,boss.x,boss.y)}},520);
+ }
 }
 function getBoss(){return enemies.find(e=>e.boss&&e.alive)}
 
@@ -1161,6 +1171,18 @@ function update(dt){
   sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
   flash=Math.max(0,flash-dt*1.4);
   if(bossDeathIntro<=0){bossDeathScene=null;flash=0;playSound("pickup")}
+  return;
+ }
+ if(bossSpawnIntro>0&&bossSpawnIntroBoss?.alive){
+  bossSpawnIntro=Math.max(0,bossSpawnIntro-dt);
+  flash=Math.max(flash,.32+.22*Math.sin(performance.now()/105));
+  followCamera(bossSpawnIntroBoss.x,bossSpawnIntroBoss.y,dt,5.4);
+  if(bossSpawnIntro<=0){
+   bossSpawnIntroBoss.shootCd=Math.max(1,bossSpawnIntroBoss.shootCd||0);
+   bossSpawnIntroBoss=null;
+   flash=1;
+   tone(135,.18,"square",.13,.5);
+  }
   return;
  }
  if(bossPhaseIntro>0&&bossIntroBoss?.alive){
@@ -1801,6 +1823,36 @@ function drawRemotePlayers(only=null){
 }
 function drawTargets(){targets.forEach(t=>{if(t.hp<=0)return;ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(t.x,t.y+13,23,10,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=t.hp===3?"#ff725f":t.hp===2?"#ffb24b":"#ffe765";ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#341b1b";ctx.fillRect(t.x-5,t.y-11,10,22);ctx.fillRect(t.x-11,t.y-5,22,10)})}
 function drawMission(){if(missionDone)return;const p=.5+.5*Math.sin(performance.now()/260);ctx.strokeStyle="rgba(101,255,139,"+(.45+p*.45)+")";ctx.lineWidth=4;ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r+p*8,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#65ff8b22";ctx.beginPath();ctx.arc(mission.x,mission.y,mission.r,0,Math.PI*2);ctx.fill()}
+function drawBossSpawnIntro(){
+ if(bossSpawnIntro<=0||!bossSpawnIntroBoss)return;
+ const elapsed=bossSpawnIntroTotal-bossSpawnIntro;
+ const p=Math.max(0,Math.min(1,elapsed/bossSpawnIntroTotal));
+ const fadeIn=Math.min(1,p/.18),fadeOut=Math.min(1,(1-p)/.16),alpha=Math.min(fadeIn,fadeOut);
+ const pulse=.5+.5*Math.sin(performance.now()/110);
+ ctx.save();ctx.setTransform(1,0,0,1,0,0);
+ ctx.fillStyle="rgba(2,3,6,"+(0.42*alpha)+")";ctx.fillRect(0,0,canvas.width,canvas.height);
+ const barH=Math.max(50,canvas.height*.085);
+ ctx.fillStyle="rgba(2,4,7,"+(0.94*alpha)+")";ctx.fillRect(0,0,canvas.width,barH);ctx.fillRect(0,canvas.height-barH,canvas.width,barH);
+ ctx.textAlign="center";
+ if(p>.18){
+  const a=Math.min(1,(p-.18)/.18)*alpha;
+  ctx.fillStyle="rgba(255,76,86,"+a+")";ctx.font="800 "+Math.round(Math.min(16,canvas.height*.024))+"px system-ui";ctx.fillText("AMEAÇA DE ALTO NÍVEL DETECTADA",canvas.width/2,canvas.height*.37);
+ }
+ if(p>.30){
+  const a=Math.min(1,(p-.30)/.16)*alpha;
+  ctx.shadowColor="#ff283d";ctx.shadowBlur=24+12*pulse;
+  ctx.fillStyle="rgba(255,255,255,"+a+")";ctx.font="900 "+Math.round(Math.min(72,canvas.height*.105))+"px system-ui";ctx.fillText("GOLIAS",canvas.width/2,canvas.height*.50);ctx.shadowBlur=0;
+ }
+ if(p>.46){
+  const a=Math.min(1,(p-.46)/.16)*alpha;
+  ctx.fillStyle="rgba(255,144,150,"+a+")";ctx.font="900 "+Math.round(Math.min(22,canvas.height*.032))+"px system-ui";ctx.fillText("O COLOSSO ENTROU NA ÁREA",canvas.width/2,canvas.height*.57);
+ }
+ if(p>.62){
+  const a=Math.min(1,(p-.62)/.14)*alpha;
+  ctx.fillStyle="rgba(220,232,240,"+a+")";ctx.font="700 "+Math.round(Math.min(13,canvas.height*.019))+"px system-ui";ctx.fillText("PREPARE-SE PARA O CONFRONTO",canvas.width/2,canvas.height*.63);
+ }
+ ctx.textAlign="left";ctx.restore();
+}
 function drawBossPhaseIntro(){
  if(bossPhaseIntro<=0)return;
  const elapsed=bossPhaseIntroTotal-bossPhaseIntro;
@@ -1837,7 +1889,7 @@ function drawBossPhaseIntro(){
  ctx.restore();
 }
 function drawCrosshair(){
- if(player.inCar||!started||bossPhaseIntro>0)return;const x=worldToScreenX(mouse.x,mouse.y),y=worldToScreenY(mouse.y,mouse.x)-buildingHeight(mouse.layer)*getViewZoom();ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
+ if(player.inCar||!started||bossSpawnIntro>0||bossPhaseIntro>0)return;const x=worldToScreenX(mouse.x,mouse.y),y=worldToScreenY(mouse.y,mouse.x)-buildingHeight(mouse.layer)*getViewZoom();ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
 }
 function hud(){
  ctx.setTransform(1,0,0,1,0,0);
@@ -1922,7 +1974,7 @@ function hud(){
  if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 38px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-10);ctx.fillStyle="#ff9ba3";ctx.font="800 16px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+22);ctx.textAlign="left"}
  if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 36px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
  if(flash>0){ctx.fillStyle="rgba(255,90,90,"+Math.min(.28,flash*.2)+")";ctx.fillRect(0,0,canvas.width,canvas.height)}
- drawBossPhaseIntro();drawCrosshair();
+ drawBossSpawnIntro();drawBossPhaseIntro();drawCrosshair();
 }
 function drawWorldLighting(){
  // Cool night tint.
