@@ -5,15 +5,16 @@ import vm from 'node:vm';
 const math=await import(process.env.THREE_TEST_MODULE||'three');
 class Renderer{constructor(){this.shadowMap={}}setPixelRatio(){}setSize(){}render(){}}
 const THREE={...math,WebGLRenderer:Renderer};
-const elements=new Map();
+const elements=new Map(),globalListeners={};
 function element(){
  const classes=new Set(),listeners={};
  return {style:{},listeners,offsetWidth:24,addEventListener:(type,fn)=>{listeners[type]=fn},classList:{toggle:(name,value)=>{value?classes.add(name):classes.delete(name)},add:name=>classes.add(name),remove:name=>classes.delete(name),contains:name=>classes.has(name)},getBoundingClientRect:()=>({left:0,top:0,width:132,height:132}),setPointerCapture(){}};
 }
-const context={THREE,FBXLoader:class{load(){}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:()=>({getContext:()=>({fillRect(){},strokeRect(){},fillText(){}})}),addEventListener(){}},addEventListener(){},innerWidth:1280,innerHeight:720,devicePixelRatio:1,performance:{now:()=>0},requestAnimationFrame(){},console};
+let avatarLoaded;
+const context={THREE,FBXLoader:class{load(_url,onLoad){avatarLoaded=onLoad}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:()=>({getContext:()=>({fillRect(){},strokeRect(){},fillText(){}})}),addEventListener(){}},addEventListener(type,fn){globalListeners[type]=fn},innerWidth:1280,innerHeight:720,devicePixelRatio:1,performance:{now:()=>0},requestAnimationFrame(){},console};
 vm.createContext(context);
 const source=fs.readFileSync(new URL('../public/3d.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
-vm.runInContext(source+`\nglobalThis.api={traceAimRay,mobileAimDirection,updateAimFromPointer,updateThirdPersonCamera,fire,updateBullets3D,frame,buildings,enemies,bullets,player,camera,pointer,mobileAim,ammoState,get aimPoint(){return aimPoint},setYaw:y=>cameraYaw=y,setPitch:p=>cameraPitch=p,resetShot:()=>shotCooldown=0};`,context);
+vm.runInContext(source+`\nglobalThis.api={traceAimRay,mobileAimDirection,updateAimFromPointer,updateThirdPersonCamera,fire,updateBullets3D,frame,buildings,enemies,bullets,player,camera,pointer,mobileAim,ammoState,get aimPoint(){return aimPoint},setYaw:y=>cameraYaw=y,setPitch:p=>cameraPitch=p,get keys(){return keys},get ready(){return isWeaponReady()},updateWeaponPose,updateProceduralAvatar,setTime:time=>t=time,resetShot:()=>shotCooldown=0};`,context);
 const a=context.api,V=THREE.Vector3;
 a.buildings.length=0;a.enemies.length=0;
 const enemy=(z,x=0)=>{const e=new THREE.Group();e.position.set(x,0,z);e.userData={alive:true,hp:3};a.enemies.push(e);return e};
@@ -55,4 +56,19 @@ const stick=elements.get('aimStick');
 stick.listeners.pointerdown({pointerId:1,clientX:100,clientY:66});assert(a.mobileAim.firing);
 a.resetShot();const mobileAmmo=a.ammoState.pistol.mag;a.frame(16);assert.equal(a.ammoState.pistol.mag,mobileAmmo-1);
 stick.listeners.pointerup({pointerId:1});assert(!a.mobileAim.firing&&!a.mobileAim.active);
+// A held mouse button must continue firing while WASD moves the player.
+a.mobileAim.active=false;a.resetShot();a.player.position.set(0,0,0);
+a.keys.add('w');const walkingAmmo=a.ammoState.pistol.mag;
+elements.get('view').listeners.pointerdown({pointerType:'mouse',button:0});
+for(let i=1;i<=45;i++)a.frame(16+i*16);
+assert(a.player.position.z<-.5,'W must keep moving while firing');
+assert(a.ammoState.pistol.mag<=walkingAmmo-3,'Holding fire must shoot more than once while moving');
+globalListeners.pointerup({button:0});a.keys.clear();const stoppedAmmo=a.ammoState.pistol.mag;
+for(let i=46;i<=70;i++)a.frame(16+i*16);
+assert.equal(a.ammoState.pistol.mag,stoppedAmmo,'Mouse release must stop firing');
+a.setTime(100);a.updateWeaponPose();assert.equal(a.player.userData.weaponPose,'rest');
 console.log('PASS: full game startup; centered ray; front/back and range selection; wall occlusion; nearest impact ordering; rotated mobile aim; muzzle trajectory; damage; hitmarker; UI/touch isolation.');
+
+export {context,elements,globalListeners,THREE};
+export const api=a;
+export const loadAvatar=model=>avatarLoaded(model);

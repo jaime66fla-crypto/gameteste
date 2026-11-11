@@ -25,6 +25,8 @@ const mobileAim={x:0,y:0,active:false,firing:false};
 let cameraYaw=0;
 let cameraPitch=.08;
 let cameraRightDrag=false;
+let desktopFiring=false;
+let weaponReadyUntil=0;
 let cameraLastX=0;
 let cameraLastY=0;
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
@@ -225,6 +227,9 @@ function makeSoldier(color=0x28313a){
 }
 
 const player=makeSoldier(0x344154);player.scale.setScalar(.68);player.position.set(4,0,8);world.add(player);
+// Recenter this weapon at its grip before mounting it on the avatar.
+player.userData.weaponParts.receiver.position.set(.22,0,0);
+player.userData.weaponParts.barrel.position.set(.85,0,0);
 player.userData.gun.rotation.y=-Math.PI/2;
 player.userData.hp=100;player.userData.maxHp=100;
 
@@ -239,7 +244,7 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  if(height>0){const s=2.05/(height*player.scale.y);model.scale.setScalar(s)}
  const center=new THREE.Vector3();bb.getCenter(center);
  model.position.set(-center.x*model.scale.x,-bb.min.y*model.scale.y,-center.z*model.scale.z);
- model.rotation.y=Math.PI;
+ model.rotation.y=0; // Erika faces +Z, the same forward axis used by aiming.
  player.add(model);
  player.userData.avatar=model;
  player.userData.avatarBaseY=model.position.y;
@@ -249,6 +254,8 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   'mixamorig:rightarm':'upperArmR',
   'mixamorig:leftforearm':'foreArmL',
   'mixamorig:rightforearm':'foreArmR',
+  'mixamorig:lefthand':'handL',
+  'mixamorig:righthand':'handR',
   'mixamorig:leftupleg':'thighL',
   'mixamorig:rightupleg':'thighR',
   'mixamorig:leftleg':'calfL',
@@ -296,6 +303,7 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  }
  player.userData.avatarAnimState='';
  setAvatarMotion('idle',true);
+ updateWeaponPose();
  const clipCount=model.animations?.length||0;
  const boneCount=Object.keys(player.userData.avatarBones||{}).length;
  const clipInfo=motionClips.length?' • animações importadas':' • movimento procedural';
@@ -306,6 +314,77 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
 },undefined,function(){
  statusEl.textContent='Avatar externo indisponível • usando personagem padrão';
 });
+
+function isWeaponReady(){
+ return !climbState&&!activeCar&&(desktopFiring||cameraRightDrag||document.pointerLockElement===canvas||
+  (mobileAim.active&&Math.hypot(mobileAim.x,mobileAim.y)>.12)||t<weaponReadyUntil);
+}
+function rotateJointToward(joint,tip,target){
+ player.updateMatrixWorld(true);
+ const origin=joint.getWorldPosition(new THREE.Vector3());
+ const from=tip.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
+ const to=target.clone().sub(origin).normalize();
+ if(!from.lengthSq()||!to.lengthSq())return;
+ const delta=new THREE.Quaternion().setFromUnitVectors(from,to);
+ const worldRotation=joint.getWorldQuaternion(new THREE.Quaternion()).premultiply(delta);
+ const parentRotation=joint.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
+ joint.quaternion.copy(parentRotation.multiply(worldRotation));
+ player.updateMatrixWorld(true);
+}
+function solveArm(side,target,pole){
+ const bones=player.userData.avatarBones;
+ const upper=bones?.['upperArm'+side]?.bone,lower=bones?.['foreArm'+side]?.bone,hand=bones?.['hand'+side]?.bone;
+ if(!upper||!lower||!hand)return;
+ player.updateMatrixWorld(true);
+ const shoulder=upper.getWorldPosition(new THREE.Vector3());
+ const elbow=lower.getWorldPosition(new THREE.Vector3());
+ const wrist=hand.getWorldPosition(new THREE.Vector3());
+ const l1=elbow.distanceTo(shoulder),l2=wrist.distanceTo(elbow);
+ if(l1<.001||l2<.001)return;
+ const direction=target.clone().sub(shoulder);
+ const distance=THREE.MathUtils.clamp(direction.length(),Math.abs(l1-l2)+.001,l1+l2-.001);
+ direction.normalize();
+ const bend=pole.clone().sub(shoulder);bend.addScaledVector(direction,-bend.dot(direction)).normalize();
+ const along=(l1*l1-l2*l2+distance*distance)/(2*distance);
+ const height=Math.sqrt(Math.max(0,l1*l1-along*along));
+ const elbowTarget=shoulder.clone().addScaledVector(direction,along).addScaledVector(bend,height);
+ const wristTarget=shoulder.clone().addScaledVector(direction,distance);
+ rotateJointToward(upper,lower,elbowTarget);
+ rotateJointToward(lower,hand,wristTarget);
+}
+function updateWeaponPose(){
+ const gun=player.userData.gun;if(!gun)return;
+ const bones=player.userData.avatarBones,ready=isWeaponReady();
+ // Weapon meshes use +X as the barrel axis, with the trigger at the mount origin.
+ const weapon=weapons3D[currentWeapon];
+ const scale=new THREE.Vector3(...weapon.scale).multiplyScalar(.5);
+ const rootRotation=player.getWorldQuaternion(new THREE.Quaternion());
+ let mount=player,position,rotation;
+ if(ready){
+  const pitch=Math.atan2(aimPoint.y-player.position.y-1.45,Math.hypot(aimPoint.x-player.position.x,aimPoint.z-player.position.z));
+  const aimRotation=rootRotation.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-pitch,0,0)));
+  const rightTarget=player.localToWorld(new THREE.Vector3(-.25,2.12,.3));
+  const direction=new THREE.Vector3(0,0,1).applyQuaternion(aimRotation);
+  const supportTarget=rightTarget.clone().addScaledVector(direction,.18*weapon.scale[0]);
+  solveArm('R',rightTarget,player.localToWorld(new THREE.Vector3(-.9,1.6,.1)));
+  solveArm('L',supportTarget,player.localToWorld(new THREE.Vector3(.85,1.6,.2)));
+  mount=bones?.handR?.bone||player;
+  position=bones?.handR?mount.getWorldPosition(new THREE.Vector3()):rightTarget;
+  rotation=aimRotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-Math.PI/2,0)));
+ }else{
+  mount=bones?.spine2?.bone||player;
+  position=player.localToWorld(new THREE.Vector3(-.38,1.8,-.42));
+  rotation=rootRotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(.15,0,.95)));
+ }
+ if(gun.parent!==mount)mount.add(gun);
+ mount.updateWorldMatrix(true,false);
+ gun.position.copy(mount.worldToLocal(position));
+ gun.quaternion.copy(mount.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation));
+ gun.scale.copy(scale).divide(mount.getWorldScale(new THREE.Vector3()));
+ gun.visible=!activeCar;
+ gun.updateMatrixWorld(true);
+ player.userData.weaponPose=ready?'aim':'rest';
+}
 
 function findAvatarAction(kind){
  const actions=player.userData.avatarActions||{};
@@ -817,10 +896,7 @@ function updateAimFromPointer(){
  placeReticle(mobileAim.active?aimPoint:null);
  crosshairEl?.classList.toggle('on-target',hit?.kind==='enemy');
  const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
- if(!climbState&&!activeCar&&Math.hypot(dx,dz)>.01){
-  player.rotation.y=Math.atan2(dx,dz);
-  if(player.userData.gun)player.userData.gun.rotation.x=-Math.atan2(aimPoint.y-player.position.y-1.3,Math.hypot(dx,dz));
- }
+ if(isWeaponReady()&&Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
 }
 function showHitmarker(killed=false){
  if(!hitmarkerEl)return;
@@ -843,7 +919,9 @@ function fire(){
  }
  ammo.mag--;
  shotCooldown=weapon.cooldown;
+ weaponReadyUntil=t+2.5;
  updateAimFromPointer();
+ updateWeaponPose();
  player.updateMatrixWorld(true);
  const barrel=player.userData.weaponParts?.barrel;
  const origin=barrel?barrel.localToWorld(new THREE.Vector3(.36,0,0)):player.position.clone().add(new THREE.Vector3(0,1.45,0));
@@ -863,10 +941,11 @@ canvas.addEventListener('contextmenu',e=>e.preventDefault());
 canvas.addEventListener('pointerdown',e=>{
  if(e.pointerType==='touch')return;
  if(e.button===2){cameraRightDrag=true;cameraLastX=e.clientX;cameraLastY=e.clientY;return}
- if(e.button===0)fire();
+ if(e.button===0){desktopFiring=true;fire()}
 });
-addEventListener('pointerup',e=>{if(e.button===2)cameraRightDrag=false});
-addEventListener('blur',()=>{keys.clear();cameraRightDrag=false});
+addEventListener('pointerup',e=>{if(e.button===2)cameraRightDrag=false;if(e.button===0)desktopFiring=false});
+canvas.addEventListener('pointercancel',()=>{desktopFiring=false;cameraRightDrag=false});
+addEventListener('blur',()=>{keys.clear();cameraRightDrag=false;desktopFiring=false;mobileMove.active=false;mobileAim.active=false;mobileAim.firing=false});
 aimLockBtn?.addEventListener('click',()=>{
  if(document.pointerLockElement===canvas){document.exitPointerLock();return}
  try{const request=canvas.requestPointerLock?.();request?.catch(()=>{statusEl.textContent='Use o botão direito para girar a câmera'})}
@@ -874,6 +953,7 @@ aimLockBtn?.addEventListener('click',()=>{
 });
 document.addEventListener('pointerlockchange',()=>{
  cameraRightDrag=false;
+ desktopFiring=false;
  if(aimLockBtn)aimLockBtn.textContent=document.pointerLockElement===canvas?'Soltar mouse (ESC)':'Travar mouse';
 });
 document.addEventListener('pointerlockerror',()=>{statusEl.textContent='Use o botão direito para girar a câmera'});
@@ -1220,7 +1300,7 @@ let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
  if(player.userData.avatarMixer)player.userData.avatarMixer.update(dt);
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateAimFromPointer();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateAimFromPointer();updateWeaponPose();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
      inputY=((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0);
@@ -1237,7 +1317,7 @@ function frame(now){
   const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;
   if(!blocked(nx,player.position.z))player.position.x=nx;
   if(!blocked(player.position.x,nz))player.position.z=nz;
-  if(!mobileAim.active)player.rotation.y=Math.atan2(dx,dz);
+  if(!isWeaponReady())player.rotation.y=Math.atan2(dx,dz);
   const gait=Math.sin(t*(keys.has('shift')?14:10));
   player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55;
  }else{
@@ -1247,12 +1327,13 @@ function frame(now){
  shotCooldown=Math.max(0,shotCooldown-dt);
  updateThirdPersonCamera(dt,player);
  updateAimFromPointer();
- if(mobileAim.firing)fire();
+ updateWeaponPose();
+ if(mobileAim.firing||desktopFiring)fire();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
- if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
+ updateWeaponPose();
  updateAimFromPointer();
  updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
-applyWeaponVisual();updateHud();updateThirdPersonCamera(1,player);updateAimFromPointer();
+applyWeaponVisual();updateHud();updateThirdPersonCamera(1,player);updateAimFromPointer();updateWeaponPose();
 requestAnimationFrame(frame);
