@@ -13,6 +13,22 @@ window.playerArt=(()=>{
   [990,470,238,373,1109,654], [1425,473,234,379,1608,645]
  ];
  const scale=57/398;
+ const clips={};
+ // Only complete eight-direction sets are activated; static art is a safe loading fallback.
+ fetch('assets/player/animations/manifest.json?v=pixellab-1').then(r=>r.ok?r.json():null).then(async manifest=>{
+  if(!manifest||manifest.frameSize!==96||manifest.frameCount!==8)return;
+  for(const motion of ['walk','run']){
+   const entries=manifest.animations?.[motion];
+   if(!entries||Object.keys(entries).length!==8)continue;
+   const loaded=await Promise.all(Array.from({length:8},(_,i)=>new Promise(resolve=>{
+    const entry=entries[String(i)];
+    if(!entry||!/^[-a-z]+\.png$/.test(entry.file))return resolve(null);
+    const sprite=new Image();sprite.onload=()=>resolve(sprite.naturalWidth===768&&sprite.naturalHeight===96?sprite:null);
+    sprite.onerror=()=>resolve(null);sprite.src='assets/player/animations/'+entry.file;
+   })));
+   if(loaded.every(Boolean))clips[motion]=loaded;
+  }
+ }).catch(()=>{});
  const direction=angle=>{
   const a=(window.gameProjection?.angle(angle)??angle);
   return (Math.round(a/(Math.PI/4))+8)%8;
@@ -24,7 +40,8 @@ window.playerArt=(()=>{
  function draw(ctx,opts,weaponRenderer){
   if(!ready)return false;
   const p=pose(opts.angle),f=frames[p.index],gait=opts.moving?Math.sin(opts.phase||0):0;
-  const bob=opts.moving?Math.abs(gait)*(opts.running?1.6:.85):0;
+  const motion=opts.running?'run':'walk',clip=opts.moving?clips[motion]?.[p.index]:null;
+  const bob=clip?0:opts.moving?Math.abs(gait)*(opts.running?1.6:.85):Math.sin(performance.now()/550)*.35;
   ctx.save();ctx.translate(opts.x,opts.y);
   // Inverse world shear / tilt keeps the sprite upright and correctly proportioned.
   window.gameProjection?.undo(ctx);
@@ -37,7 +54,12 @@ window.playerArt=(()=>{
   if(behind)gun();
   ctx.save();ctx.imageSmoothingEnabled=true;
   if(opts.hit)ctx.filter='brightness(1.7) sepia(.45)';
-  ctx.drawImage(image,f[0],f[1],f[2],f[3],-f[2]*scale/2,10-f[3]*scale-bob,f[2]*scale,f[3]*scale);
+  if(clip){
+   const frame=((Math.floor((opts.phase||0)/9*(opts.running?9:10))%8)+8)%8;
+   const animationScale=scale*512/96;
+   ctx.imageSmoothingEnabled=false;
+   ctx.drawImage(clip,frame*96,0,96,96,-48*animationScale,10-90.75*animationScale,96*animationScale,96*animationScale);
+  }else ctx.drawImage(image,f[0],f[1],f[2],f[3],-f[2]*scale/2,10-f[3]*scale-bob,f[2]*scale,f[3]*scale);
   ctx.restore();
   if(!behind)gun();
   ctx.restore();return true;

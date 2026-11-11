@@ -158,7 +158,7 @@ def main():
         return
     if args.mode == 'check':
         return
-    # Refuse to buy anything or silently continue using funded credit balances.
+    # Require sufficient included generations before starting the bounded batch.
     if float(subscription.get('generations') or 0) < (3 if args.mode=='preview' else 32):
         raise RuntimeError('Not enough included generations for this batch. No new generation was started.')
     sheet=Image.open('public/assets/player/operator-directions.png').convert('RGBA')

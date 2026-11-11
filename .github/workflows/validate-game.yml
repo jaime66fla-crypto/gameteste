@@ -21,6 +21,7 @@ jobs:
           node --check public/player-art.js
           node --check public/world-art.js
           node tests/isometric.test.cjs
+          node tests/player-animation.test.cjs
       - name: Check essential browser game controls
         run: |
           node - <<'NODE'

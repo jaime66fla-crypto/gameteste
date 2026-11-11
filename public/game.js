@@ -50,7 +50,7 @@ function insidePolygon(x,y,points){
 }
 function screenAlignedInput(x,y){const v=unprojectVector(x,y),n=Math.hypot(v.x,v.y)||1,m=Math.min(1,Math.hypot(x,y));return {x:v.x/n*m,y:v.y/n*m}}
 const keys={},cam={x:480,y:440},mouse={x:0,y:0,down:false,screenX:null,screenY:null,layer:null};
-const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
+const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",motionX:0,motionY:0,movingSpeed:0,carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
 const characterStyle=(()=>{try{return {...{outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"},...JSON.parse(localStorage.getItem("streetCharacter")||"{}")}}catch(_){return {outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"}}})();
 addEventListener("characterchange",e=>Object.assign(characterStyle,e.detail));
 function tacticalPlayerEnabled(){return characterStyle.visual!=="custom"&&window.playerArt?.ready}
@@ -294,6 +294,7 @@ function killPlayer(){
  for(const k of Object.keys(keys))keys[k]=false;
 }
 function respawnPlayer(){
+ player.motionX=player.motionY=player.movingSpeed=0;
  const p=randomOpenPoint();
  player.x=p.x;player.y=p.y;
  player.health=player.maxHealth;
@@ -1056,6 +1057,7 @@ function update(dt){
  player.carHitCd=Math.max(0,player.carHitCd-dt);car.enemyHitCd=Math.max(0,car.enemyHitCd-dt);player.hitT=Math.max(0,player.hitT-dt);player.hitKick=Math.max(0,player.hitKick-dt*34);updateTraffic(dt);updateBushState();updatePickups(dt);flash=Math.max(0,flash-dt*2);player.shootCd=Math.max(0,player.shootCd-dt);
  if(player.reloading){player.reloadT-=dt;if(player.reloadT<=0){const need=player.maxAmmo-player.ammo,take=Math.min(need,player.reserve);player.ammo+=take;player.reserve-=take;player.reloading=false}}
  if(player.inCar){
+  player.motionX=player.motionY=player.movingSpeed=0;
   if(car.health<=0){
    car.speed=0;car.nitro=0;player.inCar=false;
    const ex=car.x+Math.cos(car.angle+Math.PI/2)*58,ey=car.y+Math.sin(car.angle+Math.PI/2)*58;
@@ -1090,9 +1092,15 @@ function update(dt){
   player.x=car.x;player.y=car.y;
  }else{
   const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x,dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
-  const moving=dx!==0||dy!==0,m=Math.hypot(dx,dy)||1,run=keys.shift?1.55:1;
-  const move=screenAlignedInput(dx,dy);tryRoofMovement(move.x,move.y,dt,run);
-  if(moving)player.walk+=dt*(run>1?13:9);
+  const moving=dx!==0||dy!==0,run=keys.shift?1.55:1,move=screenAlignedInput(dx,dy);
+  const blend=1-Math.exp(-(moving?16:24)*dt),beforeX=player.x,beforeY=player.y;
+  player.motionX+=(move.x*run-player.motionX)*blend;player.motionY+=(move.y*run-player.motionY)*blend;
+  let speed=Math.hypot(player.motionX,player.motionY);
+  if(speed<.01){player.motionX=player.motionY=0;speed=0}
+  tryRoofMovement(speed?player.motionX/speed:0,speed?player.motionY/speed:0,dt,speed);
+  const distance=Math.min(Math.hypot(player.x-beforeX,player.y-beforeY),player.speed*1.6*dt);
+  player.movingSpeed=distance/Math.max(dt,.001);
+  player.walk+=distance/player.speed*9;
   if(Math.hypot(touchAim.x,touchAim.y)>.12){const aim=unprojectVector(touchAim.x,touchAim.y),wx=aim.x,wy=aim.y;player.angle=Math.atan2(wy,wx);mouse.x=player.x+wx*200;mouse.y=player.y+wy*200;mouse.layer=player.roof;}
   else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
   if(mouse.down||Math.hypot(touchAim.x,touchAim.y)>.32)shoot();
@@ -1511,8 +1519,8 @@ function drawTopDownCharacter(opts){
 }
 function drawPlayer(){
  if(player.inCar||player.dead)return;
- const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1;
- const running=moving&&!!keys.shift;
+ const moving=player.movingSpeed>3;
+ const running=player.movingSpeed>player.speed*1.15;
  const bob=moving?Math.sin(player.walk)*1.4:0,step=moving?Math.sin(player.walk)*4.2:0;
  const recoil=player.hitT>0?player.hitKick*(.65+.35*Math.sin(performance.now()/24)):0;
  if(tacticalPlayerEnabled()){
@@ -1792,5 +1800,5 @@ function bindJoystick(id,axis){
  el.addEventListener("lostpointercapture",e=>{if(e.pointerId===active)reset()});
 }
 bindJoystick("moveStick",touchMove);bindJoystick("aimStick",touchAim);
-addEventListener("blur",()=>{touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;mouse.down=false;for(const k of Object.keys(keys))keys[k]=false});
+addEventListener("blur",()=>{touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;mouse.down=false;player.motionX=player.motionY=player.movingSpeed=0;for(const k of Object.keys(keys))keys[k]=false});
 document.querySelector('[data-action="reload"]')?.addEventListener("click",startReload);
