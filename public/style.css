@@ -917,3 +917,24 @@ body.modal-open{overflow:hidden}
 .character-options select{background:#10202d;color:#fff;border:1px solid #34566c;border-radius:8px;padding:10px;font:inherit;max-width:210px}
 .character-options input:disabled,.preset-row button:disabled{opacity:.35;cursor:default}
 @media(max-width:600px){.tactical-menu-char.use-operator-art{width:230px;height:270px}.character-preview.use-operator-art{width:190px;height:220px}}
+
+
+/* Cosmetic shop */
+.shop-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:16px;margin-top:20px}
+.shop-card{background:linear-gradient(180deg,rgba(17,25,34,.96),rgba(8,13,19,.96));border:1px solid #2b3d4b;border-radius:16px;padding:16px;box-shadow:0 14px 28px rgba(0,0,0,.22)}
+.shop-card h3{margin:10px 0 6px;color:#fff}.shop-card p{margin:0 0 14px;color:#9fb0bd;font-size:13px;line-height:1.45}
+.shop-tag{display:inline-block;font-size:10px;font-weight:900;letter-spacing:.12em;color:#8ee6ff;background:#102733;border:1px solid #2b6478;border-radius:999px;padding:5px 8px}
+.shop-preview{height:118px;margin-top:12px;border-radius:12px;border:1px solid #263845;background:#0b1118;position:relative;overflow:hidden}
+.weapon-skin-preview:before{content:"";position:absolute;left:20px;right:20px;top:47px;height:16px;border-radius:8px;background:linear-gradient(90deg,#252e35,#7b8993 40%,#1b2329);box-shadow:0 0 0 2px #1118}
+.weapon-skin-preview:after{content:"";position:absolute;width:34px;height:48px;left:48%;top:57px;transform:skew(-10deg);border-radius:4px;background:#222a30}
+.weapon-skin-preview.crimson:before{box-shadow:inset 0 3px #ff4658,0 0 14px #ff465866}
+.weapon-skin-preview.neon:before{box-shadow:inset 0 3px #24d9ff,0 0 14px #24d9ff66}
+.weapon-skin-preview.gold:before{box-shadow:inset 0 3px #f2c94c,0 0 14px #f2c94c66}
+.weapon-skin-preview.toxic:before{box-shadow:inset 0 3px #65ff8b,0 0 14px #65ff8b66}
+.operator-shop-preview{background:radial-gradient(circle at 50% 35%,#233746,#0b1118 72%)}
+.operator-shop-preview:before{content:"";position:absolute;width:54px;height:74px;border-radius:26px 26px 18px 18px;background:linear-gradient(#303746,#6e684b);left:50%;top:27px;transform:translateX(-50%);box-shadow:0 15px 0 -6px #202630}
+.operator-shop-preview:after{content:"";position:absolute;width:32px;height:32px;border-radius:50%;background:#d7b08c;left:50%;top:14px;transform:translateX(-50%);box-shadow:0 -9px 0 -3px #151a21}
+.shop-equip,.shop-link{width:100%;border:1px solid #35566b;background:#13212d;color:#dcecff;border-radius:10px;padding:10px 12px;font-weight:900;cursor:pointer}
+.shop-equip.active{background:#153d2b;border-color:#3f9a68;color:#9ff1b8}
+.shop-link{background:#182536}
+@media(max-width:720px){.shop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.shop-card{padding:12px}.shop-preview{height:92px}.mobile-actions{max-width:220px;flex-wrap:wrap}.mobile-actions button[data-action="grenade"]{min-width:82px}}
