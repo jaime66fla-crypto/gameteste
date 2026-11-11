@@ -37,14 +37,21 @@ button:hover,a:hover{border-color:#65ff9b}
 }
 @media(max-width:700px){.top{transform:scale(.84);transform-origin:top left}.right{display:none}.combatHud{transform:scale(.86);transform-origin:top left}}
 @media(max-width:700px) and (orientation:portrait){.rotateNotice{display:flex}.mobileControls{display:none}}
+.crosshair.on-target{background:#ff646f;box-shadow:0 0 0 2px #000b,0 0 9px #ff646f}
+.hitmarker{position:absolute;left:50%;top:50%;width:24px;height:24px;transform:translate(-50%,-50%);z-index:7;pointer-events:none;opacity:0;background:linear-gradient(45deg,transparent 44%,#fff 46%,#fff 54%,transparent 56%),linear-gradient(-45deg,transparent 44%,#fff 46%,#fff 54%,transparent 56%);mask:radial-gradient(circle,transparent 5px,#000 6px)}
+.hitmarker.kill{filter:sepia(1) saturate(8) hue-rotate(310deg)}
+.hitmarker.active{animation:confirmHit .2s ease-out forwards}
+@keyframes confirmHit{0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
+@media(pointer:coarse){#aimLockBtn{display:none}}
 </style>
 </head>
 <body>
 <div id="app">
 <canvas id="view"></canvas>
-<div class="crosshair" aria-hidden="true"></div>
-<div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">CÂMERA LIVRE • BOTÃO DIREITO</span></div>
-<div class="hud right"><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
+<div id="crosshair" class="crosshair" aria-hidden="true"></div>
+<div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
+<div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">MIRA CENTRAL • BOTÃO DIREITO GIRA</span></div>
+<div class="hud right"><button id="aimLockBtn">Travar mouse</button><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
 <div class="hud combatHud">
   <div class="hudRow"><strong>VIDA</strong><span id="hpText">100</span></div>
   <div class="bar"><i id="hpFill"></i></div>
@@ -62,10 +69,10 @@ button:hover,a:hover{border-color:#65ff9b}
   <button class="mobileAction" id="actionBtn">E</button>
 </div>
 <div class="rotateNotice">GIRE O CELULAR PARA JOGAR EM PAISAGEM</div>
-<div class="hud bottom">WASD mover • SHIFT correr • clique atira • 1-4 troca arma • E veículo/escada</div>
-<div class="hud mode"><b>Primeira etapa</b><p>Mundo 3D real, prédios com altura física, sombras e câmera ortográfica. A lógica completa de combate será migrada depois.</p></div>
+<div class="hud bottom">WASD mover • SHIFT correr • clique atira • ESC solta o mouse • 1-4 arma • E interagir</div>
+<div class="hud mode"><b>Mira em terceira pessoa</b><p>Mire pelo ponto central. Trave o mouse ou segure o botão direito para girar. No celular, puxe o analógico direito para mirar e atirar.</p></div>
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"}}</script>
-<script type="module" src="/3d.js?v=14"></script>
+<script type="module" src="/3d.js?v=15"></script>
 </body>
 </html>

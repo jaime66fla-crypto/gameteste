@@ -17,10 +17,13 @@ const moveKnob=document.getElementById('moveKnob');
 const aimStick=document.getElementById('aimStick');
 const aimKnob=document.getElementById('aimKnob');
 const actionBtn=document.getElementById('actionBtn');
+const crosshairEl=document.getElementById('crosshair');
+const hitmarkerEl=document.getElementById('hitmarker');
+const aimLockBtn=document.getElementById('aimLockBtn');
 const mobileMove={x:0,y:0,active:false};
 const mobileAim={x:0,y:0,active:false,firing:false};
 let cameraYaw=0;
-let cameraPitch=.38;
+let cameraPitch=.08;
 let cameraRightDrag=false;
 let cameraLastX=0;
 let cameraLastY=0;
@@ -222,6 +225,7 @@ function makeSoldier(color=0x28313a){
 }
 
 const player=makeSoldier(0x344154);player.scale.setScalar(.68);player.position.set(4,0,8);world.add(player);
+player.userData.gun.rotation.y=-Math.PI/2;
 player.userData.hp=100;player.userData.maxHp=100;
 
 // Avatar loader for Erika Archer
@@ -609,14 +613,7 @@ function bindStick(el,knob,state,onMove){
 }
 bindStick(moveStick,moveKnob,mobileMove);
 bindStick(aimStick,aimKnob,mobileAim,state=>{
- const mag=Math.hypot(state.x,state.y);
- if(mag>.12){
-  const ang=Math.atan2(state.x,-state.y);
-  player.rotation.y=ang;
-  const origin=player.position.clone();
-  aimPoint.set(origin.x+Math.sin(ang)*20,origin.y+1.5,origin.z+Math.cos(ang)*20);
- }
- state.firing=mag>.58;
+ state.firing=Math.hypot(state.x,state.y)>.58;
 });
 actionBtn?.addEventListener('pointerdown',e=>{
  e.preventDefault();
@@ -770,32 +767,67 @@ function topSurfaceAt(x,z){
  }
  return y;
 }
-function nearestAliveEnemyToRay(){
- let best=null,bestD=.95;
+// The same volumes resolve the reticle and each projectile segment.
+function traceAimRay(ray,maxDistance=100,includeGround=false){
+ let best=null;
+ const consider=(point,kind,object=null)=>{
+  if(!point)return;
+  const distance=point.distanceTo(ray.origin);
+  if(distance<=maxDistance&&(!best||distance<best.distance))best={point:point.clone(),distance,kind,object};
+ };
+ for(const b of buildings){
+  const {w,h,d}=b.userData;
+  const volume=new THREE.Box3(new THREE.Vector3(b.position.x-w/2,0,b.position.z-d/2),new THREE.Vector3(b.position.x+w/2,h+.6,b.position.z+d/2));
+  if(volume.containsPoint(ray.origin))consider(ray.origin,'wall',b);
+  else consider(ray.intersectBox(volume,new THREE.Vector3()),'wall',b);
+ }
  for(const e of enemies){
   if(!e.userData.alive)continue;
-  const p=e.position.clone();p.y+=1.55;
-  const d=raycaster.ray.distanceToPoint(p);
-  if(d<bestD){best=e;bestD=d}
+  const center=e.position.clone().add(new THREE.Vector3(0,1.5,0));
+  const volume=new THREE.Sphere(center,1);
+  if(volume.containsPoint(ray.origin))consider(ray.origin,'enemy',e);
+  else consider(ray.intersectSphere(volume,new THREE.Vector3()),'enemy',e);
  }
+ if(includeGround)consider(ray.intersectPlane(groundPlane,new THREE.Vector3()),'ground');
  return best;
 }
-function updateAimFromPointer(){
- raycaster.setFromCamera(pointer,camera);
- const enemy=nearestAliveEnemyToRay();
- if(enemy){
-  aimPoint.copy(enemy.position);
-  aimPoint.y+=1.55;
- }else{
-  const roof=onRoof();
-  const aimPlane=new THREE.Plane(new THREE.Vector3(0,1,0),-(roof?roof.userData.h+.45:0));
-  if(raycaster.ray.intersectPlane(aimPlane,aimPoint)){
-   const surface=topSurfaceAt(aimPoint.x,aimPoint.z);
-   if(surface>aimPoint.y+.2)aimPoint.y=surface+.05;
-  }
+function mobileAimDirection(x,y){
+ const forward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
+ const right=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
+ return forward.multiplyScalar(-y).addScaledVector(right,x).normalize();
+}
+function placeReticle(point=null){
+ let x=50,y=50,visible=true;
+ if(point){
+  const projected=point.clone().project(camera);
+  visible=projected.z>=-1&&projected.z<=1&&Math.abs(projected.x)<=1&&Math.abs(projected.y)<=1;
+  x=(projected.x+1)*50;y=(1-projected.y)*50;
  }
+ for(const el of [crosshairEl,hitmarkerEl])if(el){el.style.left=x+'%';el.style.top=y+'%';el.style.visibility=visible?'visible':'hidden'}
+}
+function updateAimFromPointer(){
+ camera.updateMatrixWorld(true);
+ if(mobileAim.active&&Math.hypot(mobileAim.x,mobileAim.y)>.12){
+  const origin=player.position.clone().add(new THREE.Vector3(0,1.45,0));
+  const direction=mobileAimDirection(mobileAim.x,mobileAim.y);
+  raycaster.ray.set(origin,direction);
+ }else raycaster.setFromCamera(pointer,camera); // NDC (0,0): the visible center dot.
+ const hit=traceAimRay(raycaster.ray,100,true);
+ aimPoint.copy(hit?hit.point:raycaster.ray.at(100,new THREE.Vector3()));
+ placeReticle(mobileAim.active?aimPoint:null);
+ crosshairEl?.classList.toggle('on-target',hit?.kind==='enemy');
  const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
- if(Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
+ if(!climbState&&!activeCar&&Math.hypot(dx,dz)>.01){
+  player.rotation.y=Math.atan2(dx,dz);
+  if(player.userData.gun)player.userData.gun.rotation.x=-Math.atan2(aimPoint.y-player.position.y-1.3,Math.hypot(dx,dz));
+ }
+}
+function showHitmarker(killed=false){
+ if(!hitmarkerEl)return;
+ hitmarkerEl.classList.toggle('kill',killed);
+ hitmarkerEl.classList.remove('active');
+ void hitmarkerEl.offsetWidth;
+ hitmarkerEl.classList.add('active');
 }
 
 function fire(){
@@ -811,10 +843,15 @@ function fire(){
  }
  ammo.mag--;
  shotCooldown=weapon.cooldown;
- const origin=new THREE.Vector3();
- player.getWorldPosition(origin);origin.y+=1.45;
- const forward=new THREE.Vector3(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y));
- origin.addScaledVector(forward,1.05);
+ updateAimFromPointer();
+ player.updateMatrixWorld(true);
+ const barrel=player.userData.weaponParts?.barrel;
+ const origin=barrel?barrel.localToWorld(new THREE.Vector3(.36,0,0)):player.position.clone().add(new THREE.Vector3(0,1.45,0));
+ // A muzzle beyond a close wall must not shoot through it.
+ const shoulder=player.position.clone().add(new THREE.Vector3(0,1.45,0));
+ const clearance=origin.clone().sub(shoulder);
+ const obstruction=traceAimRay(new THREE.Ray(shoulder,clearance.clone().normalize()),clearance.length());
+ if(obstruction?.kind==='wall'){spawnImpact(obstruction.point,weapon.color,weapon.impact);updateHud();return}
  const target=aimPoint.clone();
  spawnMuzzle(origin);
  recoilKick=Math.min(.55,recoilKick+weapon.recoil);
@@ -822,32 +859,32 @@ function fire(){
  updateHud();
 }
 
-addEventListener('contextmenu',e=>e.preventDefault());
-addEventListener('pointerdown',e=>{
- if(e.button===2){
-  cameraRightDrag=true;
-  cameraLastX=e.clientX;
-  cameraLastY=e.clientY;
-  return;
- }
- if(e.button===0){
-  updateAimFromPointer();
-  fire();
- }
+canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',e=>{
+ if(e.pointerType==='touch')return;
+ if(e.button===2){cameraRightDrag=true;cameraLastX=e.clientX;cameraLastY=e.clientY;return}
+ if(e.button===0)fire();
 });
 addEventListener('pointerup',e=>{if(e.button===2)cameraRightDrag=false});
+addEventListener('blur',()=>{keys.clear();cameraRightDrag=false});
+aimLockBtn?.addEventListener('click',()=>{
+ if(document.pointerLockElement===canvas){document.exitPointerLock();return}
+ try{const request=canvas.requestPointerLock?.();request?.catch(()=>{statusEl.textContent='Use o botão direito para girar a câmera'})}
+ catch{statusEl.textContent='Use o botão direito para girar a câmera'}
+});
+document.addEventListener('pointerlockchange',()=>{
+ cameraRightDrag=false;
+ if(aimLockBtn)aimLockBtn.textContent=document.pointerLockElement===canvas?'Soltar mouse (ESC)':'Travar mouse';
+});
+document.addEventListener('pointerlockerror',()=>{statusEl.textContent='Use o botão direito para girar a câmera'});
 addEventListener('pointermove',e=>{
- if(cameraRightDrag){
-  const dx=e.clientX-cameraLastX,dy=e.clientY-cameraLastY;
-  cameraLastX=e.clientX;
-  cameraLastY=e.clientY;
-  cameraYaw+=dx*.006;
-  cameraPitch=THREE.MathUtils.clamp(cameraPitch-dy*.004,-.05,.95);
-  return;
- }
- pointer.x=e.clientX/innerWidth*2-1;
- pointer.y=-(e.clientY/innerHeight)*2+1;
- updateAimFromPointer();
+ if(e.pointerType==='touch')return;
+ const locked=document.pointerLockElement===canvas;
+ if(!locked&&!cameraRightDrag)return;
+ const dx=locked?e.movementX:e.clientX-cameraLastX,dy=locked?e.movementY:e.clientY-cameraLastY;
+ cameraLastX=e.clientX;cameraLastY=e.clientY;
+ cameraYaw-=dx*.004;
+ cameraPitch=THREE.MathUtils.clamp(cameraPitch+dy*.003,-.65,.95);
 });
 
 function addHealthBar(enemy){
@@ -1128,35 +1165,22 @@ function updateBullets3D(dt){
    b.mesh.position.copy(next);continue;
   }
 
-  let enemyHit=null,enemyHitDist=Infinity;
-  for(const e of enemies){
-   if(!e.userData.alive)continue;
-   const center=e.position.clone();center.y+=1.5;
-   const seg=next.clone().sub(old),len2=seg.lengthSq();
-   let q=old.clone();
-   if(len2>0){
-    const tHit=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);
-    q=old.clone().addScaledVector(seg,tHit);
-   }
-   const d=q.distanceTo(center);
-   if(d<1.0){
-    const along=old.distanceTo(q);
-    if(along<enemyHitDist){enemyHit=e;enemyHitDist=along}
-   }
-  }
-
-  const buildingBlocked=segmentHitsBuilding(old,next);
-  if(buildingBlocked){
-   b.mesh.position.copy(next);spawnImpact(next,b.color,weapons3D[currentWeapon]?.impact||5);b.life=0;continue;
-  }
-
-  b.mesh.position.copy(next);
-  if(enemyHit){
-   enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b,weapons3D[currentWeapon]?.impact||5);b.life=0;
-   if(enemyHit.userData.hp<=0){
-    enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;
-    if(enemyHit.userData.role==='boss'){startBossDeathCutscene();statusEl.textContent='GOLIAS DERROTADO • Boss eliminado';}
-    else statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D;
+  const segment=next.clone().sub(old);
+  const hit=traceAimRay(new THREE.Ray(old,segment.clone().normalize()),segment.length(),true);
+  b.mesh.position.copy(hit?hit.point:next);
+  if(hit){
+   b.life=0;
+   spawnImpact(hit.point,hit.kind==='enemy'?0xff6b6b:b.color,5);
+   if(hit.kind==='enemy'){
+    const enemyHit=hit.object;
+    enemyHit.userData.hp-=b.damage;
+    const killed=enemyHit.userData.hp<=0;
+    showHitmarker(killed);
+    if(killed){
+     enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;
+     if(enemyHit.userData.role==='boss'){startBossDeathCutscene();statusEl.textContent='GOLIAS DERROTADO • Boss eliminado'}
+     else statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D;
+    }
    }
   }
  }
@@ -1166,26 +1190,37 @@ function updateBullets3D(dt){
 function updateThirdPersonCamera(dt,targetObj){
  const focus=targetObj||player;
  const isCar=targetObj&&targetObj!==player;
- const dist=isCar?12.5:8.6;
- const lookHeight=isCar?1.35:1.45;
-
+ const dist=isCar?12.5:5.8;
+ const lookHeight=isCar?2.4:1.8;
  const horizontal=Math.cos(cameraPitch)*dist;
- const height=Math.max(2.2,Math.sin(cameraPitch)*dist+(isCar?3.6:3.0));
+ const right=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
  const desired=focus.position.clone().add(new THREE.Vector3(
   Math.sin(cameraYaw)*horizontal,
-  height,
+  lookHeight+Math.sin(cameraPitch)*dist,
   Math.cos(cameraYaw)*horizontal
- ));
-
- camera.position.lerp(desired,1-Math.exp(-dt*7));
- const lookAt=focus.position.clone().add(new THREE.Vector3(0,lookHeight,0));
- camera.lookAt(lookAt);
+ )).addScaledVector(right,isCar?0:.85);
+ // Keep the camera outside solid buildings while orbiting near a facade.
+ const anchor=focus.position.clone().add(new THREE.Vector3(0,lookHeight,0));
+ const offset=desired.clone().sub(anchor),length=offset.length();
+ const cameraRay=new THREE.Ray(anchor,offset.clone().normalize());
+ let distance=length;
+ for(const b of buildings){
+  const {w,h,d}=b.userData;
+  const volume=new THREE.Box3(new THREE.Vector3(b.position.x-w/2-.2,-.2,b.position.z-d/2-.2),new THREE.Vector3(b.position.x+w/2+.2,h+.8,b.position.z+d/2+.2));
+  const hit=cameraRay.intersectBox(volume,new THREE.Vector3());
+  if(hit)distance=Math.min(distance,Math.max(.35,hit.distanceTo(anchor)-.2));
+ }
+ desired.copy(cameraRay.at(distance,new THREE.Vector3()));
+ camera.position.lerp(desired,1-Math.exp(-dt*12));
+ const viewDirection=new THREE.Vector3(-Math.sin(cameraYaw)*Math.cos(cameraPitch),-Math.sin(cameraPitch),-Math.cos(cameraYaw)*Math.cos(cameraPitch));
+ camera.lookAt(camera.position.clone().add(viewDirection));
+ camera.updateMatrixWorld(true);
 }
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
  if(player.userData.avatarMixer)player.userData.avatarMixer.update(dt);
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateAimFromPointer();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
      inputY=((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0);
@@ -1210,12 +1245,14 @@ function frame(now){
  }
  updateProceduralAvatar(dt,!!len,avatarRunning);
  shotCooldown=Math.max(0,shotCooldown-dt);
- if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.2,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
+ updateThirdPersonCamera(dt,player);
+ updateAimFromPointer();
+ if(mobileAim.firing)fire();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
  if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
- updateThirdPersonCamera(dt,player);
+ updateAimFromPointer();
  updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
-applyWeaponVisual();updateHud();
+applyWeaponVisual();updateHud();updateThirdPersonCamera(1,player);updateAimFromPointer();
 requestAnimationFrame(frame);
