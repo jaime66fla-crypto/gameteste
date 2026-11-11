@@ -1,4 +1,6 @@
 """Generate operator animation assets via PixelLab; never expose the API key to the game."""
+import concurrent.futures
+import threading
 import argparse
 import base64
 import io
@@ -37,7 +39,7 @@ def decode_image(value):
     return image.convert('RGBA')
 
 
-def api_request(token, path, payload=None):
+def api_request(token, path, payload=None, _attempt=0):
     # Only the fixed official API receives the credential. It never enters a URL or logs.
     request = urllib.request.Request(API + path,
         data=None if payload is None else json.dumps(payload).encode(),
@@ -47,6 +49,10 @@ def api_request(token, path, payload=None):
         with urllib.request.urlopen(request, timeout=90) as response:
             return json.load(response)
     except urllib.error.HTTPError as exc:
+        if exc.code==429 and _attempt<60:
+            print('Waiting for an available PixelLab generation slot...',flush=True)
+            time.sleep(10)
+            return api_request(token,path,payload,_attempt+1)
         labels = {401:'PixelLab rejected PIXELLAB_API_KEY. Check the repository secret.',
                   402:'PixelLab requires more subscription generations or credits.',
                   403:'This PixelLab account does not have access to this API operation.',
@@ -97,6 +103,9 @@ def prepare_reference(token, image):
 
 
 def build_sheet(frames):
+    # v3 includes the original input frame before the requested generated frames.
+    if len(frames) == FRAME_COUNT + 1:
+        frames = frames[1:]
     if len(frames) != FRAME_COUNT:
         raise RuntimeError('PixelLab returned an unexpected animation frame count.')
     # Keep the generated canvas and anchors intact across every frame.
@@ -127,6 +136,7 @@ def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['preview','all','check'], default='preview')
     parser.add_argument('--resume-job', default='')
+    parser.add_argument('--reuse-walk-job', default='')
     parser.add_argument('--output', type=Path, default=Path('pixellab-output'))
     args=parser.parse_args()
     token=os.environ.get('PIXELLAB_API_KEY','').strip()
@@ -149,16 +159,18 @@ def main():
     if args.mode == 'check':
         return
     # Refuse to buy anything or silently continue using funded credit balances.
-    if float(subscription.get('generations') or 0) < (3 if args.mode=='preview' else 24):
+    if float(subscription.get('generations') or 0) < (3 if args.mode=='preview' else 32):
         raise RuntimeError('Not enough included generations for this batch. No new generation was started.')
     sheet=Image.open('public/assets/player/operator-directions.png').convert('RGBA')
     indices=[1] if args.mode=='preview' else range(8)
     manifest={'version':1,'frameSize':SIZE,'frameCount':FRAME_COUNT,'directions':DIRECTIONS,'animations':{}}
     manifest_path=args.output/'manifest.json'
-    for index in indices:
+    lock=threading.Lock()
+    recovered=poll_job(token,args.reuse_walk_job) if args.reuse_walk_job else None
+    def process_direction(index):
         direction=DIRECTIONS[index]
         print('Preparing reference: ' + direction, flush=True)
-        reference=prepare_reference(token,source_frame(sheet,index))
+        reference=(decode_image(recovered['images'][0]) if recovered and index==1 else prepare_reference(token,source_frame(sheet,index)))
         reference.save(args.output/(direction+'-reference.png'))
         for motion,fps in [('walk',10),('run',14)]:
             action=(('Walk naturally in place with a steady alternating heel-to-toe leg cycle, gentle knee bend and weight transfer. '
@@ -170,20 +182,28 @@ def main():
                        'rifle, proportions and silhouette. Smooth seamless loop. No camera motion, rotation, sliding, '
                        'extra limbs, changing gear, shadows or background. Keep the feet anchored to the same ground baseline.')
             print('Generating '+motion+' / '+direction, flush=True)
-            job=api_request(token,'/animate-with-text-v3',{'first_frame':encode_image(reference),
+            if recovered and index==1 and motion=='walk':
+                result=recovered
+                job={'background_job_id':args.reuse_walk_job}
+            else:
+                job=api_request(token,'/animate-with-text-v3',{'first_frame':encode_image(reference),
                 'action':action,'frame_count':FRAME_COUNT,'no_background':True,'seed':3611+index,'enhance_prompt':False})
             # Preserve job IDs for recovery; these identifiers never authorize API access.
             checkpoint=args.output/(motion+'-'+direction+'-job.json')
             checkpoint.write_text(json.dumps({'background_job_id':job['background_job_id']}))
-            result=poll_job(token,job['background_job_id'])
+            if not (recovered and index==1 and motion=='walk'):
+                result=poll_job(token,job['background_job_id'])
             frames=[decode_image(value) for value in result.get('images',[])]
             sprite=build_sheet(frames)
             name=motion+'-'+direction+'.png'
             sprite.save(args.output/name)
             save_preview([sprite.crop((i*SIZE,0,(i+1)*SIZE,SIZE)) for i in range(FRAME_COUNT)],
                          args.output/(motion+'-'+direction+'.gif'),fps)
-            manifest['animations'].setdefault(motion,{})[str(index)]={'file':name,'fps':fps}
-            manifest_path.write_text(json.dumps(manifest,indent=2)+'\n')
+            with lock:
+                manifest['animations'].setdefault(motion,{})[str(index)]={'file':name,'fps':fps}
+                manifest_path.write_text(json.dumps(manifest,indent=2)+'\n')
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+        list(pool.map(process_direction, indices))
     print('Animation assets completed. Review the PNG sheets and GIFs before publishing.', flush=True)
 
 

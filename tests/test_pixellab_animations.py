@@ -23,6 +23,11 @@ class AnimationAssetsTest(unittest.TestCase):
         self.assertEqual(sheet.size,(768,96))
         for n in range(8):self.assertEqual(sheet.getpixel((96*n+48,90)),(n*20,100,80,255))
 
+    def test_v3_input_frame_is_not_part_of_animation(self):
+        im=Image.new('RGBA',(96,96));im.putpixel((40,90),(1,2,3,255))
+        frames=[im]*9
+        self.assertEqual(g.build_sheet(frames).size,(768,96))
+
     def test_rejects_incomplete_or_opaque_generation(self):
         with self.assertRaises(RuntimeError):g.build_sheet([Image.new('RGBA',(96,96))]*7)
         with self.assertRaises(RuntimeError):g.build_sheet([Image.new('RGBA',(96,96),'white')]*8)

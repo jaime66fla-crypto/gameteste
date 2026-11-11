@@ -35,9 +35,9 @@ jobs:
       - name: Generate preview with PixelLab
         env:
           PIXELLAB_API_KEY: ${{ secrets.PIXELLAB_API_KEY }}
-          PIXELLAB_MODE: ${{ inputs.mode || 'preview' }}
-          PIXELLAB_RESUME_JOB: 24e88808-0f22-43f5-b5ea-f41c054b58d1
-        run: python scripts/pixellab_animations.py --mode "$PIXELLAB_MODE" --resume-job "$PIXELLAB_RESUME_JOB" --output pixellab-output
+          PIXELLAB_MODE: ${{ inputs.mode || 'all' }}
+          PIXELLAB_REUSE_WALK_JOB: 24e88808-0f22-43f5-b5ea-f41c054b58d1
+        run: python scripts/pixellab_animations.py --mode "$PIXELLAB_MODE" --reuse-walk-job "$PIXELLAB_REUSE_WALK_JOB" --output pixellab-output
       - name: Save animation sheets and review previews
         if: always()
         uses: actions/upload-artifact@v4
