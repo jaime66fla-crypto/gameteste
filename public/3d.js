@@ -326,8 +326,8 @@ function updateVehicle(dt){
  if(!activeCar)return false;
  const car=activeCar,u=car.userData;
  if(u.broken){u.speed=0;player.position.copy(car.position);player.rotation.y=car.rotation.y;return true}
- const throttle=((keys.has('w')?1:0)-(keys.has('s')?1:0)) + (mobileMove.active?-mobileMove.y:0);
- const steer=((keys.has('d')?1:0)-(keys.has('a')?1:0)) + (mobileMove.active?mobileMove.x:0);
+ const throttle=THREE.MathUtils.clamp(((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0),-1,1);
+ const steer=THREE.MathUtils.clamp(((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),-1,1);
  const max=keys.has('shift')?20:14;
  u.speed+=throttle*22*dt;
  if(!throttle)u.speed*=Math.pow(.22,dt);
@@ -629,8 +629,8 @@ addEventListener('pointermove',e=>{
   const dx=e.clientX-cameraLastX,dy=e.clientY-cameraLastY;
   cameraLastX=e.clientX;
   cameraLastY=e.clientY;
-  cameraYaw-=dx*.006;
-  cameraPitch=THREE.MathUtils.clamp(cameraPitch+dy*.004,-.05,.95);
+  cameraYaw+=dx*.006;
+  cameraPitch=THREE.MathUtils.clamp(cameraPitch-dy*.004,-.05,.95);
   return;
  }
  pointer.x=e.clientX/innerWidth*2-1;
@@ -977,10 +977,25 @@ function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
  if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
- let dx=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
-     dz=((keys.has('s')?1:0)-(keys.has('w')?1:0))+(mobileMove.active?mobileMove.y:0);
- const len=Math.hypot(dx,dz);
- if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
+ let inputX=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
+     inputY=((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0);
+ const len=Math.hypot(inputX,inputY);
+ if(len){
+  inputX/=len;inputY/=len;
+  const camForward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
+  const camRight=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
+  const move=camForward.multiplyScalar(inputY).add(camRight.multiplyScalar(inputX)).normalize();
+  const dx=move.x,dz=move.z;
+  const speed=keys.has('shift')?10:6;
+  const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;
+  if(!blocked(nx,player.position.z))player.position.x=nx;
+  if(!blocked(player.position.x,nz))player.position.z=nz;
+  if(!mobileAim.active)player.rotation.y=Math.atan2(dx,dz);
+  const gait=Math.sin(t*(keys.has('shift')?14:10));
+  player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55;
+ }else{
+  player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8
+ }
  shotCooldown=Math.max(0,shotCooldown-dt);
  if(mobileAim.active){const mag=Math.hypot(mobileAim.x,mobileAim.y);if(mag>.12){const ang=Math.atan2(mobileAim.x,-mobileAim.y);player.rotation.y=ang;aimPoint.set(player.position.x+Math.sin(ang)*20,player.position.y+1.5,player.position.z+Math.cos(ang)*20)}if(mobileAim.firing)fire()}else updateAimFromPointer();
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
