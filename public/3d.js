@@ -238,6 +238,7 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  model.rotation.y=Math.PI;
  player.add(model);
  player.userData.avatar=model;
+ player.userData.avatarBaseY=model.position.y;
  player.userData.avatarBones={};
  const mixamoMap={
   'mixamorig:leftarm':'upperArmL',
@@ -255,7 +256,10 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   'mixamorig:rightshoulder':'shoulderR'
  };
  const registerBone=(bone)=>{
-  const n=(bone?.name||'').toLowerCase();
+  // FBXLoader removes punctuation; duplicate skin bones inherit the real joint.
+  const normalize=name=>(name||'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/^mixamorig/,'');
+  while(bone?.parent?.isBone&&normalize(bone.parent.name)===normalize(bone.name))bone=bone.parent;
+  const n='mixamorig:'+normalize(bone?.name);
   const key=mixamoMap[n];
   if(key&&!player.userData.avatarBones[key]){
    player.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone()};
@@ -267,33 +271,30 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   }
   if(child.isBone)registerBone(child);
  });
- if(model.animations&&model.animations.length>0){
+ // Ignore bind-pose exports and empty takes: they contain no usable motion.
+ const motionClips=(model.animations||[]).filter(clip=>{
+  if(clip.duration<.1)return false;
+  return clip.tracks.some(track=>{
+   const size=track.getValueSize();
+   return track.values.some((value,i)=>i>=size&&Math.abs(value-track.values[i%size])>1e-5);
+  });
+ });
+ if(motionClips.length>0){
   const mixer=new THREE.AnimationMixer(model);
   player.userData.avatarMixer=mixer;
   player.userData.avatarActions={};
-  model.animations.forEach(function(clip){
+  motionClips.forEach(function(clip){
    const action=mixer.clipAction(clip);
    action.enabled=true;
    action.setLoop(THREE.LoopRepeat,Infinity);
    player.userData.avatarActions[clip.name.toLowerCase()]=action;
   });
-  const primaryClip=model.animations.find(c=>/mixamo|take/i.test(c.name))||model.animations[0];
-  if(primaryClip){
-   const primaryAction=mixer.clipAction(primaryClip);
-   primaryAction.enabled=true;
-   primaryAction.setLoop(THREE.LoopRepeat,Infinity);
-   primaryAction.play();
-   primaryAction.paused=true;
-   primaryAction.time=Math.min(primaryClip.duration*.18,.35);
-   player.userData.avatarPrimaryAction=primaryAction;
-   player.userData.avatarPrimaryClip=primaryClip;
-  }
  }
  player.userData.avatarAnimState='';
  setAvatarMotion('idle',true);
  const clipCount=model.animations?.length||0;
  const boneCount=Object.keys(player.userData.avatarBones||{}).length;
- const clipInfo=player.userData.avatarPrimaryClip?.name?(' • clip '+player.userData.avatarPrimaryClip.name):'';
+ const clipInfo=motionClips.length?' • animações importadas':' • movimento procedural';
  statusEl.textContent='Erika Archer carregada • clips '+clipCount+' • ossos '+boneCount+clipInfo;
  player.children.forEach(function(child){
   if(child!==player.userData.avatar&&child.isMesh)child.visible=false;
@@ -320,39 +321,27 @@ function setAvatarMotion(kind,force=false){
  if(!force&&player.userData.avatarAnimState===kind)return;
  player.userData.avatarAnimState=kind;
 
- const primary=player.userData.avatarPrimaryAction;
- const clip=player.userData.avatarPrimaryClip;
- if(primary&&clip){
-  primary.enabled=true;
-  primary.play();
-  if(kind==='idle'){
-   primary.paused=false;
-   primary.timeScale=0;
-   primary.time=Math.max(.01,clip.duration*.52);
-  }else{
-   primary.paused=false;
-   primary.timeScale=kind==='run'?1.45:kind==='climb'?.72:1.0;
-  }
-  return;
- }
-
  const actions=player.userData.avatarActions||{};
  const next=findAvatarAction(kind);
+ player.userData.avatarActiveAction=next;
  if(next){
-  for(const a of Object.values(actions))if(a!==next)a.fadeOut(.16);
+  for(const a of Object.values(actions))if(a!==next)a.stop();
   next.reset().fadeIn(.16).play();
+ }else{
+  for(const a of Object.values(actions))a.stop();
  }
 }
 function updateProceduralAvatar(dt,moving=false,running=false){
  const avatar=player.userData.avatar;
  const bones=player.userData.avatarBones;
  if(!avatar||!bones)return;
- if(player.userData.avatarPrimaryAction)return;
+ if(player.userData.avatarActiveAction)return;
+ const climbing=!!player.userData.climbing;
 
  // Este FBX esta em bind pose. Forca uma pose relaxada via quaternion
  // e anima por cima dela, sem depender de clips internos.
- const speed=running?11.5:moving?7.2:2.2;
- const legAmp=running?.72:moving?.48:.04;
+ const speed=climbing?11:running?11.5:moving?7.2:2.2;
+ const legAmp=climbing?.7:running?.72:moving?.48:0;
  const armAmp=running?.34:moving?.24:.025;
  const s=Math.sin(t*speed),c2=Math.cos(t*speed);
  const alpha=1-Math.exp(-dt*12);
@@ -371,10 +360,10 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  // Ombros e bracos: tira da T-pose e deixa os cotovelos levemente dobrados.
  pose('shoulderL',0,0,-.08);
  pose('shoulderR',0,0,.08);
- pose('upperArmL',moving?-s*armAmp:.03,0,-1.28);
- pose('upperArmR',moving?s*armAmp:.03,0,1.28);
- pose('foreArmL',moving?Math.max(0,-s)*.38:.16,0,-.12);
- pose('foreArmR',moving?Math.max(0,s)*.38:.16,0,.12);
+ pose('upperArmL',climbing?-1.2+s*.3:1.28,0,moving&&!climbing?-s*armAmp:0);
+ pose('upperArmR',climbing?-1.2-s*.3:1.28,0,moving&&!climbing?s*armAmp:0);
+ pose('foreArmL',climbing?-.6+s*.25:moving?Math.max(0,-s)*.38:.16,0,-.12);
+ pose('foreArmR',climbing?-.6-s*.25:moving?Math.max(0,s)*.38:.16,0,.12);
 
  // Pernas e tronco.
  pose('thighL',s*legAmp,0,0);
@@ -385,7 +374,7 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  pose('spine1',0,moving?s*.018:0,0);
  pose('spine2',0,moving?-s*.016:0,0);
 
- avatar.position.y=moving?Math.abs(c2)*(running?.05:.028):Math.sin(t*2.2)*.008;
+ avatar.position.y=(player.userData.avatarBaseY||0)+(climbing?Math.abs(s)*.035:moving?Math.abs(c2)*(running?.05:.028):Math.sin(t*2.2)*.008);
 }
 
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
@@ -572,7 +561,7 @@ function updateClimb(dt){
  }
  if(player.userData.gun)player.userData.gun.rotation.z=cycle*.05;
  if(player.userData.avatar){
-  player.userData.avatar.position.y=Math.abs(Math.sin(s.t*11))*.035;
+  updateProceduralAvatar(dt,true,false);
   player.userData.avatar.rotation.z=cycle*.025;
  }
 
@@ -585,7 +574,7 @@ function updateClimb(dt){
   }
   if(player.userData.gun)player.userData.gun.rotation.z=0;
   if(player.userData.avatar){
-   player.userData.avatar.position.y=0;
+   player.userData.avatar.position.y=player.userData.avatarBaseY||0;
    player.userData.avatar.rotation.z=0;
   }
   player.userData.climbing=false;
