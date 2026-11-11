@@ -19,6 +19,12 @@ button,a{appearance:none;border:1px solid #38505e;background:#0d1821;color:#eef5
 button:hover,a:hover{border-color:#65ff9b}
 .mode{right:14px;bottom:14px;background:#071019d9;border:1px solid #38505e;border-radius:10px;padding:10px 12px;max-width:270px}
 .mode b{color:#65ff9b}.mode p{font-size:11px;line-height:1.35;color:#b8c5cd;margin:5px 0 0}
+.combatHud{left:14px;bottom:14px;width:290px;background:#071019e8;border:1px solid #38505e;border-radius:12px;padding:10px 12px}
+.hudRow{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11px;margin:4px 0}.hudRow strong{font-size:12px}.bar{height:8px;background:#18242c;border:1px solid #31434f;border-radius:99px;overflow:hidden;margin:5px 0 8px}.bar>i{display:block;height:100%;width:100%;background:#65ff9b;transition:width .12s linear}
+.weaponLine{font-weight:900;letter-spacing:.05em}.ammo{font-size:18px;font-weight:900}
+.bossHud{left:50%;top:14px;transform:translateX(-50%);width:min(520px,46vw);background:#15090be8;border:1px solid #7a3138;border-radius:12px;padding:9px 12px;text-align:center}
+.bossHud[hidden]{display:none}.bossTitle{display:flex;justify-content:space-between;font-size:11px;font-weight:900;letter-spacing:.12em;color:#ff8c94}.bossBar{height:10px;background:#2a1115;border-radius:99px;overflow:hidden;margin-top:7px}.bossBar>i{display:block;height:100%;width:100%;background:#ff5361;transition:width .12s linear}
+.missileAlert{left:50%;top:88px;transform:translateX(-50%);background:#571017e8;border:1px solid #ff5b63;border-radius:8px;padding:7px 12px;font-weight:1000;font-size:12px;letter-spacing:.1em;animation:pulseAlert .55s infinite alternate}.missileAlert[hidden]{display:none}@keyframes pulseAlert{from{transform:translateX(-50%) scale(1)}to{transform:translateX(-50%) scale(1.05)}}
 @media(max-width:700px){.bottom{font-size:9px;max-width:92vw;white-space:normal}.mode{display:none}.top{min-width:180px}.right{top:auto;bottom:70px}}
 </style>
 </head>
@@ -27,9 +33,20 @@ button:hover,a:hover{border-color:#65ff9b}
 <canvas id="view"></canvas>
 <div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">CÂMERA ISOMÉTRICA FIXA</span></div>
 <div class="hud right"><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
-<div class="hud bottom">WASD mover • SHIFT correr • mouse apenas para observar • câmera fixa 2.5D</div>
+<div class="hud combatHud">
+  <div class="hudRow"><strong>VIDA</strong><span id="hpText">100</span></div>
+  <div class="bar"><i id="hpFill"></i></div>
+  <div class="hudRow weaponLine"><span id="weaponHud">PISTOLA</span><span class="ammo" id="ammoHud">12 / 72</span></div>
+  <div class="hudRow"><span>KILLS</span><span id="killsHud">0</span></div>
+</div>
+<div class="hud bossHud" id="bossHud">
+  <div class="bossTitle"><span>GOLIAS</span><span id="bossPhaseHud">FASE 1</span></div>
+  <div class="bossBar"><i id="bossHpFill"></i></div>
+</div>
+<div class="hud missileAlert" id="missileAlert" hidden>⚠ MÍSSIL INCOMING</div>
+<div class="hud bottom">WASD mover • SHIFT correr • clique atira • 1-4 troca arma • E veículo/escada</div>
 <div class="hud mode"><b>Primeira etapa</b><p>Mundo 3D real, prédios com altura física, sombras e câmera ortográfica. A lógica completa de combate será migrada depois.</p></div>
 </div>
-<script type="module" src="/3d.js?v=1"></script>
+<script type="module" src="/3d.js?v=2"></script>
 </body>
 </html>
