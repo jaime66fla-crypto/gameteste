@@ -927,49 +927,173 @@ function update(dt){
  const z=getViewZoom(),visibleWorldWidth=canvas.width/z,visibleWorldHeight=canvas.height/(VIEW_TILT*z);const tx=player.x-visibleWorldWidth/2,ty=player.y-visibleWorldHeight/2;cam.x+=(Math.max(0,Math.min(W-visibleWorldWidth,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-visibleWorldHeight,ty))-cam.y)*Math.min(1,dt*5.5);netTimer+=dt;if(netTimer>=.033){netTimer=0;sendNetState()}
 }
 function road(){
- ctx.fillStyle="#1d2a24";ctx.fillRect(0,0,W,H);
- const asphalt=ctx.createLinearGradient(0,390,0,490);asphalt.addColorStop(0,"#3b4245");asphalt.addColorStop(.5,"#4b5255");asphalt.addColorStop(1,"#343b3f");
- ctx.fillStyle=asphalt;for(const y of [390,900,1400])ctx.fillRect(0,y,W,100);
- for(const x of [535,1100,1660,2200])ctx.fillRect(x,0,90,H);
- // worn lane edges and tire scuffs
+ // Terrain base with subtle deterministic texture.
+ ctx.fillStyle="#18251f";ctx.fillRect(0,0,W,H);
+ ctx.save();
+ for(let y=18;y<H;y+=34){
+  for(let x=16;x<W;x+=38){
+   const n=((x*13+y*7)%29)/29;
+   ctx.fillStyle=n>.58?"rgba(76,111,78,.10)":"rgba(8,20,14,.10)";
+   ctx.fillRect(x+((y/34)%2)*8,y,2+n*3,1+n*2);
+  }
+ }
+ ctx.restore();
+
+ const roadsY=[390,900,1400],roadsX=[535,1100,1660,2200];
+ const sidewalk="#757c79",curb="#aeb3ad";
+
+ // Sidewalks and curbs make the road blocks feel less flat.
+ ctx.fillStyle=sidewalk;
+ for(const y of roadsY){ctx.fillRect(0,y-19,W,19);ctx.fillRect(0,y+100,W,19)}
+ for(const x of roadsX){ctx.fillRect(x-18,0,18,H);ctx.fillRect(x+90,0,18,H)}
+ ctx.strokeStyle=curb;ctx.lineWidth=2;ctx.globalAlpha=.55;
+ for(const y of roadsY){ctx.beginPath();ctx.moveTo(0,y-2);ctx.lineTo(W,y-2);ctx.moveTo(0,y+102);ctx.lineTo(W,y+102);ctx.stroke()}
+ for(const x of roadsX){ctx.beginPath();ctx.moveTo(x-2,0);ctx.lineTo(x-2,H);ctx.moveTo(x+92,0);ctx.lineTo(x+92,H);ctx.stroke()}
+ ctx.globalAlpha=1;
+
+ // Asphalt with layered tonal bands.
+ const asphalt=ctx.createLinearGradient(0,390,0,500);
+ asphalt.addColorStop(0,"#31393c");asphalt.addColorStop(.48,"#454d50");asphalt.addColorStop(1,"#2d3438");
+ ctx.fillStyle=asphalt;for(const y of roadsY)ctx.fillRect(0,y,W,100);
+ for(const x of roadsX)ctx.fillRect(x,0,90,H);
+
+ // Fine aggregate texture.
+ ctx.save();ctx.globalAlpha=.23;
+ for(let i=0;i<760;i++){
+  const horizontal=i%2===0;
+  const lane=horizontal?roadsY[(i*7)%roadsY.length]:roadsX[(i*11)%roadsX.length];
+  const px=horizontal?((i*137)%W):lane+((i*19)%84)+3;
+  const py=horizontal?lane+((i*23)%94)+3:((i*149)%H);
+  const light=(i%5===0);
+  ctx.fillStyle=light?"#889194":"#151a1d";
+  ctx.fillRect(px,py,1+(i%3),1);
+ }
+ ctx.restore();
+
+ // Lane edges and faded center lines.
  ctx.strokeStyle="#20272a";ctx.lineWidth=3;ctx.globalAlpha=.48;
  for(const y of [410,470,920,980,1420,1480]){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}
  for(const x of [555,605,1120,1170,1680,1730,2220,2270]){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke()}
  ctx.globalAlpha=1;
- ctx.strokeStyle="#d4c765";ctx.lineWidth=3;ctx.setLineDash([28,24]);ctx.beginPath();
+ ctx.strokeStyle="#d2c76f";ctx.lineWidth=3;ctx.setLineDash([28,24]);ctx.beginPath();
  [440,950,1450].forEach(y=>{ctx.moveTo(0,y);ctx.lineTo(W,y)});
  [580,1145,1705,2245].forEach(x=>{ctx.moveTo(x,0);ctx.lineTo(x,H)});
  ctx.stroke();ctx.setLineDash([]);
- // deterministic cracks and old skid marks
- ctx.strokeStyle="#22282b";ctx.lineWidth=2;ctx.globalAlpha=.72;
- for(let i=0;i<28;i++){const x=90+(i*173)%2750,y=[425,935,1440][i%3]+((i*19)%44-22);ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+16,y-7);ctx.lineTo(x+28,y+4);ctx.lineTo(x+45,y-3);ctx.stroke()}
- ctx.globalAlpha=.3;ctx.lineWidth=5;
- for(let i=0;i<12;i++){const x=180+(i*241)%2550,y=[417,967,1418][i%3];ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+58,y+((i%2)?8:-8));ctx.stroke()}
+
+ // Crosswalks near a few intersections.
+ ctx.fillStyle="rgba(224,226,218,.48)";
+ const crossings=[[620,390],[1185,900],[1745,1400],[2200,1018]];
+ for(const [cx,cy] of crossings){
+  for(let k=-3;k<=3;k++)ctx.fillRect(cx+k*11,cy+7,6,34);
+ }
+
+ // Cracks, patched asphalt and old skid marks.
+ ctx.strokeStyle="#171d20";ctx.lineWidth=2;ctx.globalAlpha=.74;
+ for(let i=0;i<34;i++){
+  const x=70+(i*173)%2700,y=roadsY[i%3]+24+((i*19)%50);
+  ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+14,y-6);ctx.lineTo(x+25,y+4);ctx.lineTo(x+43,y-2);ctx.stroke();
+ }
+ ctx.fillStyle="rgba(20,25,27,.28)";
+ for(let i=0;i<15;i++){
+  const x=120+(i*257)%2550,y=roadsY[i%3]+12+(i*17)%64;
+  ctx.beginPath();ctx.ellipse(x,y,20+(i%4)*7,6+(i%3)*3,.18,0,Math.PI*2);ctx.fill();
+ }
+ ctx.globalAlpha=.28;ctx.strokeStyle="#090c0e";ctx.lineWidth=5;
+ for(let i=0;i<12;i++){
+  const x=180+(i*241)%2550,y=[417,967,1418][i%3];
+  ctx.beginPath();ctx.moveTo(x,y);ctx.lineTo(x+58,y+((i%2)?8:-8));ctx.stroke();
+ }
  ctx.globalAlpha=1;
+
+ // Manholes and drain grates.
+ for(const [mx,my] of [[760,438],[1470,944],[2440,1445]]){
+  ctx.fillStyle="#20272a";ctx.beginPath();ctx.arc(mx,my,12,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#586166";ctx.lineWidth=2;ctx.beginPath();ctx.arc(mx,my,8,0,Math.PI*2);ctx.stroke();
+  ctx.strokeStyle="#343c40";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(mx-6,my);ctx.lineTo(mx+6,my);ctx.moveTo(mx,my-6);ctx.lineTo(mx,my+6);ctx.stroke();
+ }
 }
 function drawBuildings(){
  buildings.forEach((b,i)=>{
-  const height=58+(i%4)*17, roofY=b.y-height, shift=height*.30,rx=b.x+shift,ry=roofY;
-  ctx.fillStyle="#0008";ctx.fillRect(b.x+18,b.y+17,b.w,b.h);
-  ctx.fillStyle="#162129";ctx.beginPath();ctx.moveTo(b.x+b.w,b.y);ctx.lineTo(b.x+b.w+shift,roofY);ctx.lineTo(b.x+b.w+shift,b.y+b.h-height);ctx.lineTo(b.x+b.w,b.y+b.h);ctx.closePath();ctx.fill();
-  ctx.fillStyle=i%2?"#30424d":"#263844";ctx.beginPath();ctx.moveTo(b.x,b.y+b.h);ctx.lineTo(b.x+shift,roofY+b.h);ctx.lineTo(b.x+b.w+shift,roofY+b.h);ctx.lineTo(b.x+b.w,b.y+b.h);ctx.closePath();ctx.fill();
-  for(let x=b.x+35;x<b.x+b.w-20;x+=64){
-    const lit=((Math.floor(x/64)+i)%4===0);ctx.fillStyle=lit?"#ffc96f88":"#79a5b866";ctx.fillRect(x,b.y+b.h-height*.56,28,13);
-    if(lit){ctx.shadowColor="#ffbd63";ctx.shadowBlur=12;ctx.fillRect(x+3,b.y+b.h-height*.56+2,22,9);ctx.shadowBlur=0}
+  const height=58+(i%4)*17,roofY=b.y-height,shift=height*.30,rx=b.x+shift,ry=roofY;
+
+  // Deep cast shadow anchors each building to the ground.
+  ctx.fillStyle="rgba(0,0,0,.38)";
+  ctx.beginPath();ctx.roundRect(b.x+17,b.y+20,b.w+8,b.h+9,8);ctx.fill();
+
+  // Right wall.
+  const sideGrad=ctx.createLinearGradient(b.x+b.w,b.y,b.x+b.w+shift,roofY);
+  sideGrad.addColorStop(0,"#18242b");sideGrad.addColorStop(1,"#25343c");
+  ctx.fillStyle=sideGrad;
+  ctx.beginPath();ctx.moveTo(b.x+b.w,b.y);ctx.lineTo(b.x+b.w+shift,roofY);ctx.lineTo(b.x+b.w+shift,b.y+b.h-height);ctx.lineTo(b.x+b.w,b.y+b.h);ctx.closePath();ctx.fill();
+
+  // Front wall.
+  const wall=ctx.createLinearGradient(b.x,b.y,b.x,b.y+b.h);
+  wall.addColorStop(0,i%2?"#344750":"#2d4049");wall.addColorStop(1,"#1d2a31");
+  ctx.fillStyle=wall;
+  ctx.beginPath();ctx.moveTo(b.x,b.y+b.h);ctx.lineTo(b.x+shift,roofY+b.h);ctx.lineTo(b.x+b.w+shift,roofY+b.h);ctx.lineTo(b.x+b.w,b.y+b.h);ctx.closePath();ctx.fill();
+
+  // Vertical wall seams / concrete panels.
+  ctx.strokeStyle="rgba(9,15,18,.28)";ctx.lineWidth=1;
+  for(let x=b.x+28;x<b.x+b.w-20;x+=52){
+   ctx.beginPath();ctx.moveTo(x,b.y+b.h-height*.67);ctx.lineTo(x,b.y+b.h-5);ctx.stroke();
   }
-  const roofGrad=ctx.createLinearGradient(rx,ry,rx+b.w,ry+b.h);roofGrad.addColorStop(0,i%3===0?"#60737d":"#536974");roofGrad.addColorStop(1,"#334650");
+
+  // Windows with frames and occasional warm light.
+  for(let x=b.x+32;x<b.x+b.w-22;x+=58){
+   const lit=((Math.floor(x/58)+i)%4===0);
+   const wy=b.y+b.h-height*.57;
+   ctx.fillStyle="#111b21";ctx.fillRect(x-2,wy-2,32,17);
+   ctx.fillStyle=lit?"#f7c66c":"#628b9b";ctx.globalAlpha=lit?.82:.58;ctx.fillRect(x,wy,28,13);ctx.globalAlpha=1;
+   ctx.strokeStyle="rgba(218,231,235,.28)";ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(x+14,wy);ctx.lineTo(x+14,wy+13);ctx.stroke();
+   if(lit){ctx.fillStyle="rgba(255,197,100,.10)";ctx.fillRect(x-7,wy+15,42,16)}
+  }
+
+  // Rooftop slab.
+  const roofGrad=ctx.createLinearGradient(rx,ry,rx+b.w,ry+b.h);
+  roofGrad.addColorStop(0,i%3===0?"#667982":"#596f79");roofGrad.addColorStop(.55,"#475a63");roofGrad.addColorStop(1,"#33434b");
   ctx.fillStyle=roofGrad;ctx.fillRect(rx,ry,b.w,b.h);
-  ctx.strokeStyle="#a3b7c0";ctx.lineWidth=3;ctx.strokeRect(rx,ry,b.w,b.h);
-  ctx.strokeStyle="#263943";ctx.lineWidth=2;ctx.strokeRect(rx+15,ry+15,b.w-30,b.h-30);
-  // AC units
-  for(let n=0;n<2;n++){const ax=rx+34+n*78,ay=ry+28+(n%2)*24;ctx.fillStyle="#26343c";ctx.fillRect(ax,ay,48,27);ctx.strokeStyle="#81939c";ctx.lineWidth=1;ctx.strokeRect(ax+.5,ay+.5,47,26);ctx.fillStyle="#11191e";ctx.beginPath();ctx.arc(ax+24,ay+13.5,8,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#596872";for(let a=0;a<6;a++){const ang=a*Math.PI/3;ctx.beginPath();ctx.moveTo(ax+24,ay+13.5);ctx.lineTo(ax+24+Math.cos(ang)*7,ay+13.5+Math.sin(ang)*7);ctx.stroke()}}
-  // roof ducts
-  ctx.fillStyle="#78868f";ctx.fillRect(rx+b.w-92,ry+34,58,10);ctx.fillRect(rx+b.w-42,ry+34,10,48);ctx.fillStyle="#27343c";ctx.fillRect(rx+b.w-95,ry+31,14,16);
-  // warm entrance light
-  const ex=b.x+b.w*.5,ey=b.y+b.h-5;ctx.save();const glow=ctx.createRadialGradient(ex,ey,4,ex,ey,64);glow.addColorStop(0,"rgba(255,190,95,.32)");glow.addColorStop(1,"rgba(255,190,95,0)");ctx.fillStyle=glow;ctx.beginPath();ctx.arc(ex,ey,64,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.strokeStyle="#9eb0b8";ctx.lineWidth=3;ctx.strokeRect(rx,ry,b.w,b.h);
+
+  // Roof membrane seams and weathering.
+  ctx.strokeStyle="rgba(20,35,42,.38)";ctx.lineWidth=1;
+  for(let xx=rx+24;xx<rx+b.w-15;xx+=48){ctx.beginPath();ctx.moveTo(xx,ry+12);ctx.lineTo(xx,ry+b.h-12);ctx.stroke()}
+  for(let yy=ry+28;yy<ry+b.h-15;yy+=44){ctx.beginPath();ctx.moveTo(rx+12,yy);ctx.lineTo(rx+b.w-12,yy);ctx.stroke()}
+  ctx.fillStyle="rgba(15,27,32,.13)";
+  for(let n=0;n<7;n++){
+   const px=rx+18+((n*71+i*19)%(Math.max(20,b.w-45)));
+   const py=ry+18+((n*47+i*31)%(Math.max(20,b.h-45)));
+   ctx.beginPath();ctx.ellipse(px,py,10+(n%3)*6,4+(n%2)*3,.4,0,Math.PI*2);ctx.fill();
+  }
+
+  // Raised parapet.
+  ctx.strokeStyle="#253740";ctx.lineWidth=4;ctx.strokeRect(rx+14,ry+14,b.w-28,b.h-28);
+  ctx.strokeStyle="rgba(190,207,214,.20)";ctx.lineWidth=1;ctx.strokeRect(rx+16,ry+16,b.w-32,b.h-32);
+
+  // AC units with fan blades.
+  for(let n=0;n<2;n++){
+   const ax=rx+34+n*78,ay=ry+28+(n%2)*24;
+   ctx.fillStyle="#26343c";ctx.fillRect(ax,ay,48,27);
+   ctx.fillStyle="rgba(255,255,255,.08)";ctx.fillRect(ax+3,ay+3,42,4);
+   ctx.strokeStyle="#81939c";ctx.lineWidth=1;ctx.strokeRect(ax+.5,ay+.5,47,26);
+   ctx.fillStyle="#11191e";ctx.beginPath();ctx.arc(ax+24,ay+13.5,8,0,Math.PI*2);ctx.fill();
+   ctx.strokeStyle="#596872";
+   for(let a=0;a<6;a++){const ang=a*Math.PI/3;ctx.beginPath();ctx.moveTo(ax+24,ay+13.5);ctx.lineTo(ax+24+Math.cos(ang)*7,ay+13.5+Math.sin(ang)*7);ctx.stroke()}
+  }
+
+  // Ducts, pipes and a roof access box.
+  ctx.fillStyle="#7d8b92";ctx.fillRect(rx+b.w-92,ry+34,58,10);ctx.fillRect(rx+b.w-42,ry+34,10,48);
+  ctx.fillStyle="#27343c";ctx.fillRect(rx+b.w-95,ry+31,14,16);
+  ctx.fillStyle="#384950";ctx.fillRect(rx+b.w-82,ry+b.h-68,46,35);
+  ctx.strokeStyle="#73858e";ctx.strokeRect(rx+b.w-81.5,ry+b.h-67.5,45,34);
+  ctx.fillStyle="#11191e";ctx.fillRect(rx+b.w-48,ry+b.h-54,4,4);
+
+  // Warm entrance glow.
+  const ex=b.x+b.w*.5,ey=b.y+b.h-5;
+  ctx.save();const glow=ctx.createRadialGradient(ex,ey,4,ex,ey,64);
+  glow.addColorStop(0,"rgba(255,190,95,.32)");glow.addColorStop(1,"rgba(255,190,95,0)");
+  ctx.fillStyle=glow;ctx.beginPath();ctx.arc(ex,ey,64,0,Math.PI*2);ctx.fill();ctx.restore();
  });
 }
-
 function drawLadders(){
  for(const l of ladders){
   ctx.save();
@@ -989,13 +1113,45 @@ function drawLadders(){
 }
 
 function drawTrees(){trees.forEach((t,ti)=>{
- ctx.save();ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(t.x+17,t.y+12,31,10,-.22,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#5a3a27";ctx.fillRect(t.x-5,t.y-31,10,38);
- const leaves=[[-17,-35,17,"#214f35"],[14,-42,19,"#2d6843"],[-2,-54,21,"#397b4e"],[0,-34,18,"#347347"]];
- for(const [dx,dy,r,col] of leaves){ctx.fillStyle=col;ctx.beginPath();ctx.arc(t.x+dx,t.y+dy,r,0,Math.PI*2);ctx.fill();ctx.fillStyle="#ffffff0a";ctx.beginPath();ctx.arc(t.x+dx-5,t.y+dy-6,r*.45,0,Math.PI*2);ctx.fill()}
+ ctx.save();
+ // Soft offset shadow.
+ ctx.fillStyle="rgba(0,0,0,.34)";ctx.beginPath();ctx.ellipse(t.x+20,t.y+13,34,11,-.22,0,Math.PI*2);ctx.fill();
+
+ // Trunk with highlight and branch split.
+ const trunk=ctx.createLinearGradient(t.x-7,t.y,t.x+8,t.y);
+ trunk.addColorStop(0,"#3c281e");trunk.addColorStop(.55,"#76513a");trunk.addColorStop(1,"#2d2019");
+ ctx.fillStyle=trunk;ctx.fillRect(t.x-6,t.y-33,12,40);
+ ctx.strokeStyle="#5d3d2b";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(t.x,t.y-24);ctx.lineTo(t.x-12,t.y-42);ctx.moveTo(t.x+2,t.y-27);ctx.lineTo(t.x+14,t.y-46);ctx.stroke();
+
+ // Layered canopy gives a fuller 2.5D crown.
+ const leaves=[
+  [-18,-36,18,"#173e2a"],[16,-42,20,"#245b3b"],[-3,-57,22,"#34754a"],
+  [4,-34,20,"#2d6841"],[-23,-52,15,"#285f3d"],[20,-58,14,"#3f8252"]
+ ];
+ for(const [dx,dy,r,col] of leaves){
+  ctx.fillStyle=col;ctx.beginPath();ctx.arc(t.x+dx,t.y+dy,r,0,Math.PI*2);ctx.fill();
+  const g=ctx.createRadialGradient(t.x+dx-r*.35,t.y+dy-r*.4,1,t.x+dx,t.y+dy,r);
+  g.addColorStop(0,"rgba(183,226,172,.22)");g.addColorStop(1,"rgba(0,0,0,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(t.x+dx,t.y+dy,r,0,Math.PI*2);ctx.fill();
+ }
  ctx.restore();
 })}
-function drawBushes(base=true){for(const b of bushes){ctx.save();ctx.globalAlpha=base?.82:.92;ctx.fillStyle=base?"#244d31":"#367447";for(let i=0;i<6;i++){const a=i*Math.PI/3,r=b.r*.42;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,b.r*.48,0,Math.PI*2);ctx.fill()}ctx.fillStyle=base?"#2d613b":"#438955";ctx.beginPath();ctx.arc(b.x,b.y,b.r*.58,0,Math.PI*2);ctx.fill();ctx.restore()}}
+function drawBushes(base=true){for(const b of bushes){
+ ctx.save();ctx.globalAlpha=base?.83:.94;
+ if(base){ctx.fillStyle="rgba(0,0,0,.20)";ctx.beginPath();ctx.ellipse(b.x+8,b.y+9,b.r*.78,b.r*.34,0,0,Math.PI*2);ctx.fill()}
+ const outer=base?"#1f4930":"#2d6840",inner=base?"#2b603b":"#3d8050";
+ ctx.fillStyle=outer;
+ for(let i=0;i<8;i++){
+  const a=i*Math.PI/4,r=b.r*.44,rr=b.r*(.38+(i%3)*.045);
+  ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,rr,0,Math.PI*2);ctx.fill();
+ }
+ ctx.fillStyle=inner;ctx.beginPath();ctx.arc(b.x,b.y,b.r*.60,0,Math.PI*2);ctx.fill();
+ if(!base){
+  ctx.fillStyle="rgba(168,223,153,.15)";
+  for(let i=0;i<5;i++){const a=i*1.27;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*b.r*.32,b.y+Math.sin(a)*b.r*.32,b.r*.13,0,Math.PI*2);ctx.fill()}
+ }
+ ctx.restore();
+}}
 function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
  const w=weapons[type]||weapons.pistol;
  ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.lineCap="round";ctx.lineJoin="round";
@@ -1109,61 +1265,100 @@ function drawTopDownCharacter(opts){
  }=opts;
  ctx.save();ctx.translate(x,y);
 
- // ground shadow
- ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(4,15,20,8,0,0,Math.PI*2);ctx.fill();
+ // Layered contact shadow.
+ ctx.fillStyle="rgba(0,0,0,.34)";ctx.beginPath();ctx.ellipse(5,17,21,8.5,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(8,18,27,11,0,0,Math.PI*2);ctx.fill();
  ctx.rotate(angle);
 
- // legs + boots
- ctx.fillStyle="#151b20";
- ctx.beginPath();ctx.ellipse(-6,11+step,5.5,11,0,0,Math.PI*2);ctx.ellipse(7,11-step,5.5,11,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#0b0f12";
- ctx.beginPath();ctx.ellipse(-8,18+step,6,4,.12,0,Math.PI*2);ctx.ellipse(9,18-step,6,4,-.12,0,Math.PI*2);ctx.fill();
+ const enemy=role==="enemy",sniper=role==="sniper";
+ const armor=sniper?"#35483d":enemy?"#333c43":"#25333b";
+ const armorHi=sniper?"#536957":enemy?"#4c5961":"#40535d";
+ const clothDark=sniper?"#27372f":enemy?"#3c292d":"#222b31";
+ const helmet=sniper?"#34463b":enemy?"#30383e":"#222a30";
 
- // backpack behind torso
- const packColor=role==="sniper"?"#56614a":role==="enemy"?"#3a4147":"#59664f";
- ctx.fillStyle=packColor;
- ctx.beginPath();ctx.roundRect(-14,-5+bob,14,25,6);ctx.fill();
- ctx.strokeStyle="#2a3136";ctx.lineWidth=1.2;ctx.strokeRect(-12.5,-3.5+bob,11,22);
- ctx.fillStyle="#2d3439";ctx.fillRect(-11,2+bob,7,3);ctx.fillRect(-11,8+bob,7,3);
+ // Legs: separated silhouette and walking pose.
+ ctx.fillStyle=clothDark;
+ ctx.beginPath();ctx.ellipse(-6.5,10+step,6.2,12,0,0,Math.PI*2);ctx.ellipse(7,10-step,6.2,12,0,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="rgba(255,255,255,.08)";ctx.lineWidth=1;
+ ctx.beginPath();ctx.moveTo(-8,3+step);ctx.lineTo(-8,15+step);ctx.moveTo(8,3-step);ctx.lineTo(8,15-step);ctx.stroke();
 
- // torso / shirt
- const torso=ctx.createLinearGradient(-16,-10,16,17);
- torso.addColorStop(0,hit?"#ff8c91":outfit);
- torso.addColorStop(1,"#182229");
- ctx.fillStyle=torso;ctx.beginPath();ctx.roundRect(-15,-9+bob,30,27,10);ctx.fill();
+ // Boots.
+ ctx.fillStyle="#090d10";
+ ctx.beginPath();ctx.ellipse(-9,18+step,6.8,4.5,.12,0,Math.PI*2);ctx.ellipse(10,18-step,6.8,4.5,-.12,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#333b40";ctx.fillRect(-13,16+step,7,2);ctx.fillRect(7,16-step,7,2);
 
- // tactical vest
- ctx.fillStyle="#222c33";ctx.beginPath();ctx.roundRect(-11,-5+bob,22,18,5);ctx.fill();
- ctx.strokeStyle="#596771";ctx.lineWidth=1;ctx.strokeRect(-9.5,-3.5+bob,19,14);
- ctx.fillStyle="#36434b";ctx.fillRect(-8,1+bob,6,5);ctx.fillRect(2,1+bob,6,5);
- ctx.fillStyle="#11181d";ctx.fillRect(-1,-4+bob,2,16);
+ // Backpack / radio pack.
+ const packColor=sniper?"#4c5c4d":enemy?"#343c42":"#4e5b4b";
+ ctx.fillStyle="#12191d";ctx.beginPath();ctx.roundRect(-16,-7+bob,15,28,6);ctx.fill();
+ ctx.fillStyle=packColor;ctx.beginPath();ctx.roundRect(-14.5,-5+bob,12,24,5);ctx.fill();
+ ctx.strokeStyle="#252f34";ctx.lineWidth=1.2;ctx.strokeRect(-13,-3.5+bob,9,20);
+ ctx.fillStyle="#222b30";ctx.fillRect(-11,1+bob,6,3);ctx.fillRect(-11,8+bob,6,3);
+ ctx.strokeStyle="#11171a";ctx.beginPath();ctx.moveTo(-4,-3+bob);ctx.lineTo(-1,-12+bob);ctx.stroke();
 
- // neck + head
- ctx.fillStyle=skin;ctx.fillRect(-3,-12+bob,8,6);
- ctx.beginPath();ctx.ellipse(1,-17+bob,9.5,10.5,0,0,Math.PI*2);ctx.fill();
+ // Shoulders create a stronger top-down silhouette.
+ ctx.fillStyle=hit?"#ff7d85":outfit;
+ ctx.beginPath();ctx.ellipse(-10,-3+bob,8,9,-.25,0,Math.PI*2);ctx.ellipse(10,-3+bob,8,9,.25,0,Math.PI*2);ctx.fill();
 
- // cap / helmet silhouette
- ctx.fillStyle=role==="sniper"?"#39483d":role==="enemy"?"#30383e":"#282d33";
- ctx.beginPath();ctx.ellipse(0,-20+bob,11,8,0,Math.PI,Math.PI*2);ctx.fill();
- ctx.fillRect(5,-20+bob,9,3);
+ // Torso with directional light.
+ const torso=ctx.createLinearGradient(-17,-12,17,18);
+ torso.addColorStop(0,hit?"#ff9ca2":outfit);torso.addColorStop(.52,hit?"#ff6d77":outfit);torso.addColorStop(1,"#151f25");
+ ctx.fillStyle=torso;ctx.beginPath();ctx.roundRect(-15,-10+bob,30,29,10);ctx.fill();
+ ctx.strokeStyle="rgba(0,0,0,.45)";ctx.lineWidth=1.2;ctx.stroke();
 
- // headset
- ctx.strokeStyle="#151b20";ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,-19+bob,10,Math.PI*.9,Math.PI*1.65);ctx.stroke();
- ctx.fillStyle="#11171c";ctx.beginPath();ctx.arc(-8,-17+bob,3.4,0,Math.PI*2);ctx.fill();
+ // Tactical vest with pouches and shoulder straps.
+ ctx.fillStyle=armor;ctx.beginPath();ctx.roundRect(-11,-6+bob,22,20,5);ctx.fill();
+ ctx.strokeStyle=armorHi;ctx.lineWidth=1.1;ctx.strokeRect(-9.5,-4.5+bob,19,16);
+ ctx.strokeStyle="#11191d";ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(-8,-6+bob);ctx.lineTo(-5,13+bob);ctx.moveTo(8,-6+bob);ctx.lineTo(5,13+bob);ctx.stroke();
+ ctx.fillStyle=armorHi;ctx.fillRect(-8,2+bob,6,5);ctx.fillRect(2,2+bob,6,5);
+ ctx.fillStyle="#12191d";ctx.fillRect(-1,-4+bob,2,17);
 
- // arms aiming
- ctx.strokeStyle=skin;ctx.lineWidth=5;ctx.lineCap="round";
- ctx.beginPath();ctx.moveTo(8,-2+bob);ctx.lineTo(19,-7+bob);ctx.lineTo(27,-3+bob);ctx.stroke();
- ctx.beginPath();ctx.moveTo(8,7+bob);ctx.lineTo(20,9+bob);ctx.lineTo(28,4+bob);ctx.stroke();
+ // Utility belt.
+ ctx.fillStyle="#11171b";ctx.fillRect(-13,12+bob,26,4);
+ ctx.fillStyle="#56646b";ctx.fillRect(-3,12.5+bob,6,3);
 
- // gloves
- ctx.fillStyle="#151b20";ctx.beginPath();ctx.arc(27,-3+bob,3.3,0,Math.PI*2);ctx.arc(28,4+bob,3.3,0,Math.PI*2);ctx.fill();
+ // Neck and head with rim outline.
+ ctx.fillStyle=skin;ctx.fillRect(-3,-13+bob,8,6);
+ ctx.fillStyle="#10171b";ctx.beginPath();ctx.ellipse(1,-18+bob,10.7,11.7,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=skin;ctx.beginPath();ctx.ellipse(1,-18+bob,9.3,10.3,0,0,Math.PI*2);ctx.fill();
 
- drawWeaponModel(weapon,25,bob-.5,role==="sniper"?.38:.34,shooting);
+ // Hair visible around helmet/cap.
+ ctx.fillStyle=hair;ctx.beginPath();ctx.arc(-2,-20+bob,7.8,Math.PI*.9,Math.PI*1.95);ctx.lineTo(6,-18+bob);ctx.closePath();ctx.fill();
+
+ // Helmet / cap and brim.
+ ctx.fillStyle=helmet;ctx.beginPath();ctx.ellipse(0,-22+bob,10.7,7.2,0,Math.PI,Math.PI*2);ctx.fill();
+ ctx.fillStyle=armorHi;ctx.fillRect(5,-22+bob,10,3);
+ ctx.strokeStyle="rgba(255,255,255,.12)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-21+bob,9,Math.PI,Math.PI*1.82);ctx.stroke();
+
+ // Face direction cue.
+ ctx.fillStyle="rgba(72,44,34,.55)";ctx.beginPath();ctx.ellipse(8,-17+bob,2.2,1.5,0,0,Math.PI*2);ctx.fill();
+
+ // Headset / earpiece.
+ ctx.strokeStyle="#11171b";ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,-20+bob,10,Math.PI*.88,Math.PI*1.67);ctx.stroke();
+ ctx.fillStyle="#0d1215";ctx.beginPath();ctx.arc(-8,-18+bob,3.5,0,Math.PI*2);ctx.fill();
+
+ // Arms and sleeves, aimed forward.
+ ctx.strokeStyle=outfit;ctx.lineWidth=8;ctx.lineCap="round";
+ ctx.beginPath();ctx.moveTo(8,-3+bob);ctx.lineTo(19,-8+bob);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(8,7+bob);ctx.lineTo(20,9+bob);ctx.stroke();
+ ctx.strokeStyle=skin;ctx.lineWidth=5;
+ ctx.beginPath();ctx.moveTo(18,-8+bob);ctx.lineTo(28,-3+bob);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(19,9+bob);ctx.lineTo(28,4+bob);ctx.stroke();
+
+ // Gloves.
+ ctx.fillStyle="#12181c";ctx.beginPath();ctx.arc(28,-3+bob,3.7,0,Math.PI*2);ctx.arc(29,4+bob,3.7,0,Math.PI*2);ctx.fill();
+
+ // Weapon sits above hands for a cleaner combat silhouette.
+ drawWeaponModel(weapon,26,bob-.5,sniper?.40:.36,shooting);
+
+ // Small muzzle bloom on the character itself.
+ if(shooting){
+  ctx.fillStyle="rgba(255,221,111,.28)";ctx.beginPath();ctx.arc(45,bob,10,0,Math.PI*2);ctx.fill();
+ }
 
  if(showLaser){
-  ctx.strokeStyle=role==="sniper"?"#73ff9b":"#ff5959";ctx.lineWidth=1;ctx.globalAlpha=.5;
-  ctx.beginPath();ctx.moveTo(40,0);ctx.lineTo(role==="sniper"?112:78,0);ctx.stroke();ctx.globalAlpha=1;
+  ctx.strokeStyle=sniper?"#73ff9b":"#ff5959";ctx.lineWidth=1;ctx.globalAlpha=.52;
+  ctx.beginPath();ctx.moveTo(41,0);ctx.lineTo(sniper?116:80,0);ctx.stroke();ctx.globalAlpha=1;
  }
  ctx.restore();
 }
