@@ -1155,106 +1155,77 @@ function drawBushes(base=true){for(const b of bushes){
 function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
  const w=weapons[type]||weapons.pistol;
  ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.lineCap="round";ctx.lineJoin="round";
- const metal=ctx.createLinearGradient(-45,-10,45,10);metal.addColorStop(0,"#a3adb5");metal.addColorStop(.35,"#55616a");metal.addColorStop(1,"#1b2329");
- const dark=ctx.createLinearGradient(0,-10,0,20);dark.addColorStop(0,"#3a444c");dark.addColorStop(1,"#151b20");
- const wood=ctx.createLinearGradient(-20,0,35,0);wood.addColorStop(0,"#865336");wood.addColorStop(1,"#482c20");
- if(scale>.48){ctx.fillStyle="#0005";ctx.beginPath();ctx.ellipse(5,16,(type==="rifle"||type==="shotgun"||type==="lmg")?43:30,7,0,0,Math.PI*2);ctx.fill();}
+ const longGun=["rifle","shotgun","lmg"].includes(type);
+ const metal=ctx.createLinearGradient(-52,-8,48,9);metal.addColorStop(0,"#d1d8dd");metal.addColorStop(.22,"#77848d");metal.addColorStop(.55,"#303a42");metal.addColorStop(1,"#11171c");
+ const black=ctx.createLinearGradient(0,-10,0,20);black.addColorStop(0,"#4c5860");black.addColorStop(.45,"#252e34");black.addColorStop(1,"#0c1115");
+ const wood=ctx.createLinearGradient(-12,-8,45,12);wood.addColorStop(0,"#a36b44");wood.addColorStop(.5,"#6c422d");wood.addColorStop(1,"#3d261d");
+ if(scale>.48){ctx.fillStyle="rgba(0,0,0,.35)";ctx.beginPath();ctx.ellipse(5,15,longGun?45:29,6,0,0,Math.PI*2);ctx.fill()}
+ const barrel=(x1,x2,y=0,h=6)=>{ctx.fillStyle=metal;ctx.roundRect(x1,y-h/2,x2-x1,h,h/2);ctx.fill();ctx.fillStyle="rgba(255,255,255,.18)";ctx.fillRect(x1+5,y-h/2+1,Math.max(6,(x2-x1)*.5),1)};
+ const grip=(gx,gy)=>{ctx.fillStyle=black;ctx.beginPath();ctx.moveTo(gx,gy);ctx.lineTo(gx+11,gy+1);ctx.lineTo(gx+7,gy+24);ctx.lineTo(gx-5,gy+20);ctx.closePath();ctx.fill();ctx.strokeStyle="#080c0f";ctx.lineWidth=2;ctx.stroke()};
  if(type==="pistol"){
-  ctx.fillStyle=metal;ctx.roundRect(-25,-10,45,16,4);ctx.fill();ctx.fillStyle=dark;ctx.beginPath();ctx.moveTo(2,5);ctx.lineTo(15,5);ctx.lineTo(10,28);ctx.lineTo(-4,23);ctx.closePath();ctx.fill();
-  ctx.strokeStyle="#171d22";ctx.lineWidth=4;ctx.beginPath();ctx.arc(-1,8,9,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#171d22";ctx.fillRect(-22,-5,13,5);
+  barrel(-25,23,-4,13);ctx.fillStyle="#151c21";ctx.roundRect(-21,-8,34,4,2);ctx.fill();grip(-1,2);
+  ctx.strokeStyle="#0b1013";ctx.lineWidth=3;ctx.beginPath();ctx.arc(1,6,8,.2,Math.PI*.95);ctx.stroke();
  }else if(type==="smg"){
-  ctx.fillStyle=dark;ctx.roundRect(-39,-9,55,18,5);ctx.fill();ctx.fillStyle=metal;ctx.fillRect(-47,-3,12,6);ctx.fillStyle="#20282e";ctx.beginPath();ctx.moveTo(-2,8);ctx.lineTo(10,8);ctx.lineTo(6,31);ctx.lineTo(-7,27);ctx.closePath();ctx.fill();
-  ctx.strokeStyle="#687984";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(15,-4);ctx.lineTo(42,-14);ctx.lineTo(42,12);ctx.lineTo(16,5);ctx.stroke();
+  barrel(-42,27,-2,12);ctx.fillStyle="#1d262c";ctx.roundRect(-35,5,39,8,3);ctx.fill();grip(-3,5);
+  ctx.strokeStyle="#71808a";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(25,-5);ctx.lineTo(47,-13);ctx.lineTo(47,10);ctx.lineTo(26,5);ctx.stroke();
+  ctx.fillStyle="#20292f";ctx.roundRect(-15,-17,26,7,3);ctx.fill();
  }else if(type==="shotgun"){
-  ctx.fillStyle=metal;ctx.roundRect(-48,-6,70,11,5);ctx.fill();ctx.fillStyle="#2a3238";ctx.roundRect(-43,7,47,7,3);ctx.fill();ctx.fillStyle=wood;ctx.roundRect(-10,5,22,10,5);ctx.fill();ctx.beginPath();ctx.moveTo(22,-6);ctx.lineTo(48,-12);ctx.lineTo(50,10);ctx.lineTo(20,7);ctx.closePath();ctx.fill();
+  barrel(-50,48,-4,7);barrel(-47,43,5,5);ctx.fillStyle=wood;ctx.roundRect(-12,4,27,11,5);ctx.fill();
+  ctx.beginPath();ctx.moveTo(17,-7);ctx.lineTo(48,-11);ctx.lineTo(52,10);ctx.lineTo(18,7);ctx.closePath();ctx.fill();grip(-4,8);
  }else if(type==="rifle"){
-  ctx.fillStyle=metal;ctx.roundRect(-50,-4,78,8,4);ctx.fill();ctx.fillStyle="#3f4d39";ctx.roundRect(-2,4,31,13,5);ctx.fill();ctx.beginPath();ctx.moveTo(27,1);ctx.lineTo(50,-4);ctx.lineTo(54,10);ctx.lineTo(29,16);ctx.closePath();ctx.fill();
-  ctx.fillStyle="#1d2429";ctx.roundRect(-10,-17,36,8,4);ctx.fill();ctx.strokeStyle="#75838d";ctx.lineWidth=3;ctx.beginPath();ctx.arc(-1,-13,8,0,Math.PI*2);ctx.stroke();
+  barrel(-53,49,-3,7);ctx.fillStyle="#27362d";ctx.roundRect(-13,2,38,13,4);ctx.fill();grip(-5,9);
+  ctx.fillStyle="#182025";ctx.roundRect(-10,-18,31,7,3);ctx.fill();ctx.strokeStyle="#86949c";ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(2,-14,7,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle="#374b3d";ctx.beginPath();ctx.moveTo(24,1);ctx.lineTo(50,-5);ctx.lineTo(54,9);ctx.lineTo(26,15);ctx.closePath();ctx.fill();
  }else if(type==="lmg"){
-  ctx.fillStyle=dark;ctx.roundRect(-48,-8,76,16,5);ctx.fill();ctx.fillStyle=metal;ctx.fillRect(-54,-3,12,6);ctx.fillStyle="#20272c";ctx.beginPath();ctx.arc(5,22,16,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#4c5962";ctx.lineWidth=4;ctx.stroke();
-  ctx.fillStyle="#242c32";ctx.beginPath();ctx.moveTo(28,-7);ctx.lineTo(52,-12);ctx.lineTo(55,8);ctx.lineTo(28,8);ctx.closePath();ctx.fill();ctx.strokeStyle="#64747e";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-8,7);ctx.lineTo(-18,30);ctx.moveTo(0,7);ctx.lineTo(8,31);ctx.stroke();
+  barrel(-55,48,-4,9);ctx.fillStyle=black;ctx.roundRect(-43,-10,70,18,5);ctx.fill();grip(-3,7);
+  ctx.fillStyle="#20282e";ctx.beginPath();ctx.arc(4,22,15,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#5d6c75";ctx.lineWidth=3;ctx.stroke();
+  ctx.strokeStyle="#788892";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-12,8);ctx.lineTo(-23,30);ctx.moveTo(-2,8);ctx.lineTo(8,30);ctx.stroke();
  }else{
-  ctx.fillStyle=metal;ctx.roundRect(-38,-7,52,11,5);ctx.fill();ctx.roundRect(-38,6,52,9,4);ctx.fill();ctx.fillStyle=wood;ctx.roundRect(-8,13,21,9,4);ctx.fill();ctx.beginPath();ctx.moveTo(14,-7);ctx.lineTo(47,-11);ctx.lineTo(50,12);ctx.lineTo(13,8);ctx.closePath();ctx.fill();
+  barrel(-42,47,-5,7);barrel(-40,45,5,6);ctx.fillStyle=wood;ctx.roundRect(-10,9,22,9,4);ctx.fill();grip(-5,7);
  }
- if(muzzle){const tip=(type==="rifle"||type==="shotgun"||type==="lmg")?56:47;ctx.fillStyle=w.color;ctx.shadowColor=w.color;ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(tip,0);ctx.lineTo(tip+13,-7);ctx.lineTo(tip+13,7);ctx.closePath();ctx.fill();ctx.shadowBlur=0}
+ const tip=type==="pistol"?27:type==="smg"?50:56;
+ ctx.fillStyle="#0b0f12";ctx.fillRect(tip-5,-4,7,8);
+ if(muzzle){
+  const pulse=.85+Math.sin(performance.now()/28)*.15;
+  ctx.save();ctx.translate(tip+2,0);ctx.shadowColor=w.color||"#ffd25a";ctx.shadowBlur=18;
+  const g=ctx.createRadialGradient(0,0,1,0,0,18);g.addColorStop(0,"#fff7cf");g.addColorStop(.35,w.color||"#ffd25a");g.addColorStop(1,"rgba(255,120,20,0)");
+  ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,18*pulse,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#fff0ad";ctx.beginPath();ctx.moveTo(1,0);ctx.lineTo(20,-6);ctx.lineTo(14,0);ctx.lineTo(20,6);ctx.closePath();ctx.fill();ctx.restore();
+ }
  ctx.restore();
 }
 function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018dd";ctx.beginPath();ctx.arc(0,0,29,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);drawWeaponModel(p.type,0,-2,.48,false);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-34);ctx.textAlign="left"}}
 function drawVehicle(x,y,a,c,w=62,h=32){
  ctx.save();ctx.translate(x,y);ctx.rotate(a);
-
- // contact shadow
- ctx.fillStyle="#0009";ctx.beginPath();ctx.ellipse(2,8,w*.55,h*.54,0,0,Math.PI*2);ctx.fill();
-
- // tyres
- ctx.fillStyle="#090d10";
- const tw=w*.16,th=h*.23;
- ctx.roundRect(-w*.34,-h*.57,tw,th,3);ctx.roundRect(w*.18,-h*.57,tw,th,3);
- ctx.roundRect(-w*.34,h*.34,tw,th,3);ctx.roundRect(w*.18,h*.34,tw,th,3);ctx.fill();
-
- // sporty silhouette
- const body=ctx.createLinearGradient(0,-h*.5,0,h*.5);
- body.addColorStop(0,"#dbe8ec");body.addColorStop(.13,c);body.addColorStop(.7,c);body.addColorStop(1,"#243239");
- ctx.fillStyle=body;
- ctx.beginPath();
- ctx.moveTo(-w*.48,-h*.28);
- ctx.quadraticCurveTo(-w*.42,-h*.48,-w*.23,-h*.49);
- ctx.lineTo(w*.22,-h*.49);
- ctx.quadraticCurveTo(w*.43,-h*.45,w*.49,-h*.26);
- ctx.lineTo(w*.49,h*.26);
- ctx.quadraticCurveTo(w*.43,h*.45,w*.22,h*.49);
- ctx.lineTo(-w*.23,h*.49);
- ctx.quadraticCurveTo(-w*.42,h*.48,-w*.48,h*.28);
- ctx.closePath();ctx.fill();
-
- // bonnet + boot
- ctx.fillStyle="rgba(255,255,255,.09)";
- ctx.roundRect(w*.18,-h*.34,w*.22,h*.68,4);ctx.fill();
- ctx.fillStyle="rgba(0,0,0,.12)";
- ctx.roundRect(-w*.43,-h*.33,w*.20,h*.66,4);ctx.fill();
-
- // cabin
- const glass=ctx.createLinearGradient(-w*.16,-h*.33,w*.16,h*.33);
- glass.addColorStop(0,"#a7d3df");glass.addColorStop(.35,"#5d8795");glass.addColorStop(1,"#243842");
- ctx.fillStyle=glass;
- ctx.beginPath();
- ctx.moveTo(-w*.14,-h*.34);ctx.lineTo(w*.16,-h*.34);
- ctx.quadraticCurveTo(w*.25,-h*.30,w*.28,-h*.18);
- ctx.lineTo(w*.28,h*.18);ctx.quadraticCurveTo(w*.25,h*.30,w*.16,h*.34);
- ctx.lineTo(-w*.14,h*.34);ctx.quadraticCurveTo(-w*.22,h*.28,-w*.24,h*.17);
- ctx.lineTo(-w*.24,-h*.17);ctx.quadraticCurveTo(-w*.22,-h*.28,-w*.14,-h*.34);
- ctx.closePath();ctx.fill();
-
- // windshield divisions
- ctx.strokeStyle="#1b2a31";ctx.lineWidth=2;
- ctx.beginPath();ctx.moveTo(-w*.20,-h*.27);ctx.lineTo(w*.22,-h*.27);ctx.stroke();
- ctx.beginPath();ctx.moveTo(-w*.20,h*.27);ctx.lineTo(w*.22,h*.27);ctx.stroke();
- ctx.beginPath();ctx.moveTo(w*.01,-h*.32);ctx.lineTo(w*.01,h*.32);ctx.stroke();
-
- // mirrors
- ctx.fillStyle="#1a242a";ctx.roundRect(-w*.07,-h*.58,9,4,2);ctx.roundRect(-w*.07,h*.46,9,4,2);ctx.fill();
-
- // grille / bumpers
- ctx.fillStyle="#11181d";ctx.fillRect(w*.43,-h*.19,5,h*.38);ctx.fillRect(-w*.48,-h*.18,4,h*.36);
- ctx.fillStyle="#4f5d65";ctx.fillRect(w*.44,-h*.10,4,h*.20);
-
- // headlights / tail lights
- ctx.shadowBlur=9;
- ctx.shadowColor="#eafcff";ctx.fillStyle="#eafcff";
- ctx.roundRect(w*.39,-h*.31,7,6,2);ctx.roundRect(w*.39,h*.14,7,6,2);ctx.fill();
- ctx.shadowColor="#ff535a";ctx.fillStyle="#ff535a";
- ctx.roundRect(-w*.46,-h*.30,5,6,2);ctx.roundRect(-w*.46,h*.13,5,6,2);ctx.fill();
- ctx.shadowBlur=0;
-
- // body highlight
- ctx.strokeStyle="rgba(230,245,250,.30)";ctx.lineWidth=1;ctx.beginPath();
- ctx.moveTo(-w*.35,-h*.4);ctx.lineTo(w*.28,-h*.4);ctx.stroke();
-
- // headlight beams
- ctx.fillStyle="rgba(255,230,170,.13)";
- ctx.beginPath();ctx.moveTo(w*.48,-h*.20);ctx.lineTo(w*.48+76,-h*.46);ctx.lineTo(w*.48+76,-h*.04);ctx.closePath();ctx.fill();
- ctx.beginPath();ctx.moveTo(w*.48,h*.20);ctx.lineTo(w*.48+76,h*.46);ctx.lineTo(w*.48+76,h*.04);ctx.closePath();ctx.fill();
-
+ const damaged=c==="#3a3a3a";
+ ctx.fillStyle="rgba(0,0,0,.46)";ctx.beginPath();ctx.ellipse(-1,8,w*.56,h*.58,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#090c0f";const tw=w*.15,th=h*.25;
+ for(const sx of [-1,1])for(const sy of [-1,1])ctx.roundRect((sx<0?-w*.35:w*.21),(sy<0?-h*.58:h*.34),tw,th,3);ctx.fill();
+ const body=ctx.createLinearGradient(-w*.2,-h*.5,w*.18,h*.55);
+ body.addColorStop(0,damaged?"#555b5f":"#eef4f6");body.addColorStop(.16,c);body.addColorStop(.64,c);body.addColorStop(1,damaged?"#22272a":"#182229");
+ ctx.fillStyle=body;ctx.beginPath();
+ ctx.moveTo(-w*.49,-h*.23);ctx.quadraticCurveTo(-w*.45,-h*.46,-w*.24,-h*.49);
+ ctx.lineTo(w*.22,-h*.49);ctx.quadraticCurveTo(w*.43,-h*.45,w*.50,-h*.25);
+ ctx.lineTo(w*.50,h*.25);ctx.quadraticCurveTo(w*.43,h*.45,w*.22,h*.49);
+ ctx.lineTo(-w*.24,h*.49);ctx.quadraticCurveTo(-w*.45,h*.46,-w*.49,h*.23);ctx.closePath();ctx.fill();
+ ctx.strokeStyle="rgba(8,12,15,.75)";ctx.lineWidth=1.5;ctx.stroke();
+ ctx.fillStyle="rgba(255,255,255,.12)";ctx.roundRect(w*.20,-h*.35,w*.20,h*.70,4);ctx.fill();
+ ctx.fillStyle="rgba(0,0,0,.14)";ctx.roundRect(-w*.43,-h*.34,w*.18,h*.68,4);ctx.fill();
+ const glass=ctx.createLinearGradient(-w*.18,-h*.32,w*.22,h*.30);glass.addColorStop(0,"#b7dce4");glass.addColorStop(.35,"#648995");glass.addColorStop(1,"#1c3039");
+ ctx.fillStyle=glass;ctx.beginPath();
+ ctx.moveTo(-w*.16,-h*.35);ctx.lineTo(w*.14,-h*.35);ctx.quadraticCurveTo(w*.26,-h*.31,w*.29,-h*.17);
+ ctx.lineTo(w*.29,h*.17);ctx.quadraticCurveTo(w*.26,h*.31,w*.14,h*.35);ctx.lineTo(-w*.16,h*.35);
+ ctx.quadraticCurveTo(-w*.24,h*.29,-w*.26,h*.15);ctx.lineTo(-w*.26,-h*.15);ctx.quadraticCurveTo(-w*.24,-h*.29,-w*.16,-h*.35);ctx.closePath();ctx.fill();
+ ctx.strokeStyle="#16252c";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-w*.23,-h*.27);ctx.lineTo(w*.23,-h*.27);ctx.moveTo(-w*.23,h*.27);ctx.lineTo(w*.23,h*.27);ctx.moveTo(0,-h*.33);ctx.lineTo(0,h*.33);ctx.stroke();
+ ctx.fillStyle="#151d22";ctx.roundRect(-w*.08,-h*.59,10,4,2);ctx.roundRect(-w*.08,h*.47,10,4,2);ctx.fill();
+ ctx.fillStyle="#10161a";ctx.fillRect(w*.44,-h*.20,5,h*.40);ctx.fillRect(-w*.49,-h*.19,4,h*.38);
+ ctx.shadowBlur=10;ctx.shadowColor="#e9fbff";ctx.fillStyle="#ecfbff";ctx.roundRect(w*.39,-h*.31,8,6,2);ctx.roundRect(w*.39,h*.14,8,6,2);ctx.fill();
+ ctx.shadowColor="#ff3d48";ctx.fillStyle="#ff414d";ctx.roundRect(-w*.47,-h*.30,6,6,2);ctx.roundRect(-w*.47,h*.13,6,6,2);ctx.fill();ctx.shadowBlur=0;
+ ctx.strokeStyle="rgba(255,255,255,.32)";ctx.lineWidth=1.2;ctx.beginPath();ctx.moveTo(-w*.34,-h*.40);ctx.quadraticCurveTo(0,-h*.47,w*.30,-h*.39);ctx.stroke();
+ ctx.strokeStyle="rgba(0,0,0,.22)";ctx.beginPath();ctx.moveTo(-w*.34,h*.39);ctx.quadraticCurveTo(0,h*.46,w*.30,h*.38);ctx.stroke();
+ ctx.fillStyle="rgba(255,224,160,.11)";ctx.beginPath();ctx.moveTo(w*.48,-h*.20);ctx.lineTo(w*.48+82,-h*.46);ctx.lineTo(w*.48+82,-h*.03);ctx.closePath();ctx.fill();
+ ctx.beginPath();ctx.moveTo(w*.48,h*.20);ctx.lineTo(w*.48+82,h*.46);ctx.lineTo(w*.48+82,h*.03);ctx.closePath();ctx.fill();
+ if(damaged){ctx.strokeStyle="#16191b";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-8,-10);ctx.lineTo(5,-3);ctx.lineTo(-2,5);ctx.moveTo(14,4);ctx.lineTo(25,-4);ctx.stroke()}
  ctx.restore();
 }
 function drawTopDownCharacter(opts){
@@ -1331,7 +1302,7 @@ function drawTopDownCharacter(opts){
  ctx.strokeStyle="rgba(255,255,255,.12)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-21+bob,9,Math.PI,Math.PI*1.82);ctx.stroke();
 
  // Face direction cue.
- ctx.fillStyle="rgba(72,44,34,.55)";ctx.beginPath();ctx.ellipse(8,-17+bob,2.2,1.5,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="rgba(72,44,34,.55)";ctx.beginPath();ctx.ellipse(8,-17+bob,2.2,1.5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle="rgba(255,255,255,.55)";ctx.beginPath();ctx.arc(8.8,-18+bob,1,0,Math.PI*2);ctx.fill();
 
  // Headset / earpiece.
  ctx.strokeStyle="#11171b";ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,-20+bob,10,Math.PI*.88,Math.PI*1.67);ctx.stroke();
@@ -1486,7 +1457,7 @@ function render(){
  road();drawBuildings();drawLadders();drawTrees();drawBushes(true);drawWeaponPickups();drawMission();drawTargets();drawEnemies();
  for(const s of skids){ctx.globalAlpha=Math.max(0,s.t*.4);ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.a);ctx.fillStyle="#090a0b";ctx.fillRect(-18,-12,36,3);ctx.fillRect(-18,9,36,3);ctx.restore()}ctx.globalAlpha=1;
  traffic.forEach(t=>drawVehicle(t.x,t.y,t.a,t.c,54,27));drawVehicle(car.x,car.y,car.angle,car.health<=0?"#3a3a3a":car.health>40?"#65ff8b":"#d86770");drawWorldLighting();if(car.health<=0){ctx.fillStyle="#111";ctx.beginPath();ctx.arc(car.x+8,car.y-20,13,0,Math.PI*2);ctx.fill();ctx.fillStyle="#333";ctx.beginPath();ctx.arc(car.x+16,car.y-34,9,0,Math.PI*2);ctx.fill()}drawPlayer();drawRemotePlayers();drawBushes(false);
- bullets.forEach(b=>{ctx.fillStyle=b.color||"#ffe36e";ctx.beginPath();ctx.arc(b.x,b.y,3,0,Math.PI*2);ctx.fill()});
+ bullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);const col=b.color||"#ffe36e";ctx.shadowColor=col;ctx.shadowBlur=10;ctx.strokeStyle=col;ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-14,0);ctx.lineTo(4,0);ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle="#fff8d2";ctx.beginPath();ctx.arc(5,0,2.4,0,Math.PI*2);ctx.fill();ctx.restore()});
  remoteBullets.forEach(b=>{const a=Math.atan2(b.vy,b.vx);ctx.save();ctx.translate(b.x,b.y);ctx.rotate(a);ctx.shadowColor=b.color||"#7ee8ff";ctx.shadowBlur=12;ctx.strokeStyle=b.color||"#7ee8ff";ctx.lineWidth=6;ctx.lineCap="round";ctx.beginPath();ctx.moveTo(-18,0);ctx.lineTo(7,0);ctx.stroke();ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(8,0,3,0,Math.PI*2);ctx.fill();ctx.restore()});
  missiles.forEach(m=>{
   ctx.save();
@@ -1531,7 +1502,7 @@ function render(){
   ctx.shadowColor="#ff3b3b";ctx.shadowBlur=12;ctx.fillStyle="#ff6565";ctx.beginPath();ctx.arc(5,0,3,0,Math.PI*2);ctx.fill();ctx.restore();
  });
  ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
- sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.strokeStyle="#fff";ctx.beginPath();ctx.moveTo(h.x-8,h.y-8);ctx.lineTo(h.x+8,h.y+8);ctx.moveTo(h.x+8,h.y-8);ctx.lineTo(h.x-8,h.y+8);ctx.stroke()});
+ sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.save();ctx.globalAlpha=Math.max(.15,Math.min(1,h.t/.25));ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.shadowColor="#ff4d5a";ctx.shadowBlur=8;ctx.beginPath();ctx.moveTo(h.x-9,h.y-9);ctx.lineTo(h.x-3,h.y-3);ctx.moveTo(h.x+9,h.y-9);ctx.lineTo(h.x+3,h.y-3);ctx.moveTo(h.x-9,h.y+9);ctx.lineTo(h.x-3,h.y+3);ctx.moveTo(h.x+9,h.y+9);ctx.lineTo(h.x+3,h.y+3);ctx.stroke();ctx.restore()});
  ctx.restore();hud()
 }
 let last=performance.now();function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
