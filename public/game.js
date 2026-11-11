@@ -50,7 +50,7 @@ function insidePolygon(x,y,points){
 }
 function screenAlignedInput(x,y){const v=unprojectVector(x,y),n=Math.hypot(v.x,v.y)||1,m=Math.min(1,Math.hypot(x,y));return {x:v.x/n*m,y:v.y/n*m}}
 const keys={},cam={x:480,y:440},mouse={x:0,y:0,down:false,screenX:null,screenY:null,layer:null};
-const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,recoilHeat:0,health:100,maxHealth:100,weapon:"pistol",grenades:3,grenadeCd:0,carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
+const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,recoilHeat:0,health:100,maxHealth:100,weapon:"pistol",grenades:3,grenadeCd:0,carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,climb:null,hitT:0,hitKick:0};
 const characterStyle=(()=>{try{return {...{outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"},...JSON.parse(localStorage.getItem("streetCharacter")||"{}")}}catch(_){return {outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"}}})();
 addEventListener("characterchange",e=>Object.assign(characterStyle,e.detail));
 function tacticalPlayerEnabled(){return characterStyle.visual!=="custom"&&window.playerArt?.ready}
@@ -261,7 +261,35 @@ const ladders=buildings.map((b,i)=>({
 }));
 function ladderForBuilding(index){return ladders.find(l=>l.building===index)}
 function pointInBuilding(x,y,b,pad=0){return x>b.x+pad&&x<b.x+b.w-pad&&y>b.y+pad&&y<b.y+b.h-pad}
+function updatePlayerClimb(dt){
+ if(!player.climb)return false;
+ const c=player.climb;
+ c.t=Math.min(c.total,c.t+dt);
+ player.walk+=dt*12;
+ player.angle=-Math.PI/2;
+ if(c.t>=c.total){
+  if(c.dir==="up"){
+   player.roof=c.building;
+   const b=buildings[c.building],l=ladderForBuilding(c.building);
+   player.x=l.x+l.w/2;player.y=b.y+b.h-34;
+  }else{
+   const b=buildings[c.building],l=ladderForBuilding(c.building);
+   player.roof=null;player.x=l.x+l.w/2;player.y=b.y+b.h+34;
+  }
+  player.climb=null;playSound("pickup");
+ }
+ return true;
+}
+function playerClimbVisual(){
+ if(!player.climb)return {x:player.x,y:player.y};
+ const c=player.climb,b=buildings[c.building],l=ladderForBuilding(c.building);
+ const p=Math.max(0,Math.min(1,c.t/c.total)),h=buildingHeight(c.building);
+ const liftH=c.dir==="up"?h*p:h*(1-p);
+ const lift=unprojectVector(0,-liftH);
+ return {x:l.x+l.w/2+lift.x,y:b.y+b.h+34+lift.y};
+}
 function tryRoofMovement(dx,dy,dt,run){
+ if(updatePlayerClimb(dt))return;
  const magnitude=Math.hypot(dx,dy);
   const step=player.speed*run*dt*Math.min(1,magnitude);
   const vx=magnitude?dx/magnitude*step:0,vy=magnitude?dy/magnitude*step:0;
@@ -272,10 +300,10 @@ function tryRoofMovement(dx,dy,dt,run){
   const ladderCenter=l.x+l.w/2;
   const exitZone=Math.abs(player.x-ladderCenter)<=30&&player.y>=b.y+b.h-68;
   if(exitZone&&dy>0){
+   const building=player.roof;
    player.roof=null;
-   player.x=ladderCenter;
-   player.y=b.y+b.h+34;
-   playSound("pickup");
+   player.x=ladderCenter;player.y=b.y+b.h+34;
+   player.climb={building,dir:"down",t:0,total:1.05};
    return;
   }
   player.x=Math.max(b.x+player.r,Math.min(b.x+b.w-player.r,nx));
@@ -290,10 +318,8 @@ function tryRoofMovement(dx,dy,dt,run){
   const inLadderX=Math.abs(player.x-ladderCenter)<=Math.max(16,l.w*.6);
   const inLadderY=player.y>=b.y+b.h+player.r&&player.y<=b.y+b.h+player.r+20;
   if(inLadderX&&inLadderY&&dy<-.35){
-   player.roof=i;
-   player.x=ladderCenter;
-   player.y=b.y+b.h-34;
-   playSound("pickup");
+   player.x=ladderCenter;player.y=b.y+b.h+34;
+   player.climb={building:i,dir:"up",t:0,total:1.05};
    return;
   }
  }
@@ -590,7 +616,7 @@ function projectileOutOfWorld(x1,y1,x2,y2){
 }
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=(player.weapon==="shotgun"||player.weapon==="sawedoff")?1.35:player.weapon==="lmg"?1.65:1.05;playSound("reload")}
 function shoot(){
- if(!started||paused||player.dead||player.inCar||player.reloading||player.shootCd>0)return;
+ if(!started||paused||player.dead||player.inCar||player.climb||player.reloading||player.shootCd>0)return;
  if(player.ammo<=0){startReload();return}
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  const autoWeapon=player.weapon==="smg"||player.weapon==="lmg";
@@ -773,7 +799,32 @@ function moveEnemyOnRoof(e,tx,ty,dt){
  e.x=Math.max(b.x+56,Math.min(b.x+b.w-56,e.x+dx/d*step));
  e.y=Math.max(b.y+56,Math.min(b.y+b.h-56,e.y+dy/d*step));
 }
+function startEnemyClimb(e,building,dir){
+ const b=buildings[building],l=ladderForBuilding(building);
+ e.roof=null;e.x=l.x+l.w/2;e.y=b.y+b.h+38;
+ e.climb={building,dir,t:0,total:1.15};
+}
+function updateEnemyClimb(e,dt){
+ if(!e.climb)return false;
+ const c=e.climb;c.t=Math.min(c.total,c.t+dt);
+ e.movePhase=(e.movePhase||0)+dt*11;e.angle=-Math.PI/2;
+ if(c.t>=c.total){
+  const b=buildings[c.building],l=ladderForBuilding(c.building);
+  if(c.dir==="up"){e.roof=c.building;e.x=l.x+l.w/2;e.y=b.y+b.h-34}
+  else{e.roof=null;e.x=l.x+l.w/2;e.y=b.y+b.h+38}
+  e.climb=null;e.descending=false;
+ }
+ return true;
+}
+function enemyClimbVisual(e){
+ if(!e.climb)return {x:e.x,y:e.y};
+ const c=e.climb,b=buildings[c.building],l=ladderForBuilding(c.building);
+ const p=Math.max(0,Math.min(1,c.t/c.total)),h=buildingHeight(c.building);
+ const liftH=c.dir==="up"?h*p:h*(1-p),lift=unprojectVector(0,-liftH);
+ return {x:l.x+l.w/2+lift.x,y:b.y+b.h+38+lift.y};
+}
 function updateSniperEnemy(e,dt){
+ if(updateEnemyClimb(e,dt))return;
  if(e.roof===null){
   if(e.targetRoof===null)e.targetRoof=nearestRoofForEnemy(e);
   const l=ladderForBuilding(e.targetRoof),b=buildings[e.targetRoof];
@@ -783,9 +834,7 @@ function updateSniperEnemy(e,dt){
   if(Math.hypot(e.x-lx,e.y-ly)>20){
    moveEnemyGround(e,lx,ly,dt);
   }else{
-   e.roof=e.targetRoof;e.climbing=false;e.descending=false;
-   const perch=roofSafePoint(e.roof,lx,b.y+b.h*.55);
-   e.x=perch.x;e.y=perch.y;
+   startEnemyClimb(e,e.targetRoof,"up");
   }
   return;
  }
@@ -804,8 +853,7 @@ function updateSniperEnemy(e,dt){
    moveEnemyOnRoof(e,lx,ly,dt);
   }else{
    const oldRoof=e.roof;
-   e.roof=null;e.descending=false;
-   e.x=lx;e.y=b.y+b.h+38;
+   startEnemyClimb(e,oldRoof,"down");
    e.targetRoof=bestSniperRoof(e);
    if(e.targetRoof===oldRoof)e.targetRoof=nearestRoofForEnemy(e);
   }
@@ -830,6 +878,7 @@ function updateSniperEnemy(e,dt){
 }
 
 function updatePistolEnemy(e,dt){
+ if(updateEnemyClimb(e,dt))return;
  // Player is on a roof: normal soldiers seek that building's ladder and climb.
  if(player.roof!==null){
   if(e.roof===null){
@@ -841,8 +890,7 @@ function updatePistolEnemy(e,dt){
    if(Math.hypot(e.x-lx,e.y-ly)>20){
     moveEnemyGround(e,lx,ly,dt);
    }else{
-    e.roof=e.targetRoof;
-    e.x=lx;e.y=b.y+b.h-34;
+    startEnemyClimb(e,e.targetRoof,"up");
    }
    return;
   }
@@ -1116,19 +1164,20 @@ function drawEnemies(only=null){
   const phase=e.movePhase||0;
   const moving=Math.abs(Math.sin(phase))>.04;
   const roofLift=0;
+  const climbPos=enemyClimbVisual(e);
   const enemyWeapon=sniper?"rifle":"pistol";
   const enemyShooting=sniper?(e.aimT||0)<=0&&e.shootCd>1.55:e.shootCd>.92;
   const enemyRunning=moving&&e.speed>=80;
   let bodyDrawn=false;
   if(window.playerArt?.ready){
    bodyDrawn=window.playerArt.draw(ctx,{
-    x:e.x,y:e.y-roofLift,angle:e.angle,gunAngle:projectedAngle(e.angle),
+    x:climbPos.x,y:climbPos.y-roofLift,angle:e.angle,gunAngle:projectedAngle(e.angle),
     weapon:enemyWeapon,shooting:enemyShooting,
     moving,running:enemyRunning,phase,hit:false
    },drawWeaponModel);
   }
   if(!bodyDrawn&&!window.worldArt?.entity(ctx,sniper?"sniper":"enemy",{x:e.x,y:e.y-roofLift,angle:e.angle,size:sniper?60:57,moving,phase,shooting:enemyShooting}))drawTopDownCharacter({
-   x:e.x,y:e.y-roofLift,angle:e.angle,
+   x:climbPos.x,y:climbPos.y-roofLift,angle:e.angle,
    outfit:sniper?"#394334":"#343840",skin:"#d1a884",hair:"#171b20",
    weapon:enemyWeapon,shooting:enemyShooting,
    role:sniper?"sniper":"enemy",showLaser:true,
@@ -1868,6 +1917,8 @@ function drawTopDownCharacter(opts){
 }
 function drawPlayer(){
  if(player.inCar||player.dead)return;
+ const climbPos=playerClimbVisual();
+ const climbing=!!player.climb;
  const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1;
  const running=moving&&!!keys.shift;
  const bob=moving?Math.sin(player.walk)*1.4:0,step=moving?Math.sin(player.walk)*4.2:0;
@@ -1875,18 +1926,18 @@ function drawPlayer(){
  if(tacticalPlayerEnabled()){
   const gun=playerGunPose();
   if(window.playerArt.draw(ctx,{
-   x:player.x,y:player.y,angle:player.angle,gunAngle:gun.screenAngle,
+   x:climbPos.x,y:climbPos.y,angle:player.angle,gunAngle:gun.screenAngle,
    weapon:player.weapon,shooting:player.shootCd>Math.max(0,weapons[player.weapon].fire-.065),
-   moving,running,phase:player.walk,hit:player.hitT>0
+   moving:moving||climbing,running:false,phase:player.walk,hit:player.hitT>0
   },drawWeaponModel))return;
  }
 
  drawTopDownCharacter({
-  x:player.x-Math.cos(player.angle)*recoil,
-  y:player.y-Math.sin(player.angle)*recoil,
+  x:climbPos.x-Math.cos(player.angle)*recoil,
+  y:climbPos.y-Math.sin(player.angle)*recoil,
   angle:player.angle,outfit:characterStyle.outfit,skin:characterStyle.skin,hair:characterStyle.hair,
   weapon:player.weapon,shooting:player.shootCd>.10,step,bob,hit:player.hitT>0,role:"player",
-  moving,running,phase:player.walk
+  moving:moving||climbing,running:climbing?false:running,phase:player.walk
  });
 }
 function drawRemotePlayers(only=null){
