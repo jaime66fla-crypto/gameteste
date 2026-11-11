@@ -907,3 +907,13 @@ body.modal-open{overflow:hidden}
 @media(max-width:1100px){
   .showcase-character.tactical-menu-char{--s:2.35}
 }
+
+/* PNG art replaces the procedural portrait only for the tactical appearance. */
+.operator-art{display:none}
+.tactical-menu-char.use-operator-art{width:290px;height:330px;transform:translate(-50%,-50%);filter:none;animation:none}
+.tactical-menu-char.use-operator-art>span{display:none}
+.use-operator-art>.operator-art{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 8px 12px #0008)}
+.character-preview.use-operator-art{width:235px;height:270px;top:62%}
+.character-options select{background:#10202d;color:#fff;border:1px solid #34566c;border-radius:8px;padding:10px;font:inherit;max-width:210px}
+.character-options input:disabled,.preset-row button:disabled{opacity:.35;cursor:default}
+@media(max-width:600px){.tactical-menu-char.use-operator-art{width:230px;height:270px}.character-preview.use-operator-art{width:190px;height:220px}}

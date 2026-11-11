@@ -36,7 +36,17 @@ function worldToScreenX(x,y){const z=getViewZoom(),dy=y-cam.y;return viewOffsetX
 function worldToScreenY(y){const z=getViewZoom();return viewOffsetY()+(y-cam.y)*VIEW_TILT*z;}
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
-const characterStyle=(()=>{try{return {...{outfit:"#e23b43",skin:"#d7b08c",hair:"#151a21"},...JSON.parse(localStorage.getItem("streetCharacter")||"{}")}}catch(_){return {outfit:"#e23b43",skin:"#d7b08c",hair:"#151a21"}}})();
+const characterStyle=(()=>{try{return {...{outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"},...JSON.parse(localStorage.getItem("streetCharacter")||"{}")}}catch(_){return {outfit:"#303746",visual:"tactical",skin:"#d7b08c",hair:"#151a21"}}})();
+addEventListener("characterchange",e=>Object.assign(characterStyle,e.detail));
+function tacticalPlayerEnabled(){return characterStyle.visual!=="custom"&&window.playerArt?.ready}
+function playerGunPose(){
+ const p=window.playerArt.pose(player.angle);
+ const wx=p.x-VIEW_SKEW*p.y/VIEW_TILT,wy=p.y/VIEW_TILT;
+ const x=player.x+wx,y=player.y+wy;
+ const angle=Math.atan2(mouse.y-y,mouse.x-x);
+ const screenAngle=Math.atan2(Math.sin(angle)*VIEW_TILT,Math.cos(angle)+VIEW_SKEW*Math.sin(angle));
+ return {x,y,angle,screenAngle};
+}
 const weapons={
  pistol:{name:"PISTOLA",mag:12,reserve:72,fire:.16,speed:980,spread:.025,pellets:1,damage:1,color:"#ffe36e"},
  smg:{name:"SMG",mag:30,reserve:120,fire:.075,speed:930,spread:.07,pellets:1,damage:1,color:"#7ee8ff"},
@@ -454,7 +464,12 @@ function shoot(){
  if(player.ammo<=0){startReload();return}
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  for(let i=0;i<w.pellets;i++){
-  const a=player.angle+(Math.random()-.5)*w.spread,ox=player.x+Math.cos(a)*28,oy=player.y+Math.sin(a)*28;
+  const gun=tacticalPlayerEnabled()?playerGunPose():null;
+  const a=(gun?gun.angle:player.angle)+(Math.random()-.5)*w.spread;
+  const tip=(player.weapon==="pistol"?27:player.weapon==="smg"?50:56)*.32;
+  const projectedLength=gun?Math.hypot(Math.cos(gun.angle)+VIEW_SKEW*Math.sin(gun.angle),VIEW_TILT*Math.sin(gun.angle)):1;
+  const muzzleDistance=gun?tip/projectedLength:28;
+  const ox=(gun?gun.x:player.x)+Math.cos(a)*muzzleDistance,oy=(gun?gun.y:player.y)+Math.sin(a)*muzzleDistance;
   const bt=player.weapon==="rifle"?1.15:player.weapon==="sawedoff"?.58:.9,bvx=Math.cos(a)*w.speed,bvy=Math.sin(a)*w.speed;
   bullets.push({x:ox,y:oy,vx:bvx,vy:bvy,t:bt,damage:w.damage,color:w.color,layer:player.roof});
   if(gameMode==="multi"&&socket?.readyState===WebSocket.OPEN){
@@ -1500,6 +1515,15 @@ function drawPlayer(){
  const running=moving&&!!keys.shift;
  const bob=moving?Math.sin(player.walk)*1.4:0,step=moving?Math.sin(player.walk)*4.2:0;
  const recoil=player.hitT>0?player.hitKick*(.65+.35*Math.sin(performance.now()/24)):0;
+ if(tacticalPlayerEnabled()){
+  const gun=playerGunPose();
+  if(window.playerArt.draw(ctx,{
+   x:player.x,y:player.y,angle:player.angle,gunAngle:gun.screenAngle,
+   weapon:player.weapon,shooting:player.shootCd>Math.max(0,weapons[player.weapon].fire-.065),
+   moving,running,phase:player.walk,hit:player.hitT>0
+  },drawWeaponModel))return;
+ }
+
  drawTopDownCharacter({
   x:player.x-Math.cos(player.angle)*recoil,
   y:player.y-Math.sin(player.angle)*recoil,

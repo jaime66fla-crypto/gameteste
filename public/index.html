@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#080b10">
-  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css">
+  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css?v=player-art-1">
 </head>
 <body>
 <header class="hero landing-only launcher-screen">
@@ -21,7 +21,7 @@
 
     <div class="launcher-main">
       <section class="launcher-copy">
-        <span class="launcher-kicker">WEB BUILD • V5.1</span>
+        <span class="launcher-kicker">WEB BUILD • V5.2</span>
         <h1>DOMINE<br><em>A CIDADE</em></h1>
         <p>Combate 2.5D, veículos, telhados, soldados, snipers e um boss em duas fases. Monte seu personagem e veja as novidades antes de entrar.</p>
         <div class="launcher-buttons">
@@ -39,6 +39,7 @@
         <div class="showcase-grid"></div>
         <div class="showcase-glow"></div>
         <div class="showcase-character tactical-menu-char" id="landingCharacter">
+          <img class="operator-art" src="assets/player/operator-main.png" alt="Operador tático com mochila e rifle" width="1208" height="1302">
           <span class="char-shadow"></span>
           <span class="char-leg leg-a"></span><span class="char-leg leg-b"></span>
           <span class="char-boot boot-a"></span><span class="char-boot boot-b"></span>
@@ -49,7 +50,7 @@
           <span class="char-glove glove-a"></span><span class="char-glove glove-b"></span>
           <span class="char-gun"><i></i><b></b></span>
         </div>
-        <div class="showcase-badge"><b>NOVA BUILD</b><span>Combate em telhados + dano visual</span></div>
+        <div class="showcase-badge"><b>NOVA BUILD</b><span>Novo operador tático em 8 direções</span></div>
       </section>
     </div>
 
@@ -73,6 +74,7 @@
     <span class="launcher-kicker">PATCH NOTES • 11 NOV 2026</span>
     <h2>Atualizações da build</h2>
     <div class="update-list">
+      <article class="update-feature"><span class="update-tag new">PLAYER</span><div><h3>Novo operador tático</h3><p>Arte transparente no menu e oito direções durante a partida, com mochila oliva e uniforme azul escuro. A arma acompanha a mira e as trocas de equipamento.</p></div></article>
       <article class="update-feature"><span class="update-tag new">NOVO</span><div><h3>Dano mais expressivo</h3><p>Impacto agora tem tranco, flash e partículas visuais para deixar os tiros mais claros durante o combate.</p></div></article>
       <article><span class="update-tag">COMBATE</span><div><h3>Telhados e snipers</h3><p>Prédios só podem ser acessados pelas escadas e inimigos snipers usam posições elevadas.</p></div></article>
       <article><span class="update-tag">BOSS</span><div><h3>Golias em duas fases</h3><p>A segunda fase libera ataques de mísseis com aviso de área e animação de deslocamento.</p></div></article>
@@ -105,6 +107,7 @@
       <span class="launcher-kicker">PERSONAGEM</span>
       <h2>Monte seu visual</h2>
       <div class="character-preview tactical-menu-char" id="characterPreview">
+          <img class="operator-art" src="assets/player/operator-main.png" alt="Operador tático com mochila e rifle" width="1208" height="1302">
         <span class="char-shadow"></span>
         <span class="char-leg leg-a"></span><span class="char-leg leg-b"></span>
         <span class="char-boot boot-a"></span><span class="char-boot boot-b"></span>
@@ -117,14 +120,15 @@
       </div>
     </div>
     <div class="character-options">
-      <label>Roupa <input type="color" id="outfitColor" value="#e23b43"></label>
+      <label>Visual <select id="characterVisual"><option value="tactical">Operador tático</option><option value="custom">Cores personalizadas</option></select></label>
+      <label>Roupa <input type="color" id="outfitColor" value="#303746"></label>
       <div class="preset-row" data-target="outfitColor"><button data-color="#e23b43" class="red"></button><button data-color="#2c7cff" class="blue"></button><button data-color="#65ff8b" class="green"></button><button data-color="#f2c94c" class="yellow"></button><button data-color="#a855f7" class="purple"></button><button data-color="#232a35" class="black"></button></div>
       <label>Pele <input type="color" id="skinColor" value="#d7b08c"></label>
       <div class="preset-row" data-target="skinColor"><button data-color="#f1c9a5" style="background:#f1c9a5"></button><button data-color="#d7b08c" style="background:#d7b08c"></button><button data-color="#b87b55" style="background:#b87b55"></button><button data-color="#7d4e37" style="background:#7d4e37"></button><button data-color="#4a2e24" style="background:#4a2e24"></button></div>
       <label>Cabelo <input type="color" id="hairColor" value="#151a21"></label>
       <div class="preset-row" data-target="hairColor"><button data-color="#151a21" style="background:#151a21"></button><button data-color="#38251c" style="background:#38251c"></button><button data-color="#7b542e" style="background:#7b542e"></button><button data-color="#d3b36c" style="background:#d3b36c"></button><button data-color="#b8c0ca" style="background:#b8c0ca"></button></div>
       <button id="saveCharacterBtn" class="btn character-save">Salvar personagem</button>
-      <small>As cores ficam salvas neste navegador e serão usadas durante a partida.</small>
+      <small>O operador tático usa a nova arte. Escolha cores personalizadas para editar roupa, pele e cabelo. Sua escolha fica salva neste navegador.</small>
     </div>
   </div>
 </div>
@@ -190,7 +194,8 @@
     </div>
   </div>
 </div>
-<script src="game.js?v=launcher-20261111-1"></script>
+<script src="player-art.js?v=1"></script>
+<script src="game.js?v=player-art-1"></script>
 <script>
 const gameModal=document.getElementById('gameModal');
 async function forceMobileLandscape(){
@@ -258,13 +263,19 @@ function readCharacter(){
   try{return JSON.parse(localStorage.getItem('streetCharacter')||'{}')}catch(_){return{}}
 }
 function paintCharacter(){
-  const cfg={outfit:charInputs.outfit?.value||'#e23b43',skin:charInputs.skin?.value||'#d7b08c',hair:charInputs.hair?.value||'#151a21'};
+  const cfg={visual:document.getElementById('characterVisual').value,outfit:charInputs.outfit?.value||'#303746',skin:charInputs.skin?.value||'#d7b08c',hair:charInputs.hair?.value||'#151a21'};
   document.documentElement.style.setProperty('--char-outfit',cfg.outfit);
   document.documentElement.style.setProperty('--char-skin',cfg.skin);
   document.documentElement.style.setProperty('--char-hair',cfg.hair);
+  const tactical=cfg.visual==='tactical';
+  document.querySelectorAll('.tactical-menu-char').forEach(el=>el.classList.toggle('use-operator-art',tactical));
+  document.querySelectorAll('.character-options input[type=color],.preset-row button').forEach(el=>el.disabled=tactical);
+  window.dispatchEvent(new CustomEvent('characterchange',{detail:cfg}));
   return cfg;
 }
 const savedCharacter=readCharacter();
+document.getElementById('characterVisual').value=savedCharacter.visual==='custom'?'custom':'tactical';
+document.getElementById('characterVisual').addEventListener('change',paintCharacter);
 if(savedCharacter.outfit&&charInputs.outfit)charInputs.outfit.value=savedCharacter.outfit;
 if(savedCharacter.skin&&charInputs.skin)charInputs.skin.value=savedCharacter.skin;
 if(savedCharacter.hair&&charInputs.hair)charInputs.hair.value=savedCharacter.hair;
