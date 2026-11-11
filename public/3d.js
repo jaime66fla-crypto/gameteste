@@ -258,7 +258,7 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   if(!child.isBone)return;
   const n=(child.name||'').toLowerCase();
   const key=mixamoMap[n];
-  if(key)player.userData.avatarBones[key]={bone:child,base:child.rotation.clone()};
+  if(key)player.userData.avatarBones[key]={bone:child,base:child.rotation.clone(),baseQuaternion:child.quaternion.clone()};
  });
  if(model.animations&&model.animations.length>0){
   const mixer=new THREE.AnimationMixer(model);
@@ -309,30 +309,44 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  const avatar=player.userData.avatar;
  const bones=player.userData.avatarBones;
  if(!avatar||!bones)return;
- const hasClip=!!findAvatarAction(player.userData.avatarAnimState||'idle');
- if(hasClip)return;
- const speed=running?11:moving?7:2.2;
- const amp=running?.72:moving?.48:.05;
+
+ // Este FBX esta em bind pose. Forca uma pose relaxada via quaternion
+ // e anima por cima dela, sem depender de clips internos.
+ const speed=running?11.5:moving?7.2:2.2;
+ const legAmp=running?.72:moving?.48:.04;
+ const armAmp=running?.34:moving?.24:.025;
  const s=Math.sin(t*speed),c2=Math.cos(t*speed);
- const apply=(key,axis,val,offset=0)=>{
+ const alpha=1-Math.exp(-dt*12);
+ const tmpEuler=new THREE.Euler();
+ const tmpQ=new THREE.Quaternion();
+ const targetQ=new THREE.Quaternion();
+
+ const pose=(key,rx=0,ry=0,rz=0)=>{
   const o=bones[key];if(!o)return;
-  o.bone.rotation[axis]=THREE.MathUtils.lerp(o.bone.rotation[axis],o.base[axis]+offset+val,1-Math.exp(-dt*10));
+  tmpEuler.set(rx,ry,rz,'XYZ');
+  tmpQ.setFromEuler(tmpEuler);
+  targetQ.copy(o.baseQuaternion||o.bone.quaternion).multiply(tmpQ);
+  o.bone.quaternion.slerp(targetQ,alpha);
  };
- // Mixamo: converte a T-pose em postura relaxada e adiciona balanço de caminhada.
- apply('shoulderL','z',0,-.12);
- apply('shoulderR','z',0,.12);
- apply('upperArmL','z',moving?s*.14:0,-1.18);
- apply('upperArmR','z',moving?-s*.14:0,1.18);
- apply('upperArmL','x',moving?-s*.30:0,.10);
- apply('upperArmR','x',moving?s*.30:0,.10);
- apply('foreArmL','x',moving?Math.max(0,-s)*.28:.12,.18);
- apply('foreArmR','x',moving?Math.max(0,s)*.28:.12,.18);
- apply('thighL','x',s*amp,0);
- apply('thighR','x',-s*amp,0);
- apply('calfL','x',Math.max(0,-s)*amp*.72,0);
- apply('calfR','x',Math.max(0,s)*amp*.72,0);
- apply('spine','z',moving?s*.035:Math.sin(t*2.2)*.012,0);
- avatar.position.y=moving?Math.abs(c2)*(running?.045:.025):Math.sin(t*2.2)*.008;
+
+ // Ombros e bracos: tira da T-pose e deixa os cotovelos levemente dobrados.
+ pose('shoulderL',0,0,-.08);
+ pose('shoulderR',0,0,.08);
+ pose('upperArmL',moving?-s*armAmp:.03,0,-1.28);
+ pose('upperArmR',moving?s*armAmp:.03,0,1.28);
+ pose('foreArmL',moving?Math.max(0,-s)*.38:.16,0,-.12);
+ pose('foreArmR',moving?Math.max(0,s)*.38:.16,0,.12);
+
+ // Pernas e tronco.
+ pose('thighL',s*legAmp,0,0);
+ pose('thighR',-s*legAmp,0,0);
+ pose('calfL',Math.max(0,-s)*legAmp*.78,0,0);
+ pose('calfR',Math.max(0,s)*legAmp*.78,0,0);
+ pose('spine',0,0,moving?s*.035:Math.sin(t*2.2)*.012);
+ pose('spine1',0,moving?s*.018:0,0);
+ pose('spine2',0,moving?-s*.016:0,0);
+
+ avatar.position.y=moving?Math.abs(c2)*(running?.05:.028):Math.sin(t*2.2)*.008;
 }
 
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
