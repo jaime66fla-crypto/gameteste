@@ -36,7 +36,8 @@ jobs:
         env:
           PIXELLAB_API_KEY: ${{ secrets.PIXELLAB_API_KEY }}
           PIXELLAB_MODE: ${{ inputs.mode || 'preview' }}
-        run: python scripts/pixellab_animations.py --mode "$PIXELLAB_MODE" --output pixellab-output
+          PIXELLAB_RESUME_JOB: 24e88808-0f22-43f5-b5ea-f41c054b58d1
+        run: python scripts/pixellab_animations.py --mode "$PIXELLAB_MODE" --resume-job "$PIXELLAB_RESUME_JOB" --output pixellab-output
       - name: Save animation sheets and review previews
         if: always()
         uses: actions/upload-artifact@v4

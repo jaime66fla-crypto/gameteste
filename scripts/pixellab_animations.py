@@ -126,6 +126,7 @@ def save_preview(frames, path, fps):
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--mode', choices=['preview','all','check'], default='preview')
+    parser.add_argument('--resume-job', default='')
     parser.add_argument('--output', type=Path, default=Path('pixellab-output'))
     args=parser.parse_args()
     token=os.environ.get('PIXELLAB_API_KEY','').strip()
@@ -136,6 +137,15 @@ def main():
     print('PixelLab authentication succeeded.', flush=True)
     print('Subscription generations remaining: ' + str(subscription.get('generations','unknown')), flush=True)
     args.output.mkdir(parents=True, exist_ok=True)
+    if args.resume_job:
+        result=poll_job(token,args.resume_job)
+        (args.output/'recovered-response.json').write_text(json.dumps(result))
+        def shape(value):
+            if isinstance(value,dict):return {k:shape(v) for k,v in value.items()}
+            if isinstance(value,list):return {'count':len(value),'item':shape(value[0]) if value else None}
+            return type(value).__name__
+        print('Recovered result structure: '+json.dumps(shape(result)),flush=True)
+        return
     if args.mode == 'check':
         return
     # Refuse to buy anything or silently continue using funded credit balances.
