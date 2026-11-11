@@ -1179,6 +1179,40 @@ function drawBuildings(){
   wall.addColorStop(0,i%2?"#2d3948":"#263440");wall.addColorStop(1,"#141c25");ctx.fillStyle=wall;
   ctx.beginPath();ctx.moveTo(b.x,b.y+b.h);ctx.lineTo(b.x+shift,roofY+b.h);ctx.lineTo(b.x+b.w+shift,roofY+b.h);ctx.lineTo(b.x+b.w,b.y+b.h);ctx.closePath();ctx.fill();
 
+  // Project Zomboid-inspired masonry and weathered architectural depth.
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(b.x,b.y+b.h);ctx.lineTo(b.x+shift,roofY+b.h);
+  ctx.lineTo(b.x+b.w+shift,roofY+b.h);ctx.lineTo(b.x+b.w,b.y+b.h);
+  ctx.closePath();ctx.clip();
+  const faceTop=roofY+b.h,faceBottom=b.y+b.h;
+  ctx.strokeStyle="rgba(190,198,195,.12)";ctx.lineWidth=1;
+  for(let yy=faceTop+8,row=0;yy<faceBottom;yy+=13,row++){
+   ctx.beginPath();ctx.moveTo(b.x-8,yy);ctx.lineTo(b.x+b.w+shift+8,yy);ctx.stroke();
+   for(let xx=b.x+(row%2)*23;xx<b.x+b.w+shift;xx+=46){
+    ctx.beginPath();ctx.moveTo(xx,yy);ctx.lineTo(xx,yy+13);ctx.stroke();
+   }
+  }
+  ctx.fillStyle="rgba(13,20,24,.24)";
+  for(let n=0;n<14;n++){
+   const px=b.x+((n*73+i*41)%Math.max(40,b.w));
+   const py=faceTop+((n*19+i*11)%Math.max(12,faceBottom-faceTop));
+   ctx.fillRect(px,py,11+n%4*8,2+n%3);
+  }
+  ctx.restore();
+  // Vents on the side elevation reinforce wall thickness.
+  for(let n=0;n<3;n++){
+   const sx=b.x+b.w+shift*(n+.6)/4,sy=b.y+b.h-height*(n+.6)/4;
+   ctx.fillStyle="#111c24";ctx.fillRect(sx-5,sy-38,10,19);
+   ctx.strokeStyle="#65727b";ctx.lineWidth=1;ctx.strokeRect(sx-5,sy-38,10,19);
+   for(let sl=0;sl<3;sl++){ctx.beginPath();ctx.moveTo(sx-3,sy-34+sl*5);ctx.lineTo(sx+3,sy-34+sl*5);ctx.stroke()}
+  }
+  const entryX=b.x+b.w*.5;
+  ctx.fillStyle="#121b22";ctx.fillRect(entryX-24,b.y+b.h-51,48,7);
+  ctx.fillStyle=i%2?"#556c5e":"#6e5549";ctx.fillRect(entryX-24,b.y+b.h-54,48,5);
+  ctx.fillStyle="#626b6c";ctx.fillRect(entryX-19,b.y+b.h-3,38,5);
+  ctx.fillStyle="#30383a";ctx.fillRect(entryX-15,b.y+b.h+2,30,4);
+
   // Wall seams and grime.
   ctx.strokeStyle="rgba(7,10,14,.34)";ctx.lineWidth=1;
   for(let x=b.x+26;x<b.x+b.w-18;x+=48){ctx.beginPath();ctx.moveTo(x,b.y+b.h-height*.67);ctx.lineTo(x,b.y+b.h-4);ctx.stroke()}
