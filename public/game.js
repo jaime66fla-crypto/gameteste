@@ -1675,6 +1675,7 @@ function hud(){
  const px=18,py=18,pw=190,ph=82;
  ctx.fillStyle="#061018c8";ctx.fillRect(px,py,pw,ph);ctx.strokeStyle="#2d4758";ctx.strokeRect(px+.5,py+.5,pw-1,ph-1);
  ctx.fillStyle="#8ea0ad";ctx.font="700 9px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",px+12,py+17);
+ ctx.textAlign="right";ctx.fillStyle=fps>=50?"#8fe3a1":fps>=30?"#ffd36a":"#ff7c86";ctx.font="800 9px system-ui";ctx.fillText(fps+" FPS",px+pw-10,py+17);ctx.textAlign="left";
  ctx.fillStyle="#fff";ctx.font="900 18px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",px+12,py+39);
  ctx.fillStyle="#263640";ctx.fillRect(px+12,py+49,122,7);
  ctx.fillStyle=player.health>55?"#65ff8b":player.health>25?"#ffd45c":"#ff626e";ctx.fillRect(px+12,py+49,122*(player.health/player.maxHealth),7);
@@ -1847,7 +1848,14 @@ function render(){
  sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.save();ctx.globalAlpha=Math.max(.15,Math.min(1,h.t/.25));ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.shadowColor="#ff4d5a";ctx.shadowBlur=8;ctx.beginPath();ctx.moveTo(h.x-9,h.y-9);ctx.lineTo(h.x-3,h.y-3);ctx.moveTo(h.x+9,h.y-9);ctx.lineTo(h.x+3,h.y-3);ctx.moveTo(h.x-9,h.y+9);ctx.lineTo(h.x-3,h.y+3);ctx.moveTo(h.x+9,h.y+9);ctx.lineTo(h.x+3,h.y+3);ctx.stroke();ctx.restore()});
  ctx.restore();hud();drawBossDeathOverlay()
 }
-let last=performance.now();function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+let fps=60,fpsFrames=0,fpsAccum=0,last=performance.now();
+function loop(t){
+ const dt=Math.min(.033,(t-last)/1000);last=t;
+ fpsFrames++;fpsAccum+=dt;
+ if(fpsAccum>=.5){fps=Math.round(fpsFrames/fpsAccum);fpsFrames=0;fpsAccum=0}
+ update(dt);render();requestAnimationFrame(loop)
+}
+requestAnimationFrame(loop);
 for(const btn of document.querySelectorAll("[data-key]")){const k=btn.dataset.key;const down=e=>{e.preventDefault();keys[k]=true},up=e=>{e.preventDefault();keys[k]=false};btn.addEventListener("pointerdown",down);btn.addEventListener("pointerup",up);btn.addEventListener("pointercancel",up);btn.addEventListener("pointerleave",up)}
 for(const btn of document.querySelectorAll('[data-action="e"]'))btn.addEventListener("click",toggleCar);
 function bindJoystick(id,axis){
