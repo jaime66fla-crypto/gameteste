@@ -118,7 +118,7 @@
   </div>
 </div>
 
-<div id="gameModal" class="game-modal" aria-hidden="true">
+<div id="rotateOverlay" class="rotate-overlay" aria-hidden="true"><div class="rotate-card"><div class="rotate-phone">↻</div><strong>Gire o celular</strong><span>O jogo funciona em modo paisagem.</span></div></div><div id="gameModal" class="game-modal" aria-hidden="true">
   <div class="game-modal-card">
     <div class="game-modal-topbar">
       <div><span class="badge">WEB BUILD V5</span><strong>Street Prototype</strong></div>
@@ -182,24 +182,50 @@
 <script src="game.js?v=launcher-20261111-1"></script>
 <script>
 const gameModal=document.getElementById('gameModal');
-document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',()=>{
+async function forceMobileLandscape(){
+  if(!document.body.classList.contains('platform-mobile'))return;
+  const target=document.getElementById('gameModal');
+  try{
+    if(!document.fullscreenElement&&target?.requestFullscreen)await target.requestFullscreen();
+  }catch(_){}
+  try{
+    if(screen.orientation?.lock)await screen.orientation.lock('landscape');
+  }catch(_){}
+  updateRotateOverlay();
+}
+function updateRotateOverlay(){
+  const overlay=document.getElementById('rotateOverlay');
+  if(!overlay)return;
+  const mobile=document.body.classList.contains('platform-mobile');
+  const portrait=matchMedia('(orientation: portrait)').matches;
+  const show=mobile&&gameModal.classList.contains('show')&&portrait;
+  overlay.classList.toggle('show',show);
+  overlay.setAttribute('aria-hidden',show?'false':'true');
+}
+document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',async()=>{
   gameModal.classList.add('show');
-  if(document.body.classList.contains('platform-mobile')&&screen.orientation?.lock)screen.orientation.lock('landscape').catch(()=>{});
   gameModal.setAttribute('aria-hidden','false');
   document.body.classList.add('modal-open');
+  await forceMobileLandscape();
 }));
 document.getElementById('closeGameBtn').addEventListener('click',()=>{
   gameModal.classList.remove('show');
   gameModal.setAttribute('aria-hidden','true');
   document.body.classList.remove('modal-open');
+  document.getElementById('rotateOverlay')?.classList.remove('show');
+  if(document.fullscreenElement)document.exitFullscreen?.().catch(()=>{});
 });
 gameModal.addEventListener('click',e=>{
   if(e.target===gameModal){
     gameModal.classList.remove('show');
     gameModal.setAttribute('aria-hidden','true');
     document.body.classList.remove('modal-open');
+    document.getElementById('rotateOverlay')?.classList.remove('show');
   }
 });
+addEventListener('orientationchange',()=>setTimeout(updateRotateOverlay,120));
+addEventListener('resize',updateRotateOverlay);
+document.addEventListener('fullscreenchange',updateRotateOverlay);
 
 const panelEls=document.querySelectorAll('.launcher-panel');
 function closeLauncherPanels(){panelEls.forEach(p=>{p.classList.remove('show');p.setAttribute('aria-hidden','true')});}
