@@ -49,10 +49,15 @@ const buildingSpots=[
  [-45,45,18,15],[-15,45,17,15],[15,45,17,15],[45,45,18,15]
 ];
 const buildings=[];
+const ladders=[];
 for(let i=0;i<buildingSpots.length;i++){
  const [x,y,w,d]=buildingSpots[i]; const h=6+(i%4)*.8;
- const b=box(w,h,d,i%3===0?0x626b68:0x707773,x,y);buildings.push(b);
+ const b=box(w,h,d,i%3===0?0x626b68:0x707773,x,y);b.userData={index:i,w,h,d};buildings.push(b);
  const roof=box(w-.6,.35,d-.6,0x4c5553,x,y,h+.15);
+ const ladder=new THREE.Group();
+ for(const sx of [-.45,.45]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.12,h+1,.12),mat(0xaab0a7,.55,.15));rail.position.set(sx,(h+1)/2,0);ladder.add(rail)}
+ for(let yy=.5;yy<h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(1.05,.09,.10),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
+ ladder.position.set(x,0,y+d/2+.18);world.add(ladder);ladders.push({building:i,group:ladder,x,z:y+d/2+.18,h});
  for(let k=0;k<2;k++)box(2.4,1.2,2.2,0x424a49,x-3+k*6,y,h+.9);
  const winMat=mat(0x2b6475,.4,.15);
  for(const sx of [-1,1]){
@@ -104,13 +109,62 @@ function makeCar(x,y,rot=0){
 }
 makeCar(-8,-30,0);makeCar(30,18,Math.PI/2);
 
+let climbState=null;
+function nearLadder(){
+ let best=null,bestD=Infinity;
+ for(const l of ladders){
+  const d=Math.hypot(player.position.x-l.x,player.position.z-l.z);
+  if(d<1.6&&d<bestD){best=l;bestD=d}
+ }
+ return best;
+}
+function startClimb(dir){
+ const l=nearLadder();if(!l||climbState)return false;
+ const b=buildings[l.building];
+ climbState={ladder:l,dir,t:0,total:1.35,startY:player.position.y,endY:dir==="up"?b.userData.h+.45:0};
+ player.position.x=l.x;player.position.z=l.z+.35;
+ return true;
+}
+function updateClimb(dt){
+ if(!climbState)return false;
+ const s=climbState;s.t=Math.min(s.total,s.t+dt);
+ const p=s.t/s.total,ease=p*p*(3-2*p);
+ player.position.y=THREE.MathUtils.lerp(s.startY,s.endY,ease);
+ player.rotation.y=Math.PI;
+ const gait=Math.sin(s.t*16);
+ player.userData.legs[0].rotation.x=gait*.7;player.userData.legs[1].rotation.x=-gait*.7;
+ if(s.t>=s.total){player.position.y=s.endY;climbState=null}
+ return true;
+}
+
+
 const keys=new Set();let t=0;
-addEventListener('keydown',e=>keys.add(e.key.toLowerCase()));
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='e'){if(player.position.y<1)startClimb('up');else startClimb('down')}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
 
+function onRoof(){
+ if(player.position.y<1)return null;
+ for(const b of buildings){
+  const dx=Math.abs(player.position.x-b.position.x),dz=Math.abs(player.position.z-b.position.z);
+  if(dx<b.userData.w/2-.45&&dz<b.userData.d/2-.45&&Math.abs(player.position.y-(b.userData.h+.45))<1)return b;
+ }
+ return null;
+}
 function blocked(nx,nz){
- for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.geometry.parameters.width/2+.55&&dz<b.geometry.parameters.depth/2+.55)return true}
+ const roof=onRoof();
+ if(roof){
+  const dx=Math.abs(nx-roof.position.x),dz=Math.abs(nz-roof.position.z);
+  return dx>roof.userData.w/2-.6||dz>roof.userData.d/2-.6;
+ }
+ for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.userData.w/2+.55&&dz<b.userData.d/2+.55)return true}
+ return false;
+}
+function bulletHitsBuilding(pos){
+ for(const b of buildings){
+  const dx=Math.abs(pos.x-b.position.x),dz=Math.abs(pos.z-b.position.z);
+  if(dx<b.userData.w/2&&dz<b.userData.d/2&&pos.y>=0&&pos.y<=b.userData.h+.6)return true;
+ }
  return false;
 }
 
@@ -120,7 +174,7 @@ function resize(){
  camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
-statusEl.textContent='Protótipo 3D ativo • Clique para atirar';
+statusEl.textContent='Protótipo 3D ativo • Clique para atirar • E sobe/desce escadas';
 
 
 
@@ -192,6 +246,7 @@ function updateBullets3D(dt){
  for(const b of bullets){
   const old=b.mesh.position.clone();
   b.mesh.position.addScaledVector(b.dir,b.speed*dt);b.life-=dt;
+  if(bulletHitsBuilding(b.mesh.position)){b.life=0;continue}
   for(const e of enemies){
    if(!e.userData.alive)continue;
    const p=e.position.clone();p.y+=1.5;
@@ -208,12 +263,13 @@ function updateBullets3D(dt){
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
  shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);
- const target=new THREE.Vector3(player.position.x,0,player.position.z);
- camera.position.lerp(new THREE.Vector3(target.x+42,52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
+ const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
+ camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
  renderer.render(scene,camera);requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
