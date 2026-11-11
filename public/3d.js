@@ -206,6 +206,18 @@ enemies[1].position.set(-12,0,-13);world.add(enemies[1]);
 enemies[0].userData.role='soldier';
 enemies[1].userData.role='sniper';
 
+const bossSpawns=[[-54,-30],[56,-25],[-52,28],[52,38],[0,-40],[38,8]];
+const golias=makeSoldier(0x5b2525);
+golias.scale.set(1.65,1.65,1.65);
+const bossSpawn=bossSpawns[Math.floor(Math.random()*bossSpawns.length)];
+golias.position.set(bossSpawn[0],0,bossSpawn[1]);
+golias.userData.role='boss';
+world.add(golias);
+enemies.push(golias);
+
+const bossMissiles=[];
+const bossWarnings=[];
+
 const cars=[];
 const vehicleSmoke=[];
 const smokeGeo=new THREE.SphereGeometry(.22,7,5);
@@ -523,12 +535,14 @@ function addHealthBar(enemy){
  bg.position.y=3.5;hp.position.set(0,3.5,.012);enemy.add(bg);enemy.add(hp);enemy.userData.hpBar=hp;
 }
 for(const e of enemies){
- e.userData.hp=e.userData.role==='sniper'?2.4:3;
+ e.userData.hp=e.userData.role==='boss'?18:(e.userData.role==='sniper'?2.4:3);
  e.userData.maxHp=e.userData.hp;
  e.userData.alive=true;
  e.userData.state='patrol';
  e.userData.alertTimer=0;
- e.userData.fireCd=Math.random()*.8;
+ e.userData.fireCd=e.userData.role==='boss'?1.2:Math.random()*.8;
+ e.userData.missileCd=e.userData.role==='boss'?3.5:0;
+ e.userData.phase=1;
  e.userData.patrolAngle=Math.random()*Math.PI*2;
  e.userData.home=e.position.clone();
  e.userData.climb=null;
@@ -578,6 +592,54 @@ function updateEnemyClimb(e,dt){
  if(c.t>=c.total){e.position.y=c.endY;e.userData.climb=null;e.userData.state='attack'}
  return true;
 }
+function bossPhase(e){
+ return e.userData.hp<=e.userData.maxHp*.5?2:1;
+}
+function spawnBossMissile(e){
+ const angle=Math.random()*Math.PI*2;
+ const radius=2.5+Math.random()*6;
+ const tx=THREE.MathUtils.clamp(player.position.x+Math.cos(angle)*radius,-MAP_W/2+4,MAP_W/2-4);
+ const tz=THREE.MathUtils.clamp(player.position.z+Math.sin(angle)*radius,-MAP_H/2+4,MAP_H/2-4);
+
+ const ring=new THREE.Mesh(
+  new THREE.RingGeometry(1.25,1.55,28),
+  new THREE.MeshBasicMaterial({color:0xff352f,transparent:true,opacity:.75,side:THREE.DoubleSide,depthWrite:false})
+ );
+ ring.rotation.x=-Math.PI/2;ring.position.set(tx,.13,tz);world.add(ring);
+
+ const missile=new THREE.Group();
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(.16,.2,1.1,8),mat(0x33383c,.35,.7));
+ body.rotation.z=Math.PI/2;missile.add(body);
+ const tip=new THREE.Mesh(new THREE.ConeGeometry(.2,.45,8),mat(0x6b2525,.4,.55));
+ tip.rotation.z=-Math.PI/2;tip.position.x=.75;missile.add(tip);
+ missile.position.set(e.position.x,10,e.position.z);world.add(missile);
+
+ bossWarnings.push({mesh:ring,t:1.25,max:1.25,target:new THREE.Vector3(tx,0,tz),missile});
+ bossMissiles.push({mesh:missile,start:missile.position.clone(),target:new THREE.Vector3(tx,.25,tz),t:0,total:1.25,armed:true});
+}
+function bossHitkillAt(pos){
+ const target=activeCar?activeCar.position:player.position;
+ if(Math.hypot(target.x-pos.x,target.z-pos.z)<=2.35){
+  if(activeCar){damageCar(activeCar,999);activeCar=null;player.visible=true}
+  player.position.set(4,0,8);
+  statusEl.textContent='GOLIAS • Míssil acertou em cheio • HITKILL';
+ }
+}
+function updateBossMissiles(dt){
+ for(let i=bossWarnings.length-1;i>=0;i--){
+  const w=bossWarnings[i];w.t-=dt;
+  w.mesh.material.opacity=.35+.4*Math.abs(Math.sin(t*10));
+  const p=1-Math.max(0,w.t)/w.max;
+  w.missile.position.lerpVectors(w.missile.position,w.target,Math.min(1,p*.09));
+  if(w.t<=0){
+   bossHitkillAt(w.target);
+   spawnImpact(w.target.clone().add(new THREE.Vector3(0,.25,0)),0xff4b2b,18);
+   world.remove(w.mesh);
+   world.remove(w.missile);
+   bossWarnings.splice(i,1);
+  }
+ }
+}
 function enemyFire(e){
  const origin=e.position.clone();origin.y+=1.75;
  const target=player.position.clone();target.y+=1.4;
@@ -600,7 +662,24 @@ function updateEnemies3D(dt){
   if(los&&d<34){e.userData.alertTimer=4;e.userData.state='alert'}
   else e.userData.alertTimer=Math.max(0,e.userData.alertTimer-dt);
 
-  if(e.userData.role==='sniper'){
+  if(e.userData.role==='boss'){
+   e.userData.phase=bossPhase(e);
+   e.rotation.y=Math.atan2(dx,dz);
+   if(d>12)moveEnemyGround(e,player.position.x,player.position.z,e.userData.phase===2?2.0:1.45,dt);
+   if(los&&d<30&&e.userData.fireCd<=0){
+    enemyFire(e);
+    e.userData.fireCd=e.userData.phase===2?.65:.9;
+   }
+   if(e.userData.phase===2){
+    e.userData.missileCd=Math.max(0,e.userData.missileCd-dt);
+    if(e.userData.missileCd<=0){
+     spawnBossMissile(e);
+     if(Math.random()>.45)spawnBossMissile(e);
+     e.userData.missileCd=3.2+Math.random()*1.6;
+     statusEl.textContent='GOLIAS • FASE 2 • MÍSSEIS INCOMING';
+    }
+   }
+  }else if(e.userData.role==='sniper'){
    if(e.position.y<2){
     if(!e.userData.targetLadder)e.userData.targetLadder=nearestLadderForEnemy(e);
     const l=e.userData.targetLadder;
@@ -685,7 +764,11 @@ function updateBullets3D(dt){
   b.mesh.position.copy(next);
   if(enemyHit){
    enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b,weapons3D[currentWeapon]?.impact||5);b.life=0;
-   if(enemyHit.userData.hp<=0){enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
+   if(enemyHit.userData.hp<=0){
+    enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;
+    if(enemyHit.userData.role==='boss')statusEl.textContent='GOLIAS DERROTADO • Boss eliminado';
+    else statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D;
+   }
   }
  }
  for(let i=bullets.length-1;i>=0;i--){if(bullets[i].life<=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
@@ -694,12 +777,12 @@ function updateBullets3D(dt){
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
- if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
- shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);
+ shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);
  recoilKick=Math.max(0,recoilKick-dt*2.8);
  if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
  const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
