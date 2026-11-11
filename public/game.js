@@ -235,12 +235,12 @@ function inStreet(x,y,padding=0){
 const remotePlayers=new Map();
 const ranking=new Map();
 const enemies=[];
-const mission={x:2440,y:1560,r:48};
+const mission={x:2480,y:1605,r:48};
 const buildings=[
 {x:80,y:70,w:360,h:240},{x:700,y:70,w:300,h:250},{x:1280,y:60,w:300,h:270},{x:1840,y:80,w:270,h:235},{x:2380,y:70,w:320,h:250},
 {x:80,y:570,w:350,h:250},{x:710,y:570,w:300,h:240},{x:1270,y:570,w:300,h:250},{x:1840,y:570,w:270,h:245},{x:2380,y:570,w:320,h:250},
 {x:80,y:1070,w:350,h:230},{x:710,y:1070,w:300,h:230},{x:1270,y:1070,w:300,h:230},{x:1840,y:1070,w:270,h:230},{x:2380,y:1070,w:320,h:230},
-{x:80,y:1580,w:350,h:230},{x:710,y:1580,w:300,h:230},{x:1270,y:1580,w:300,h:230},{x:1840,y:1580,w:270,h:230},{x:2380,y:1580,w:320,h:230}];
+{x:80,y:1580,w:350,h:230},{x:710,y:1580,w:300,h:230},{x:1270,y:1580,w:300,h:230}];
 
 const ladders=buildings.map((b,i)=>({
  building:i,
@@ -1237,6 +1237,73 @@ function road(){
  }
  ctx.restore();
 
+ // District pass inspired by the full-city reference: distinct readable zones.
+ // These are mostly visual surfaces so core movement/AI remains stable.
+ ctx.save();
+
+ // Central civic plaza / park.
+ ctx.fillStyle="#59645a";ctx.fillRect(1185,1020,500,360);
+ ctx.fillStyle="#71786f";ctx.beginPath();ctx.arc(1435,1200,118,0,Math.PI*2);ctx.fill();
+ ctx.strokeStyle="rgba(220,224,214,.28)";ctx.lineWidth=8;ctx.beginPath();ctx.arc(1435,1200,82,0,Math.PI*2);ctx.stroke();
+ ctx.strokeStyle="rgba(220,224,214,.18)";ctx.lineWidth=12;
+ for(const a of [0,Math.PI/2,Math.PI,Math.PI*1.5]){
+  ctx.beginPath();ctx.moveTo(1435+Math.cos(a)*82,1200+Math.sin(a)*82);ctx.lineTo(1435+Math.cos(a)*170,1200+Math.sin(a)*170);ctx.stroke();
+ }
+ for(const [tx,ty] of [[1320,1100],[1550,1100],[1320,1300],[1550,1300]]){
+  ctx.fillStyle="#2d5b38";ctx.beginPath();ctx.arc(tx,ty,24,0,Math.PI*2);ctx.fill();
+ }
+
+ // Residential / greener west side.
+ ctx.fillStyle="rgba(52,88,56,.22)";ctx.fillRect(0,0,560,H);
+ for(let i=0;i<28;i++){
+  const gx=70+(i*83)%430,gy=120+(i*137)%1650;
+  ctx.fillStyle=i%3===0?"rgba(55,110,65,.45)":"rgba(42,82,50,.35)";
+  ctx.beginPath();ctx.arc(gx,gy,8+(i%4)*3,0,Math.PI*2);ctx.fill();
+ }
+
+ // Industrial sector east-center.
+ ctx.fillStyle="rgba(92,84,68,.22)";ctx.fillRect(1780,0,520,1450);
+ for(const [tx,ty,r] of [[1960,360,46],[2070,360,39],[1975,760,42],[2110,760,48]]){
+  ctx.fillStyle="#74766f";ctx.beginPath();ctx.arc(tx,ty,r,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#9a9b90";ctx.lineWidth=5;ctx.stroke();
+  ctx.fillStyle="#4d5250";ctx.beginPath();ctx.arc(tx,ty,r*.55,0,Math.PI*2);ctx.fill();
+ }
+
+ // Port / container yards on far east.
+ ctx.fillStyle="rgba(58,72,78,.34)";ctx.fillRect(2325,0,475,1450);
+ const containerColors=["#7a503b","#596f78","#5e6948","#6d4d58"];
+ for(let i=0;i<28;i++){
+  const cx=2360+(i%5)*76,cy=360+Math.floor(i/5)*64;
+  ctx.fillStyle=containerColors[i%containerColors.length];ctx.fillRect(cx,cy,58,24);
+  ctx.strokeStyle="rgba(20,25,28,.55)";ctx.strokeRect(cx+.5,cy+.5,57,23);
+ }
+ // Quays and piers.
+ ctx.fillStyle="#5f6462";ctx.fillRect(2675,120,105,970);
+ ctx.fillRect(2580,120,80,410);ctx.fillRect(2580,660,80,370);
+ ctx.strokeStyle="#b18b51";ctx.lineWidth=6;
+ for(const y of [210,510,790,1020]){ctx.beginPath();ctx.moveTo(2640,y);ctx.lineTo(2770,y-95);ctx.stroke()}
+
+ // Airport carved out in south-east.
+ ctx.fillStyle="#59605f";ctx.fillRect(1750,1510,1030,360);
+ ctx.fillStyle="#2f3538";ctx.fillRect(1830,1688,850,105);
+ ctx.strokeStyle="#d8d0a2";ctx.lineWidth=3;ctx.setLineDash([34,22]);ctx.beginPath();ctx.moveTo(1870,1740);ctx.lineTo(2640,1740);ctx.stroke();ctx.setLineDash([]);
+ ctx.strokeStyle="#d6d9d0";ctx.lineWidth=3;
+ for(const x of [1880,2010,2140,2270,2400,2530]){ctx.beginPath();ctx.moveTo(x,1701);ctx.lineTo(x,1715);ctx.moveTo(x,1765);ctx.lineTo(x,1779);ctx.stroke()}
+ // Taxiway / apron.
+ ctx.fillStyle="#3f4649";ctx.fillRect(1960,1560,710,92);ctx.fillRect(2480,1560,190,225);
+ ctx.strokeStyle="rgba(232,193,84,.65)";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(1990,1606);ctx.lineTo(2600,1606);ctx.stroke();
+ // Simple aircraft silhouette.
+ ctx.save();ctx.translate(2425,1605);ctx.fillStyle="#c7ced2";
+ ctx.fillRect(-45,-5,90,10);ctx.fillRect(-7,-36,14,72);
+ ctx.beginPath();ctx.moveTo(45,-5);ctx.lineTo(64,0);ctx.lineTo(45,5);ctx.closePath();ctx.fill();
+ ctx.fillRect(-22,-24,44,5);ctx.restore();
+
+ // Coastal edge / water impression around map border.
+ ctx.strokeStyle="#163b48";ctx.lineWidth=26;ctx.strokeRect(12,12,W-24,H-24);
+ ctx.strokeStyle="rgba(77,137,153,.28)";ctx.lineWidth=9;ctx.strokeRect(28,28,W-56,H-56);
+
+ ctx.restore();
+
  // Faded lane markers.
  ctx.strokeStyle="rgba(190,166,76,.68)";ctx.lineWidth=3;ctx.setLineDash([24,22]);ctx.beginPath();
  for(const y of streets.horizontal){
@@ -1726,6 +1793,12 @@ function hud(){
  for(const x of streets.vertical)ctx.fillRect(mx+(x-streets.width/2)/W*mw,my,streets.width/W*mw,mh);
  ctx.fillStyle="#344048";
  buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));
+ ctx.save();ctx.font="700 5px system-ui";ctx.fillStyle="#b7c8d2";ctx.textAlign="center";
+ ctx.fillText("CENTRO",mx+1435/W*mw,my+1180/H*mh);
+ ctx.fillText("IND.",mx+2020/W*mw,my+780/H*mh);
+ ctx.fillText("PORTO",mx+2550/W*mw,my+760/H*mh);
+ ctx.fillText("AEROP.",mx+2280/W*mw,my+1690/H*mh);
+ ctx.restore();
  if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,3,0,Math.PI*2);ctx.fill()}
  ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,3.3,0,Math.PI*2);ctx.fill();
  if(gameMode==="solo"){for(const e of enemies){if(!e.alive)continue;ctx.fillStyle=e.boss?"#ff2d3f":"#ff8b8b";ctx.beginPath();ctx.arc(mx+e.x/W*mw,my+e.y/H*mh,e.boss?3.6:2.2,0,Math.PI*2);ctx.fill()}}
