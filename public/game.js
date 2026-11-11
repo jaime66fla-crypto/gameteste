@@ -973,40 +973,29 @@ function drawTrees(){trees.forEach(t=>{
 function drawBushes(base=true){for(const b of bushes){ctx.save();ctx.globalAlpha=base?.82:.92;ctx.fillStyle=base?"#244d31":"#367447";for(let i=0;i<6;i++){const a=i*Math.PI/3,r=b.r*.42;ctx.beginPath();ctx.arc(b.x+Math.cos(a)*r,b.y+Math.sin(a)*r,b.r*.48,0,Math.PI*2);ctx.fill()}ctx.fillStyle=base?"#2d613b":"#438955";ctx.beginPath();ctx.arc(b.x,b.y,b.r*.58,0,Math.PI*2);ctx.fill();ctx.restore()}}
 function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
  const w=weapons[type]||weapons.pistol;
- ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);
- ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(7,9,type==="shotgun"||type==="rifle"||type==="lmg"?34:25,6,0,0,Math.PI*2);ctx.fill();
- ctx.lineCap="round";ctx.lineJoin="round";
+ ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.lineCap="round";ctx.lineJoin="round";
+ const metal=ctx.createLinearGradient(-45,-10,45,10);metal.addColorStop(0,"#a3adb5");metal.addColorStop(.35,"#55616a");metal.addColorStop(1,"#1b2329");
+ const dark=ctx.createLinearGradient(0,-10,0,20);dark.addColorStop(0,"#3a444c");dark.addColorStop(1,"#151b20");
+ const wood=ctx.createLinearGradient(-20,0,35,0);wood.addColorStop(0,"#865336");wood.addColorStop(1,"#482c20");
+ ctx.fillStyle="#0007";ctx.beginPath();ctx.ellipse(5,16,(type==="rifle"||type==="shotgun"||type==="lmg")?43:30,7,0,0,Math.PI*2);ctx.fill();
  if(type==="pistol"){
-  ctx.fillStyle="#2b333b";ctx.fillRect(-18,-7,33,12);ctx.fillStyle="#7d8a94";ctx.fillRect(-13,-9,27,4);
-  ctx.fillStyle="#202830";ctx.beginPath();ctx.moveTo(-1,4);ctx.lineTo(9,4);ctx.lineTo(5,22);ctx.lineTo(-5,19);ctx.closePath();ctx.fill();
-  ctx.strokeStyle="#11181e";ctx.lineWidth=2;for(let i=-9;i<9;i+=5){ctx.beginPath();ctx.moveTo(i,-8);ctx.lineTo(i+1,-4);ctx.stroke()}
-  ctx.fillStyle="#11181e";ctx.fillRect(-7,3,13,3);
+  ctx.fillStyle=metal;ctx.roundRect(-25,-10,45,16,4);ctx.fill();ctx.fillStyle=dark;ctx.beginPath();ctx.moveTo(2,5);ctx.lineTo(15,5);ctx.lineTo(10,28);ctx.lineTo(-4,23);ctx.closePath();ctx.fill();
+  ctx.strokeStyle="#171d22";ctx.lineWidth=4;ctx.beginPath();ctx.arc(-1,8,9,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#171d22";ctx.fillRect(-22,-5,13,5);
  }else if(type==="smg"){
-  ctx.fillStyle="#28323a";ctx.fillRect(-31,-7,48,13);ctx.fillStyle="#657682";ctx.fillRect(-21,-10,34,4);
-  ctx.fillStyle="#202830";ctx.fillRect(16,-4,20,7);ctx.strokeStyle="#758692";ctx.lineWidth=4;ctx.beginPath();ctx.moveTo(35,-2);ctx.lineTo(45,-10);ctx.lineTo(45,8);ctx.lineTo(35,2);ctx.stroke();
-  ctx.fillStyle="#1a2229";ctx.beginPath();ctx.moveTo(-2,5);ctx.lineTo(8,5);ctx.lineTo(5,24);ctx.lineTo(-4,21);ctx.closePath();ctx.fill();
-  ctx.fillStyle="#151c22";ctx.beginPath();ctx.moveTo(10,5);ctx.lineTo(18,5);ctx.lineTo(17,16);ctx.lineTo(9,15);ctx.closePath();ctx.fill();
+  ctx.fillStyle=dark;ctx.roundRect(-39,-9,55,18,5);ctx.fill();ctx.fillStyle=metal;ctx.fillRect(-47,-3,12,6);ctx.fillStyle="#20282e";ctx.beginPath();ctx.moveTo(-2,8);ctx.lineTo(10,8);ctx.lineTo(6,31);ctx.lineTo(-7,27);ctx.closePath();ctx.fill();
+  ctx.strokeStyle="#687984";ctx.lineWidth=5;ctx.beginPath();ctx.moveTo(15,-4);ctx.lineTo(42,-14);ctx.lineTo(42,12);ctx.lineTo(16,5);ctx.stroke();
  }else if(type==="shotgun"){
-  ctx.fillStyle="#303940";ctx.fillRect(-42,-5,67,10);ctx.fillStyle="#7a8892";ctx.fillRect(-42,-7,55,4);
-  ctx.fillStyle="#6b4329";ctx.fillRect(-10,4,22,8);ctx.fillStyle="#73472e";ctx.beginPath();ctx.moveTo(24,-6);ctx.lineTo(43,-12);ctx.lineTo(45,9);ctx.lineTo(22,7);ctx.closePath();ctx.fill();
-  ctx.fillStyle="#20272d";ctx.fillRect(-19,5,20,6);
+  ctx.fillStyle=metal;ctx.roundRect(-48,-6,70,11,5);ctx.fill();ctx.fillStyle="#2a3238";ctx.roundRect(-43,7,47,7,3);ctx.fill();ctx.fillStyle=wood;ctx.roundRect(-10,5,22,10,5);ctx.fill();ctx.beginPath();ctx.moveTo(22,-6);ctx.lineTo(48,-12);ctx.lineTo(50,10);ctx.lineTo(20,7);ctx.closePath();ctx.fill();
  }else if(type==="rifle"){
-  ctx.fillStyle="#263039";ctx.fillRect(-44,-5,74,10);ctx.fillStyle="#7f8d97";ctx.fillRect(-44,-7,66,4);
-  ctx.fillStyle="#394832";ctx.beginPath();ctx.moveTo(-4,3);ctx.lineTo(28,3);ctx.lineTo(18,12);ctx.lineTo(-1,12);ctx.closePath();ctx.fill();
-  ctx.fillStyle="#1c242a";ctx.beginPath();ctx.moveTo(4,8);ctx.lineTo(12,8);ctx.lineTo(10,25);ctx.lineTo(2,23);ctx.closePath();ctx.fill();
-  ctx.strokeStyle=w.color;ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(-1,-13,13,5,0,0,Math.PI*2);ctx.stroke();ctx.fillStyle="#384650";ctx.fillRect(-4,-9,7,5);
+  ctx.fillStyle=metal;ctx.roundRect(-50,-4,78,8,4);ctx.fill();ctx.fillStyle="#3f4d39";ctx.roundRect(-2,4,31,13,5);ctx.fill();ctx.beginPath();ctx.moveTo(27,1);ctx.lineTo(50,-4);ctx.lineTo(54,10);ctx.lineTo(29,16);ctx.closePath();ctx.fill();
+  ctx.fillStyle="#1d2429";ctx.roundRect(-10,-17,36,8,4);ctx.fill();ctx.strokeStyle="#75838d";ctx.lineWidth=3;ctx.beginPath();ctx.arc(-1,-13,8,0,Math.PI*2);ctx.stroke();
  }else if(type==="lmg"){
-  ctx.fillStyle="#28323a";ctx.fillRect(-43,-7,76,14);ctx.fillStyle="#73828d";ctx.fillRect(-40,-9,54,4);
-  ctx.fillStyle="#232b31";ctx.beginPath();ctx.arc(4,15,15,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#4e5a63";ctx.lineWidth=4;ctx.stroke();
-  ctx.fillStyle="#1b2228";ctx.beginPath();ctx.moveTo(20,5);ctx.lineTo(29,5);ctx.lineTo(26,24);ctx.lineTo(18,21);ctx.closePath();ctx.fill();
-  ctx.strokeStyle="#667680";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-10,7);ctx.lineTo(-18,27);ctx.moveTo(-4,7);ctx.lineTo(2,28);ctx.stroke();
-  ctx.fillStyle=w.color;for(let i=0;i<5;i++)ctx.fillRect(8+i*4,-2,2,8);
+  ctx.fillStyle=dark;ctx.roundRect(-48,-8,76,16,5);ctx.fill();ctx.fillStyle=metal;ctx.fillRect(-54,-3,12,6);ctx.fillStyle="#20272c";ctx.beginPath();ctx.arc(5,22,16,0,Math.PI*2);ctx.fill();ctx.strokeStyle="#4c5962";ctx.lineWidth=4;ctx.stroke();
+  ctx.fillStyle="#242c32";ctx.beginPath();ctx.moveTo(28,-7);ctx.lineTo(52,-12);ctx.lineTo(55,8);ctx.lineTo(28,8);ctx.closePath();ctx.fill();ctx.strokeStyle="#64747e";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-8,7);ctx.lineTo(-18,30);ctx.moveTo(0,7);ctx.lineTo(8,31);ctx.stroke();
  }else{
-  ctx.fillStyle="#303940";ctx.fillRect(-31,-6,48,12);ctx.fillStyle="#7b8992";ctx.fillRect(-31,-8,43,4);
-  ctx.fillStyle="#70472f";ctx.fillRect(-15,5,19,8);ctx.fillStyle="#74482f";ctx.beginPath();ctx.moveTo(15,-6);ctx.lineTo(35,-10);ctx.lineTo(34,10);ctx.lineTo(13,7);ctx.closePath();ctx.fill();
-  ctx.strokeStyle="#181f25";ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(-31,-4);ctx.lineTo(-42,-4);ctx.moveTo(-31,3);ctx.lineTo(-42,3);ctx.stroke();
+  ctx.fillStyle=metal;ctx.roundRect(-38,-7,52,11,5);ctx.fill();ctx.roundRect(-38,6,52,9,4);ctx.fill();ctx.fillStyle=wood;ctx.roundRect(-8,13,21,9,4);ctx.fill();ctx.beginPath();ctx.moveTo(14,-7);ctx.lineTo(47,-11);ctx.lineTo(50,12);ctx.lineTo(13,8);ctx.closePath();ctx.fill();
  }
- if(muzzle){ctx.fillStyle=w.color;ctx.shadowColor=w.color;ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(type==="rifle"||type==="lmg"||type==="shotgun"?47:42,0);ctx.lineTo(type==="rifle"||type==="lmg"||type==="shotgun"?59:54,-7);ctx.lineTo(type==="rifle"||type==="lmg"||type==="shotgun"?59:54,7);ctx.closePath();ctx.fill();ctx.shadowBlur=0}
+ if(muzzle){const tip=(type==="rifle"||type==="shotgun"||type==="lmg")?56:47;ctx.fillStyle=w.color;ctx.shadowColor=w.color;ctx.shadowBlur=12;ctx.beginPath();ctx.moveTo(tip,0);ctx.lineTo(tip+13,-7);ctx.lineTo(tip+13,7);ctx.closePath();ctx.fill();ctx.shadowBlur=0}
  ctx.restore();
 }
 function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018dd";ctx.beginPath();ctx.arc(0,0,29,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);drawWeaponModel(p.type,0,0,.56,false);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-34);ctx.textAlign="left"}}
