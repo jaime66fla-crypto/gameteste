@@ -192,8 +192,11 @@ function makeSoldier(color=0x28313a){
  const torso=new THREE.Mesh(new THREE.CapsuleGeometry(.48,.85,5,8),mat(color));torso.position.y=1.65;torso.castShadow=true;g.add(torso);
  const head=new THREE.Mesh(new THREE.SphereGeometry(.38,12,10),mat(0xc39370));head.position.y=2.62;head.castShadow=true;g.add(head);
  const helm=new THREE.Mesh(new THREE.SphereGeometry(.43,12,8,0,Math.PI*2,0,Math.PI*.58),mat(0x242a30));helm.position.y=2.76;g.add(helm);
- const gun=new THREE.Mesh(new THREE.BoxGeometry(1.5,.14,.16),mat(0x11161a,.35,.55));gun.position.set(.72,1.75,.35);g.add(gun);
- g.userData.legs=legs;return g;
+ const gun=new THREE.Group();
+ const receiver=new THREE.Mesh(new THREE.BoxGeometry(1.05,.18,.18),mat(0x11161a,.3,.65));receiver.position.set(.62,1.76,.35);gun.add(receiver);
+ const barrel=new THREE.Mesh(new THREE.BoxGeometry(.72,.09,.09),mat(0x232a2f,.25,.75));barrel.position.set(1.45,1.77,.35);gun.add(barrel);
+ g.add(gun);
+ g.userData.legs=legs;g.userData.gun=gun;g.userData.weaponParts={receiver,barrel};return g;
 }
 
 const player=makeSoldier(0x344154);player.position.set(4,0,8);world.add(player);
@@ -403,15 +406,28 @@ let shotCooldown=0;
 let kills3D=0;
 let currentWeapon='pistol';
 const weapons3D={
- pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:42,spread:.012,pellets:1,color:0xffdf78},
- smg:{label:'SMG',cooldown:.085,damage:.55,speed:46,spread:.045,pellets:1,color:0xffc85a},
- rifle:{label:'RIFLE',cooldown:.19,damage:1.7,speed:58,spread:.009,pellets:1,color:0xffefad},
- shotgun:{label:'ESCOPETA',cooldown:.62,damage:.52,speed:38,spread:.12,pellets:7,color:0xffb85c}
+ pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:42,spread:.012,pellets:1,color:0xffdf78,recoil:.18,scale:[.72,.82,.72],impact:4},
+ smg:{label:'SMG',cooldown:.085,damage:.55,speed:46,spread:.045,pellets:1,color:0xffc85a,recoil:.12,scale:[1.0,.92,.82],impact:4},
+ rifle:{label:'RIFLE',cooldown:.19,damage:1.7,speed:58,spread:.009,pellets:1,color:0xffefad,recoil:.28,scale:[1.35,1,1],impact:6},
+ shotgun:{label:'ESCOPETA',cooldown:.62,damage:.52,speed:38,spread:.12,pellets:7,color:0xffb85c,recoil:.42,scale:[1.48,1.12,1.05],impact:8}
 };
 const muzzleFx=[],impactFx=[];
+let recoilKick=0;
+function applyWeaponVisual(){
+ const w=weapons3D[currentWeapon],gun=player.userData.gun;
+ if(!gun||!w)return;
+ gun.scale.set(...w.scale);
+ const parts=player.userData.weaponParts;
+ if(parts){
+  if(currentWeapon==='pistol'){parts.receiver.material.color.setHex(0x1b2024);parts.barrel.material.color.setHex(0x2d3439)}
+  if(currentWeapon==='smg'){parts.receiver.material.color.setHex(0x20272d);parts.barrel.material.color.setHex(0x11161a)}
+  if(currentWeapon==='rifle'){parts.receiver.material.color.setHex(0x273037);parts.barrel.material.color.setHex(0x151a1d)}
+  if(currentWeapon==='shotgun'){parts.receiver.material.color.setHex(0x3a2c22);parts.barrel.material.color.setHex(0x171b1e)}
+ }
+}
 function setWeapon(name){
  if(!weapons3D[name])return;
- currentWeapon=name;
+ currentWeapon=name;applyWeaponVisual();
  statusEl.textContent='Arma: '+weapons3D[name].label+' • 1-4 troca • clique atira';
 }
 function spawnMuzzle(origin){
@@ -419,8 +435,8 @@ function spawnMuzzle(origin){
  const flash=new THREE.Mesh(new THREE.SphereGeometry(.23,8,6),new THREE.MeshBasicMaterial({color:0xffe09a,transparent:true,opacity:.95}));
  flash.position.copy(origin);world.add(flash);muzzleFx.push({light,flash,t:.07});
 }
-function spawnImpact(pos,color=0xffd58a){
- for(let i=0;i<5;i++){
+function spawnImpact(pos,color=0xffd58a,count=5){
+ for(let i=0;i<count;i++){
   const m=new THREE.Mesh(new THREE.SphereGeometry(.055,6,4),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.9}));
   m.position.copy(pos);world.add(m);
   impactFx.push({m,v:new THREE.Vector3((Math.random()-.5)*4,Math.random()*3.5,(Math.random()-.5)*4),t:.28});
@@ -437,8 +453,9 @@ function makeTracer(origin,target,weapon){
  const dir=target.clone().sub(origin).normalize();
  const spread=weapon.spread||0;
  dir.x+=(Math.random()-.5)*spread;dir.y+=(Math.random()-.5)*spread*.55;dir.z+=(Math.random()-.5)*spread;dir.normalize();
- const mesh=new THREE.Mesh(new THREE.SphereGeometry(.11,8,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75}));
- mesh.position.copy(origin);mesh.castShadow=true;world.add(mesh);
+ const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.9,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.95}));
+ mesh.rotation.x=Math.PI/2;
+ mesh.position.copy(origin);mesh.castShadow=false;world.add(mesh);
  bullets.push({mesh,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color});
 }
 
@@ -487,6 +504,7 @@ function fire(){
  origin.addScaledVector(forward,1.05);
  const target=aimPoint.clone();
  spawnMuzzle(origin);
+ recoilKick=Math.min(.55,recoilKick+weapon.recoil);
  for(let i=0;i<weapon.pellets;i++)makeTracer(origin,target,weapon);
 }
 
@@ -558,12 +576,12 @@ function updateBullets3D(dt){
 
   const buildingBlocked=segmentHitsBuilding(old,next);
   if(buildingBlocked){
-   b.mesh.position.copy(next);spawnImpact(next,b.color);b.life=0;continue;
+   b.mesh.position.copy(next);spawnImpact(next,b.color,weapons3D[currentWeapon]?.impact||5);b.life=0;continue;
   }
 
   b.mesh.position.copy(next);
   if(enemyHit){
-   enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b);b.life=0;
+   enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b,weapons3D[currentWeapon]?.impact||5);b.life=0;
    if(enemyHit.userData.hp<=0){enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
   }
  }
@@ -573,12 +591,15 @@ function updateBullets3D(dt){
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);applyWeaponVisual();
+requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
  shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);
+ recoilKick=Math.max(0,recoilKick-dt*2.8);
+ if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
  const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
  camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
  updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);
