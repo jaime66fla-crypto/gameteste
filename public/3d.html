@@ -25,7 +25,17 @@ button:hover,a:hover{border-color:#65ff9b}
 .bossHud{left:50%;top:14px;transform:translateX(-50%);width:min(520px,46vw);background:#15090be8;border:1px solid #7a3138;border-radius:12px;padding:9px 12px;text-align:center}
 .bossHud[hidden]{display:none}.bossTitle{display:flex;justify-content:space-between;font-size:11px;font-weight:900;letter-spacing:.12em;color:#ff8c94}.bossBar{height:10px;background:#2a1115;border-radius:99px;overflow:hidden;margin-top:7px}.bossBar>i{display:block;height:100%;width:100%;background:#ff5361;transition:width .12s linear}
 .missileAlert{left:50%;top:88px;transform:translateX(-50%);background:#571017e8;border:1px solid #ff5b63;border-radius:8px;padding:7px 12px;font-weight:1000;font-size:12px;letter-spacing:.1em;animation:pulseAlert .55s infinite alternate}.missileAlert[hidden]{display:none}@keyframes pulseAlert{from{transform:translateX(-50%) scale(1)}to{transform:translateX(-50%) scale(1.05)}}
-@media(max-width:700px){.bottom{font-size:9px;max-width:92vw;white-space:normal}.mode{display:none}.top{min-width:180px}.right{top:auto;bottom:70px}}
+.mobileControls{display:none;position:absolute;inset:0;z-index:8;pointer-events:none}
+.stick{position:absolute;width:132px;height:132px;border-radius:50%;border:2px solid #8aa0ad88;background:#07101966;backdrop-filter:blur(2px);pointer-events:auto;touch-action:none}
+.stick .knob{position:absolute;left:50%;top:50%;width:58px;height:58px;margin:-29px;border-radius:50%;background:#dbe7edaa;border:2px solid #ffffff99;box-shadow:0 0 18px #0008}
+#moveStick{left:18px;bottom:18px}#aimStick{right:18px;bottom:18px}
+.mobileAction{position:absolute;right:166px;bottom:44px;width:62px;height:62px;border-radius:50%;border:2px solid #65ff9baa;background:#0d1821dd;color:#fff;font-weight:900;pointer-events:auto;touch-action:none}
+.rotateNotice{display:none;position:absolute;inset:0;z-index:20;background:#05090de8;align-items:center;justify-content:center;text-align:center;padding:30px;font-weight:900;letter-spacing:.05em}
+@media(pointer:coarse),(max-width:900px){
+ .mobileControls{display:block}.bottom,.mode{display:none}.combatHud{width:220px;bottom:auto;top:96px;padding:8px 10px}.top{min-width:170px;max-width:42vw}.right{top:auto;bottom:160px}.bossHud{width:54vw}
+}
+@media(max-width:700px){.top{transform:scale(.84);transform-origin:top left}.right{display:none}.combatHud{transform:scale(.86);transform-origin:top left}}
+@media(max-width:700px) and (orientation:portrait){.rotateNotice{display:flex}.mobileControls{display:none}}
 </style>
 </head>
 <body>
@@ -44,9 +54,15 @@ button:hover,a:hover{border-color:#65ff9b}
   <div class="bossBar"><i id="bossHpFill"></i></div>
 </div>
 <div class="hud missileAlert" id="missileAlert" hidden>⚠ MÍSSIL INCOMING</div>
+<div class="mobileControls" id="mobileControls">
+  <div class="stick" id="moveStick"><div class="knob" id="moveKnob"></div></div>
+  <div class="stick" id="aimStick"><div class="knob" id="aimKnob"></div></div>
+  <button class="mobileAction" id="actionBtn">E</button>
+</div>
+<div class="rotateNotice">GIRE O CELULAR PARA JOGAR EM PAISAGEM</div>
 <div class="hud bottom">WASD mover • SHIFT correr • clique atira • 1-4 troca arma • E veículo/escada</div>
 <div class="hud mode"><b>Primeira etapa</b><p>Mundo 3D real, prédios com altura física, sombras e câmera ortográfica. A lógica completa de combate será migrada depois.</p></div>
 </div>
-<script type="module" src="/3d.js?v=2"></script>
+<script type="module" src="/3d.js?v=3"></script>
 </body>
 </html>
