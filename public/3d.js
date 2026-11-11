@@ -2,6 +2,15 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.m
 
 const canvas=document.getElementById('view');
 const statusEl=document.getElementById('status');
+const hpText=document.getElementById('hpText');
+const hpFill=document.getElementById('hpFill');
+const weaponHud=document.getElementById('weaponHud');
+const ammoHud=document.getElementById('ammoHud');
+const killsHud=document.getElementById('killsHud');
+const bossHud=document.getElementById('bossHud');
+const bossPhaseHud=document.getElementById('bossPhaseHud');
+const bossHpFill=document.getElementById('bossHpFill');
+const missileAlert=document.getElementById('missileAlert');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
 renderer.setPixelRatio(Math.min(devicePixelRatio,2));
 renderer.shadowMap.enabled=true;
@@ -200,6 +209,7 @@ function makeSoldier(color=0x28313a){
 }
 
 const player=makeSoldier(0x344154);player.position.set(4,0,8);world.add(player);
+player.userData.hp=100;player.userData.maxHp=100;
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
 enemies[1].position.set(-12,0,-13);world.add(enemies[1]);
@@ -421,6 +431,12 @@ const bullets=[];
 let shotCooldown=0;
 let kills3D=0;
 let currentWeapon='pistol';
+const ammoState={
+ pistol:{mag:12,reserve:72},
+ smg:{mag:30,reserve:150},
+ rifle:{mag:20,reserve:100},
+ shotgun:{mag:8,reserve:40}
+};
 const weapons3D={
  pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:42,spread:.012,pellets:1,color:0xffdf78,recoil:.18,scale:[.72,.82,.72],impact:4},
  smg:{label:'SMG',cooldown:.085,damage:.55,speed:46,spread:.045,pellets:1,color:0xffc85a,recoil:.12,scale:[1.0,.92,.82],impact:4},
@@ -441,9 +457,25 @@ function applyWeaponVisual(){
   if(currentWeapon==='shotgun'){parts.receiver.material.color.setHex(0x3a2c22);parts.barrel.material.color.setHex(0x171b1e)}
  }
 }
+function updateHud(){
+ const hpPct=Math.max(0,player.userData.hp/player.userData.maxHp*100);
+ if(hpText)hpText.textContent=Math.ceil(player.userData.hp);
+ if(hpFill)hpFill.style.width=hpPct+'%';
+ if(weaponHud)weaponHud.textContent=weapons3D[currentWeapon].label;
+ const ammo=ammoState[currentWeapon];
+ if(ammoHud)ammoHud.textContent=ammo.mag+' / '+ammo.reserve;
+ if(killsHud)killsHud.textContent=kills3D;
+ if(golias?.userData?.maxHp){
+  const pct=Math.max(0,golias.userData.hp/golias.userData.maxHp*100);
+  if(bossHpFill)bossHpFill.style.width=pct+'%';
+  if(bossPhaseHud)bossPhaseHud.textContent='FASE '+(golias.userData.phase||1);
+  if(bossHud)bossHud.hidden=!golias.userData.alive;
+ }
+ if(missileAlert)missileAlert.hidden=bossWarnings.length===0;
+}
 function setWeapon(name){
  if(!weapons3D[name])return;
- currentWeapon=name;applyWeaponVisual();
+ currentWeapon=name;applyWeaponVisual();updateHud();
  statusEl.textContent='Arma: '+weapons3D[name].label+' • 1-4 troca • clique atira';
 }
 function spawnMuzzle(origin){
@@ -513,6 +545,15 @@ function updateAimFromPointer(){
 function fire(){
  if(shotCooldown>0||climbState||activeCar)return;
  const weapon=weapons3D[currentWeapon];
+ const ammo=ammoState[currentWeapon];
+ if(ammo.mag<=0){
+  if(ammo.reserve<=0){statusEl.textContent='Sem munição • troque de arma';return}
+  const size=currentWeapon==='pistol'?12:currentWeapon==='smg'?30:currentWeapon==='rifle'?20:8;
+  const load=Math.min(size,ammo.reserve);ammo.mag=load;ammo.reserve-=load;updateHud();
+  statusEl.textContent='Recarregado • '+weapon.label;
+  return;
+ }
+ ammo.mag--;
  shotCooldown=weapon.cooldown;
  const origin=new THREE.Vector3();
  player.getWorldPosition(origin);origin.y+=1.78;
@@ -522,6 +563,7 @@ function fire(){
  spawnMuzzle(origin);
  recoilKick=Math.min(.55,recoilKick+weapon.recoil);
  for(let i=0;i<weapon.pellets;i++)makeTracer(origin,target,weapon);
+ updateHud();
 }
 
 addEventListener('pointermove',e=>{
@@ -623,7 +665,9 @@ function bossHitkillAt(pos){
  const target=activeCar?activeCar.position:player.position;
  if(Math.hypot(target.x-pos.x,target.z-pos.z)<=2.35){
   if(activeCar){damageCar(activeCar,999);activeCar=null;player.visible=true}
+  player.userData.hp=100;
   player.position.set(4,0,8);
+  updateHud();
   statusEl.textContent='GOLIAS • Míssil acertou em cheio • HITKILL';
  }
 }
@@ -709,7 +753,7 @@ function enemyFire(e){
  const dir=target.sub(origin).normalize();
  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.028,.028,.7,6),new THREE.MeshBasicMaterial({color:e.userData.role==='sniper'?0xff5c5c:0xff9b5c,transparent:true,opacity:.9}));
  mesh.rotation.x=Math.PI/2;mesh.position.copy(origin);world.add(mesh);
- bullets.push({mesh,dir,speed:e.userData.role==='sniper'?48:35,life:1.2,damage:0,color:0xff6b5c,enemyShot:true});
+ bullets.push({mesh,dir,speed:e.userData.role==='sniper'?48:35,life:1.2,damage:0,color:0xff6b5c,enemyShot:true,sniperShot:e.userData.role==='sniper'});
  spawnMuzzle(origin);
 }
 function updateEnemies3D(dt){
@@ -796,7 +840,13 @@ function updateBullets3D(dt){
    const seg=next.clone().sub(old),len2=seg.lengthSq();
    let q=old.clone();
    if(len2>0){const th=THREE.MathUtils.clamp(center.clone().sub(old).dot(seg)/len2,0,1);q=old.clone().addScaledVector(seg,th)}
-   if(q.distanceTo(center)<.9){spawnImpact(center,0xff5544,5);b.life=0;statusEl.textContent='Você foi atingido • inimigos agora atacam com linha de visão';continue}
+   if(q.distanceTo(center)<.9){
+    spawnImpact(center,0xff5544,5);b.life=0;
+    player.userData.hp=Math.max(0,player.userData.hp-(b.sniperShot?35:14));
+    if(player.userData.hp<=0){player.userData.hp=100;player.position.set(4,0,8);statusEl.textContent='Você morreu • respawn';}
+    else statusEl.textContent='Você foi atingido';
+    updateHud();continue
+   }
    if(segmentHitsBuilding(old,next)){b.mesh.position.copy(next);spawnImpact(next,b.color,4);b.life=0;continue}
    b.mesh.position.copy(next);continue;
   }
@@ -851,5 +901,5 @@ function frame(now){
  camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
  updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
-applyWeaponVisual();
+applyWeaponVisual();updateHud();
 requestAnimationFrame(frame);
