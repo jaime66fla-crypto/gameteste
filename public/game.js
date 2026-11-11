@@ -24,6 +24,7 @@ function screenToWorldY(y){const z=getViewZoom();return cam.y+(y-canvas.height*(
 function worldToScreenY(y){const z=getViewZoom();return (y-cam.y)*VIEW_TILT*z+canvas.height*(1-VIEW_TILT)/2;}
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
 const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
+const characterStyle=(()=>{try{return {...{outfit:"#e23b43",skin:"#d7b08c",hair:"#151a21"},...JSON.parse(localStorage.getItem("streetCharacter")||"{}")}}catch(_){return {outfit:"#e23b43",skin:"#d7b08c",hair:"#151a21"}}})();
 const weapons={
  pistol:{name:"PISTOLA",mag:12,reserve:72,fire:.16,speed:980,spread:.025,pellets:1,damage:1,color:"#ffe36e"},
  smg:{name:"SMG",mag:30,reserve:120,fire:.075,speed:930,spread:.07,pellets:1,damage:1,color:"#7ee8ff"},
@@ -993,10 +994,10 @@ function drawPlayer(){
  ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(5,13,19,8,0,0,Math.PI*2);ctx.fill();
  ctx.save();ctx.rotate(player.angle);
  ctx.fillStyle="#1c2430";ctx.beginPath();ctx.ellipse(-6,8+step,6,11,0,0,Math.PI*2);ctx.ellipse(7,8-step,6,11,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle=player.hitT>0?"#ff7a7f":"#e23b43";ctx.beginPath();ctx.ellipse(0,bob,17,14,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5+bob,10,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#151a21";ctx.beginPath();ctx.arc(-1,-8+bob,10,Math.PI,Math.PI*2);ctx.fill();
- ctx.fillStyle="#d7b08c";ctx.fillRect(9,-8+bob,16,5);ctx.fillRect(9,4+bob,16,5);
+ ctx.fillStyle=player.hitT>0?"#ff7a7f":characterStyle.outfit;ctx.beginPath();ctx.ellipse(0,bob,17,14,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=characterStyle.skin;ctx.beginPath();ctx.arc(2,-5+bob,10,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=characterStyle.hair;ctx.beginPath();ctx.arc(-1,-8+bob,10,Math.PI,Math.PI*2);ctx.fill();
+ ctx.fillStyle=characterStyle.skin;ctx.fillRect(9,-8+bob,16,5);ctx.fillRect(9,4+bob,16,5);
  ctx.fillStyle="#252d33";ctx.fillRect(17,-4+bob,22,8);ctx.fillStyle="#88939c";ctx.fillRect(34,-2+bob,11,4);
  if(player.shootCd>.10){ctx.fillStyle="#ffd45c";ctx.beginPath();ctx.moveTo(46,bob);ctx.lineTo(58,-6+bob);ctx.lineTo(58,6+bob);ctx.closePath();ctx.fill()}
  ctx.restore();ctx.restore()
