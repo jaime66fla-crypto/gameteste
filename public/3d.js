@@ -957,16 +957,13 @@ function updateThirdPersonCamera(dt,targetObj){
  const dist=isCar?12.5:9.2;
  const lookHeight=isCar?1.35:1.8;
 
- const cp=Math.cos(cameraPitch),sp=Math.sin(cameraPitch);
- const orbit=new THREE.Vector3(
-  Math.sin(cameraYaw)*cp,
-  sp,
-  Math.cos(cameraYaw)*cp
- ).multiplyScalar(dist);
-
- const desired=focus.position.clone()
-   .add(new THREE.Vector3(0,lookHeight+1.2,0))
-   .sub(orbit);
+ const horizontal=Math.cos(cameraPitch)*dist;
+ const height=Math.max(2.2,Math.sin(cameraPitch)*dist+(isCar?3.6:3.0));
+ const desired=focus.position.clone().add(new THREE.Vector3(
+  Math.sin(cameraYaw)*horizontal,
+  height,
+  Math.cos(cameraYaw)*horizontal
+ ));
 
  camera.position.lerp(desired,1-Math.exp(-dt*7));
  const lookAt=focus.position.clone().add(new THREE.Vector3(0,lookHeight,0));
