@@ -37,46 +37,106 @@ function plane(w,d,color,x,y,z=.01){
  m.position.set(x,z,y);m.receiveShadow=true;world.add(m);return m;
 }
 
-plane(120,100,0x3d493d,0,0,-.08);
+const MAP_W=146,MAP_H=104;
+plane(MAP_W,MAP_H,0x3d493d,0,0,-.08);
 const road=0x303738,sidewalk=0x777c75;
-for(const y of [-30,0,30]){plane(120,12,road,0,y,.02);plane(120,2.2,sidewalk,0,y-7.1,.04);plane(120,2.2,sidewalk,0,y+7.1,.04)}
-for(const x of [-30,0,30]){plane(12,100,road,x,0,.03);plane(2.2,100,sidewalk,x-7.1,0,.05);plane(2.2,100,sidewalk,x+7.1,0,.05)}
+const mapScale=.035,mapOffsetX=2000,mapOffsetY=1400;
+const mx=v=>(v-mapOffsetX)*mapScale;
+const mz=v=>(v-mapOffsetY)*mapScale;
+const mw=v=>v*mapScale;
 
-const buildingSpots=[
- [-45,-45,18,15],[-15,-45,17,15],[15,-45,17,15],[45,-45,18,15],
- [-45,-15,18,15],[-15,-15,17,15],[15,-15,17,15],[45,-15,18,15],
- [-45,15,18,15],[-15,15,17,15],[15,15,17,15],[45,15,18,15],
- [-45,45,18,15],[-15,45,17,15],[15,45,17,15],[45,45,18,15]
+const streetX=[580,1145,1705,2245,2900,3500].map(mx);
+const streetZ=[440,950,1450,2050,2520].map(mz);
+const roadW=mw(160),walkW=mw(24);
+for(const z of streetZ){
+ plane(MAP_W,roadW,road,0,z,.02);
+ plane(MAP_W,walkW,sidewalk,0,z-roadW/2-walkW/2,.04);
+ plane(MAP_W,walkW,sidewalk,0,z+roadW/2+walkW/2,.04);
+}
+for(const x of streetX){
+ plane(roadW,MAP_H,road,x,0,.03);
+ plane(walkW,MAP_H,sidewalk,x-roadW/2-walkW/2,0,.05);
+ plane(walkW,MAP_H,sidewalk,x+roadW/2+walkW/2,0,.05);
+}
+
+const sourceBuildings=[
+ [80,70,360,240],[700,70,300,250],[1280,60,300,270],[1840,80,270,235],[2380,70,320,250],
+ [80,570,350,250],[710,570,300,240],[1270,570,300,250],[1840,570,270,245],[2380,570,320,250],
+ [80,1070,350,230],[710,1070,300,230],[1270,1070,300,230],[1840,1070,270,230],[2380,1070,320,230],
+ [80,1580,350,230],[710,1580,300,230],[1270,1580,300,230],
+ [80,2180,350,230],[710,2180,300,230],[1270,2180,300,230],[1840,2180,270,230],
+ [2380,120,330,260],[2380,570,330,250],[2380,1070,330,230],
+ [3020,120,310,260],[3020,570,310,250],[3020,1070,310,230]
 ];
+const buildingSpots=sourceBuildings.map(([x,y,w,d])=>[
+ mx(x+w/2),mz(y+d/2),mw(w),mw(d)
+]);
+
 const buildings=[];
 const ladders=[];
 for(let i=0;i<buildingSpots.length;i++){
- const [x,y,w,d]=buildingSpots[i]; const h=6+(i%4)*.8;
+ const [x,y,w,d]=buildingSpots[i]; const h=5.5+(i%4)*.85;
  const b=box(w,h,d,i%3===0?0x626b68:0x707773,x,y);b.userData={index:i,w,h,d};buildings.push(b);
- const roof=box(w-.6,.35,d-.6,0x4c5553,x,y,h+.15);
- const ladder=new THREE.Group();
- for(const sx of [-.45,.45]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.12,h+1,.12),mat(0xaab0a7,.55,.15));rail.position.set(sx,(h+1)/2,0);ladder.add(rail)}
- for(let yy=.5;yy<h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(1.05,.09,.10),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
- ladder.position.set(x,0,y+d/2+.18);world.add(ladder);ladders.push({building:i,group:ladder,x,z:y+d/2+.18,h});
- for(let k=0;k<2;k++)box(2.4,1.2,2.2,0x424a49,x-3+k*6,y,h+.9);
+ box(w-.45,.35,d-.45,0x4c5553,x,y,h+.15);
+ for(let k=0;k<2;k++)box(2.0,1.0,1.8,0x424a49,x-2.5+k*5,y,h+.85);
  const winMat=mat(0x2b6475,.4,.15);
  for(const sx of [-1,1]){
-  const win=new THREE.Mesh(new THREE.BoxGeometry(.12,1.4,d*.55),winMat);
-  win.position.set(x+sx*(w/2+.07),3.0,y);world.add(win);
+  const win=new THREE.Mesh(new THREE.BoxGeometry(.10,1.25,Math.max(2,d*.55)),winMat);
+  win.position.set(x+sx*(w/2+.055),2.8,y);world.add(win);
  }
+ const ladder=new THREE.Group();
+ for(const sx of [-.42,.42]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.11,h+1,.11),mat(0xaab0a7,.55,.15));rail.position.set(sx,(h+1)/2,0);ladder.add(rail)}
+ for(let yy=.5;yy<h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(.98,.08,.09),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
+ ladder.position.set(x,0,y+d/2+.16);world.add(ladder);ladders.push({building:i,group:ladder,x,z:y+d/2+.16,h});
 }
 
 const stripeMat=mat(0xc9b34f,.8,0);
-for(const y of [-30,0,30])for(let x=-56;x<58;x+=8){const s=new THREE.Mesh(new THREE.BoxGeometry(3,.09,.18),stripeMat);s.position.set(x,.11,y);world.add(s)}
-for(const x of [-30,0,30])for(let y=-46;y<48;y+=8){const s=new THREE.Mesh(new THREE.BoxGeometry(.18,.09,3),stripeMat);s.position.set(x,.11,y);world.add(s)}
+for(const z of streetZ)for(let x=-MAP_W/2+3;x<MAP_W/2-2;x+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(2.7,.09,.16),stripeMat);s.position.set(x,.11,z);world.add(s)}
+for(const x of streetX)for(let z=-MAP_H/2+3;z<MAP_H/2-2;z+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(.16,.09,2.7),stripeMat);s.position.set(x,.11,z);world.add(s)}
 
+function zoneLabel(text,x,z){
+ const cv=document.createElement('canvas');cv.width=512;cv.height=96;
+ const g=cv.getContext('2d');g.fillStyle='rgba(4,10,15,.76)';g.fillRect(0,8,512,80);
+ g.strokeStyle='rgba(101,255,139,.65)';g.lineWidth=3;g.strokeRect(3,11,506,74);
+ g.fillStyle='#ecf8f2';g.font='800 38px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText(text,256,48);
+ const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;
+ const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
+ sp.position.set(x,8,z);sp.scale.set(12,2.25,1);scene.add(sp);
+}
+function addZonePad(x,z,w,d,color){
+ const p=plane(w,d,color,x,z,.08);p.material.roughness=.95;return p;
+}
+
+// Praça central
+addZonePad(0,2.5,17,13,0x59675b);
+for(const [dx,dz] of [[-5,-3],[5,-3],[-5,3],[5,3]])makeTree?.(dx,2.5+dz);
+const fountain=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.5,.45,20),mat(0x657a80,.4,.15));fountain.position.set(0,.28,2.5);fountain.receiveShadow=true;world.add(fountain);
+zoneLabel('PRAÇA',0,2.5);
+
+// Aeroporto / pista
+addZonePad(49,-41,38,15,0x3b4143);
+for(let x=34;x<65;x+=6){const s=new THREE.Mesh(new THREE.BoxGeometry(3,.10,.28),mat(0xe8e6ce,.75,0));s.position.set(x,.15,-41);world.add(s)}
+box(11,4.2,6.5,0x59656a,61,-31);box(7,2.5,5,0x4c565b,45,-31);
+zoneLabel('AEROPORTO',49,-41);
+
+// Porto com água e docas
+addZonePad(-57,39,29,20,0x274e5c);
+for(const x of [-67,-60,-53,-46]){const dock=box(2,.45,12,0x715844,x,34,.08);dock.receiveShadow=true}
+for(let i=0;i<5;i++)box(3.2,1.6,2.2,i%2?0x7a4d3a:0x3f6674,-66+i*4.1,44,.05);
+zoneLabel('PORTO',-57,39);
+
+// Distrito industrial
+addZonePad(45,24,31,22,0x4b504d);
+box(13,5.8,8,0x555c5b,38,19);box(11,4.8,7,0x5e625d,52,27);
+for(const x of [35,42,50,57]){const tank=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,4.2,16),mat(0x6a7070,.65,.25));tank.position.set(x,2.15,31);tank.castShadow=true;world.add(tank)}
+zoneLabel('INDUSTRIAL',45,24);
 function makeTree(x,y){
  const g=new THREE.Group();
  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.35,.5,3.4,8),mat(0x60442e));trunk.position.y=1.7;trunk.castShadow=true;g.add(trunk);
  const crown=new THREE.Mesh(new THREE.SphereGeometry(2.25,10,8),mat(0x2e7545));crown.position.y=4.4;crown.scale.set(1,1.15,1);crown.castShadow=true;g.add(crown);
  g.position.set(x,0,y);world.add(g);
 }
-[[-22,-22],[22,-22],[-22,22],[22,22],[-52,8],[52,-8]].forEach(p=>makeTree(...p));
+[[-24,-23],[23,-22],[-24,21],[24,19],[-63,8],[64,-8],[-8,38],[12,-38],[33,8],[-39,-7]].forEach(p=>makeTree(...p));
 
 function makeLamp(x,y){
  const pole=new THREE.Mesh(new THREE.CylinderGeometry(.12,.15,4.8,8),mat(0x303536));pole.position.set(x,2.4,y);pole.castShadow=true;world.add(pole);
@@ -95,10 +155,10 @@ function makeSoldier(color=0x28313a){
  g.userData.legs=legs;return g;
 }
 
-const player=makeSoldier(0x344154);player.position.set(5,0,8);world.add(player);
+const player=makeSoldier(0x344154);player.position.set(4,0,8);world.add(player);
 const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
-enemies[0].position.set(18,0,-7);world.add(enemies[0]);
-enemies[1].position.set(-15,7.7,-15);world.add(enemies[1]);
+enemies[0].position.set(19,0,-8);world.add(enemies[0]);
+enemies[1].position.set(-12,6.35,-13);world.add(enemies[1]);
 
 function makeCar(x,y,rot=0){
  const g=new THREE.Group();
@@ -107,7 +167,7 @@ function makeCar(x,y,rot=0){
  for(const sx of [-1.25,1.25])for(const sz of [-.86,.86]){const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.24,12),mat(0x111416));wheel.rotation.z=Math.PI/2;wheel.position.set(sx,.38,sz);g.add(wheel)}
  g.position.set(x,0,y);g.rotation.y=rot;world.add(g);
 }
-makeCar(-8,-30,0);makeCar(30,18,Math.PI/2);
+makeCar(-9,-33,0);makeCar(31,22,Math.PI/2);makeCar(51,-15,Math.PI/2);makeCar(-30,39,0);
 
 let climbState=null;
 function nearLadder(){
