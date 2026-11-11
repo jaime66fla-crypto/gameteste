@@ -1058,12 +1058,40 @@ function drawBuildings(){
   ctx.fillStyle="rgba(0,0,0,.12)";
   for(let n=0;n<5;n++){const gx=b.x+15+((n*61+i*17)%Math.max(24,b.w-45));ctx.fillRect(gx,b.y+b.h-10-(n%3)*8,24+(n%2)*13,3)}
 
-  // Windows.
+  // Windows and facade details.
+  const facadeBaseY=b.y+b.h-height*.57;
   for(let x=b.x+30;x<b.x+b.w-22;x+=58){
-   const lit=((Math.floor(x/58)+i)%4===0),wy=b.y+b.h-height*.57;
-   ctx.fillStyle="#0a1118";ctx.fillRect(x-2,wy-2,32,17);
-   ctx.fillStyle=lit?"#f1b867":"#3f6374";ctx.globalAlpha=lit?.86:.52;ctx.fillRect(x,wy,28,13);ctx.globalAlpha=1;
-   ctx.strokeStyle="rgba(215,226,233,.22)";ctx.beginPath();ctx.moveTo(x+14,wy);ctx.lineTo(x+14,wy+13);ctx.stroke();
+   const lit=((Math.floor(x/58)+i)%4===0),wy=facadeBaseY;
+   ctx.fillStyle="#081018";ctx.fillRect(x-3,wy-3,34,19);
+   ctx.fillStyle=lit?"#f1b867":"#34596d";ctx.globalAlpha=lit?.90:.60;ctx.fillRect(x,wy,28,13);ctx.globalAlpha=1;
+   ctx.strokeStyle="rgba(215,226,233,.28)";ctx.beginPath();ctx.moveTo(x+14,wy);ctx.lineTo(x+14,wy+13);ctx.stroke();
+   ctx.fillStyle="rgba(0,0,0,.18)";ctx.fillRect(x-2,wy+15,32,5);
+  }
+
+  // Doors, service panels, pipes and vents keep the walls from feeling empty.
+  const doorX=b.x+b.w*.48,doorY=b.y+b.h-48;
+  ctx.fillStyle="#0b1117";ctx.fillRect(doorX,doorY,28,44);
+  ctx.strokeStyle="#52616c";ctx.lineWidth=1.5;ctx.strokeRect(doorX+.5,doorY+.5,27,43);
+  ctx.fillStyle="#bfc8ce";ctx.beginPath();ctx.arc(doorX+22,doorY+22,1.7,0,Math.PI*2);ctx.fill();
+
+  const panelX=b.x+18,panelY=b.y+b.h-58;
+  ctx.fillStyle="#202b33";ctx.fillRect(panelX,panelY,26,34);ctx.strokeStyle="#5e6d78";ctx.strokeRect(panelX+.5,panelY+.5,25,33);
+  ctx.fillStyle="#0a1117";ctx.fillRect(panelX+6,panelY+7,14,7);ctx.fillRect(panelX+6,panelY+19,14,3);
+
+  ctx.strokeStyle="#61717b";ctx.lineWidth=4;ctx.lineCap="round";ctx.beginPath();
+  ctx.moveTo(b.x+b.w-28,b.y+b.h-8);ctx.lineTo(b.x+b.w-28,b.y+b.h-52);ctx.lineTo(b.x+b.w-52,b.y+b.h-52);ctx.stroke();
+
+  for(let vx=b.x+54;vx<b.x+b.w-70;vx+=88){
+   ctx.fillStyle="#141c23";ctx.fillRect(vx,b.y+b.h-24,30,9);
+   ctx.strokeStyle="#4c5962";ctx.lineWidth=1;ctx.strokeRect(vx+.5,b.y+b.h-23.5,29,8);
+   for(let sl=0;sl<4;sl++){ctx.beginPath();ctx.moveTo(vx+5+sl*6,b.y+b.h-22);ctx.lineTo(vx+5+sl*6,b.y+b.h-16);ctx.stroke()}
+  }
+
+  // Subtle lower-wall grime and chipped concrete.
+  ctx.fillStyle="rgba(0,0,0,.16)";
+  for(let n=0;n<6;n++){
+   const gx=b.x+12+((n*47+i*23)%Math.max(24,b.w-32)),gy=b.y+b.h-16-(n%2)*7;
+   ctx.beginPath();ctx.ellipse(gx,gy,9+(n%3)*5,2+(n%2)*2,.25,0,Math.PI*2);ctx.fill();
   }
 
   // Roof slab.
@@ -1436,48 +1464,78 @@ function drawCrosshair(){
  if(player.inCar||!started||bossPhaseIntro>0)return;const x=worldToScreenX(mouse.x,mouse.y),y=worldToScreenY(mouse.y);ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
 }
 function hud(){
- ctx.setTransform(1,0,0,1,0,0);ctx.shadowColor="#24d9ff";ctx.shadowBlur=10;ctx.fillStyle="#061018dc";ctx.fillRect(20,20,250,128);ctx.shadowBlur=0;ctx.strokeStyle="#365362";ctx.strokeRect(20.5,20.5,249,127);ctx.fillStyle="#8ea0ad";ctx.font="700 11px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",35,43);ctx.fillStyle="#fff";ctx.font="900 25px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",35,72);
- ctx.fillStyle="#fff";ctx.font="800 11px system-ui";ctx.fillText("VIDA "+Math.ceil(player.health)+" / "+player.maxHealth,35,94);ctx.fillStyle="#263640";ctx.fillRect(35,102,200,9);ctx.fillStyle=player.health>55?"#65ff8b":player.health>25?"#ffd45c":"#ff626e";ctx.fillRect(35,102,200*(player.health/player.maxHealth),9);
- if(!player.inCar){ctx.fillStyle=player.reloading?"#ffd45c":"#fff";ctx.font="800 12px system-ui";ctx.fillText(player.reloading?"RECARREGANDO...":player.ammo+" / "+player.reserve+"  •  "+weapons[player.weapon].name,35,132);if(player.roof!==null){ctx.fillStyle="#7ee8ff";ctx.font="800 10px system-ui";ctx.fillText("NO TELHADO",150,43)}if(player.hidden){ctx.fillStyle="#71e69a";ctx.font="800 10px system-ui";ctx.fillText("OCULTO NO ARBUSTO",150,43)}}
+ ctx.setTransform(1,0,0,1,0,0);
+
+ // Compact player HUD.
+ const px=18,py=18,pw=190,ph=82;
+ ctx.fillStyle="#061018c8";ctx.fillRect(px,py,pw,ph);ctx.strokeStyle="#2d4758";ctx.strokeRect(px+.5,py+.5,pw-1,ph-1);
+ ctx.fillStyle="#8ea0ad";ctx.font="700 9px system-ui";ctx.fillText(player.inCar?"VEÍCULO":"STATUS",px+12,py+17);
+ ctx.fillStyle="#fff";ctx.font="900 18px system-ui";ctx.fillText(player.inCar?Math.round(Math.abs(car.speed)*.22)+" km/h":"A PÉ",px+12,py+39);
+ ctx.fillStyle="#263640";ctx.fillRect(px+12,py+49,122,7);
+ ctx.fillStyle=player.health>55?"#65ff8b":player.health>25?"#ffd45c":"#ff626e";ctx.fillRect(px+12,py+49,122*(player.health/player.maxHealth),7);
+ ctx.fillStyle="#cbd7df";ctx.font="800 9px system-ui";ctx.fillText(Math.ceil(player.health)+" HP",px+140,py+56);
+ if(!player.inCar){
+  ctx.fillStyle=player.reloading?"#ffd45c":"#dbe7ef";ctx.font="800 10px system-ui";
+  ctx.fillText(player.reloading?"RECARREGANDO":player.ammo+" / "+player.reserve+"  "+weapons[player.weapon].name,px+12,py+73);
+  if(player.roof!==null){ctx.fillStyle="#7ee8ff";ctx.fillText("TELHADO",px+128,py+17)}
+  else if(player.hidden){ctx.fillStyle="#71e69a";ctx.fillText("OCULTO",px+132,py+17)}
+ }
 
  const bossTop=getBoss();
  if(bossTop){
-  const bw=Math.min(620,canvas.width*.52),bx=(canvas.width-bw)/2,by=18;
-  ctx.fillStyle="#071018e8";ctx.fillRect(bx,by,bw,52);ctx.strokeStyle="#263845";ctx.strokeRect(bx+.5,by+.5,bw-1,51);
-  ctx.fillStyle="#fff";ctx.font="900 14px system-ui";ctx.fillText("VIDA",bx+14,by+20);
-  ctx.textAlign="center";ctx.fillText("GOLIAS  •  FASE "+(bossTop.phase||1),canvas.width/2,by+20);ctx.textAlign="left";
-  ctx.fillStyle="#263640";ctx.fillRect(bx+14,by+29,bw-28,11);
-  ctx.fillStyle="#ff3045";ctx.fillRect(bx+14,by+29,(bw-28)*(bossTop.hp/bossTop.maxHp),11);
+  const bw=Math.min(460,canvas.width*.38),bx=(canvas.width-bw)/2,by=16;
+  ctx.fillStyle="#071018d8";ctx.fillRect(bx,by,bw,34);ctx.strokeStyle="#263845";ctx.strokeRect(bx+.5,by+.5,bw-1,33);
+  ctx.fillStyle="#fff";ctx.font="900 11px system-ui";ctx.textAlign="center";ctx.fillText("GOLIAS • FASE "+(bossTop.phase||1),canvas.width/2,by+13);
+  ctx.fillStyle="#263640";ctx.fillRect(bx+12,by+20,bw-24,6);ctx.fillStyle="#ff3045";ctx.fillRect(bx+12,by+20,(bw-24)*(bossTop.hp/bossTop.maxHp),6);ctx.textAlign="left";
  }
 
- const rx=canvas.width-248;ctx.shadowColor="#24d9ff";ctx.shadowBlur=10;ctx.fillStyle="#061018dc";ctx.fillRect(rx,20,228,110);ctx.shadowBlur=0;ctx.fillStyle="#fff";ctx.font="800 12px system-ui";ctx.fillText(car.health<=0?"VEÍCULO QUEBRADO":"INTEGRIDADE",rx+16,43);ctx.fillStyle="#263640";ctx.fillRect(rx+16,53,196,9);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+16,53,196*car.health/100,9);ctx.fillStyle="#fff";ctx.fillText("NITRO",rx+16,83);ctx.fillStyle="#263640";ctx.fillRect(rx+16,92,196,9);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+16,92,196*car.nitro/100,9);
- const alive=targets.filter(t=>t.hp>0).length;ctx.fillStyle="#061018dc";ctx.fillRect(20,canvas.height-110,260,90);ctx.fillStyle="#fff";ctx.font="800 12px system-ui";
+ // Vehicle HUD only while driving or damaged enough to matter.
+ if(player.inCar||car.health<100){
+  const rw=170,rh=58,rx=canvas.width-rw-18,ry=18;
+  ctx.fillStyle="#061018c8";ctx.fillRect(rx,ry,rw,rh);ctx.strokeStyle="#2d4758";ctx.strokeRect(rx+.5,ry+.5,rw-1,rh-1);
+  ctx.fillStyle="#fff";ctx.font="800 9px system-ui";ctx.fillText(car.health<=0?"QUEBRADO":"CARRO",rx+10,ry+14);
+  ctx.fillStyle="#263640";ctx.fillRect(rx+10,ry+22,150,6);ctx.fillStyle=car.health>40?"#65ff8b":"#e66";ctx.fillRect(rx+10,ry+22,150*car.health/100,6);
+  ctx.fillStyle="#263640";ctx.fillRect(rx+10,ry+40,150,6);ctx.fillStyle="#24d9ff";ctx.fillRect(rx+10,ry+40,150*car.nitro/100,6);
+ }
+
+ // Small lower-left match info.
+ const alive=targets.filter(t=>t.hp>0).length,boxW=205,boxH=60,bx=18,by=canvas.height-boxH-18;
+ ctx.fillStyle="#061018bf";ctx.fillRect(bx,by,boxW,boxH);
+ ctx.fillStyle="#fff";ctx.font="800 10px system-ui";
  if(gameMode==="solo"){
   const boss=getBoss(),normalLeft=enemies.filter(e=>e.alive&&!e.boss).length;
-  ctx.fillText("MODO SOLO  •  KILLS "+kills,34,canvas.height-76);
-  if(boss){ctx.fillStyle="#ff626e";ctx.fillText("GOLIAS FASE "+(boss.phase||1)+"  "+Math.ceil(boss.hp)+" / "+boss.maxHp,34,canvas.height-52)}
-  else if(bossDefeated){ctx.fillStyle="#65ff8b";ctx.fillText("BOSS DERROTADO",34,canvas.height-52)}
-  else{ctx.fillStyle="#ff8b8b";ctx.fillText("INIMIGOS RESTANTES  "+normalLeft,34,canvas.height-52)}
+  ctx.fillText("SOLO  •  KILLS "+kills,bx+11,by+17);
+  ctx.fillStyle=boss?"#ff626e":bossDefeated?"#65ff8b":"#ff8b8b";
+  ctx.fillText(boss?"GOLIAS "+Math.ceil(boss.hp)+" / "+boss.maxHp:bossDefeated?"BOSS DERROTADO":"INIMIGOS "+normalLeft,bx+11,by+35);
+ }else{
+  ctx.fillText(connectionStatus==="connected"?"ONLINE • "+kills+" KILLS":"OFFLINE",bx+11,by+17);
  }
- else{ctx.fillText((connectionStatus==="connected"?"ONLINE":"DESCONECTADO")+"  •  SALA "+roomCode.toUpperCase(),34,canvas.height-76);ctx.fillStyle=connectionStatus==="connected"?"#65ff8b":"#ff8b8b";ctx.fillText(connectionStatus==="connected"?"SEUS ABATES  "+kills:"SERVIDOR MULTIPLAYER INDISPONÍVEL",34,canvas.height-52)}
- ctx.fillStyle="#9fb0bd";ctx.fillText("ALVOS RESTANTES  "+alive,34,canvas.height-28);
+ ctx.fillStyle="#9fb0bd";ctx.fillText("ALVOS "+alive,bx+11,by+52);
+
+ // Smaller minimap.
+ const mw=132,mh=82,mx=canvas.width-mw-18,my=canvas.height-mh-18;
+ ctx.fillStyle="#061018d0";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";
+ buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));
+ if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,3,0,Math.PI*2);ctx.fill()}
+ ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,3.3,0,Math.PI*2);ctx.fill();
+ if(gameMode==="solo"){for(const e of enemies){if(!e.alive)continue;ctx.fillStyle=e.boss?"#ff2d3f":"#ff8b8b";ctx.beginPath();ctx.arc(mx+e.x/W*mw,my+e.y/H*mh,e.boss?3.6:2.2,0,Math.PI*2);ctx.fill()}}
+
  if(gameMode==="multi"){
-  const rows=[{name:playerName,kills},...Array.from(ranking.values())].sort((a,b)=>b.kills-a.kills).slice(0,5);
-  const rw=210,rh=28+rows.length*22,rx2=canvas.width-rw-20,ry2=150;ctx.fillStyle="#061018dc";ctx.fillRect(rx2,ry2,rw,rh);ctx.fillStyle="#fff";ctx.font="900 12px system-ui";ctx.fillText("RANK DE ABATES",rx2+14,ry2+20);
-  rows.forEach((p,i)=>{ctx.fillStyle=i===0?"#ffd45c":"#dce7ee";ctx.font="700 11px system-ui";ctx.fillText((i+1)+". "+p.name,rx2+14,ry2+43+i*22);ctx.textAlign="right";ctx.fillText(String(p.kills),rx2+rw-14,ry2+43+i*22);ctx.textAlign="left"});
+  const rows=[{name:playerName,kills},...Array.from(ranking.values())].sort((a,b)=>b.kills-a.kills).slice(0,3);
+  const rw=150,rh=24+rows.length*18,rx2=canvas.width-rw-18,ry2=86;
+  ctx.fillStyle="#061018c8";ctx.fillRect(rx2,ry2,rw,rh);ctx.fillStyle="#fff";ctx.font="900 9px system-ui";ctx.fillText("RANK",rx2+10,ry2+15);
+  rows.forEach((p,i)=>{ctx.fillStyle=i===0?"#ffd45c":"#dce7ee";ctx.font="700 9px system-ui";ctx.fillText((i+1)+". "+p.name,rx2+10,ry2+34+i*18);ctx.textAlign="right";ctx.fillText(String(p.kills),rx2+rw-10,ry2+34+i*18);ctx.textAlign="left"});
  }
- const mw=190,mh=120,mx=canvas.width-210,my=canvas.height-140;ctx.fillStyle="#061018e8";ctx.fillRect(mx,my,mw,mh);ctx.fillStyle="#344048";buildings.forEach(b=>ctx.fillRect(mx+b.x/W*mw,my+b.y/H*mh,b.w/W*mw,b.h/H*mh));if(!missionDone){ctx.fillStyle="#ffd65b";ctx.beginPath();ctx.arc(mx+mission.x/W*mw,my+mission.y/H*mh,4,0,Math.PI*2);ctx.fill()}ctx.fillStyle="#65ff8b";ctx.beginPath();ctx.arc(mx+player.x/W*mw,my+player.y/H*mh,4.5,0,Math.PI*2);ctx.fill();
- if(gameMode==="solo"){
-  for(const e of enemies){if(!e.alive)continue;ctx.fillStyle=e.boss?"#ff2d3f":"#ff8b8b";ctx.beginPath();ctx.arc(mx+e.x/W*mw,my+e.y/H*mh,e.boss?5:3,0,Math.PI*2);ctx.fill()}
- }
+
  const ladderNear=player.roof===null&&ladders.find(l=>Math.abs(player.x-(l.x+l.w/2))<=48&&player.y>=l.y-4&&player.y<=l.y+l.h+28);
- if(ladderNear){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-120,canvas.height-142,240,36);ctx.fillStyle="#7ee8ff";ctx.font="900 12px system-ui";ctx.fillText("SUBA PELA ESCADA",canvas.width/2-78,canvas.height-118)}
-  const near=!player.inCar&&car.health>0&&Math.hypot(player.x-car.x,player.y-car.y)<82;if(near){ctx.fillStyle="#081119e8";ctx.fillRect(canvas.width/2-105,canvas.height-93,210,38);ctx.fillStyle="#dfffe6";ctx.font="900 13px system-ui";ctx.fillText("E  ENTRAR NO VEÍCULO",canvas.width/2-83,canvas.height-68)}
- if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 46px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-12);ctx.fillStyle="#ff9ba3";ctx.font="800 20px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+28);ctx.textAlign="left"}
- if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 44px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
+ if(ladderNear){ctx.fillStyle="#081119d8";ctx.fillRect(canvas.width/2-76,canvas.height-78,152,24);ctx.fillStyle="#7ee8ff";ctx.font="900 9px system-ui";ctx.fillText("SUBA PELA ESCADA",canvas.width/2-52,canvas.height-62)}
+ const near=!player.inCar&&car.health>0&&Math.hypot(player.x-car.x,player.y-car.y)<82;
+ if(near){ctx.fillStyle="#081119d8";ctx.fillRect(canvas.width/2-70,canvas.height-48,140,24);ctx.fillStyle="#dfffe6";ctx.font="900 9px system-ui";ctx.fillText("E  ENTRAR NO CARRO",canvas.width/2-50,canvas.height-32)}
+
+ if(player.dead){ctx.fillStyle="#140307b8";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 38px system-ui";ctx.fillText("VOCÊ FOI DERRUBADO",canvas.width/2,canvas.height/2-10);ctx.fillStyle="#ff9ba3";ctx.font="800 16px system-ui";ctx.fillText("Renasce em "+Math.max(1,Math.ceil(player.respawnT))+"...",canvas.width/2,canvas.height/2+22);ctx.textAlign="left"}
+ if(paused){ctx.fillStyle="#030609aa";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle="#fff";ctx.textAlign="center";ctx.font="900 36px system-ui";ctx.fillText("PAUSADO",canvas.width/2,canvas.height/2);ctx.textAlign="left"}
  if(flash>0){ctx.fillStyle="rgba(255,90,90,"+Math.min(.28,flash*.2)+")";ctx.fillRect(0,0,canvas.width,canvas.height)}
- drawBossPhaseIntro();
- drawCrosshair()
+ drawBossPhaseIntro();drawCrosshair();
 }
 function drawWorldLighting(){
  // Cool night tint.
