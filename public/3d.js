@@ -254,11 +254,18 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
   'mixamorig:leftshoulder':'shoulderL',
   'mixamorig:rightshoulder':'shoulderR'
  };
- model.traverse(function(child){
-  if(!child.isBone)return;
-  const n=(child.name||'').toLowerCase();
+ const registerBone=(bone)=>{
+  const n=(bone?.name||'').toLowerCase();
   const key=mixamoMap[n];
-  if(key)player.userData.avatarBones[key]={bone:child,base:child.rotation.clone(),baseQuaternion:child.quaternion.clone()};
+  if(key&&!player.userData.avatarBones[key]){
+   player.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone()};
+  }
+ };
+ model.traverse(function(child){
+  if(child.isSkinnedMesh&&child.skeleton?.bones){
+   for(const bone of child.skeleton.bones)registerBone(bone);
+  }
+  if(child.isBone)registerBone(child);
  });
  if(model.animations&&model.animations.length>0){
   const mixer=new THREE.AnimationMixer(model);
