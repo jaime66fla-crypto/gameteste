@@ -516,12 +516,22 @@ function moveEnemyGround(e,tx,ty,dt){
  if(!collides(nx,e.y,e.r))e.x=nx;
  if(!collides(e.x,ny,e.r))e.y=ny;
 }
+function roofSafePoint(roofIndex,preferX=null,preferY=null){
+ const b=buildings[roofIndex];if(!b)return null;
+ const margin=56;
+ const minX=b.x+margin,maxX=b.x+b.w-margin;
+ const minY=b.y+margin,maxY=b.y+b.h-margin;
+ const x=Math.max(minX,Math.min(maxX,preferX??b.x+b.w*.58));
+ const y=Math.max(minY,Math.min(maxY,preferY??b.y+b.h*.46));
+ return {x,y};
+}
 function moveEnemyOnRoof(e,tx,ty,dt){
  e.movePhase=(e.movePhase||0)+dt*(e.speed>80?10:7);
  const b=buildings[e.roof];if(!b)return;
- const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,step=e.speed*dt;
- e.x=Math.max(b.x+e.r,Math.min(b.x+b.w-e.r,e.x+dx/d*step));
- e.y=Math.max(b.y+e.r,Math.min(b.y+b.h-e.r,e.y+dy/d*step));
+ const safe=roofSafePoint(e.roof,tx,ty);if(!safe)return;
+ const dx=safe.x-e.x,dy=safe.y-e.y,d=Math.hypot(dx,dy)||1,step=e.speed*dt;
+ e.x=Math.max(b.x+56,Math.min(b.x+b.w-56,e.x+dx/d*step));
+ e.y=Math.max(b.y+56,Math.min(b.y+b.h-56,e.y+dy/d*step));
 }
 function updateSniperEnemy(e,dt){
  if(e.roof===null){
@@ -534,7 +544,8 @@ function updateSniperEnemy(e,dt){
    moveEnemyGround(e,lx,ly,dt);
   }else{
    e.roof=e.targetRoof;e.climbing=false;e.descending=false;
-   e.x=lx;e.y=b.y+b.h-34;
+   const perch=roofSafePoint(e.roof,lx,b.y+b.h*.55);
+   e.x=perch.x;e.y=perch.y;
   }
   return;
  }
@@ -547,7 +558,7 @@ function updateSniperEnemy(e,dt){
  // walk to the ladder, descend and relocate to a better rooftop.
  if(d>SNIPER_RANGE||e.descending){
   e.descending=true;
-  const lx=l.x+l.w/2,ly=b.y+b.h-30;
+  const lx=l.x+l.w/2,ly=b.y+b.h-58;
   e.angle=Math.atan2(ly-e.y,lx-e.x);
   if(Math.hypot(e.x-lx,e.y-ly)>16){
    moveEnemyOnRoof(e,lx,ly,dt);
@@ -561,14 +572,14 @@ function updateSniperEnemy(e,dt){
   return;
  }
 
- const centerX=b.x+b.w*.5,centerY=b.y+b.h*.5;
- if(Math.hypot(e.x-centerX,e.y-centerY)>58)moveEnemyOnRoof(e,centerX,centerY,dt);
+ const perch=roofSafePoint(e.roof,b.x+b.w*.62,b.y+b.h*.46);
+ if(perch&&Math.hypot(e.x-perch.x,e.y-perch.y)>18)moveEnemyOnRoof(e,perch.x,perch.y,dt);
  e.shootCd-=dt;
  if(!player.inCar&&!player.dead&&d<=SNIPER_RANGE&&e.shootCd<=0){
   e.shootCd=2.0+Math.random()*.8;
   const a=e.angle+(Math.random()-.5)*.025,speed=900;
   enemyBullets.push({
-   x:e.x+Math.cos(a)*32,y:e.y+Math.sin(a)*32,
+   x:e.x+Math.cos(a)*32,y:e.y+Math.sin(a)*32-6,
    vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,t:SNIPER_RANGE/speed+.35,damage:22,
    boss:false,sniper:true,layer:e.roof,targetLayer:player.roof
   });
@@ -773,15 +784,19 @@ function drawEnemies(){
   const sniper=e.type==="sniper";
   const phase=e.movePhase||0;
   const moving=Math.abs(Math.sin(phase))>.04;
+  const roofLift=sniper&&e.roof!==null?18:0;
+  if(sniper&&e.roof!==null){
+   ctx.save();ctx.globalAlpha=.32;ctx.fillStyle="#000";ctx.beginPath();ctx.ellipse(e.x+10,e.y+11,20,7,-.15,0,Math.PI*2);ctx.fill();ctx.restore();
+  }
   drawTopDownCharacter({
-   x:e.x,y:e.y,angle:e.angle,
+   x:e.x,y:e.y-roofLift,angle:e.angle,
    outfit:sniper?"#394334":"#343840",skin:"#d1a884",hair:"#171b20",
    weapon:sniper?"rifle":"pistol",shooting:e.shootCd>.92,
    role:sniper?"sniper":"enemy",showLaser:true,
    moving,phase,running:false
   });
-  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-43);ctx.textAlign="left"}
-  ctx.fillStyle="#0c0f12";ctx.fillRect(e.x-19,e.y-35,38,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-19,e.y-35,38*(e.hp/e.maxHp),5);
+  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-roofLift-45);ctx.textAlign="left"}
+  ctx.fillStyle="#0c0f12";ctx.fillRect(e.x-19,e.y-roofLift-37,38,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-19,e.y-roofLift-37,38*(e.hp/e.maxHp),5);
  }
 }
 function reportKill(){
