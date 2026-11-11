@@ -2122,9 +2122,18 @@ function drawWorldLighting(){
  // Street lamps at intersections and road edges.
  const lamps=streets.vertical.flatMap(x=>streets.horizontal.map(y=>[x+streets.width/2+12,y-streets.width/2-12]));
  for(const [x,y] of lamps){
-  ctx.save();ctx.translate(x,y);undoProjection(ctx);ctx.fillStyle="#333c36";ctx.fillRect(-2,-48,4,48);ctx.fillStyle="#a4afa0";ctx.fillRect(-7,-50,14,4);ctx.restore();
-  const cone=ctx.createRadialGradient(x,y+18,2,x,y+45,105);cone.addColorStop(0,"rgba(255,213,154,.38)");cone.addColorStop(.45,"rgba(255,165,92,.13)");cone.addColorStop(1,"rgba(255,140,70,0)");
-  ctx.fillStyle=cone;ctx.beginPath();ctx.arc(x,y+45,105,0,Math.PI*2);ctx.fill();
+  ctx.save();ctx.translate(x,y);undoProjection(ctx);
+  // Lamp post.
+  ctx.fillStyle="#333c36";ctx.fillRect(-2,-48,4,48);
+  ctx.fillStyle="#a4afa0";ctx.fillRect(-7,-50,14,4);
+  // Projected pool of light: screen-space ellipse instead of a world-space circle.
+  // This prevents the old white "ball" artifact under the lamps.
+  const glow=ctx.createRadialGradient(0,18,2,0,18,72);
+  glow.addColorStop(0,"rgba(255,220,165,.16)");
+  glow.addColorStop(.42,"rgba(255,188,115,.075)");
+  glow.addColorStop(1,"rgba(255,160,85,0)");
+  ctx.save();ctx.translate(0,20);ctx.scale(1.35,.42);ctx.fillStyle=glow;ctx.beginPath();ctx.arc(0,0,72,0,Math.PI*2);ctx.fill();ctx.restore();
+  ctx.restore();
  }
  // Building entrance glow.
  for(let i=0;i<buildings.length;i++){
@@ -2136,11 +2145,11 @@ function drawWorldLighting(){
  for(const t of trees){const g=ctx.createRadialGradient(t.x-10,t.y-62,1,t.x-10,t.y-62,34);g.addColorStop(0,"rgba(125,176,210,.10)");g.addColorStop(1,"rgba(100,150,190,0)");ctx.fillStyle=g;ctx.beginPath();ctx.arc(t.x-10,t.y-62,34,0,Math.PI*2);ctx.fill()}
  ctx.restore();
 
- // Ambient mist/smoke patches.
- ctx.save();ctx.globalAlpha=.11;
- for(let i=0;i<12;i++){
-  const x=180+(i*239)%(W-360),y=210+(i*173)%(H-420),r=34+(i%4)*18;
-  const g=ctx.createRadialGradient(x,y,2,x,y,r);g.addColorStop(0,"rgba(190,205,220,.55)");g.addColorStop(1,"rgba(190,205,220,0)");
+ // Very subtle ambient haze. Keep it faint enough not to read as white circles.
+ ctx.save();ctx.globalAlpha=.035;
+ for(let i=0;i<8;i++){
+  const x=240+(i*367)%(W-480),y=260+(i*281)%(H-520),r=42+(i%3)*16;
+  const g=ctx.createRadialGradient(x,y,4,x,y,r);g.addColorStop(0,"rgba(175,190,198,.18)");g.addColorStop(1,"rgba(175,190,198,0)");
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();
  }
  ctx.restore();
