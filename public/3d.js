@@ -839,7 +839,7 @@ function updateEnemies3D(dt){
    if(d>12)moveEnemyGround(e,player.position.x,player.position.z,e.userData.phase===2?2.0:1.45,dt);
    if(los&&d<30&&e.userData.fireCd<=0){
     enemyFire(e);
-    e.userData.fireCd=e.userData.phase===2?.65:.9;
+    e.userData.fireCd=e.userData.phase===2 ? .65 : .9;
    }
    if(e.userData.phase===2){
     e.userData.missileCd=Math.max(0,e.userData.missileCd-dt);
