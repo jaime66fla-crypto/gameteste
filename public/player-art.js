@@ -6,6 +6,24 @@ window.playerArt=(()=>{
  image.onerror=()=>{ready=false};
  image.src='assets/player/operator-directions.png';
 
+ const directionNames=[
+  'east','south-east','south','south-west',
+  'west','north-west','north','north-east'
+ ];
+ const animationSheets={walk:[],run:[]};
+ const animationReady={walk:[],run:[]};
+
+ for(const mode of ['walk','run']){
+  for(let i=0;i<8;i++){
+   const img=new Image();
+   animationReady[mode][i]=false;
+   img.onload=()=>{animationReady[mode][i]=true};
+   img.onerror=()=>{animationReady[mode][i]=false};
+   img.src='assets/player/animations/'+mode+'-'+directionNames[i]+'.png';
+   animationSheets[mode][i]=img;
+  }
+ }
+
  // Tight alpha bounds, common pixels-per-unit scale: no direction is stretched.
  const frames=[
   [110,28,254,398,332,220], [547,32,244,390,711,244],
@@ -38,31 +56,35 @@ window.playerArt=(()=>{
   const s=Math.sin(phase),c=Math.cos(phase),double=Math.sin(phase*2);
   const run=opts.running?1:0;
   return {
-   // Feet contact feels heavier: most vertical motion happens between steps.
-   lift:Math.abs(s)*(run?2.25:1.2),
-   // Small side-to-side weight transfer makes the torso stop looking pinned.
-   sway:c*(run?1.45:.78),
-   // Torso lean follows the stride, intentionally very subtle.
-   lean:double*(run?.018:.010),
-   // Tiny squash on impact gives the static source art some step cadence.
-   squash:1-Math.max(0,-double)*(run?.018:.010),
-   // Weapon trails the shoulder a fraction instead of feeling welded to the body.
-   gunLag:-c*(run?.020:.011)
+   lift:Math.abs(s)*(run?1.4:.7),
+   sway:c*(run?.65:.32),
+   lean:double*(run?.010:.006),
+   squash:1-Math.max(0,-double)*(run?.010:.006),
+   gunLag:-c*(run?.016:.009)
   };
+ }
+
+ function animatedFrame(opts,index){
+  if(!opts.moving)return null;
+  const mode=opts.running?'run':'walk';
+  if(!animationReady[mode][index])return null;
+  const phase=opts.phase||0;
+  const cycle=Math.PI*2;
+  const normalized=((phase%cycle)+cycle)%cycle/cycle;
+  const frame=Math.floor(normalized*8)%8;
+  return {image:animationSheets[mode][index],frame,mode};
  }
 
  function draw(ctx,opts,weaponRenderer){
   if(!ready)return false;
   const p=pose(opts.angle),f=frames[p.index],m=motion(opts);
+  const anim=animatedFrame(opts,p.index);
 
   ctx.save();
   ctx.translate(opts.x,opts.y);
-
-  // Inverse world shear / tilt keeps the sprite upright and correctly proportioned.
   window.gameProjection?.undo(ctx);
 
-  // Ground shadow reacts to the step height.
-  const shadowScale=1-Math.min(.14,Math.abs(m.lift)*.035);
+  const shadowScale=1-Math.min(.10,Math.abs(m.lift)*.03);
   ctx.save();
   ctx.scale(shadowScale,shadowScale);
   ctx.fillStyle='rgba(0,0,0,.35)';
@@ -71,7 +93,6 @@ window.playerArt=(()=>{
   ctx.fill();
   ctx.restore();
 
-  // Whole-body movement layer. This is visual-only; collisions stay untouched.
   ctx.translate(m.sway,-m.lift);
   ctx.rotate(m.lean);
   ctx.scale(1,m.squash);
@@ -90,14 +111,25 @@ window.playerArt=(()=>{
   ctx.save();
   ctx.imageSmoothingEnabled=true;
   if(opts.hit)ctx.filter='brightness(1.7) sepia(.45)';
-  ctx.drawImage(
-   image,
-   f[0],f[1],f[2],f[3],
-   -f[2]*scale/2,
-   10-f[3]*scale,
-   f[2]*scale,
-   f[3]*scale
-  );
+
+  if(anim){
+   const size=72;
+   ctx.drawImage(
+    anim.image,
+    anim.frame*96,0,96,96,
+    -size/2,-62,size,size
+   );
+  }else{
+   ctx.drawImage(
+    image,
+    f[0],f[1],f[2],f[3],
+    -f[2]*scale/2,
+    10-f[3]*scale,
+    f[2]*scale,
+    f[3]*scale
+   );
+  }
+
   ctx.restore();
 
   if(!behind)gun();
@@ -105,5 +137,13 @@ window.playerArt=(()=>{
   return true;
  }
 
- return {get ready(){return ready},direction,pose,draw};
+ return {
+  get ready(){return ready},
+  direction,
+  pose,
+  draw,
+  get animationsReady(){
+   return animationReady.walk.filter(Boolean).length+animationReady.run.filter(Boolean).length;
+  }
+ };
 })();
