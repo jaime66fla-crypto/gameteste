@@ -1116,12 +1116,23 @@ function drawEnemies(only=null){
   const phase=e.movePhase||0;
   const moving=Math.abs(Math.sin(phase))>.04;
   const roofLift=0;
-  if(!window.worldArt?.entity(ctx,sniper?"sniper":"enemy",{x:e.x,y:e.y-roofLift,angle:e.angle,size:sniper?60:57,moving,phase,shooting:e.shootCd>.92}))drawTopDownCharacter({
+  const enemyWeapon=sniper?"rifle":"pistol";
+  const enemyShooting=sniper?(e.aimT||0)<=0&&e.shootCd>1.55:e.shootCd>.92;
+  const enemyRunning=moving&&e.speed>=80;
+  let bodyDrawn=false;
+  if(window.playerArt?.ready){
+   bodyDrawn=window.playerArt.draw(ctx,{
+    x:e.x,y:e.y-roofLift,angle:e.angle,gunAngle:projectedAngle(e.angle),
+    weapon:enemyWeapon,shooting:enemyShooting,
+    moving,running:enemyRunning,phase,hit:false
+   },drawWeaponModel);
+  }
+  if(!bodyDrawn&&!window.worldArt?.entity(ctx,sniper?"sniper":"enemy",{x:e.x,y:e.y-roofLift,angle:e.angle,size:sniper?60:57,moving,phase,shooting:enemyShooting}))drawTopDownCharacter({
    x:e.x,y:e.y-roofLift,angle:e.angle,
    outfit:sniper?"#394334":"#343840",skin:"#d1a884",hair:"#171b20",
-   weapon:sniper?"rifle":"pistol",shooting:e.shootCd>.92,
+   weapon:enemyWeapon,shooting:enemyShooting,
    role:sniper?"sniper":"enemy",showLaser:true,
-   moving,phase,running:false
+   moving,phase,running:enemyRunning
   });
   ctx.save();ctx.translate(e.x,e.y);undoProjection(ctx);
   if(sniper){
