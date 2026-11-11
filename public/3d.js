@@ -120,7 +120,90 @@ function resize(){
  camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
-statusEl.textContent='Protótipo 3D ativo';
+statusEl.textContent='Protótipo 3D ativo • Clique para atirar';
+
+
+
+const raycaster=new THREE.Raycaster();
+const pointer=new THREE.Vector2();
+const aimPoint=new THREE.Vector3();
+const groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
+const bullets=[];
+let shotCooldown=0;
+let kills3D=0;
+
+function makeTracer(origin,target){
+ const dir=target.clone().sub(origin).normalize();
+ const mesh=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),mat(0xffdd75,.25,.2));
+ mesh.position.copy(origin);mesh.castShadow=true;world.add(mesh);
+ bullets.push({mesh,dir,speed:38,life:1.1});
+}
+
+function updateAimFromPointer(){
+ raycaster.setFromCamera(pointer,camera);
+ if(raycaster.ray.intersectPlane(groundPlane,aimPoint)){
+  const dx=aimPoint.x-player.position.x,dz=aimPoint.z-player.position.z;
+  if(Math.hypot(dx,dz)>.01)player.rotation.y=Math.atan2(dx,dz);
+ }
+}
+
+function fire(){
+ if(shotCooldown>0)return;
+ shotCooldown=.18;
+ const origin=new THREE.Vector3();
+ player.getWorldPosition(origin);origin.y+=1.75;
+ const target=aimPoint.clone();target.y=1.15;
+ makeTracer(origin,target);
+}
+
+addEventListener('pointermove',e=>{
+ pointer.x=e.clientX/innerWidth*2-1;
+ pointer.y=-(e.clientY/innerHeight)*2+1;
+ updateAimFromPointer();
+});
+addEventListener('pointerdown',e=>{if(e.button===0){updateAimFromPointer();fire()}});
+
+function addHealthBar(enemy){
+ const bg=new THREE.Mesh(new THREE.PlaneGeometry(1.8,.16),new THREE.MeshBasicMaterial({color:0x301318,side:THREE.DoubleSide}));
+ const hp=new THREE.Mesh(new THREE.PlaneGeometry(1.7,.10),new THREE.MeshBasicMaterial({color:0xff5264,side:THREE.DoubleSide}));
+ bg.position.y=3.5;hp.position.set(0,3.5,.012);enemy.add(bg);enemy.add(hp);enemy.userData.hpBar=hp;
+}
+for(const e of enemies){e.userData.hp=3;e.userData.alive=true;addHealthBar(e)}
+
+function updateEnemies3D(dt){
+ for(const e of enemies){
+  if(!e.userData.alive)continue;
+  const dx=player.position.x-e.position.x,dz=player.position.z-e.position.z,d=Math.hypot(dx,dz)||1;
+  e.rotation.y=Math.atan2(dx,dz);
+  if(d>8&&e.position.y<2){
+   const side=Math.sin(t*1.8+e.position.x)*.55;
+   const fx=dx/d,fz=dz/d,sx=-fz,sz=fx;
+   const mx=fx*.7+sx*side,mz=fz*.7+sz*side;
+   const nx=e.position.x+mx*2.1*dt,nz=e.position.z+mz*2.1*dt;
+   if(!blocked(nx,nz)){e.position.x=nx;e.position.z=nz}
+   const gait=Math.sin(t*8+e.position.x);
+   e.userData.legs[0].rotation.x=gait*.4;e.userData.legs[1].rotation.x=-gait*.4;
+  }
+  if(e.userData.hpBar)e.userData.hpBar.scale.x=Math.max(0,e.userData.hp/3);
+ }
+}
+
+function updateBullets3D(dt){
+ for(const b of bullets){
+  const old=b.mesh.position.clone();
+  b.mesh.position.addScaledVector(b.dir,b.speed*dt);b.life-=dt;
+  for(const e of enemies){
+   if(!e.userData.alive)continue;
+   const p=e.position.clone();p.y+=1.5;
+   if(b.mesh.position.distanceTo(p)<1.05){
+    e.userData.hp--;b.life=0;
+    if(e.userData.hp<=0){e.userData.alive=false;e.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
+    break;
+   }
+  }
+ }
+ for(let i=bullets.length-1;i>=0;i--){if(bullets[i].life<=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
+}
 
 let last=performance.now();
 function frame(now){
@@ -128,9 +211,9 @@ function frame(now){
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
+ shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);
  const target=new THREE.Vector3(player.position.x,0,player.position.z);
  camera.position.lerp(new THREE.Vector3(target.x+42,52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
- enemies[0].rotation.y=Math.atan2(player.position.x-enemies[0].position.x,player.position.z-enemies[0].position.z);
  renderer.render(scene,camera);requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
