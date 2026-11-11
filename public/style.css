@@ -668,3 +668,19 @@ body.modal-open{overflow:hidden}
     min-width:105px!important;
   }
 }
+
+/* Mobile joystick ergonomic inward shift */
+.platform-mobile .mobile-controls,
+.platform-mobile #gameModal:fullscreen .mobile-controls,
+.platform-mobile #gameModal:-webkit-full-screen .mobile-controls{
+  left:max(34px,calc(env(safe-area-inset-left) + 22px))!important;
+  right:max(34px,calc(env(safe-area-inset-right) + 22px))!important;
+}
+@media(max-height:500px) and (orientation:landscape){
+  .platform-mobile .mobile-controls,
+  .platform-mobile #gameModal:fullscreen .mobile-controls,
+  .platform-mobile #gameModal:-webkit-full-screen .mobile-controls{
+    left:max(28px,calc(env(safe-area-inset-left) + 16px))!important;
+    right:max(28px,calc(env(safe-area-inset-right) + 16px))!important;
+  }
+}
