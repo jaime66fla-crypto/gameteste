@@ -498,12 +498,14 @@ function bestSniperRoof(e){
  return best;
 }
 function moveEnemyGround(e,tx,ty,dt){
+ e.movePhase=(e.movePhase||0)+dt*(e.speed>80?10:7);
  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,step=e.speed*dt;
  const nx=e.x+dx/d*step,ny=e.y+dy/d*step;
  if(!collides(nx,e.y,e.r))e.x=nx;
  if(!collides(e.x,ny,e.r))e.y=ny;
 }
 function moveEnemyOnRoof(e,tx,ty,dt){
+ e.movePhase=(e.movePhase||0)+dt*(e.speed>80?10:7);
  const b=buildings[e.roof];if(!b)return;
  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,step=e.speed*dt;
  e.x=Math.max(b.x+e.r,Math.min(b.x+b.w-e.r,e.x+dx/d*step));
@@ -757,13 +759,17 @@ function drawEnemies(){
  for(const e of enemies){
   if(!e.alive)continue;if(e.boss){drawBossTank(e);continue}
   const sniper=e.type==="sniper";
+  const phase=e.movePhase||0;
+  const moving=Math.abs(Math.sin(phase))>.04;
   drawTopDownCharacter({
    x:e.x,y:e.y,angle:e.angle,
-   outfit:sniper?"#4f614d":"#7a3338",skin:"#d1a884",hair:"#1b1f22",
-   weapon:sniper?"rifle":"pistol",shooting:false,role:sniper?"sniper":"enemy",showLaser:true
+   outfit:sniper?"#394334":"#343840",skin:"#d1a884",hair:"#171b20",
+   weapon:sniper?"rifle":"pistol",shooting:e.shootCd>.92,
+   role:sniper?"sniper":"enemy",showLaser:true,
+   moving,phase,running:false
   });
-  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-40);ctx.textAlign="left"}
-  ctx.fillStyle="#111";ctx.fillRect(e.x-18,e.y-33,36,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-18,e.y-33,36*(e.hp/e.maxHp),5);
+  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-43);ctx.textAlign="left"}
+  ctx.fillStyle="#0c0f12";ctx.fillRect(e.x-19,e.y-35,38,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-19,e.y-35,38*(e.hp/e.maxHp),5);
  }
 }
 function reportKill(){
@@ -1238,119 +1244,125 @@ function drawVehicle(x,y,a,c,w=62,h=32){
 }
 function drawTopDownCharacter(opts){
  const {
-  x,y,angle=0,outfit="#e23b43",skin="#d7b08c",hair="#151a21",
+  x,y,angle=0,outfit="#2f343c",skin="#d7b08c",hair="#151a21",
   weapon="pistol",shooting=false,step=0,bob=0,hit=false,
-  role="player",showLaser=false
+  role="player",showLaser=false,running=false,moving=false,phase=0
  }=opts;
+
+ const styles={
+  player:{cloth:outfit,vest:"#6e684b",vestHi:"#918661",pack:"#756d4c",helmet:"#242832",accent:"#a9b4bd"},
+  enemy:{cloth:"#343840",vest:"#595a4a",vestHi:"#777866",pack:"#5b5943",helmet:"#252932",accent:"#c74a4a"},
+  sniper:{cloth:"#31392d",vest:"#566247",vestHi:"#7a8968",pack:"#4e5840",helmet:"#394034",accent:"#84a665"},
+  elite:{cloth:"#252a31",vest:"#3d454e",vestHi:"#606b76",pack:"#30363d",helmet:"#171b21",accent:"#cb4141"},
+  boss:{cloth:"#31292b",vest:"#5f4b42",vestHi:"#87695a",pack:"#4a3c35",helmet:"#7a2025",accent:"#ff4f4f"}
+ };
+ const s=styles[role]||styles.player;
+ const visualAngle=Math.round(angle/(Math.PI/4))*(Math.PI/4);
+ const dirDelta=angle-visualAngle;
+ const gait=moving?Math.sin(phase||0):0;
+ const gait2=moving?Math.cos(phase||0):0;
+ const stride=(running?6.2:4.2)*gait;
+ const bodyBob=(running?2.1:1.25)*Math.abs(gait2)+(bob||0)*.35;
+ const lean=running?2.5:0;
+
  ctx.save();ctx.translate(x,y);
 
- // Layered contact shadow.
- ctx.fillStyle="rgba(0,0,0,.34)";ctx.beginPath();ctx.ellipse(5,17,21,8.5,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(8,18,27,11,0,0,Math.PI*2);ctx.fill();
- ctx.rotate(angle);
+ // Contact shadow responds to movement and gives the body stronger relief.
+ ctx.fillStyle="rgba(0,0,0,.42)";ctx.beginPath();ctx.ellipse(5,19,running?24:21,running?8:9,visualAngle*.08,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="rgba(0,0,0,.16)";ctx.beginPath();ctx.ellipse(9,20,running?31:27,12,0,0,Math.PI*2);ctx.fill();
 
- const enemy=role==="enemy",sniper=role==="sniper";
- const armor=sniper?"#35483d":enemy?"#333c43":"#25333b";
- const armorHi=sniper?"#536957":enemy?"#4c5961":"#40535d";
- const clothDark=sniper?"#27372f":enemy?"#3c292d":"#222b31";
- const helmet=sniper?"#34463b":enemy?"#30383e":"#222a30";
+ ctx.rotate(visualAngle);
+ ctx.translate(lean,0);
 
- // Legs: separated silhouette and walking pose.
- ctx.fillStyle=clothDark;
- ctx.beginPath();ctx.ellipse(-6.5,10+step,6.2,12,0,0,Math.PI*2);ctx.ellipse(7,10-step,6.2,12,0,0,Math.PI*2);ctx.fill();
- ctx.strokeStyle="rgba(255,255,255,.08)";ctx.lineWidth=1;
- ctx.beginPath();ctx.moveTo(-8,3+step);ctx.lineTo(-8,15+step);ctx.moveTo(8,3-step);ctx.lineTo(8,15-step);ctx.stroke();
+ // Legs with alternating stride and visible knee pads.
+ ctx.fillStyle="#20252b";
+ ctx.beginPath();ctx.ellipse(-7,10+stride,6.7,13,-.12,0,Math.PI*2);ctx.ellipse(7,10-stride,6.7,13,.12,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#343a40";
+ ctx.beginPath();ctx.ellipse(-7,7+stride,5,4,0,0,Math.PI*2);ctx.ellipse(7,7-stride,5,4,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle="#0c1014";
+ ctx.beginPath();ctx.ellipse(-9,20+stride,7.5,4.8,.10,0,Math.PI*2);ctx.ellipse(10,20-stride,7.5,4.8,-.10,0,Math.PI*2);ctx.fill();
 
- // Boots.
- ctx.fillStyle="#090d10";
- ctx.beginPath();ctx.ellipse(-9,18+step,6.8,4.5,.12,0,Math.PI*2);ctx.ellipse(10,18-step,6.8,4.5,-.12,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#333b40";ctx.fillRect(-13,16+step,7,2);ctx.fillRect(7,16-step,7,2);
+ // Backpack sits behind the torso like the reference sheet.
+ ctx.fillStyle="#10151a";ctx.beginPath();ctx.roundRect(-18,-10+bodyBob,16,31,7);ctx.fill();
+ ctx.fillStyle=s.pack;ctx.beginPath();ctx.roundRect(-16,-8+bodyBob,13,27,6);ctx.fill();
+ ctx.strokeStyle="rgba(15,18,18,.55)";ctx.lineWidth=1.4;
+ for(let yy=-3;yy<15;yy+=6){ctx.beginPath();ctx.moveTo(-14,yy+bodyBob);ctx.lineTo(-5,yy+bodyBob);ctx.stroke()}
+ ctx.strokeStyle="#11171b";ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(-5,-8+bodyBob);ctx.lineTo(-1,-18+bodyBob);ctx.stroke();
 
- // Backpack / radio pack.
- const packColor=sniper?"#4c5c4d":enemy?"#343c42":"#4e5b4b";
- ctx.fillStyle="#12191d";ctx.beginPath();ctx.roundRect(-16,-7+bob,15,28,6);ctx.fill();
- ctx.fillStyle=packColor;ctx.beginPath();ctx.roundRect(-14.5,-5+bob,12,24,5);ctx.fill();
- ctx.strokeStyle="#252f34";ctx.lineWidth=1.2;ctx.strokeRect(-13,-3.5+bob,9,20);
- ctx.fillStyle="#222b30";ctx.fillRect(-11,1+bob,6,3);ctx.fillRect(-11,8+bob,6,3);
- ctx.strokeStyle="#11171a";ctx.beginPath();ctx.moveTo(-4,-3+bob);ctx.lineTo(-1,-12+bob);ctx.stroke();
+ // Shoulders / upper body.
+ ctx.fillStyle=hit?"#ff777f":s.cloth;
+ ctx.beginPath();ctx.ellipse(-11,-3+bodyBob,8.5,9,-.24,0,Math.PI*2);ctx.ellipse(10,-3+bodyBob,8.5,9,.24,0,Math.PI*2);ctx.fill();
+ const torso=ctx.createLinearGradient(-16,-12,16,18);
+ torso.addColorStop(0,hit?"#ff9aa0":s.cloth);torso.addColorStop(.55,s.cloth);torso.addColorStop(1,"#151a20");
+ ctx.fillStyle=torso;ctx.beginPath();ctx.roundRect(-15,-11+bodyBob,30,30,10);ctx.fill();
+ ctx.strokeStyle="rgba(0,0,0,.48)";ctx.lineWidth=1.4;ctx.stroke();
 
- // Shoulders create a stronger top-down silhouette.
- ctx.fillStyle=hit?"#ff7d85":outfit;
- ctx.beginPath();ctx.ellipse(-10,-3+bob,8,9,-.25,0,Math.PI*2);ctx.ellipse(10,-3+bob,8,9,.25,0,Math.PI*2);ctx.fill();
+ // Tactical vest + straps + pouches.
+ ctx.fillStyle=s.vest;ctx.beginPath();ctx.roundRect(-12,-7+bodyBob,24,21,5);ctx.fill();
+ ctx.strokeStyle=s.vestHi;ctx.lineWidth=1.2;ctx.strokeRect(-10,-5+bodyBob,20,17);
+ ctx.strokeStyle="#11171b";ctx.lineWidth=2;
+ ctx.beginPath();ctx.moveTo(-8,-7+bodyBob);ctx.lineTo(-5,14+bodyBob);ctx.moveTo(8,-7+bodyBob);ctx.lineTo(5,14+bodyBob);ctx.stroke();
+ ctx.fillStyle=s.vestHi;ctx.fillRect(-9,2+bodyBob,6,5);ctx.fillRect(3,2+bodyBob,6,5);ctx.fillRect(-3,8+bodyBob,6,5);
 
- // Torso with directional light.
- const torso=ctx.createLinearGradient(-17,-12,17,18);
- torso.addColorStop(0,hit?"#ff9ca2":outfit);torso.addColorStop(.52,hit?"#ff6d77":outfit);torso.addColorStop(1,"#151f25");
- ctx.fillStyle=torso;ctx.beginPath();ctx.roundRect(-15,-10+bob,30,29,10);ctx.fill();
- ctx.strokeStyle="rgba(0,0,0,.45)";ctx.lineWidth=1.2;ctx.stroke();
+ // Belt / holster.
+ ctx.fillStyle="#11161b";ctx.fillRect(-14,13+bodyBob,28,4);
+ ctx.fillStyle="#5f676f";ctx.fillRect(-3,13.5+bodyBob,6,3);
+ ctx.fillStyle="#161b20";ctx.roundRect(-17,12+bodyBob,5,10,2);ctx.fill();
 
- // Tactical vest with pouches and shoulder straps.
- ctx.fillStyle=armor;ctx.beginPath();ctx.roundRect(-11,-6+bob,22,20,5);ctx.fill();
- ctx.strokeStyle=armorHi;ctx.lineWidth=1.1;ctx.strokeRect(-9.5,-4.5+bob,19,16);
- ctx.strokeStyle="#11191d";ctx.lineWidth=2;
- ctx.beginPath();ctx.moveTo(-8,-6+bob);ctx.lineTo(-5,13+bob);ctx.moveTo(8,-6+bob);ctx.lineTo(5,13+bob);ctx.stroke();
- ctx.fillStyle=armorHi;ctx.fillRect(-8,2+bob,6,5);ctx.fillRect(2,2+bob,6,5);
- ctx.fillStyle="#12191d";ctx.fillRect(-1,-4+bob,2,17);
+ // Neck and larger top-down head.
+ ctx.fillStyle=skin;ctx.fillRect(-3,-15+bodyBob,8,7);
+ ctx.fillStyle="#0d1115";ctx.beginPath();ctx.ellipse(0,-21+bodyBob,11.7,12.5,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=skin;ctx.beginPath();ctx.ellipse(1,-20.5+bodyBob,10,10.8,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=hair;ctx.beginPath();ctx.arc(-2,-22+bodyBob,8.4,Math.PI*.88,Math.PI*1.94);ctx.lineTo(6,-20+bodyBob);ctx.closePath();ctx.fill();
 
- // Utility belt.
- ctx.fillStyle="#11171b";ctx.fillRect(-13,12+bob,26,4);
- ctx.fillStyle="#56646b";ctx.fillRect(-3,12.5+bob,6,3);
+ // Cap / helmet with clear brim in the facing direction.
+ ctx.fillStyle=s.helmet;ctx.beginPath();ctx.ellipse(0,-24+bodyBob,11.4,7.5,0,Math.PI,Math.PI*2);ctx.fill();
+ ctx.fillStyle=s.accent;ctx.globalAlpha=.65;ctx.fillRect(5,-24+bodyBob,11,3);ctx.globalAlpha=1;
+ ctx.strokeStyle="rgba(255,255,255,.11)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-23+bodyBob,9.5,Math.PI,Math.PI*1.82);ctx.stroke();
 
- // Neck and head with rim outline.
- ctx.fillStyle=skin;ctx.fillRect(-3,-13+bob,8,6);
- ctx.fillStyle="#10171b";ctx.beginPath();ctx.ellipse(1,-18+bob,10.7,11.7,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle=skin;ctx.beginPath();ctx.ellipse(1,-18+bob,9.3,10.3,0,0,Math.PI*2);ctx.fill();
+ // Headset.
+ ctx.strokeStyle="#11161b";ctx.lineWidth=2.8;ctx.beginPath();ctx.arc(0,-22+bodyBob,10.5,Math.PI*.86,Math.PI*1.68);ctx.stroke();
+ ctx.fillStyle="#0b0f13";ctx.beginPath();ctx.arc(-8.7,-20+bodyBob,3.8,0,Math.PI*2);ctx.fill();
 
- // Hair visible around helmet/cap.
- ctx.fillStyle=hair;ctx.beginPath();ctx.arc(-2,-20+bob,7.8,Math.PI*.9,Math.PI*1.95);ctx.lineTo(6,-18+bob);ctx.closePath();ctx.fill();
+ // Face cue and brim shadow.
+ ctx.fillStyle="rgba(38,26,23,.48)";ctx.beginPath();ctx.ellipse(8,-18.5+bodyBob,2.4,1.6,0,0,Math.PI*2);ctx.fill();
 
- // Helmet / cap and brim.
- ctx.fillStyle=helmet;ctx.beginPath();ctx.ellipse(0,-22+bob,10.7,7.2,0,Math.PI,Math.PI*2);ctx.fill();
- ctx.fillStyle=armorHi;ctx.fillRect(5,-22+bob,10,3);
- ctx.strokeStyle="rgba(255,255,255,.12)";ctx.lineWidth=1;ctx.beginPath();ctx.arc(0,-21+bob,9,Math.PI,Math.PI*1.82);ctx.stroke();
+ // Arms dynamically brace the weapon.
+ const armSwing=moving?gait*(running?2.4:1.2):0;
+ ctx.strokeStyle=s.cloth;ctx.lineWidth=8.5;ctx.lineCap="round";
+ ctx.beginPath();ctx.moveTo(8,-4+bodyBob);ctx.lineTo(19,-9+bodyBob-armSwing);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(8,7+bodyBob);ctx.lineTo(20,10+bodyBob+armSwing);ctx.stroke();
+ ctx.strokeStyle=skin;ctx.lineWidth=5.2;
+ ctx.beginPath();ctx.moveTo(18,-9+bodyBob-armSwing);ctx.lineTo(28,-3+bodyBob);ctx.stroke();
+ ctx.beginPath();ctx.moveTo(19,10+bodyBob+armSwing);ctx.lineTo(29,4+bodyBob);ctx.stroke();
+ ctx.fillStyle="#11161b";ctx.beginPath();ctx.arc(28,-3+bodyBob,3.9,0,Math.PI*2);ctx.arc(29,4+bodyBob,3.9,0,Math.PI*2);ctx.fill();
 
- // Face direction cue.
- ctx.fillStyle="rgba(72,44,34,.55)";ctx.beginPath();ctx.ellipse(8,-17+bob,2.2,1.5,0,0,Math.PI*2);ctx.fill();ctx.fillStyle="rgba(255,255,255,.55)";ctx.beginPath();ctx.arc(8.8,-18+bob,1,0,Math.PI*2);ctx.fill();
+ // Weapon angle can still follow the exact aim direction inside the snapped 8-way body.
+ ctx.save();ctx.translate(26,bodyBob-.5);ctx.rotate(dirDelta);
+ drawWeaponModel(weapon,0,0,role==="sniper"?.43:.39,shooting);
+ ctx.restore();
 
- // Headset / earpiece.
- ctx.strokeStyle="#11171b";ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,-20+bob,10,Math.PI*.88,Math.PI*1.67);ctx.stroke();
- ctx.fillStyle="#0d1215";ctx.beginPath();ctx.arc(-8,-18+bob,3.5,0,Math.PI*2);ctx.fill();
-
- // Arms and sleeves, aimed forward.
- ctx.strokeStyle=outfit;ctx.lineWidth=8;ctx.lineCap="round";
- ctx.beginPath();ctx.moveTo(8,-3+bob);ctx.lineTo(19,-8+bob);ctx.stroke();
- ctx.beginPath();ctx.moveTo(8,7+bob);ctx.lineTo(20,9+bob);ctx.stroke();
- ctx.strokeStyle=skin;ctx.lineWidth=5;
- ctx.beginPath();ctx.moveTo(18,-8+bob);ctx.lineTo(28,-3+bob);ctx.stroke();
- ctx.beginPath();ctx.moveTo(19,9+bob);ctx.lineTo(28,4+bob);ctx.stroke();
-
- // Gloves.
- ctx.fillStyle="#12181c";ctx.beginPath();ctx.arc(28,-3+bob,3.7,0,Math.PI*2);ctx.arc(29,4+bob,3.7,0,Math.PI*2);ctx.fill();
-
- // Weapon sits above hands for a cleaner combat silhouette.
- drawWeaponModel(weapon,26,bob-.5,sniper?.40:.36,shooting);
-
- // Small muzzle bloom on the character itself.
  if(shooting){
-  ctx.fillStyle="rgba(255,221,111,.28)";ctx.beginPath();ctx.arc(45,bob,10,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="rgba(255,204,95,.20)";ctx.beginPath();ctx.arc(47,bodyBob,12,0,Math.PI*2);ctx.fill();
  }
-
  if(showLaser){
-  ctx.strokeStyle=sniper?"#73ff9b":"#ff5959";ctx.lineWidth=1;ctx.globalAlpha=.52;
-  ctx.beginPath();ctx.moveTo(41,0);ctx.lineTo(sniper?116:80,0);ctx.stroke();ctx.globalAlpha=1;
+  ctx.save();ctx.rotate(dirDelta);ctx.strokeStyle=role==="sniper"?"#80ff9f":"#ff5c5c";ctx.lineWidth=1;ctx.globalAlpha=.48;
+  ctx.beginPath();ctx.moveTo(42,0);ctx.lineTo(role==="sniper"?126:84,0);ctx.stroke();ctx.restore();
  }
  ctx.restore();
 }
 function drawPlayer(){
  if(player.inCar||player.dead)return;
  const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1;
+ const running=moving&&!!keys.shift;
  const bob=moving?Math.sin(player.walk)*1.4:0,step=moving?Math.sin(player.walk)*4.2:0;
  const recoil=player.hitT>0?player.hitKick*(.65+.35*Math.sin(performance.now()/24)):0;
  drawTopDownCharacter({
   x:player.x-Math.cos(player.angle)*recoil,
   y:player.y-Math.sin(player.angle)*recoil,
   angle:player.angle,outfit:characterStyle.outfit,skin:characterStyle.skin,hair:characterStyle.hair,
-  weapon:player.weapon,shooting:player.shootCd>.10,step,bob,hit:player.hitT>0,role:"player"
+  weapon:player.weapon,shooting:player.shootCd>.10,step,bob,hit:player.hitT>0,role:"player",
+  moving,running,phase:player.walk
  });
 }
 function drawRemotePlayers(){
@@ -1363,7 +1375,8 @@ function drawRemotePlayers(){
   else{
    drawTopDownCharacter({
     x:rxp,y:ryp,angle:p.angle||0,outfit:"#3f9ee8",skin:"#d7b08c",hair:"#151a21",
-    weapon:p.weapon||"pistol",shooting:!!p.shooting,role:"player"
+    weapon:p.weapon||"pistol",shooting:!!p.shooting,role:"player",
+    moving:Math.hypot((p.x??rxp)-rxp,(p.y??ryp)-ryp)>.5,phase:performance.now()/120
    });
   }
   ctx.save();ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#dff5ff";ctx.fillText(p.name||"Jogador",rxp,ryp-40);
