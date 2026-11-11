@@ -558,3 +558,113 @@ body.modal-open{overflow:hidden}
     font-size:10px!important;
   }
 }
+
+/* Mobile HUD cleanup based on fullscreen landscape layout */
+.platform-mobile .game-modal-topbar{
+  min-height:38px!important;
+  padding:3px 8px!important;
+  background:#071018e8!important;
+  position:relative!important;
+  z-index:120!important;
+}
+.platform-mobile .game-modal-topbar>div:first-child{
+  gap:7px!important;
+}
+.platform-mobile .game-modal-topbar .badge{
+  font-size:8px!important;
+}
+.platform-mobile .game-modal-topbar strong{
+  font-size:11px!important;
+}
+.platform-mobile .game-modal-topbar .game-actions{
+  gap:4px!important;
+}
+.platform-mobile .game-modal-topbar .ghost{
+  padding:5px 8px!important;
+  font-size:9px!important;
+  min-height:28px!important;
+}
+
+.platform-mobile .mobile-controls,
+.platform-mobile #gameModal:fullscreen .mobile-controls,
+.platform-mobile #gameModal:-webkit-full-screen .mobile-controls{
+  position:fixed!important;
+  left:max(12px,env(safe-area-inset-left))!important;
+  right:max(12px,env(safe-area-inset-right))!important;
+  bottom:max(12px,env(safe-area-inset-bottom))!important;
+  top:auto!important;
+  display:flex!important;
+  justify-content:space-between!important;
+  align-items:flex-end!important;
+  pointer-events:none!important;
+  z-index:9999!important;
+  padding:0!important;
+}
+
+.platform-mobile #moveStick{
+  position:relative!important;
+  left:0!important;
+  bottom:0!important;
+}
+
+.platform-mobile #aimStick{
+  position:relative!important;
+  right:0!important;
+  bottom:0!important;
+}
+
+/* actions sit above/right instead of blocking the center */
+.platform-mobile .mobile-actions,
+.platform-mobile #gameModal:fullscreen .mobile-actions,
+.platform-mobile #gameModal:-webkit-full-screen .mobile-actions{
+  position:absolute!important;
+  right:calc(clamp(118px,24vh,175px) + 22px)!important;
+  bottom:calc(clamp(118px,24vh,175px) + 12px)!important;
+  transform:none!important;
+  display:grid!important;
+  grid-template-columns:repeat(2,auto)!important;
+  gap:7px!important;
+  align-items:center!important;
+  pointer-events:auto!important;
+}
+.platform-mobile .mobile-actions button{
+  min-width:58px!important;
+  min-height:34px!important;
+  padding:5px 8px!important;
+  font-size:10px!important;
+  border-radius:10px!important;
+  background:#0b1721e8!important;
+  border:1px solid #425665!important;
+  box-shadow:0 5px 16px #0008!important;
+}
+.platform-mobile .mobile-actions button[data-action="e"]{
+  grid-column:1/-1!important;
+  min-width:123px!important;
+}
+
+@media(max-height:500px) and (orientation:landscape){
+  .platform-mobile .game-modal-topbar{
+    min-height:32px!important;
+    padding:2px 6px!important;
+  }
+  .platform-mobile .game-modal-topbar .ghost{
+    padding:4px 6px!important;
+    font-size:8px!important;
+    min-height:24px!important;
+  }
+  .platform-mobile .mobile-actions,
+  .platform-mobile #gameModal:fullscreen .mobile-actions,
+  .platform-mobile #gameModal:-webkit-full-screen .mobile-actions{
+    right:126px!important;
+    bottom:116px!important;
+    gap:5px!important;
+  }
+  .platform-mobile .mobile-actions button{
+    min-width:50px!important;
+    min-height:29px!important;
+    font-size:9px!important;
+  }
+  .platform-mobile .mobile-actions button[data-action="e"]{
+    min-width:105px!important;
+  }
+}
