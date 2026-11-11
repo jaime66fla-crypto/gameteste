@@ -253,3 +253,139 @@ body.modal-open{overflow:hidden}
 .character-editor-card{width:min(880px,94vw);display:grid;grid-template-columns:1fr 1fr;gap:30px;overflow:hidden}.character-preview-wrap{min-height:430px;position:relative;background:radial-gradient(circle at 50% 55%,#164a622c,transparent 37%),#08131d;border:1px solid #ffffff12;border-radius:16px;padding:22px}.character-preview-wrap h2{font-size:2.4rem}.character-preview{--s:2.25;top:60%}.character-options{display:flex;flex-direction:column;justify-content:center;gap:12px}.character-options label{display:flex;align-items:center;justify-content:space-between;font-weight:900;font-size:13px;color:#b6c6d1}.character-options input[type=color]{width:52px;height:32px;border:0;background:transparent}.preset-row{display:flex;gap:8px;margin-top:-5px;margin-bottom:7px}.preset-row button{width:30px;height:30px;border-radius:50%;border:2px solid #ffffff2c;cursor:pointer}.preset-row button:hover{transform:scale(1.12);border-color:#fff}.preset-row .red{background:#e23b43}.preset-row .blue{background:#2c7cff}.preset-row .green{background:#65ff8b}.preset-row .yellow{background:#f2c94c}.preset-row .purple{background:#a855f7}.preset-row .black{background:#232a35}.character-save{width:100%;margin-top:7px}.character-options small{color:#667d8e;line-height:1.5}
 @media(max-width:850px){.launcher-nav-actions{display:none}.launcher-main{grid-template-columns:1fr;padding-top:30px}.launcher-showcase{display:none}.launcher-copy h1{font-size:clamp(3.4rem,15vw,6rem)}.launcher-cards{grid-template-columns:1fr}.launcher-screen{height:auto}.update-list{grid-template-columns:1fr}.weapon-gallery{grid-template-columns:1fr 1fr}.character-editor-card{grid-template-columns:1fr}.character-preview-wrap{min-height:330px}.character-preview{--s:1.7}.launcher-panel{padding:10px}}
 @media(max-width:540px){.weapon-gallery{grid-template-columns:1fr}.launcher-panel-card{padding:22px 16px}.launcher-buttons{flex-direction:column;align-items:stretch}.launcher-buttons>*{width:100%}.launcher-status{gap:9px 14px}}
+
+/* Arsenal art aligned with the current in-game 2.5D canvas style */
+.weapon-art{
+  --gun:#252d33;--metal:#88939c;--accentGun:#ffe36e;
+  height:128px;
+  background:
+    linear-gradient(90deg,transparent 49%,#ffffff08 50%,transparent 51%),
+    linear-gradient(0deg,transparent 49%,#ffffff08 50%,transparent 51%),
+    linear-gradient(155deg,#1b2b34,#101920 58%,#0b1117);
+  background-size:34px 34px,34px 34px,auto;
+  border:1px solid #2a3b46;
+  box-shadow:inset 0 -18px 35px #0006;
+}
+.weapon-art:before{
+  content:"";
+  position:absolute;
+  left:12%;
+  right:12%;
+  bottom:17px;
+  height:13px;
+  border-radius:50%;
+  background:#0008;
+  filter:blur(2px);
+}
+.weapon-art i,.weapon-art b{z-index:2;box-shadow:none}
+
+/* pistol: same blocky proportions used by the canvas player weapon */
+.pistol-art{--accentGun:#ffe36e}
+.pistol-art i{
+  width:54px;height:15px;left:42%;top:43%;
+  background:var(--gun);
+  border-radius:3px 5px 3px 3px;
+  box-shadow:18px 2px 0 -4px var(--metal),-10px 1px 0 -5px #151a21;
+}
+.pistol-art b{
+  width:14px;height:31px;left:49%;top:52%;
+  background:#1c2430;transform:skew(-8deg) rotate(2deg);
+  border-radius:2px 2px 5px 5px;
+}
+.pistol-art:after{
+  content:"";position:absolute;z-index:3;width:11px;height:7px;
+  left:65%;top:46%;background:var(--accentGun);
+  clip-path:polygon(0 50%,100% 0,100% 100%);
+  filter:drop-shadow(0 0 7px #ffd45c);
+}
+
+/* smg */
+.smg-art{--accentGun:#7ee8ff}
+.smg-art i{
+  width:82px;height:18px;left:28%;top:44%;
+  background:#27313a;border-radius:4px;
+  box-shadow:26px 0 0 -5px var(--metal),-20px 4px 0 -6px #151a21;
+}
+.smg-art b{
+  width:17px;height:34px;left:48%;top:53%;
+  background:#18242d;transform:skew(-6deg);
+}
+.smg-art:after{
+  content:"";position:absolute;z-index:3;left:35%;top:38%;
+  width:27px;height:7px;background:#43515d;border-radius:3px;
+  box-shadow:70px 9px 0 -1px var(--accentGun);
+}
+
+/* shotgun */
+.shotgun-art{--accentGun:#ffbd69}
+.shotgun-art i{
+  width:118px;height:13px;left:18%;top:45%;
+  background:#303941;border-radius:7px;
+  box-shadow:44px 0 0 -3px #687783,-33px 4px 0 -3px #513828;
+}
+.shotgun-art b{
+  width:45px;height:15px;left:24%;top:52%;
+  background:#65452f;transform:rotate(4deg);border-radius:6px;
+}
+.shotgun-art:after{
+  content:"";position:absolute;z-index:3;left:47%;top:50%;
+  width:36px;height:7px;background:#171d23;border-radius:4px;
+  box-shadow:51px -2px 0 -1px var(--accentGun);
+}
+
+/* rifle */
+.rifle-art{--accentGun:#b9ff7a}
+.rifle-art i{
+  width:126px;height:14px;left:14%;top:46%;
+  background:#28323a;border-radius:4px;
+  box-shadow:58px 0 0 -4px #83919b,-35px 5px 0 -4px #1d252b;
+}
+.rifle-art b{
+  width:18px;height:35px;left:47%;top:53%;
+  background:#202930;transform:skew(-7deg);
+}
+.rifle-art:after{
+  content:"";position:absolute;z-index:3;
+  width:34px;height:11px;border:3px solid var(--accentGun);
+  left:46%;top:34%;border-radius:50%;
+  box-shadow:55px 15px 0 -4px var(--accentGun);
+}
+
+/* lmg */
+.lmg-art{--accentGun:#ffd36a}
+.lmg-art i{
+  width:128px;height:18px;left:13%;top:43%;
+  background:#29343d;border-radius:4px;
+  box-shadow:62px 0 0 -4px #84919a,-30px 4px 0 -3px #1b242b;
+}
+.lmg-art b{
+  width:39px;height:34px;left:43%;top:52%;
+  border-radius:50% 50% 42% 42%;
+  background:#1a2228;transform:none;
+  box-shadow:inset 0 0 0 5px #303b43;
+}
+.lmg-art:after{
+  content:"";position:absolute;z-index:3;left:31%;top:35%;
+  width:42px;height:8px;background:#3c4851;
+  box-shadow:91px 14px 0 -2px var(--accentGun);
+}
+
+/* sawed-off */
+.sawed-art{--accentGun:#ff8f5a}
+.sawed-art i{
+  width:84px;height:17px;left:29%;top:44%;
+  background:#323c44;border-radius:8px;
+  box-shadow:35px 0 0 -4px #778690,-23px 4px 0 -3px #65442e;
+}
+.sawed-art b{
+  width:31px;height:17px;left:31%;top:54%;
+  background:#70492f;transform:rotate(7deg);border-radius:6px;
+}
+.sawed-art:after{
+  content:"";position:absolute;z-index:3;left:58%;top:45%;
+  width:26px;height:6px;background:var(--accentGun);
+  clip-path:polygon(0 35%,100% 0,100% 100%);
+  filter:drop-shadow(0 0 6px var(--accentGun));
+}
+.weapon-card:hover .weapon-art{transform:translateY(-2px);border-color:#4e6472}
+.weapon-card:hover .weapon-art:after{filter:drop-shadow(0 0 10px var(--accentGun))}
