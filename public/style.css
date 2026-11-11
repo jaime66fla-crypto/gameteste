@@ -796,3 +796,114 @@ body.modal-open{overflow:hidden}
   background:linear-gradient(135deg,#7ee8ff,#4fc6eb)!important;color:#031018!important;border-color:#7ee8ff!important
 }
 .game-modal-topbar{background:linear-gradient(180deg,#09131ce8,#071018e8)}
+
+
+/* Tactical menu character updated to match the current in-game operator */
+.tactical-menu-char{
+  --s:2.7;
+  width:96px;height:132px;
+  transform:translate(-50%,-50%) scale(var(--s)) rotate(-7deg);
+  filter:drop-shadow(0 20px 14px #000a);
+}
+.character-preview.tactical-menu-char{--s:2.15;top:62%}
+.tactical-menu-char .char-shadow{
+  width:68px;height:18px;left:12px;bottom:2px;
+  background:rgba(0,0,0,.58);filter:blur(1px);transform:rotate(7deg)
+}
+.tactical-menu-char .char-leg{
+  width:18px;height:44px;bottom:17px;background:#20252b;border-radius:9px;
+  box-shadow:inset -4px -6px 0 #0003,inset 2px 0 0 #ffffff08
+}
+.tactical-menu-char .leg-a{left:24px;transform:rotate(8deg)}
+.tactical-menu-char .leg-b{right:24px;transform:rotate(-7deg)}
+.tactical-menu-char .char-boot{
+  position:absolute;width:22px;height:10px;bottom:12px;background:#0b0f13;border-radius:7px;
+  box-shadow:inset 0 2px 0 #30363d
+}
+.tactical-menu-char .boot-a{left:18px;transform:rotate(9deg)}
+.tactical-menu-char .boot-b{right:18px;transform:rotate(-8deg)}
+.tactical-menu-char .char-pack{
+  position:absolute;left:11px;top:43px;width:27px;height:49px;border-radius:10px;
+  background:linear-gradient(145deg,#8a8057,#635d43 62%,#39382e);
+  border:2px solid #1a1d1d;box-shadow:inset -5px -8px 0 #0002,0 7px 10px #0004
+}
+.tactical-menu-char .char-pack:before{
+  content:"";position:absolute;left:5px;right:5px;top:8px;height:4px;background:#302f28;
+  box-shadow:0 9px 0 #302f28,0 18px 0 #302f28,0 27px 0 #302f28
+}
+.tactical-menu-char .char-body{
+  left:24px;top:40px;width:52px;height:61px;border-radius:20px 22px 16px 16px;
+  background:linear-gradient(145deg,var(--char-outfit),var(--char-outfit) 56%,#171d22);
+  box-shadow:inset -8px -9px 0 #0003,inset 3px 2px 0 #ffffff08
+}
+.tactical-menu-char .char-vest{
+  position:absolute;left:30px;top:48px;width:40px;height:39px;border-radius:9px;
+  background:linear-gradient(145deg,#807755,#615c45);border:1px solid #252722;
+  box-shadow:inset 0 -8px 0 #0002
+}
+.tactical-menu-char .char-vest:before,
+.tactical-menu-char .char-vest:after{
+  content:"";position:absolute;top:7px;width:5px;height:29px;background:#282b28;border-radius:3px
+}
+.tactical-menu-char .char-vest:before{left:7px}.tactical-menu-char .char-vest:after{right:7px}
+.tactical-menu-char .char-head{
+  left:35px;top:17px;width:35px;height:38px;border-radius:48%;
+  background:var(--char-skin);box-shadow:inset -6px -5px 0 #0002
+}
+.tactical-menu-char .char-hair{
+  left:35px;top:13px;width:37px;height:20px;border-radius:22px 22px 9px 9px;background:var(--char-hair)
+}
+.tactical-menu-char .char-cap{
+  position:absolute;left:32px;top:11px;width:42px;height:20px;border-radius:22px 22px 8px 8px;
+  background:linear-gradient(145deg,#303640,#1b2027);box-shadow:inset -5px -4px 0 #0003
+}
+.tactical-menu-char .char-cap:after{
+  content:"";position:absolute;right:-13px;top:11px;width:21px;height:6px;border-radius:5px;background:#4d5661
+}
+.tactical-menu-char .char-headset{
+  position:absolute;left:31px;top:17px;width:44px;height:23px;border:3px solid #11161b;border-bottom:0;border-radius:24px 24px 0 0
+}
+.tactical-menu-char .char-headset:before{
+  content:"";position:absolute;left:-4px;top:11px;width:9px;height:13px;border-radius:5px;background:#0b1014;
+  box-shadow:40px 0 0 #0b1014
+}
+.tactical-menu-char .char-arm{
+  position:absolute;height:13px;border-radius:8px;background:var(--char-skin);z-index:4;
+  box-shadow:inset -3px -3px 0 #0002
+}
+.tactical-menu-char .arm-a{left:62px;top:56px;width:41px;transform:rotate(-10deg)}
+.tactical-menu-char .arm-b{left:57px;top:73px;width:43px;transform:rotate(10deg)}
+.tactical-menu-char .char-glove{
+  position:absolute;width:11px;height:11px;border-radius:50%;background:#11161b;z-index:6
+}
+.tactical-menu-char .glove-a{left:97px;top:56px}.tactical-menu-char .glove-b{left:93px;top:76px}
+.tactical-menu-char .char-gun{
+  position:absolute;left:87px;top:59px;width:64px;height:14px;border-radius:4px;
+  background:linear-gradient(180deg,#434d55,#1a2025);z-index:5;
+  box-shadow:none;transform:rotate(-2deg);transform-origin:left center
+}
+.tactical-menu-char .char-gun:before{
+  content:"";position:absolute;left:17px;top:-7px;width:25px;height:7px;border-radius:3px;background:#1d252b;
+  box-shadow:inset 0 1px 0 #788691
+}
+.tactical-menu-char .char-gun:after{
+  content:"";position:absolute;right:-20px;top:4px;width:23px;height:6px;border-radius:3px;background:#7a8791;
+  box-shadow:-8px 0 0 #222a30
+}
+.tactical-menu-char .char-gun i{
+  position:absolute;left:20px;top:11px;width:11px;height:26px;background:#161d22;
+  transform:skew(-7deg);border-radius:2px 2px 5px 5px
+}
+.tactical-menu-char .char-gun b{
+  position:absolute;left:7px;top:11px;width:18px;height:7px;border:3px solid #12171b;border-top:0;border-radius:0 0 12px 12px
+}
+.showcase-character.tactical-menu-char{
+  animation:menuOperatorIdle 2.4s ease-in-out infinite;
+}
+@keyframes menuOperatorIdle{
+  0%,100%{transform:translate(-50%,-50%) scale(var(--s)) rotate(-7deg) translateY(0)}
+  50%{transform:translate(-50%,-50%) scale(var(--s)) rotate(-7deg) translateY(-2px)}
+}
+@media(max-width:1100px){
+  .showcase-character.tactical-menu-char{--s:2.35}
+}
