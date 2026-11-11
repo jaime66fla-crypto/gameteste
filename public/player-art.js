@@ -14,7 +14,7 @@ window.playerArt=(()=>{
  ];
  const scale=57/398;
  const direction=angle=>{
-  const a=Math.atan2(Math.sin(angle)*.70,Math.cos(angle)+.18*Math.sin(angle));
+  const a=(window.gameProjection?.angle(angle)??angle);
   return (Math.round(a/(Math.PI/4))+8)%8;
  };
  function pose(angle){
@@ -27,7 +27,7 @@ window.playerArt=(()=>{
   const bob=opts.moving?Math.abs(gait)*(opts.running?1.6:.85):0;
   ctx.save();ctx.translate(opts.x,opts.y);
   // Inverse world shear / tilt keeps the sprite upright and correctly proportioned.
-  ctx.transform(1,0,-.18/.70,1/.70,0,0);
+  window.gameProjection?.undo(ctx);
   ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(0,10,14,4.5,0,0,Math.PI*2);ctx.fill();
   const gun=()=>{
    ctx.save();ctx.translate(p.x,p.y);ctx.rotate(opts.gunAngle);

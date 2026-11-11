@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - 'public/**'
+      - 'tests/**'
       - '.github/workflows/validate-game.yml'
 jobs:
   validate:
@@ -17,6 +18,9 @@ jobs:
       - name: JavaScript syntax
         run: |
           node --check public/game.js
+          node --check public/player-art.js
+          node --check public/world-art.js
+          node tests/isometric.test.cjs
       - name: Check essential browser game controls
         run: |
           node - <<'NODE'

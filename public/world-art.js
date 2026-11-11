@@ -8,11 +8,11 @@ window.worldArt=(()=>{
   img.src='assets/world/'+name+'.png';
  }
  const data=()=>window.worldArtFrames;
- const direction=a=>(Math.round(Math.atan2(Math.sin(a)*.70,Math.cos(a)+.18*Math.sin(a))/(Math.PI/2))+4)%4;
+ const direction=a=>(Math.round((window.gameProjection?.angle(a)??a)/(Math.PI/2))+4)%4;
  function blit(ctx,sheet,f,x,y,w,h){
   ctx.drawImage(images[sheet],...f,x,y,w,h);
  }
- function upright(ctx,x,y){ctx.translate(x,y);ctx.transform(1,0,-.18/.70,1/.70,0,0)}
+ function upright(ctx,x,y){ctx.translate(x,y);window.gameProjection?.undo(ctx)}
  function entity(ctx,kind,o){
   if(!ready.units||!data())return false;
   const row={enemy:0,sniper:1,jeep:2,boss:3}[kind];
