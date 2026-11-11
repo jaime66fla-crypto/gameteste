@@ -23,7 +23,7 @@ function getViewZoom(){return player.weapon==="rifle"?.78:1}
 function screenToWorldY(y){const z=getViewZoom();return cam.y+(y-canvas.height*(1-VIEW_TILT)/2)/(VIEW_TILT*z);}
 function worldToScreenY(y){const z=getViewZoom();return (y-cam.y)*VIEW_TILT*z+canvas.height*(1-VIEW_TILT)/2;}
 const keys={},cam={x:0,y:0},mouse={x:0,y:0,down:false};
-const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null};
+const player={x:480,y:440,r:16,speed:190,inCar:false,angle:0,walk:0,ammo:12,reserve:72,maxAmmo:12,reloading:false,reloadT:0,shootCd:0,health:100,maxHealth:100,weapon:"pistol",carHitCd:0,hidden:false,dead:false,respawnT:0,roof:null,hitT:0,hitKick:0};
 const weapons={
  pistol:{name:"PISTOLA",mag:12,reserve:72,fire:.16,speed:980,spread:.025,pellets:1,damage:1,color:"#ffe36e"},
  smg:{name:"SMG",mag:30,reserve:120,fire:.075,speed:930,spread:.07,pellets:1,damage:1,color:"#7ee8ff"},
@@ -33,7 +33,7 @@ const weapons={
  sawedoff:{name:"ESCOPETA CERRADA",mag:2,reserve:40,fire:.78,speed:760,spread:.52,pellets:10,damage:1,color:"#ff8f5a"}
 };
 const car={x:590,y:440,angle:0,speed:0,acc:430,max:470,turn:2.5,health:100,nitro:100,enemyHitCd:0};
-let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
+let started=false,paused=false,missionDone=false,flash=0,skids=[],sparks=[],damageChunks=[],bullets=[],remoteBullets=[],enemyBullets=[],missiles=[],shells=[],hitMarks=[],weaponPickups=[],pickupRespawns=[];
 let socket=null,myId=null,netTimer=0,connectionStatus="offline",reconnectAttempts=0,playerName="Jogador",roomCode="cidade-1",gameMode="solo",kills=0,bossSpawned=false,bossDefeated=false;
 let bossPhaseIntro=0,bossPhaseIntroTotal=3,bossIntroBoss=null;
 
@@ -189,11 +189,31 @@ function updatePickups(dt){
 }
 function updateBushState(){player.hidden=!player.inCar&&!player.dead&&bushes.some(b=>Math.hypot(player.x-b.x,player.y-b.y)<b.r*.72)}
 
+function spawnDamageBurst(x,y,angle=player.angle,strong=false){
+ const count=strong?18:9;
+ for(let i=0;i<count;i++){
+  const a=angle+Math.PI+(Math.random()-.5)*1.7;
+  const speed=(strong?115:75)+Math.random()*(strong?180:120);
+  damageChunks.push({
+   x:x+(Math.random()-.5)*12,y:y+(Math.random()-.5)*12,
+   vx:Math.cos(a)*speed,vy:Math.sin(a)*speed,
+   t:(strong?.65:.38)+Math.random()*.35,
+   maxT:strong?1:.7,
+   r:1.8+Math.random()*(strong?3.8:2.5),
+   spin:(Math.random()-.5)*10,
+   rot:Math.random()*6.28,
+   dark:Math.random()<.35
+  });
+ }
+}
 function damagePlayer(amount){
  if(player.dead||player.inCar)return;
  player.health=Math.max(0,player.health-amount);
+ player.hitT=.22;
+ player.hitKick=Math.min(7,2.5+amount*.7);
+ spawnDamageBurst(player.x,player.y,player.angle,player.health<=0);
  flash=Math.max(flash,.7);playSound("damage");
- if(navigator.vibrate&&selectedPlatform==="mobile")navigator.vibrate(45);
+ if(navigator.vibrate&&selectedPlatform==="mobile")navigator.vibrate(player.health<=0?[80,45,120]:45);
  if(player.health<=0)killPlayer();
 }
 function killPlayer(){
@@ -856,7 +876,7 @@ function update(dt){
   if(player.respawnT<=0)respawnPlayer();
   return;
  }
- player.carHitCd=Math.max(0,player.carHitCd-dt);car.enemyHitCd=Math.max(0,car.enemyHitCd-dt);updateTraffic(dt);updateBushState();updatePickups(dt);flash=Math.max(0,flash-dt*2);player.shootCd=Math.max(0,player.shootCd-dt);
+ player.carHitCd=Math.max(0,player.carHitCd-dt);car.enemyHitCd=Math.max(0,car.enemyHitCd-dt);player.hitT=Math.max(0,player.hitT-dt);player.hitKick=Math.max(0,player.hitKick-dt*34);updateTraffic(dt);updateBushState();updatePickups(dt);flash=Math.max(0,flash-dt*2);player.shootCd=Math.max(0,player.shootCd-dt);
  if(player.reloading){player.reloadT-=dt;if(player.reloadT<=0){const need=player.maxAmmo-player.ammo,take=Math.min(need,player.reserve);player.ammo+=take;player.reserve-=take;player.reloading=false}}
  if(player.inCar){
   if(car.health<=0){
@@ -903,7 +923,7 @@ function update(dt){
  ensurePlayerNotStuck();updateBushState();updateBullets(dt);updateEnemies(dt);
  if(gameMode==="solo"&&!bossSpawned&&!bossDefeated&&enemies.filter(e=>e.alive&&!e.boss).length===0)spawnBoss();
  if(!missionDone&&Math.hypot(player.x-mission.x,player.y-mission.y)<70){missionDone=true;flash=1}
- skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);
+ skids.forEach(s=>s.t-=dt*.34);skids=skids.filter(s=>s.t>0);sparks.forEach(s=>{s.x+=s.vx*dt;s.y+=s.vy*dt;s.t-=dt});sparks=sparks.filter(s=>s.t>0);damageChunks.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.vx*=Math.pow(.055,dt);p.vy*=Math.pow(.055,dt);p.vy+=70*dt;p.rot+=p.spin*dt;p.t-=dt});damageChunks=damageChunks.filter(p=>p.t>0);
  updateEngineSound();
  const z=getViewZoom(),visibleWorldWidth=canvas.width/z,visibleWorldHeight=canvas.height/(VIEW_TILT*z);const tx=player.x-visibleWorldWidth/2,ty=player.y-visibleWorldHeight/2;cam.x+=(Math.max(0,Math.min(W-visibleWorldWidth,tx))-cam.x)*Math.min(1,dt*5.5);cam.y+=(Math.max(0,Math.min(H-visibleWorldHeight,ty))-cam.y)*Math.min(1,dt*5.5);netTimer+=dt;if(netTimer>=.033){netTimer=0;sendNetState()}
 }
@@ -966,11 +986,14 @@ function drawVehicle(x,y,a,c,w=62,h=32){
 function drawPlayer(){
  if(player.inCar||player.dead)return;
  const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1,bob=moving?Math.sin(player.walk)*2:0,step=moving?Math.sin(player.walk)*5:0;
- ctx.save();ctx.translate(player.x,player.y);
+ const recoil=player.hitT>0?player.hitKick*(.65+.35*Math.sin(performance.now()/24)):0;
+ ctx.save();ctx.translate(player.x-Math.cos(player.angle)*recoil,player.y-Math.sin(player.angle)*recoil);
+ if(player.hitT>0){ctx.rotate((Math.random()-.5)*.09);}
+
  ctx.fillStyle="#0006";ctx.beginPath();ctx.ellipse(5,13,19,8,0,0,Math.PI*2);ctx.fill();
  ctx.save();ctx.rotate(player.angle);
  ctx.fillStyle="#1c2430";ctx.beginPath();ctx.ellipse(-6,8+step,6,11,0,0,Math.PI*2);ctx.ellipse(7,8-step,6,11,0,0,Math.PI*2);ctx.fill();
- ctx.fillStyle="#e23b43";ctx.beginPath();ctx.ellipse(0,bob,17,14,0,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle=player.hitT>0?"#ff7a7f":"#e23b43";ctx.beginPath();ctx.ellipse(0,bob,17,14,0,0,Math.PI*2);ctx.fill();
  ctx.fillStyle="#d7b08c";ctx.beginPath();ctx.arc(2,-5+bob,10,0,Math.PI*2);ctx.fill();
  ctx.fillStyle="#151a21";ctx.beginPath();ctx.arc(-1,-8+bob,10,Math.PI,Math.PI*2);ctx.fill();
  ctx.fillStyle="#d7b08c";ctx.fillRect(9,-8+bob,16,5);ctx.fillRect(9,4+bob,16,5);
@@ -1133,7 +1156,7 @@ function render(){
   ctx.shadowColor="#ff3b3b";ctx.shadowBlur=12;ctx.fillStyle="#ff6565";ctx.beginPath();ctx.arc(5,0,3,0,Math.PI*2);ctx.fill();ctx.restore();
  });
  ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
- sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});hitMarks.forEach(h=>{ctx.strokeStyle="#fff";ctx.beginPath();ctx.moveTo(h.x-8,h.y-8);ctx.lineTo(h.x+8,h.y+8);ctx.moveTo(h.x+8,h.y-8);ctx.lineTo(h.x-8,h.y+8);ctx.stroke()});
+ sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.strokeStyle="#fff";ctx.beginPath();ctx.moveTo(h.x-8,h.y-8);ctx.lineTo(h.x+8,h.y+8);ctx.moveTo(h.x+8,h.y-8);ctx.lineTo(h.x-8,h.y+8);ctx.stroke()});
  ctx.restore();hud()
 }
 let last=performance.now();function loop(t){const dt=Math.min(.033,(t-last)/1000);last=t;update(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
