@@ -1600,6 +1600,8 @@ function drawCrosshair(){
  if(player.inCar||!started||bossPhaseIntro>0)return;const x=worldToScreenX(mouse.x,mouse.y),y=worldToScreenY(mouse.y,mouse.x)-buildingHeight(mouse.layer)*getViewZoom();ctx.strokeStyle="#ffffffdd";ctx.lineWidth=2;ctx.beginPath();ctx.arc(x,y,9,0,Math.PI*2);ctx.moveTo(x-15,y);ctx.lineTo(x-5,y);ctx.moveTo(x+5,y);ctx.lineTo(x+15,y);ctx.moveTo(x,y-15);ctx.lineTo(x,y-5);ctx.moveTo(x,y+5);ctx.lineTo(x,y+15);ctx.stroke()
 }
 function hud(){
+ const sprintButton=document.querySelector('[data-key="shift"]');
+ if(sprintButton){const label=player.inCar?"NITRO":"CORRER";if(sprintButton.textContent!==label)sprintButton.textContent=label;}
  ctx.setTransform(1,0,0,1,0,0);
 
  // Compact player HUD.

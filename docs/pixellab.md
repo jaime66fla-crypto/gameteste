@@ -13,4 +13,4 @@ python -m unittest discover -s tests -p 'test_pixellab*.py' -v
 node tests/isometric.test.cjs
 ```
 
-Completed assets load in `player-art.js`. The original directional sprite remains available while sheets load or if any direction is missing. Animation playback follows the distance actually travelled, so collisions do not animate a walking loop in place. Movement uses a short acceleration/deceleration transition for keyboard and touch input alike.
+For the game, pack the sixteen strips into `operator-motion.png` (768×1536, walk rows 0–7 and run rows 8–15) and the idle references into `operator-idle.png` (768×96). The manifest gives each direction its row. These two packed assets load in `player-art.js`. The original directional sprite remains available while sheets load or if any direction is missing. Animation playback follows the distance actually travelled, so collisions do not animate a walking loop in place. Movement uses a short acceleration/deceleration transition for keyboard and touch input alike.
