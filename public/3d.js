@@ -30,9 +30,9 @@ const scene=new THREE.Scene();
 scene.background=new THREE.Color(0x1d2927);
 scene.fog=new THREE.Fog(0x1d2927,55,150);
 
-const camera=new THREE.OrthographicCamera(-26,26,14.6,-14.6,0.1,300);
-camera.position.set(42,52,42);
-camera.lookAt(0,0,0);
+const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,300);
+camera.position.set(0,8,-11);
+camera.lookAt(0,1.6,0);
 
 scene.add(new THREE.HemisphereLight(0xbfd8e8,0x394236,1.55));
 const sun=new THREE.DirectionalLight(0xffdfb5,3.2);
@@ -454,8 +454,8 @@ function bulletHitsBuilding(pos){
 
 function resize(){
  const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);
- const aspect=w/h,span=25;
- camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
+ camera.aspect=w/h;
+ camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
 statusEl.textContent='PISTOLA • 1-4 troca arma • clique atira • E veículo/escada';
@@ -925,11 +925,34 @@ function updateBullets3D(dt){
  for(let i=bullets.length-1;i>=0;i--){if(bullets[i].life<=0){world.remove(bullets[i].mesh);bullets.splice(i,1)}}
 }
 
+function updateThirdPersonCamera(dt,targetObj){
+ const focus=targetObj||player;
+ const yaw=focus.rotation.y||0;
+ const isCar=targetObj&&targetObj!==player;
+ const dist=isCar?12.5:9.2;
+ const height=isCar?6.8:5.6;
+ const lookHeight=isCar?1.3:1.8;
+
+ const forward=new THREE.Vector3(Math.sin(yaw),0,Math.cos(yaw));
+ const desired=focus.position.clone()
+   .add(new THREE.Vector3(0,height,0))
+   .addScaledVector(forward,-dist);
+
+ // leve deslocamento lateral para dar sensação mais GTA
+ const right=new THREE.Vector3(forward.z,0,-forward.x);
+ desired.addScaledVector(right,isCar?.8:.55);
+
+ camera.position.lerp(desired,1-Math.exp(-dt*6.5));
+ const lookAt=focus.position.clone()
+   .add(new THREE.Vector3(0,lookHeight,0))
+   .addScaledVector(forward,isCar?3.8:2.8);
+ camera.lookAt(lookAt);
+}
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
- if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),
      dz=((keys.has('s')?1:0)-(keys.has('w')?1:0))+(mobileMove.active?mobileMove.y:0);
  const len=Math.hypot(dx,dz);
@@ -939,8 +962,7 @@ function frame(now){
  updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}
  recoilKick=Math.max(0,recoilKick-dt*2.8);
  if(player.userData.gun)player.userData.gun.position.z=-recoilKick;
- const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
- camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
+ updateThirdPersonCamera(dt,player);
  updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
 applyWeaponVisual();updateHud();
