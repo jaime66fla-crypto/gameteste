@@ -1,0 +1,47 @@
+name: PixelLab operator animations
+on:
+  push:
+    branches: [feature/pixellab-animations]
+    paths:
+      - 'scripts/pixellab_animations.py'
+      - '.github/workflows/pixellab-animations.yml'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Preview: one direction; all: eight directions; check: authentication only'
+        type: choice
+        default: preview
+        options: [preview, all, check]
+permissions:
+  contents: read
+concurrency:
+  group: pixellab-operator-generation
+  cancel-in-progress: false
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install image processing dependency
+        run: python -m pip install Pillow==11.3.0
+      - name: Check generator
+        run: python -m unittest discover -s tests -p 'test_pixellab*.py' -v
+      - name: Generate preview with PixelLab
+        env:
+          PIXELLAB_API_KEY: ${{ secrets.PIXELLAB_API_KEY }}
+          PIXELLAB_MODE: ${{ inputs.mode || 'preview' }}
+        run: python scripts/pixellab_animations.py --mode "$PIXELLAB_MODE" --output pixellab-output
+      - name: Save animation sheets and review previews
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixellab-operator-${{ github.run_number }}
+          path: pixellab-output/
+          if-no-files-found: ignore
+          retention-days: 30
