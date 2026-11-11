@@ -284,8 +284,10 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  }
  player.userData.avatarAnimState='';
  setAvatarMotion('idle',true);
+ const clipCount=model.animations?.length||0;
+ const boneCount=Object.keys(player.userData.avatarBones||{}).length;
  const clipInfo=player.userData.avatarPrimaryClip?.name?(' • clip '+player.userData.avatarPrimaryClip.name):'';
- statusEl.textContent='Erika Archer carregada • avatar 3D ativo'+clipInfo;
+ statusEl.textContent='Erika Archer carregada • clips '+clipCount+' • ossos '+boneCount+clipInfo;
  player.children.forEach(function(child){
   if(child!==player.userData.avatar&&child.isMesh)child.visible=false;
  });
