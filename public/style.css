@@ -509,3 +509,52 @@ body.modal-open{overflow:hidden}
     font-size:9px!important;
   }
 }
+
+/* Mobile controls sizing and button positioning */
+.platform-mobile .joystick{
+  width:clamp(118px,24vh,175px)!important;
+  height:clamp(118px,24vh,175px)!important;
+}
+.platform-mobile .mobile-controls{
+  align-items:flex-end!important;
+  padding-left:max(14px,env(safe-area-inset-left))!important;
+  padding-right:max(14px,env(safe-area-inset-right))!important;
+  padding-bottom:max(14px,env(safe-area-inset-bottom))!important;
+}
+.platform-mobile .mobile-actions{
+  transform:translateY(-54px);
+  gap:7px!important;
+}
+.platform-mobile .mobile-actions button{
+  min-width:62px!important;
+  min-height:36px!important;
+  font-size:11px!important;
+  padding:5px 8px!important;
+}
+.platform-mobile #gameModal:fullscreen .joystick,
+.platform-mobile #gameModal:-webkit-full-screen .joystick{
+  width:clamp(118px,24vh,175px)!important;
+  height:clamp(118px,24vh,175px)!important;
+}
+.platform-mobile #gameModal:fullscreen .mobile-actions,
+.platform-mobile #gameModal:-webkit-full-screen .mobile-actions{
+  transform:translateY(-58px)!important;
+}
+@media(max-height:500px) and (orientation:landscape){
+  .platform-mobile .joystick,
+  .platform-mobile #gameModal:fullscreen .joystick,
+  .platform-mobile #gameModal:-webkit-full-screen .joystick{
+    width:104px!important;
+    height:104px!important;
+  }
+  .platform-mobile .mobile-actions,
+  .platform-mobile #gameModal:fullscreen .mobile-actions,
+  .platform-mobile #gameModal:-webkit-full-screen .mobile-actions{
+    transform:translateY(-42px)!important;
+  }
+  .platform-mobile .mobile-actions button{
+    min-width:54px!important;
+    min-height:32px!important;
+    font-size:10px!important;
+  }
+}
