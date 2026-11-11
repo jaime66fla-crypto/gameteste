@@ -202,13 +202,52 @@ enemies[0].position.set(19,0,-8);world.add(enemies[0]);
 enemies[1].position.set(-12,6.35,-13);world.add(enemies[1]);
 
 const cars=[];
+const vehicleSmoke=[];
+const smokeGeo=new THREE.SphereGeometry(.22,7,5);
+function spawnVehicleSmoke(car,intensity=1){
+ const forward=new THREE.Vector3(Math.sin(car.rotation.y),0,Math.cos(car.rotation.y));
+ const pos=car.position.clone().addScaledVector(forward,1.15);
+ pos.y=.9;
+ const smoke=new THREE.Mesh(
+  smokeGeo,
+  new THREE.MeshBasicMaterial({color:intensity>1.4?0x202426:0x5a5f61,transparent:true,opacity:.34,depthWrite:false})
+ );
+ smoke.position.copy(pos);
+ smoke.scale.setScalar(.65+Math.random()*.35);
+ world.add(smoke);
+ vehicleSmoke.push({
+  mesh:smoke,
+  life:.9+Math.random()*.55,
+  maxLife:1.45,
+  drift:new THREE.Vector3((Math.random()-.5)*.45,.75+Math.random()*.55,(Math.random()-.5)*.45),
+  grow:.9+Math.random()*.55
+ });
+}
+function updateVehicleSmoke(dt){
+ for(const car of cars){
+  const u=car.userData;
+  if(u.health<60){
+   u.smokeTimer=(u.smokeTimer||0)-dt;
+   const severity=THREE.MathUtils.clamp((60-u.health)/60,0,1);
+   const interval=u.broken?.08:THREE.MathUtils.lerp(.34,.13,severity);
+   if(u.smokeTimer<=0){spawnVehicleSmoke(car,u.broken?1.8:1+severity);u.smokeTimer=interval}
+  }
+ }
+ for(let i=vehicleSmoke.length-1;i>=0;i--){
+  const p=vehicleSmoke[i];p.life-=dt;
+  p.mesh.position.addScaledVector(p.drift,dt);
+  const grow=1+p.grow*dt;p.mesh.scale.multiplyScalar(grow);
+  p.mesh.material.opacity=Math.max(0,.34*(p.life/p.maxLife));
+  if(p.life<=0){world.remove(p.mesh);p.mesh.material.dispose();vehicleSmoke.splice(i,1)}
+ }
+}
 function makeCar(x,y,rot=0){
  const g=new THREE.Group();
  const body=new THREE.Mesh(new THREE.BoxGeometry(3.8,.75,1.9),mat(0x25384d,.3,.6));body.position.y=.65;body.castShadow=true;g.add(body);
  const top=new THREE.Mesh(new THREE.BoxGeometry(2.1,.65,1.55),mat(0x477185,.25,.45));top.position.set(-.25,1.28,0);top.castShadow=true;g.add(top);
  const wheels=[];
  for(const sx of [-1.25,1.25])for(const sz of [-.86,.86]){const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.24,12),mat(0x111416));wheel.rotation.z=Math.PI/2;wheel.position.set(sx,.38,sz);g.add(wheel);wheels.push(wheel)}
- g.position.set(x,0,y);g.rotation.y=rot;g.userData={speed:0,health:100,broken:false,wheels,body,top};world.add(g);cars.push(g);return g;
+ g.position.set(x,0,y);g.rotation.y=rot;g.userData={speed:0,health:100,broken:false,wheels,body,top,smokeTimer:0};world.add(g);cars.push(g);return g;
 }
 makeCar(-9,-33,0);makeCar(31,22,Math.PI/2);makeCar(51,-15,Math.PI/2);makeCar(-30,39,0);
 let activeCar=null;
@@ -233,13 +272,19 @@ function carBlocked(nx,nz){
  return false;
 }
 function damageCar(car,amount){
- car.userData.health=Math.max(0,car.userData.health-amount);
- if(car.userData.health<=0){car.userData.broken=true;car.userData.speed=0;car.userData.body.material.color.setHex(0x242628);car.userData.top.material.color.setHex(0x303437);statusEl.textContent='Veículo destruído • E para sair'}
+ const u=car.userData;
+ u.health=Math.max(0,u.health-amount);
+ if(u.health<=60&&!u.broken)statusEl.textContent='Veículo danificado • '+Math.ceil(u.health)+'% • fumaça no motor';
+ if(u.health<=0){
+  u.broken=true;u.speed=0;
+  u.body.material.color.setHex(0x242628);u.top.material.color.setHex(0x303437);
+  statusEl.textContent='Veículo destruído • motor desligado • E para sair';
+ }
 }
 function updateVehicle(dt){
  if(!activeCar)return false;
  const car=activeCar,u=car.userData;
- if(u.broken){u.speed=0;player.position.copy(car.position);return true}
+ if(u.broken){u.speed=0;player.position.copy(car.position);player.rotation.y=car.rotation.y;return true}
  const throttle=(keys.has('w')?1:0)-(keys.has('s')?1:0);
  const steer=(keys.has('d')?1:0)-(keys.has('a')?1:0);
  const max=keys.has('shift')?20:14;
@@ -528,12 +573,12 @@ function updateBullets3D(dt){
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
- if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
- if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
- shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);
+ shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);
  const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
  camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
  updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);
