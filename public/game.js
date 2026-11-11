@@ -711,9 +711,50 @@ function bestSniperRoof(e){
 function moveEnemyGround(e,tx,ty,dt){
  e.movePhase=(e.movePhase||0)+dt*(e.speed>80?10:7);
  const dx=tx-e.x,dy=ty-e.y,d=Math.hypot(dx,dy)||1,step=e.speed*dt;
- const nx=e.x+dx/d*step,ny=e.y+dy/d*step;
+ let mx=dx/d,my=dy/d;
+ // Keep enemies from stacking on top of each other while moving.
+ let avoidX=0,avoidY=0;
+ for(const other of enemies){
+  if(other===e||!other.alive||other.roof!==e.roof)continue;
+  const ox=e.x-other.x,oy=e.y-other.y,od=Math.hypot(ox,oy)||1;
+  if(od<58){const force=(58-od)/58;avoidX+=ox/od*force;avoidY+=oy/od*force}
+ }
+ mx+=avoidX*.75;my+=avoidY*.75;
+ const ml=Math.hypot(mx,my)||1;mx/=ml;my/=ml;
+ const nx=e.x+mx*step,ny=e.y+my*step;
  if(!collides(nx,e.y,e.r))e.x=nx;
  if(!collides(e.x,ny,e.r))e.y=ny;
+}
+function moveEnemyTactical(e,targetX,targetY,dt,desired=235){
+ e.tacticT=(e.tacticT||0)-dt;
+ if(e.tacticT<=0){
+  e.tacticT=.7+Math.random()*1.15;
+  if(e.flankDir===undefined)e.flankDir=Math.random()<.5?-1:1;
+  if(Math.random()<.34)e.flankDir*=-1;
+  e.tacticBias=(Math.random()*.45+.65);
+ }
+ const dx=targetX-e.x,dy=targetY-e.y,d=Math.hypot(dx,dy)||1;
+ const forwardX=dx/d,forwardY=dy/d;
+ const sideX=-forwardY*(e.flankDir||1),sideY=forwardX*(e.flankDir||1);
+ let approach=0;
+ if(d>desired+55)approach=1;
+ else if(d<desired-50)approach=-.65;
+ const strafe=(e.tacticBias||.85)*(d<430?1:.42);
+ let mx=forwardX*approach+sideX*strafe,my=forwardY*approach+sideY*strafe;
+ // separation from nearby soldiers
+ for(const other of enemies){
+  if(other===e||!other.alive||other.roof!==e.roof)continue;
+  const ox=e.x-other.x,oy=e.y-other.y,od=Math.hypot(ox,oy)||1;
+  if(od<72){const force=(72-od)/72;mx+=ox/od*force*1.15;my+=oy/od*force*1.15}
+ }
+ const ml=Math.hypot(mx,my)||1;mx/=ml;my/=ml;
+ const speed=e.speed*(d<desired-50?.9:1.05),step=speed*dt;
+ const nx=e.x+mx*step,ny=e.y+my*step;
+ let moved=false;
+ if(!collides(nx,e.y,e.r)){e.x=nx;moved=true}
+ if(!collides(e.x,ny,e.r)){e.y=ny;moved=true}
+ if(!moved){e.flankDir=(e.flankDir||1)*-1;e.tacticT=.18}
+ e.movePhase=(e.movePhase||0)+dt*9.5;
 }
 function roofSafePoint(roofIndex,preferX=null,preferY=null){
  const b=buildings[roofIndex];if(!b)return null;
@@ -823,7 +864,15 @@ function updatePistolEnemy(e,dt){
 
   const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;
   e.angle=Math.atan2(dy,dx);
-  if(d>145)moveEnemyOnRoof(e,player.x,player.y,dt);
+  if(d>190)moveEnemyOnRoof(e,player.x,player.y,dt);
+  else if(d>105){
+   // Short lateral repositioning on rooftops keeps enemies from standing still.
+   e.roofStrafe=(e.roofStrafe||1);
+   e.roofStrafeT=(e.roofStrafeT||0)-dt;
+   if(e.roofStrafeT<=0){e.roofStrafeT=.8+Math.random()*.8;if(Math.random()<.45)e.roofStrafe*=-1}
+   const sx=e.x-Math.sin(e.angle)*68*e.roofStrafe,sy=e.y+Math.cos(e.angle)*68*e.roofStrafe;
+   moveEnemyOnRoof(e,sx,sy,dt);
+  }
   e.shootCd-=dt;
   if(!player.dead&&!player.inCar&&d<430&&e.shootCd<=0){
    e.shootCd=1.1+Math.random()*.8;
@@ -855,7 +904,10 @@ function updatePistolEnemy(e,dt){
  const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;
  e.angle=Math.atan2(dy,dx);
  const canSee=!player.hidden||d<125;
- if(canSee&&d>150)moveEnemyGround(e,player.x,player.y,dt);
+ if(canSee){
+  // Soldiers now circle, flank and keep combat distance instead of walking in a straight line.
+  moveEnemyTactical(e,player.x,player.y,dt,225);
+ }
  e.shootCd-=dt;
  if(canSee&&!player.inCar&&!player.dead&&d<420&&e.shootCd<=0){
   e.shootCd=1.1+Math.random()*.8;
@@ -877,7 +929,10 @@ function updateEnemies(dt){
   if(!e.boss&&e.type==="pistol"){updatePistolEnemy(e,dt);continue}
   const dx=player.x-e.x,dy=player.y-e.y,d=Math.hypot(dx,dy)||1;e.angle=Math.atan2(dy,dx);
   const canSee=player.roof===null&&(!player.hidden||d<(e.boss?220:125));
-  if(canSee&&d>(e.boss?190:150))moveEnemyGround(e,player.x,player.y,dt);
+  if(canSee&&d>(e.boss?190:150)){
+   if(e.boss)moveEnemyTactical(e,player.x,player.y,dt,e.phase===2?285:245);
+   else moveEnemyGround(e,player.x,player.y,dt);
+  }
   if(e.boss){
    const newPhase=e.hp<=e.maxHp*.5?2:1;
    if(newPhase!==e.phase){
