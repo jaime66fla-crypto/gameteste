@@ -938,3 +938,17 @@ body.modal-open{overflow:hidden}
 .shop-equip.active{background:#153d2b;border-color:#3f9a68;color:#9ff1b8}
 .shop-link{background:#182536}
 @media(max-width:720px){.shop-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.shop-card{padding:12px}.shop-preview{height:92px}.mobile-actions{max-width:220px;flex-wrap:wrap}.mobile-actions button[data-action="grenade"]{min-width:82px}}
+
+/* Personagem atual do modo 3D no menu principal */
+.current-3d-character{--s:3.2;width:120px;height:170px;top:50%;filter:drop-shadow(0 24px 18px #000a);transform:translate(-50%,-50%) scale(var(--s)) rotateY(-8deg);transform-style:preserve-3d}
+.current-3d-character span{position:absolute;display:block}
+.c3d-shadow{left:26px;bottom:3px;width:72px;height:20px;border-radius:50%;background:#0009;filter:blur(2px)}
+.c3d-leg{bottom:21px;width:22px;height:58px;border-radius:12px;background:linear-gradient(90deg,#11181e,#25313a 60%,#11171c);box-shadow:inset -5px -4px 0 #0003}
+.c3d-leg-a{left:35px;transform:rotate(4deg)}.c3d-leg-b{right:35px;transform:rotate(-5deg)}
+.c3d-torso{left:29px;top:50px;width:62px;height:72px;border-radius:28px 28px 20px 20px;background:linear-gradient(100deg,#222d38,#3f5064 52%,#26323d);box-shadow:inset -10px -7px 0 #0002,0 5px 12px #0005}
+.c3d-head{left:44px;top:21px;width:38px;height:42px;border-radius:48%;background:linear-gradient(100deg,#b17f5f,#d0a07c 55%,#8d6048)}
+.c3d-helmet{left:40px;top:13px;width:47px;height:27px;border-radius:28px 28px 12px 12px;background:linear-gradient(#333b43,#171e24);box-shadow:inset 0 -5px 0 #0003}
+.c3d-gun{left:63px;top:72px;width:76px;height:12px;border-radius:4px;background:linear-gradient(90deg,#10161a,#323d44);transform:rotate(7deg);box-shadow:0 4px 7px #0006}
+.c3d-gun i{right:-31px;top:3px;width:38px;height:6px;border-radius:2px;background:#1b2227}
+.c3d-gun b{left:30px;top:8px;width:16px;height:28px;border-radius:3px;background:#1b2329;transform:skew(-8deg)}
+.current-3d-character:after{content:"3D";position:absolute;right:-42px;top:5px;padding:4px 7px;border:1px solid #65ff8b66;border-radius:6px;color:#65ff8b;font:900 9px/1 system-ui;letter-spacing:.12em;background:#071019cc}
