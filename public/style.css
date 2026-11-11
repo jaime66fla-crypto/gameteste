@@ -684,3 +684,8 @@ body.modal-open{overflow:hidden}
     right:max(28px,calc(env(safe-area-inset-right) + 16px))!important;
   }
 }
+
+.realistic-art{height:145px!important;background:radial-gradient(circle at 50% 47%,#315d78 0,#173244 36%,#0b1720 74%)!important;border:1px solid #547087!important;overflow:hidden!important}
+.weapon-svg{width:100%;height:100%;display:block;filter:drop-shadow(0 10px 12px #0007)}
+.realistic-art:before{display:none!important}
+.realistic-art:after{display:none!important}
