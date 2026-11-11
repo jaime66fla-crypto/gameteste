@@ -294,7 +294,7 @@ function updateClimb(dt){
 
 
 const keys=new Set();let t=0;
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
 
@@ -345,7 +345,7 @@ function resize(){
  camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
-statusEl.textContent='Protótipo 3D ativo • E veículo/escada • Clique atira';
+statusEl.textContent='PISTOLA • 1-4 troca arma • clique atira • E veículo/escada';
 
 
 
@@ -356,12 +356,45 @@ const groundPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0);
 const bullets=[];
 let shotCooldown=0;
 let kills3D=0;
+let currentWeapon='pistol';
+const weapons3D={
+ pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:42,spread:.012,pellets:1,color:0xffdf78},
+ smg:{label:'SMG',cooldown:.085,damage:.55,speed:46,spread:.045,pellets:1,color:0xffc85a},
+ rifle:{label:'RIFLE',cooldown:.19,damage:1.7,speed:58,spread:.009,pellets:1,color:0xffefad},
+ shotgun:{label:'ESCOPETA',cooldown:.62,damage:.52,speed:38,spread:.12,pellets:7,color:0xffb85c}
+};
+const muzzleFx=[],impactFx=[];
+function setWeapon(name){
+ if(!weapons3D[name])return;
+ currentWeapon=name;
+ statusEl.textContent='Arma: '+weapons3D[name].label+' • 1-4 troca • clique atira';
+}
+function spawnMuzzle(origin){
+ const light=new THREE.PointLight(0xffc56a,8,5,2);light.position.copy(origin);scene.add(light);
+ const flash=new THREE.Mesh(new THREE.SphereGeometry(.23,8,6),new THREE.MeshBasicMaterial({color:0xffe09a,transparent:true,opacity:.95}));
+ flash.position.copy(origin);world.add(flash);muzzleFx.push({light,flash,t:.07});
+}
+function spawnImpact(pos,color=0xffd58a){
+ for(let i=0;i<5;i++){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(.055,6,4),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.9}));
+  m.position.copy(pos);world.add(m);
+  impactFx.push({m,v:new THREE.Vector3((Math.random()-.5)*4,Math.random()*3.5,(Math.random()-.5)*4),t:.28});
+ }
+}
+function updateWeaponFx(dt){
+ for(const f of muzzleFx){f.t-=dt;f.flash.scale.multiplyScalar(1.12);f.flash.material.opacity=Math.max(0,f.t/.07);f.light.intensity=8*Math.max(0,f.t/.07)}
+ for(let i=muzzleFx.length-1;i>=0;i--)if(muzzleFx[i].t<=0){scene.remove(muzzleFx[i].light);world.remove(muzzleFx[i].flash);muzzleFx.splice(i,1)}
+ for(const p of impactFx){p.t-=dt;p.v.y-=8*dt;p.m.position.addScaledVector(p.v,dt);p.m.material.opacity=Math.max(0,p.t/.28)}
+ for(let i=impactFx.length-1;i>=0;i--)if(impactFx[i].t<=0){world.remove(impactFx[i].m);impactFx.splice(i,1)}
+}
 
-function makeTracer(origin,target){
+function makeTracer(origin,target,weapon){
  const dir=target.clone().sub(origin).normalize();
- const mesh=new THREE.Mesh(new THREE.SphereGeometry(.12,8,6),mat(0xffdd75,.25,.2));
+ const spread=weapon.spread||0;
+ dir.x+=(Math.random()-.5)*spread;dir.y+=(Math.random()-.5)*spread*.55;dir.z+=(Math.random()-.5)*spread;dir.normalize();
+ const mesh=new THREE.Mesh(new THREE.SphereGeometry(.11,8,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75}));
  mesh.position.copy(origin);mesh.castShadow=true;world.add(mesh);
- bullets.push({mesh,dir,speed:38,life:1.1});
+ bullets.push({mesh,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color});
 }
 
 function topSurfaceAt(x,z){
@@ -401,11 +434,15 @@ function updateAimFromPointer(){
 
 function fire(){
  if(shotCooldown>0||climbState||activeCar)return;
- shotCooldown=.18;
+ const weapon=weapons3D[currentWeapon];
+ shotCooldown=weapon.cooldown;
  const origin=new THREE.Vector3();
  player.getWorldPosition(origin);origin.y+=1.78;
+ const forward=new THREE.Vector3(Math.sin(player.rotation.y),0,Math.cos(player.rotation.y));
+ origin.addScaledVector(forward,1.05);
  const target=aimPoint.clone();
- makeTracer(origin,target);
+ spawnMuzzle(origin);
+ for(let i=0;i<weapon.pellets;i++)makeTracer(origin,target,weapon);
 }
 
 addEventListener('pointermove',e=>{
@@ -476,12 +513,12 @@ function updateBullets3D(dt){
 
   const buildingBlocked=segmentHitsBuilding(old,next);
   if(buildingBlocked){
-   b.mesh.position.copy(next);b.life=0;continue;
+   b.mesh.position.copy(next);spawnImpact(next,b.color);b.life=0;continue;
   }
 
   b.mesh.position.copy(next);
   if(enemyHit){
-   enemyHit.userData.hp--;b.life=0;
+   enemyHit.userData.hp-=b.damage;spawnImpact(enemyHit.position.clone().add(new THREE.Vector3(0,1.4,0)),0xff6b6b);b.life=0;
    if(enemyHit.userData.hp<=0){enemyHit.userData.alive=false;enemyHit.visible=false;kills3D++;statusEl.textContent='Protótipo 3D ativo • Kills '+kills3D}
   }
  }
@@ -492,11 +529,11 @@ let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
  if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
- if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
- shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);
+ shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);
  const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
  camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
  updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);
