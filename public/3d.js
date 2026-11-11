@@ -74,16 +74,57 @@ const buildingSpots=sourceBuildings.map(([x,y,w,d])=>[
 
 const buildings=[];
 const ladders=[];
+const buildingVisuals=[];
 for(let i=0;i<buildingSpots.length;i++){
  const [x,y,w,d]=buildingSpots[i]; const h=5.5+(i%4)*.85;
- const b=box(w,h,d,i%3===0?0x626b68:0x707773,x,y);b.userData={index:i,w,h,d};buildings.push(b);
- box(w-.45,.35,d-.45,0x4c5553,x,y,h+.15);
- for(let k=0;k<2;k++)box(2.0,1.0,1.8,0x424a49,x-2.5+k*5,y,h+.85);
- const winMat=mat(0x2b6475,.4,.15);
- for(const sx of [-1,1]){
-  const win=new THREE.Mesh(new THREE.BoxGeometry(.10,1.25,Math.max(2,d*.55)),winMat);
-  win.position.set(x+sx*(w/2+.055),2.8,y);world.add(win);
+ const facadeColor=i%4===0?0x626b68:i%4===1?0x737773:i%4===2?0x666c72:0x756d63;
+ const b=box(w,h,d,facadeColor,x,y);b.userData={index:i,w,h,d};buildings.push(b);
+ const visual={body:b,extras:[]};buildingVisuals.push(visual);
+
+ const roof=box(w-.45,.35,d-.45,i%2?0x4a5353:0x55504a,x,y,h+.15);visual.extras.push(roof);
+
+ // Rooftop props: HVAC, ducts, water tanks and vents vary per building.
+ const propCount=1+(i%3);
+ for(let k=0;k<propCount;k++){
+  const px=x-w*.24+k*Math.max(2.2,w*.22),pz=y+(k%2?d*.16:-d*.14);
+  const ac=box(1.7+.2*(k%2),.8+.15*(i%2),1.4,0x41494a,px,pz,h+.42);visual.extras.push(ac);
+  const vent=new THREE.Mesh(new THREE.CylinderGeometry(.26,.32,1.05,10),mat(0x667071,.55,.2));vent.position.set(px+.65,h+1.25,pz-.45);vent.castShadow=true;world.add(vent);visual.extras.push(vent);
  }
+ if(i%4===0){
+  const tank=new THREE.Mesh(new THREE.CylinderGeometry(.85,.85,1.45,14),mat(0x555f61,.65,.18));
+  tank.position.set(x+w*.22,h+1.25,y-d*.18);tank.castShadow=true;world.add(tank);visual.extras.push(tank);
+ }
+ if(i%3===0){
+  const duct=box(Math.max(2.4,w*.28),.5,.75,0x596263,x-w*.08,y+d*.18,h+.5);visual.extras.push(duct);
+ }
+
+ // Doors and window bands on south/north facades.
+ const doorMat=mat(i%2?0x38464e:0x4b3e36,.55,.08);
+ const door=new THREE.Mesh(new THREE.BoxGeometry(1.45,2.35,.12),doorMat);
+ door.position.set(x-w*.22,1.18,y+d/2+.07);door.castShadow=true;world.add(door);visual.extras.push(door);
+ const doorTop=new THREE.Mesh(new THREE.BoxGeometry(1.8,.16,.18),mat(0x242b2f,.55,.15));
+ doorTop.position.set(door.position.x,2.45,door.position.z+.02);world.add(doorTop);visual.extras.push(doorTop);
+
+ const winMat=mat(0x2b6475,.32,.18);
+ for(const side of [-1,1]){
+  const z=y+side*(d/2+.06);
+  const count=Math.max(2,Math.floor(w/3.2));
+  for(let k=0;k<count;k++){
+   const wx=x-w*.36+(count===1?0:k*(w*.72/(count-1)));
+   const win=new THREE.Mesh(new THREE.BoxGeometry(Math.min(1.45,w/count*.58),1.05,.10),winMat);
+   win.position.set(wx,3.0,z);world.add(win);visual.extras.push(win);
+  }
+ }
+ for(const side of [-1,1]){
+  const xx=x+side*(w/2+.055);
+  const count=Math.max(2,Math.floor(d/3.3));
+  for(let k=0;k<count;k++){
+   const wz=y-d*.34+(count===1?0:k*(d*.68/(count-1)));
+   const win=new THREE.Mesh(new THREE.BoxGeometry(.10,1.0,Math.min(1.35,d/count*.58)),winMat);
+   win.position.set(xx,3.0,wz);world.add(win);visual.extras.push(win);
+  }
+ }
+
  const ladder=new THREE.Group();
  for(const sx of [-.42,.42]){const rail=new THREE.Mesh(new THREE.BoxGeometry(.11,h+1,.11),mat(0xaab0a7,.55,.15));rail.position.set(sx,(h+1)/2,0);ladder.add(rail)}
  for(let yy=.5;yy<h+.7;yy+=.55){const rung=new THREE.Mesh(new THREE.BoxGeometry(.98,.08,.09),mat(0xb8beb4,.5,.15));rung.position.set(0,yy,0);ladder.add(rung)}
@@ -220,6 +261,22 @@ function blocked(nx,nz){
  for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.userData.w/2+.55&&dz<b.userData.d/2+.55)return true}
  return false;
 }
+function updateBuildingVisibility(){
+ for(let i=0;i<buildings.length;i++){
+  const b=buildings[i],v=buildingVisuals[i];
+  const toPlayer=new THREE.Vector3(player.position.x-b.position.x,0,player.position.z-b.position.z);
+  const toCamera=new THREE.Vector3(camera.position.x-b.position.x,0,camera.position.z-b.position.z);
+  const playerBehind=toPlayer.dot(toCamera)<0;
+  const near=Math.hypot(toPlayer.x,toPlayer.z)<Math.max(b.userData.w,b.userData.d)*1.15;
+  const fade=playerBehind&&near&&player.position.y<1.5;
+  const all=[v.body,...v.extras];
+  for(const obj of all){
+   if(!obj.material)continue;
+   const mats=Array.isArray(obj.material)?obj.material:[obj.material];
+   for(const m of mats){m.transparent=fade;m.opacity=fade?.34:1;m.depthWrite=!fade}
+  }
+ }
+}
 function bulletHitsBuilding(pos){
  for(const b of buildings){
   const dx=Math.abs(pos.x-b.position.x),dz=Math.abs(pos.z-b.position.z);
@@ -330,6 +387,6 @@ function frame(now){
  shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);
  const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);
  camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);
- renderer.render(scene,camera);requestAnimationFrame(frame);
+ updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
