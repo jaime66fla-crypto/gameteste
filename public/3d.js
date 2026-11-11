@@ -201,14 +201,68 @@ const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
 enemies[0].position.set(19,0,-8);world.add(enemies[0]);
 enemies[1].position.set(-12,6.35,-13);world.add(enemies[1]);
 
+const cars=[];
 function makeCar(x,y,rot=0){
  const g=new THREE.Group();
  const body=new THREE.Mesh(new THREE.BoxGeometry(3.8,.75,1.9),mat(0x25384d,.3,.6));body.position.y=.65;body.castShadow=true;g.add(body);
  const top=new THREE.Mesh(new THREE.BoxGeometry(2.1,.65,1.55),mat(0x477185,.25,.45));top.position.set(-.25,1.28,0);top.castShadow=true;g.add(top);
- for(const sx of [-1.25,1.25])for(const sz of [-.86,.86]){const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.24,12),mat(0x111416));wheel.rotation.z=Math.PI/2;wheel.position.set(sx,.38,sz);g.add(wheel)}
- g.position.set(x,0,y);g.rotation.y=rot;world.add(g);
+ const wheels=[];
+ for(const sx of [-1.25,1.25])for(const sz of [-.86,.86]){const wheel=new THREE.Mesh(new THREE.CylinderGeometry(.36,.36,.24,12),mat(0x111416));wheel.rotation.z=Math.PI/2;wheel.position.set(sx,.38,sz);g.add(wheel);wheels.push(wheel)}
+ g.position.set(x,0,y);g.rotation.y=rot;g.userData={speed:0,health:100,broken:false,wheels,body,top};world.add(g);cars.push(g);return g;
 }
 makeCar(-9,-33,0);makeCar(31,22,Math.PI/2);makeCar(51,-15,Math.PI/2);makeCar(-30,39,0);
+let activeCar=null;
+function nearestCar(){
+ let best=null,bestD=Infinity;
+ for(const car of cars){const d=Math.hypot(player.position.x-car.position.x,player.position.z-car.position.z);if(d<2.8&&d<bestD){best=car;bestD=d}}
+ return best;
+}
+function toggleVehicle(){
+ if(player.position.y>1||climbState)return false;
+ if(activeCar){
+  const side=new THREE.Vector3(Math.cos(activeCar.rotation.y),0,-Math.sin(activeCar.rotation.y)).multiplyScalar(2.2);
+  player.position.copy(activeCar.position).add(side);player.position.y=0;player.visible=true;activeCar=null;
+  statusEl.textContent='Protótipo 3D ativo • A PÉ • E veículo/escada';return true;
+ }
+ const car=nearestCar();
+ if(car&&!car.userData.broken){activeCar=car;player.visible=false;statusEl.textContent='Protótipo 3D ativo • NO CARRO • WASD dirigir • SHIFT turbo • E sair';return true}
+ return false;
+}
+function carBlocked(nx,nz){
+ for(const b of buildings){const dx=Math.abs(nx-b.position.x),dz=Math.abs(nz-b.position.z);if(dx<b.userData.w/2+1.7&&dz<b.userData.d/2+1.15)return true}
+ return false;
+}
+function damageCar(car,amount){
+ car.userData.health=Math.max(0,car.userData.health-amount);
+ if(car.userData.health<=0){car.userData.broken=true;car.userData.speed=0;car.userData.body.material.color.setHex(0x242628);car.userData.top.material.color.setHex(0x303437);statusEl.textContent='Veículo destruído • E para sair'}
+}
+function updateVehicle(dt){
+ if(!activeCar)return false;
+ const car=activeCar,u=car.userData;
+ if(u.broken){u.speed=0;player.position.copy(car.position);return true}
+ const throttle=(keys.has('w')?1:0)-(keys.has('s')?1:0);
+ const steer=(keys.has('d')?1:0)-(keys.has('a')?1:0);
+ const max=keys.has('shift')?20:14;
+ u.speed+=throttle*22*dt;
+ if(!throttle)u.speed*=Math.pow(.22,dt);
+ u.speed=THREE.MathUtils.clamp(u.speed,-6,max);
+ const turnFactor=THREE.MathUtils.clamp(Math.abs(u.speed)/7,0,1);
+ car.rotation.y+=steer*1.7*turnFactor*dt*(u.speed>=0?1:-1);
+ const fx=Math.sin(car.rotation.y),fz=Math.cos(car.rotation.y);
+ const nx=car.position.x+fx*u.speed*dt,nz=car.position.z+fz*u.speed*dt;
+ if(carBlocked(nx,nz)){
+  if(Math.abs(u.speed)>7)damageCar(car,Math.min(38,Math.abs(u.speed)*2.2));
+  u.speed*=-.22;
+ }else{car.position.x=nx;car.position.z=nz}
+ for(const wheel of u.wheels)wheel.rotation.x-=u.speed*dt*2.6;
+ for(const e of enemies){
+  if(!e.userData.alive||e.position.y>2)continue;
+  const d=Math.hypot(e.position.x-car.position.x,e.position.z-car.position.z);
+  if(d<2.1&&Math.abs(u.speed)>4){e.userData.hp=0;e.userData.alive=false;e.visible=false;kills3D++;u.speed*=.72;statusEl.textContent='Atropelamento • Kills '+kills3D}
+ }
+ player.position.copy(car.position);player.position.y=0;player.rotation.y=car.rotation.y;
+ return true;
+}
 
 let climbState=null;
 function nearLadder(){
@@ -240,7 +294,7 @@ function updateClimb(dt){
 
 
 const keys=new Set();let t=0;
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='e'){if(player.position.y<1)startClimb('up');else startClimb('down')}});
+addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
 
@@ -291,7 +345,7 @@ function resize(){
  camera.left=-span*aspect;camera.right=span*aspect;camera.top=span;camera.bottom=-span;camera.updateProjectionMatrix();
 }
 addEventListener('resize',resize);resize();
-statusEl.textContent='Protótipo 3D ativo • Combate vertical • Clique atira • E escadas';
+statusEl.textContent='Protótipo 3D ativo • E veículo/escada • Clique atira';
 
 
 
@@ -346,7 +400,7 @@ function updateAimFromPointer(){
 }
 
 function fire(){
- if(shotCooldown>0||climbState)return;
+ if(shotCooldown>0||climbState||activeCar)return;
  shotCooldown=.18;
  const origin=new THREE.Vector3();
  player.getWorldPosition(origin);origin.y+=1.78;
@@ -438,6 +492,7 @@ let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
  if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(player.position.x,player.position.y*.35,player.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);renderer.render(scene,camera);requestAnimationFrame(frame);return}
+ if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);const target=new THREE.Vector3(activeCar.position.x,1.2,activeCar.position.z);camera.position.lerp(new THREE.Vector3(target.x+42,target.y+52,target.z+42),1-Math.exp(-dt*4.5));camera.lookAt(target);updateBuildingVisibility();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  let dx=(keys.has('d')?1:0)-(keys.has('a')?1:0),dz=(keys.has('s')?1:0)-(keys.has('w')?1:0);
  const len=Math.hypot(dx,dz);
  if(len){dx/=len;dz/=len;const speed=keys.has('shift')?10:6;const nx=player.position.x+dx*speed*dt,nz=player.position.z+dz*speed*dt;if(!blocked(nx,player.position.z))player.position.x=nx;if(!blocked(player.position.x,nz))player.position.z=nz;player.rotation.y=Math.atan2(dx,dz);const gait=Math.sin(t*(keys.has('shift')?14:10));player.userData.legs[0].rotation.x=gait*.55;player.userData.legs[1].rotation.x=-gait*.55}else{player.userData.legs[0].rotation.x*=.8;player.userData.legs[1].rotation.x*=.8}
