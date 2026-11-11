@@ -784,6 +784,8 @@ function drawBossDeathWorld(){
  }
  ctx.restore();
 
+ window.worldArt?.effect(ctx,"wreck",s.x,s.y,115);
+
  // Multi-stage explosions.
  const blasts=[.12,.32,.52,.73];
  for(let i=0;i<blasts.length;i++){
@@ -792,6 +794,7 @@ function drawBossDeathWorld(){
   const g=ctx.createRadialGradient(s.x+(i-1.5)*14,s.y+(i%2?-10:7),2,s.x+(i-1.5)*14,s.y+(i%2?-10:7),r);
   g.addColorStop(0,"rgba(255,255,210,"+(1-q)+")");g.addColorStop(.25,"rgba(255,180,55,"+(.9-q*.6)+")");g.addColorStop(.65,"rgba(255,64,30,"+(.55-q*.4)+")");g.addColorStop(1,"rgba(255,40,20,0)");
   ctx.fillStyle=g;ctx.beginPath();ctx.arc(s.x+(i-1.5)*14,s.y+(i%2?-10:7),r,0,Math.PI*2);ctx.fill();
+  window.worldArt?.effect(ctx,"explosion",s.x+(i-1.5)*14,s.y+(i%2?-10:7),r*2,1-q);
  }
 }
 function drawBossDeathOverlay(){
@@ -820,6 +823,7 @@ function drawBossDeathOverlay(){
 }
 function drawBossTank(e){
  const pulse=.5+.5*Math.sin(performance.now()/120);
+ if(!window.worldArt?.entity(ctx,"boss",{x:e.x,y:e.y,angle:e.angle,size:110,damaged:e.hp<e.maxHp*.4})){
  ctx.save();ctx.translate(e.x,e.y);ctx.rotate(e.angle);
  // shadow
  ctx.fillStyle="#0009";ctx.beginPath();ctx.ellipse(6,18,48,26,0,0,Math.PI*2);ctx.fill();
@@ -854,8 +858,9 @@ function drawBossTank(e){
   ctx.beginPath();ctx.moveTo(55,10);ctx.lineTo(70,4);ctx.lineTo(66,12);ctx.lineTo(73,14);ctx.lineTo(55,16);ctx.closePath();ctx.fill();ctx.shadowBlur=0;
  }
  ctx.restore();
+ }
  // local boss bar
- const bw=150,by=e.y-62;
+ const bw=150,by=e.y-86;
  ctx.fillStyle="#0b0d10dd";ctx.fillRect(e.x-bw/2,by,bw,12);
  ctx.fillStyle="#ff3045";ctx.fillRect(e.x-bw/2+2,by+2,(bw-4)*(e.hp/e.maxHp),8);
  ctx.strokeStyle="#5d1d25";ctx.strokeRect(e.x-bw/2+.5,by+.5,bw-1,11);
@@ -873,15 +878,15 @@ function drawEnemies(){
   if(sniper&&e.roof!==null){
    ctx.save();ctx.globalAlpha=.32;ctx.fillStyle="#000";ctx.beginPath();ctx.ellipse(e.x+10,e.y+11,20,7,-.15,0,Math.PI*2);ctx.fill();ctx.restore();
   }
-  drawTopDownCharacter({
+  if(!window.worldArt?.entity(ctx,sniper?"sniper":"enemy",{x:e.x,y:e.y-roofLift,angle:e.angle,size:sniper?60:57,moving,phase,shooting:e.shootCd>.92}))drawTopDownCharacter({
    x:e.x,y:e.y-roofLift,angle:e.angle,
    outfit:sniper?"#394334":"#343840",skin:"#d1a884",hair:"#171b20",
    weapon:sniper?"rifle":"pistol",shooting:e.shootCd>.92,
    role:sniper?"sniper":"enemy",showLaser:true,
    moving,phase,running:false
   });
-  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-roofLift-45);ctx.textAlign="left"}
-  ctx.fillStyle="#0c0f12";ctx.fillRect(e.x-19,e.y-roofLift-37,38,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-19,e.y-roofLift-37,38*(e.hp/e.maxHp),5);
+  if(sniper){ctx.fillStyle="#8dffb7";ctx.font="900 9px system-ui";ctx.textAlign="center";ctx.fillText(e.roof===null?"SNIPER ↑":"SNIPER",e.x,e.y-roofLift-70);ctx.textAlign="left"}
+  ctx.fillStyle="#0c0f12";ctx.fillRect(e.x-19,e.y-roofLift-59,38,5);ctx.fillStyle="#ff5f5f";ctx.fillRect(e.x-19,e.y-roofLift-59,38*(e.hp/e.maxHp),5);
  }
 }
 function reportKill(){
@@ -1325,6 +1330,7 @@ function drawBushes(base=true){for(const b of bushes){
  ctx.restore();
 }}
 function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
+ if(window.worldArt?.weapon(ctx,type,x,y,scale,muzzle))return;
  const w=weapons[type]||weapons.pistol;
  ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.lineCap="round";ctx.lineJoin="round";
  const longGun=["rifle","shotgun","lmg"].includes(type);
@@ -1368,6 +1374,7 @@ function drawWeaponModel(type,x=0,y=0,scale=1,muzzle=false){
 }
 function drawWeaponPickups(){for(const p of weaponPickups){const w=weapons[p.type];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.spin*.18);ctx.fillStyle="#061018dd";ctx.beginPath();ctx.arc(0,0,29,0,Math.PI*2);ctx.fill();ctx.strokeStyle=w.color;ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(0,0,25,0,Math.PI*2);ctx.stroke();ctx.rotate(-p.spin*.18);drawWeaponModel(p.type,0,-2,.48,false);ctx.restore();ctx.fillStyle="#eaf4fa";ctx.font="800 9px system-ui";ctx.textAlign="center";ctx.fillText(w.name,p.x,p.y-34);ctx.textAlign="left"}}
 function drawVehicle(x,y,a,c,w=62,h=32){
+ if(w>=58&&window.worldArt?.entity(ctx,"jeep",{x,y,angle:a,size:68,damaged:c==="#3a3a3a"||c==="#d86770"}))return;
  ctx.save();ctx.translate(x,y);ctx.rotate(a);
  const damaged=c==="#3a3a3a";
  ctx.fillStyle="rgba(0,0,0,.46)";ctx.beginPath();ctx.ellipse(-1,8,w*.56,h*.58,0,0,Math.PI*2);ctx.fill();
@@ -1733,7 +1740,9 @@ function render(){
 
    ctx.fillStyle="#fff";ctx.font="900 10px system-ui";ctx.textAlign="center";ctx.fillText("MÍSSIL",m.x,m.y+3);ctx.textAlign="left";
   }else{
-   ctx.fillStyle="rgba(255,92,28,"+(m.t/.35)+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r*(1.2-m.t/.7),0,Math.PI*2);ctx.fill();
+   if(!window.worldArt?.effect(ctx,"explosion",m.x,m.y,m.r*2.2,m.t/.35)){
+    ctx.fillStyle="rgba(255,92,28,"+(m.t/.35)+")";ctx.beginPath();ctx.arc(m.x,m.y,m.r*(1.2-m.t/.7),0,Math.PI*2);ctx.fill();
+   }
   }
   ctx.restore();
  });
