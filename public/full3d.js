@@ -12,86 +12,228 @@ renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.1;
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x9fc7df);
-scene.fog=new THREE.Fog(0x9fc7df,38,115);
 const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,250);
 
-scene.add(new THREE.HemisphereLight(0xdce8f0,0x35513a,2.0));
-const sun=new THREE.DirectionalLight(0xffe5bd,3.5);
-sun.position.set(-18,28,-14); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
-sun.shadow.camera.left=-40; sun.shadow.camera.right=40; sun.shadow.camera.top=40; sun.shadow.camera.bottom=-40;
-scene.add(sun);
 
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120,1,1),new THREE.MeshStandardMaterial({color:0x5f7f4d,roughness:1}));
+function buildForestEnvironment(scene,options={}){
+ const {
+  mapSize=300,
+  treeCount=180,
+  rockCount=60,
+  bushCount=90,
+  safeZoneRadius=25,
+  seed=42
+ }=options;
 
-floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
-
-// Nature ambience
-const natureGroup=new THREE.Group(); scene.add(natureGroup);
-
-function makeTree(x,z,s=1){
- const g=new THREE.Group();
- const trunk=new THREE.Mesh(
-   new THREE.CylinderGeometry(.18*s,.24*s,2.1*s,8),
-   new THREE.MeshStandardMaterial({color:0x6c4b2f,roughness:1})
- );
- trunk.position.y=1.05*s; trunk.castShadow=true; trunk.receiveShadow=true; g.add(trunk);
- const leafMat=new THREE.MeshStandardMaterial({color:0x3e6f38,roughness:.95});
- const crown1=new THREE.Mesh(new THREE.SphereGeometry(.95*s,8,7),leafMat);
- crown1.position.set(0,2.45*s,0); crown1.castShadow=true; crown1.receiveShadow=true; g.add(crown1);
- const crown2=new THREE.Mesh(new THREE.SphereGeometry(.72*s,8,7),new THREE.MeshStandardMaterial({color:0x4f8243,roughness:.95}));
- crown2.position.set(.25*s,3.05*s,.08*s); crown2.castShadow=true; g.add(crown2);
- g.position.set(x,0,z); natureGroup.add(g);
-}
-function makeBush(x,z,s=1){
- const g=new THREE.Group();
- const mat=new THREE.MeshStandardMaterial({color:0x4f7c43,roughness:1});
- for(const [ox,oz,sc] of [[0,0,1],[.45,.12,.78],[-.4,.1,.72],[.1,-.36,.66]]){
-   const m=new THREE.Mesh(new THREE.SphereGeometry(.52*s*sc,7,6),mat);
-   m.position.set(ox*s,.42*s,oz*s); m.castShadow=true; m.receiveShadow=true; g.add(m);
+ let currentSeed=seed;
+ function random(){
+  const x=Math.sin(currentSeed++)*10000;
+  return x-Math.floor(x);
  }
- g.position.set(x,0,z); natureGroup.add(g);
+
+ const skyColor=new THREE.Color(0xa8d5e5);
+ const fogColor=new THREE.Color(0xc2e0d8);
+ scene.background=skyColor;
+ scene.fog=new THREE.FogExp2(fogColor,.0085);
+
+ const hemiLight=new THREE.HemisphereLight(0xdff5ff,0x3b5233,.85);
+ hemiLight.position.set(0,50,0);
+ scene.add(hemiLight);
+
+ const sunLight=new THREE.DirectionalLight(0xfff4d6,1.4);
+ sunLight.position.set(60,100,40);
+ sunLight.castShadow=true;
+ sunLight.shadow.mapSize.width=2048;
+ sunLight.shadow.mapSize.height=2048;
+ sunLight.shadow.camera.near=10;
+ sunLight.shadow.camera.far=250;
+ const d=100;
+ sunLight.shadow.camera.left=-d;
+ sunLight.shadow.camera.right=d;
+ sunLight.shadow.camera.top=d;
+ sunLight.shadow.camera.bottom=-d;
+ sunLight.shadow.bias=-.0005;
+ scene.add(sunLight);
+
+ const groundGeo=new THREE.PlaneGeometry(mapSize,mapSize,64,64);
+ groundGeo.rotateX(-Math.PI/2);
+ const posAttr=groundGeo.attributes.position;
+ for(let i=0;i<posAttr.count;i++){
+  const x=posAttr.getX(i);
+  const z=posAttr.getZ(i);
+  const distFromCenter=Math.hypot(x,z);
+  if(distFromCenter>safeZoneRadius){
+   const factor=Math.min((distFromCenter-safeZoneRadius)/40,1);
+   const height=(Math.sin(x*.05)*Math.cos(z*.05)*2.5+Math.sin(x*.12+z*.1)*.8)*factor;
+   posAttr.setY(i,height);
+  }
+ }
+ groundGeo.computeVertexNormals();
+
+ const groundMat=new THREE.MeshStandardMaterial({
+  color:0x5c8a47,
+  roughness:.9,
+  metalness:.05,
+  flatShading:true
+ });
+ const ground=new THREE.Mesh(groundGeo,groundMat);
+ ground.receiveShadow=true;
+ scene.add(ground);
+
+ function getTerrainHeight(x,z){
+  const distFromCenter=Math.hypot(x,z);
+  if(distFromCenter<=safeZoneRadius)return 0;
+  const factor=Math.min((distFromCenter-safeZoneRadius)/40,1);
+  return (Math.sin(x*.05)*Math.cos(z*.05)*2.5+Math.sin(x*.12+z*.1)*.8)*factor;
+ }
+
+ const trunkMat=new THREE.MeshStandardMaterial({color:0x6e4f3a,roughness:.9,flatShading:true});
+ const leafMaterials=[
+  new THREE.MeshStandardMaterial({color:0x3d6e35,roughness:.8,flatShading:true}),
+  new THREE.MeshStandardMaterial({color:0x4f8542,roughness:.8,flatShading:true}),
+  new THREE.MeshStandardMaterial({color:0x2d5429,roughness:.8,flatShading:true})
+ ];
+ const rockMat=new THREE.MeshStandardMaterial({color:0x858a8c,roughness:.85,flatShading:true});
+
+ const forestGroup=new THREE.Group();
+ const colliders=[];
+
+ function createPineTree(scale){
+  const tree=new THREE.Group();
+  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
+
+  const trunkGeo=new THREE.CylinderGeometry(.35*scale,.55*scale,2.5*scale,6);
+  const trunk=new THREE.Mesh(trunkGeo,trunkMat);
+  trunk.position.y=1.25*scale;
+  trunk.castShadow=true;
+  trunk.receiveShadow=true;
+  tree.add(trunk);
+
+  for(let i=0;i<3;i++){
+   const radius=(2.4-i*.55)*scale;
+   const height=2.8*scale;
+   const coneGeo=new THREE.ConeGeometry(radius,height,7);
+   const cone=new THREE.Mesh(coneGeo,mat);
+   cone.position.y=(3+i*1.5)*scale;
+   cone.rotation.y=random()*Math.PI;
+   cone.castShadow=true;
+   cone.receiveShadow=true;
+   tree.add(cone);
+  }
+  return tree;
+ }
+
+ function createOakTree(scale){
+  const tree=new THREE.Group();
+  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
+
+  const trunkGeo=new THREE.CylinderGeometry(.4*scale,.65*scale,3.2*scale,6);
+  const trunk=new THREE.Mesh(trunkGeo,trunkMat);
+  trunk.position.y=1.6*scale;
+  trunk.castShadow=true;
+  trunk.receiveShadow=true;
+  tree.add(trunk);
+
+  const crownPositions=[
+   {x:0,y:4.2,z:0,r:2.2},
+   {x:1.1,y:3.6,z:.6,r:1.5},
+   {x:-1,y:3.8,z:-.7,r:1.6}
+  ];
+  crownPositions.forEach(p=>{
+   const crownGeo=new THREE.IcosahedronGeometry(p.r*scale,1);
+   const crown=new THREE.Mesh(crownGeo,mat);
+   crown.position.set(p.x*scale,p.y*scale,p.z*scale);
+   crown.rotation.set(random(),random(),random());
+   crown.castShadow=true;
+   crown.receiveShadow=true;
+   tree.add(crown);
+  });
+  return tree;
+ }
+
+ function createRock(scale){
+  const rockGeo=new THREE.DodecahedronGeometry(scale,0);
+  const pos=rockGeo.attributes.position;
+  for(let i=0;i<pos.count;i++){
+   pos.setXYZ(
+    i,
+    pos.getX(i)*(.8+random()*.4),
+    pos.getY(i)*(.6+random()*.4),
+    pos.getZ(i)*(.8+random()*.4)
+   );
+  }
+  rockGeo.computeVertexNormals();
+  const rock=new THREE.Mesh(rockGeo,rockMat);
+  rock.castShadow=true;
+  rock.receiveShadow=true;
+  return rock;
+ }
+
+ function createBush(scale){
+  const bush=new THREE.Group();
+  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
+  for(let i=0;i<3;i++){
+   const geo=new THREE.IcosahedronGeometry((.7+random()*.4)*scale,0);
+   const part=new THREE.Mesh(geo,mat);
+   part.position.set((random()-.5)*scale,.4*scale,(random()-.5)*scale);
+   part.castShadow=true;
+   part.receiveShadow=true;
+   bush.add(part);
+  }
+  return bush;
+ }
+
+ function getValidPosition(minRadius){
+  let x,z,dist,attempts=0;
+  do{
+   x=(random()-.5)*(mapSize-15);
+   z=(random()-.5)*(mapSize-15);
+   dist=Math.hypot(x,z);
+   attempts++;
+  }while(dist<minRadius&&attempts<30);
+  return {x,z,y:getTerrainHeight(x,z)};
+ }
+
+ for(let i=0;i<treeCount;i++){
+  const pos=getValidPosition(safeZoneRadius);
+  const scale=.8+random()*.9;
+  const tree=random()>.45?createPineTree(scale):createOakTree(scale);
+  tree.position.set(pos.x,pos.y,pos.z);
+  tree.rotation.y=random()*Math.PI*2;
+  forestGroup.add(tree);
+  colliders.push({type:'tree',x:pos.x,z:pos.z,radius:.6*scale});
+ }
+
+ for(let i=0;i<rockCount;i++){
+  const pos=getValidPosition(safeZoneRadius*.7);
+  const scale=.6+random()*1.4;
+  const rock=createRock(scale);
+  rock.position.set(pos.x,pos.y+scale*.3,pos.z);
+  rock.rotation.set(random()*Math.PI,random()*Math.PI,0);
+  forestGroup.add(rock);
+  colliders.push({type:'rock',x:pos.x,z:pos.z,radius:scale*.9});
+ }
+
+ for(let i=0;i<bushCount;i++){
+  const pos=getValidPosition(safeZoneRadius*.5);
+  const scale=.7+random()*.8;
+  const bush=createBush(scale);
+  bush.position.set(pos.x,pos.y,pos.z);
+  forestGroup.add(bush);
+ }
+
+ scene.add(forestGroup);
+ return {forestGroup,colliders,getTerrainHeight,ground};
 }
-function makeRock(x,z,s=1){
- const m=new THREE.Mesh(
-   new THREE.DodecahedronGeometry(.55*s,0),
-   new THREE.MeshStandardMaterial({color:0x737b70,roughness:1})
- );
- m.scale.set(1.25,.75,1); m.position.set(x,.32*s,z); m.rotation.set(.2,.5,.1);
- m.castShadow=true; m.receiveShadow=true; natureGroup.add(m);
-}
-function makeGrassPatch(x,z,w,d,color){
- const m=new THREE.Mesh(
-   new THREE.PlaneGeometry(w,d),
-   new THREE.MeshStandardMaterial({color,roughness:1,side:THREE.DoubleSide})
- );
- m.rotation.x=-Math.PI/2; m.position.set(x,.012,z); m.receiveShadow=true; natureGroup.add(m);
-}
 
-makeGrassPatch(-22,-18,22,15,0x557447);
-makeGrassPatch(0,0,34,24,0x6f9259);
-makeGrassPatch(24,18,26,18,0x6b8d55);
-makeGrassPatch(-22,22,18,16,0x64824f);
-makeGrassPatch(24,-22,20,15,0x58784a);
-
-[
- [-26,-20,1.25],[-20,-26,1],[-30,6,1.15],[-24,20,1.05],[-12,28,.9],
- [14,27,1.15],[26,24,1.25],[31,8,1],[28,-18,1.2],[16,-28,1],
- [-4,-30,.9],[7,31,.95],
- [-8,8,.95],[8,10,1.05],[-11,-6,.9],[12,-4,.9]
-].forEach(v=>makeTree(...v));
-
-[
- [-18,-12,1],[-13,20,.85],[-29,14,.9],[22,13,1],[30,-7,.95],
- [18,-21,.85],[-6,27,.8],[10,-26,.8],
- [-5,5,.85],[5,6,.8],[-7,-3,.75],[7,-2,.8]
-].forEach(v=>makeBush(...v));
-
-[
- [-10,-18,.9],[-28,-4,.75],[-18,28,.8],[24,28,.95],[31,17,.7],
- [20,-29,.85],[6,-31,.65]
-].forEach(v=>makeRock(...v));
-
+const forestEnvironment=buildForestEnvironment(scene,{
+ mapSize:300,
+ treeCount:180,
+ rockCount:60,
+ bushCount:90,
+ safeZoneRadius:25,
+ seed:42
+});
 
 function box(x,y,z,sx,sy,sz,color=0x7f8a86){
  const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshStandardMaterial({color,roughness:.9}));
