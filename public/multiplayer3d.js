@@ -35,7 +35,7 @@ export function createMultiplayer3D(options){
   api.name=name;api.room=room;sequence=0;retries=0;desired=true;open();
  };
  api.disconnect=()=>{desired=false;epoch++;clearTimeout(retryTimer);socket?.close();socket=null;api.connected=false;api.id=null;clearPeers();onStatus('solo')};
- api.update=(dt,state)=>{timer+=dt;if(api.connected&&timer>=.1){timer=0;send({type:'state3d',...state,name})}};
+ api.update=(dt,state)=>{timer+=dt;if(api.connected&&timer>=.05){timer%=.05;send({type:'state3d',...state,name})}};
  api.shoot=payload=>{if(!api.connected)return null;const shotId=Date.now().toString(36)+'-'+(++sequence).toString(36);return send({type:'shot3d',...payload,shotId})?shotId:null};
  api.hit=(shotId,pellet,targetId)=>send({type:'hit3d',shotId,pellet,targetId});
  return api;
