@@ -5,7 +5,7 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1">
-  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css?v=shop-grenade-1">
+  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css?v=simple-menu-1">
 </head>
 <body>
 <header class="hero landing-only launcher-screen">
@@ -13,37 +13,29 @@
     <nav class="launcher-nav">
       <div class="launcher-brand">
         <span class="brand-mark">J</span>
-        <div><strong>JAIME TESTE</strong><small>STREET PROTOTYPE</small></div>
+        <div><strong>STREET PROTOTYPE</strong><small>3D ONLINE</small></div>
       </div>
       <div class="launcher-nav-actions">
-        <button class="launcher-link" data-open-panel="updatesPanel"><span>◉</span> Atualizações</button>
-        <button class="launcher-link" data-open-panel="arsenalPanel"><span>⌁</span> Arsenal</button>
-        <button class="launcher-link" data-open-panel="characterPanel"><span>♟</span> Personagem</button>
-        <button class="launcher-link" data-open-panel="shopPanel"><span>◆</span> Loja</button>
+        <button class="launcher-link" data-open-panel="shopPanel">Loja</button>
       </div>
     </nav>
 
     <div class="launcher-main">
       <section class="launcher-copy">
-        <span class="launcher-kicker">WEB BUILD • 3D</span>
-        <h1>DOMINE<br><em>A CIDADE</em></h1>
-        <p>Explore a cidade em 3D, dirija veículos e suba aos telhados. Jogue livremente sem bots ou entre numa sala multiplayer com seus amigos.</p>
+        <span class="launcher-kicker">STREET PROTOTYPE</span>
+        <h1>ENTRE<br><em>NA CIDADE</em></h1>
+        <p>Escolha como quer jogar.</p>
         <div class="launcher-buttons">
-          <button class="btn open-game main-play-btn">Jogar agora</button>
-          <a class="btn" href="/3d?multiplayer=1">Multiplayer</a>
-          <button class="launcher-secondary" data-open-panel="updatesPanel">Ver novidades</button>
-        </div>
-        <div class="launcher-status">
-          <span><i></i> Build online</span>
-          <span>MODO 3D / 2.5D</span>
-          <span>PC + Mobile</span>
+          <button class="btn open-game main-play-btn">Jogar</button>
+          <a class="btn" href="/3d.html?multiplayer=1">Multiplayer</a>
+          <button class="launcher-secondary" data-open-panel="shopPanel">Loja</button>
         </div>
       </section>
 
       <section class="launcher-showcase">
         <div class="showcase-grid"></div>
         <div class="showcase-glow"></div>
-        <div class="showcase-character current-3d-character" id="landingCharacter" aria-label="Personagem atual do modo 3D">
+        <div class="showcase-character current-3d-character" id="landingCharacter" aria-label="Personagem atual">
           <span class="c3d-shadow"></span>
           <span class="c3d-leg c3d-leg-a"></span><span class="c3d-leg c3d-leg-b"></span>
           <span class="c3d-torso"></span>
@@ -51,23 +43,7 @@
           <span class="c3d-helmet"></span>
           <span class="c3d-gun"><i></i><b></b></span>
         </div>
-        <div class="showcase-badge"><b>NOVA BUILD</b><span>Personagem atual do modo 3D</span></div>
       </section>
-    </div>
-
-    <div class="launcher-cards">
-      <button class="launcher-card" data-open-panel="updatesPanel">
-        <span class="card-icon">↻</span><div><small>PATCH NOTES</small><strong>Atualizações</strong><p>Veja o que entrou na versão atual.</p></div><b>→</b>
-      </button>
-      <button class="launcher-card" data-open-panel="arsenalPanel">
-        <span class="card-icon">⌁</span><div><small>ARMAMENTO</small><strong>Arsenal</strong><p>Conheça a arte e o perfil das armas.</p></div><b>→</b>
-      </button>
-      <button class="launcher-card" data-open-panel="characterPanel">
-        <span class="card-icon">♟</span><div><small>PERSONALIZAÇÃO</small><strong>Seu personagem</strong><p>Escolha roupa, pele e cabelo.</p></div><b>→</b>
-      </button>
-      <button class="launcher-card" data-open-panel="shopPanel">
-        <span class="card-icon">◆</span><div><small>COSMÉTICOS</small><strong>Loja</strong><p>Equipe skins de armas e visuais do personagem.</p></div><b>→</b>
-      </button>
     </div>
   </div>
 </header>
