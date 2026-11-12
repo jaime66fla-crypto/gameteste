@@ -1,7 +1,5 @@
 window.addEventListener('error',e=>{const s=document.getElementById('state');if(s)s.textContent='ERRO: '+(e.message||'falha JS')});
 window.addEventListener('unhandledrejection',e=>{const s=document.getElementById('state');if(s)s.textContent='ERRO: '+(e.reason?.message||e.reason||'promise')});
-import * as THREE from 'https://esm.sh/three@0.187.0';
-import { FBXLoader } from 'https://esm.sh/three@0.187.0/examples/jsm/loaders/FBXLoader.js';
 
 const canvas=document.getElementById('view');
 const stateEl=document.getElementById('state');
@@ -65,7 +63,7 @@ function makeGun(){
 }
 makeGun();
 
-new FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
+new THREE.FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
  model=fbx;
  model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
  const box3=new THREE.Box3().setFromObject(model),h=box3.max.y-box3.min.y;
