@@ -623,8 +623,8 @@ class BowAnimationSystem {
   this.state='holstered';
   this.drawProgress=0;
   this.avatar.group.add(this.bowGroup);
-  this.bowGroup.position.set(-.18,1.22,-.34);
-  this.bowGroup.rotation.set(.18,.15,.78);
+  this.bowGroup.position.set(.24,1.22,-.58);
+  this.bowGroup.rotation.set(.12,.08,.92);
   this.handArrow.visible=false;
   this.updateBowDeformation(0);
  }
