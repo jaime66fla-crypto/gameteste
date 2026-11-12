@@ -5,7 +5,8 @@ const DEFINITIONS=Object.freeze({
  pistol:{id:'pistol',name:'Pistola',ammoType:'light',magSize:12,damage:30,fireRate:60/340,reloadTime:1.15,spread:.0025,pellets:1,auto:false,range:65,muzzleZ:.2,color:0xd6c49a},
  smg:{id:'smg',name:'Submetralhadora',ammoType:'light',magSize:24,damage:18,fireRate:.095,reloadTime:1.7,spread:.009,pellets:1,auto:true,range:45,muzzleZ:.29,color:0x80c4de},
  rifle:{id:'rifle',name:'Rifle de assalto',ammoType:'rifle',magSize:30,damage:28,fireRate:.14,reloadTime:2,spread:.004,pellets:1,auto:true,range:85,muzzleZ:.47,color:0x91c388},
- shotgun:{id:'shotgun',name:'Escopeta',ammoType:'shells',magSize:6,damage:11,fireRate:.85,reloadTime:2.2,spread:.05,pellets:6,auto:false,range:28,muzzleZ:.5,color:0xe8b17f}
+ shotgun:{id:'shotgun',name:'Escopeta',ammoType:'shells',magSize:6,damage:11,fireRate:.85,reloadTime:2.2,spread:.05,pellets:6,auto:false,range:28,muzzleZ:.5,color:0xe8b17f},
+ sniper:{id:'sniper',name:'Sniper',ammoType:'rifle',magSize:5,damage:95,fireRate:1.05,reloadTime:2.7,spread:.0006,pellets:1,auto:false,range:220,muzzleZ:.68,color:0xc8d2a0}
 });
 const AMMO_NAMES={light:'Munição leve',rifle:'Munição de rifle',shells:'Cartuchos'};
 const CAPS={light:240,rifle:180,shells:48};
@@ -20,6 +21,10 @@ function createModel(id){
   box(.045,.055,.14,grip,0,.015,-.12);box(.062,.1,.025,dark,0,.0,-.2);
   if(id==='shotgun'){
    box(.035,.035,.39,steel,0,.035,.285);box(.025,.025,.33,dark,0,-.007,.27);box(.07,.065,.12,grip,0,-.004,.21);
+  }else if(id==='sniper'){
+   box(.045,.055,.36,dark,0,.025,.12);box(.026,.026,.48,steel,0,.04,.47);box(.055,.065,.18,grip,0,.005,-.14);box(.04,.09,.055,grip,0,-.055,-.015,-.12);
+   const scope=box(.11,.11,.27,dark,0,.13,.07);scope.geometry.dispose();scope.geometry=new THREE.CylinderGeometry(.055,.055,.27,14);scope.rotation.x=Math.PI/2;
+   box(.018,.055,.02,steel,0,.09,.0);box(.018,.055,.02,steel,0,.09,.14);
   }else{
    box(.05,id==='smg'?.135:.12,.065,grip,0,-.062,.06,-.16);
    box(.06,.065,id==='smg'?.09:.14,grip,0,.02,id==='smg'?.16:.23);
@@ -144,7 +149,7 @@ class WeaponLootSystem {
   this.activeSlot=slot;this.remove(item);this.applyActive(true);this.notify(spec.name+' equipada');return true;
  }
  populate(){
-  for(const [id,x,z]of [['smg',-2,-1],['rifle',2,-2],['shotgun',0,-5],['pistol',-3,-7]])this.addWeapon(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
+  for(const [id,x,z]of [['smg',-2,-1],['rifle',2,-2],['shotgun',0,-5],['pistol',-3,-7],['sniper',4,-8]])this.addWeapon(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
   const ids=Object.keys(DEFINITIONS),types=Object.keys(AMMO_NAMES);
   for(let n=0;n<22;n++)for(let attempt=0;attempt<100;attempt++){
    const extent=n<4||n>=8&&n<14?62:220;
