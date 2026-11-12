@@ -1550,8 +1550,9 @@ class PlayerController {
    const moveAngle=Math.atan2(inputDir.x,inputDir.z)+cameraAngle+Math.PI;
    const moveDir=new THREE.Vector3(Math.sin(moveAngle),0,Math.cos(moveAngle));
 
-   const canSprint=this.keys.sprint&&this.stamina>0&&!this.isCrouching;
-   const currentSpeed=this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed;
+   const canSprint=this.keys.sprint&&this.stamina>0&&!this.isCrouching&&!this.keys.aiming;
+   const adsMoveScale=this.keys.aiming?.72:1;
+   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
    this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
@@ -1892,6 +1893,51 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
 }
 const pistolWeapon=new PistolController(scene,player,mainAvatar,camera);
 
+// Dedicated first-person weapon model used only while ADS.
+// Keeping it on the camera prevents the world avatar rig from blocking movement or drifting off-center.
+const adsViewModel=new THREE.Group();
+adsViewModel.name='ADS_VIEWMODEL';
+camera.add(adsViewModel);
+if(!camera.parent)scene.add(camera);
+let adsViewWeapon=null;
+let adsViewWeaponId=null;
+function ensureAdsViewWeapon(id){
+ if(adsViewWeaponId===id&&adsViewWeapon)return adsViewWeapon;
+ if(adsViewWeapon){
+  adsViewModel.remove(adsViewWeapon);
+  adsViewWeapon.traverse(o=>{if(o.isMesh){o.geometry?.dispose?.();}});
+ }
+ adsViewWeapon=window.WeaponLootSystem.createModel(id);
+ adsViewWeaponId=id;
+ adsViewModel.add(adsViewWeapon);
+ return adsViewWeapon;
+}
+function updateAdsViewModel(dt){
+ const active=controller?.keys?.aiming&&pistolWeapon.isEquipped;
+ const id=weaponLoot?.definition?.id||'pistol';
+ adsViewModel.visible=!!active;
+ if(!active)return;
+ const gun=ensureAdsViewWeapon(id);
+ const recoil=pistolWeapon.recoil||0;
+ const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
+ const poses={
+  pistol:{p:[.19,-.23,-.52],r:[-.02,.02,0],s:2.4},
+  smg:{p:[.18,-.22,-.64],r:[-.015,.015,0],s:2.15},
+  rifle:{p:[.17,-.24,-.76],r:[-.01,.01,0],s:2.05},
+  shotgun:{p:[.2,-.25,-.77],r:[-.015,.015,0],s:1.95},
+  sniper:{p:[.17,-.26,-.88],r:[-.008,.008,0],s:1.9}
+ };
+ const pose=poses[id]||poses.pistol;
+ const t=1-Math.exp(-dt*20);
+ gun.position.x=THREE.MathUtils.lerp(gun.position.x,pose.p[0]+bob,t);
+ gun.position.y=THREE.MathUtils.lerp(gun.position.y,pose.p[1]-Math.abs(bob)*.4+recoil*.012,t);
+ gun.position.z=THREE.MathUtils.lerp(gun.position.z,pose.p[2]+recoil*.06,t);
+ gun.rotation.x=THREE.MathUtils.lerp(gun.rotation.x,pose.r[0]-recoil*.08,t);
+ gun.rotation.y=THREE.MathUtils.lerp(gun.rotation.y,pose.r[1],t);
+ gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,pose.r[2]+bob*.7,t);
+ gun.scale.setScalar(pose.s);
+}
+
 // Use the locally bundled, approved operator instead of loading Soldier from a CDN.
 pistolWeapon.pistol.removeFromParent ? pistolWeapon.pistol.removeFromParent() : pistolWeapon.pistol.parent.remove(pistolWeapon.pistol);
 pistolWeapon.pistol=mainAvatar.gun;
@@ -2083,27 +2129,23 @@ function updateCamera(dt){
  const sightDir=front.clone().sub(rear).normalize();
  const blend=1-Math.exp(-dt*18);
 
- let cameraBack=.115;
- let cameraUp=.008;
  let targetFov=46;
  let mode='iron';
 
  if(weaponId==='smg'||weaponId==='rifle'){
   mode='optic';
-  cameraBack=.16;
-  cameraUp=.012;
   targetFov=38;
  }else if(weaponId==='sniper'){
   mode='scope';
-  cameraBack=.2;
-  cameraUp=.01;
   targetFov=20;
  }else if(weaponId==='shotgun'){
-  cameraBack=.14;
   targetFov=43;
  }
 
- const desired=rear.clone().addScaledVector(sightDir,-cameraBack).add(new THREE.Vector3(0,cameraUp,0));
+ // Camera stays driven by the player/head direction; the dedicated ADS viewmodel
+ // supplies the visible weapon. This keeps WASD locomotion independent from the sight mesh.
+ const eye=player.position.clone().add(new THREE.Vector3(0,controller.isCrouching?1.18:1.55,0));
+ const desired=eye;
  camera.position.lerp(desired,blend);
 
  const lookTarget=front.clone().addScaledVector(sightDir,weaponId==='sniper'?120:28);
@@ -2244,6 +2286,7 @@ function loop(){
  }
  weaponLoot.updateHeldPose();
  pistolWeapon.update(dt,movingNow);
+ updateAdsViewModel(dt);
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
