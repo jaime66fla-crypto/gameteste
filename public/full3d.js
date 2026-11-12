@@ -680,6 +680,7 @@ class HumanCharacter {
   this.jumpBlend=0;
   this.landBlend=0;
   this.wasGrounded=true;
+  this.airborneBaseAction=null;
  }
  load(url){
   // Current runtime is classic Three.js r128. Use GLTFLoader only if available globally.
@@ -765,11 +766,22 @@ class HumanCharacter {
  updateLocomotion(speed,isGrounded=true){
   if(!isGrounded){
    const jumpKey=this.findActionKey(['jump']);
-   if(jumpKey)this.fadeToAction('jump',.12);
-   else this.fadeToAction('run',.12);
+   if(jumpKey){
+    this.fadeToAction('jump',.12);
+   }else{
+    // Soldier has no jump clip: stop locomotion animation while airborne.
+    if(this.activeAction){
+     this.airborneBaseAction=this.activeAction;
+     this.activeAction.paused=true;
+    }
+    this.state='jump';
+   }
    return;
   }
-  if(this.state==='jump'&&!isGrounded)return;
+
+  // Resume locomotion animations after landing.
+  if(this.activeAction&&this.activeAction.paused)this.activeAction.paused=false;
+  if(this.state==='jump'&&isGrounded)this.state='idle';
   if(speed>4.5){
    this.fadeToAction('run',.2);
    if(this.activeAction)this.activeAction.setEffectiveTimeScale(Math.max(.7,speed/6));
@@ -803,6 +815,7 @@ class HumanCharacter {
   if(!this.wasGrounded&&isGrounded){
    this.jumpPhase='landing';
    this.landBlend=1;
+   if(this.activeAction&&this.activeAction.paused)this.activeAction.paused=false;
   }
   this.wasGrounded=isGrounded;
 
