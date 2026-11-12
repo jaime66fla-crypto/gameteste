@@ -18,7 +18,7 @@ function createModel(id){
   box(.05,.006,.043,dark,0,-.043,.025);box(.008,.008,.012,dark,0,.064,.103);
  }else{
   box(.055,.065,id==='smg'?.18:.23,dark,0,.02,.055);box(.041,.085,.05,grip,0,-.047,-.012,-.15);
-  box(.045,.055,.14,grip,0,.015,-.12);box(.062,.1,.025,dark,0,.0,-.2);
+  box(.045,.055,.14,grip,-.07,.085,-.12);box(.062,.1,.025,dark,-.07,.105,-.2);
   if(id==='shotgun'){
    box(.035,.035,.39,steel,0,.035,.285);box(.025,.025,.33,dark,0,-.007,.27);box(.07,.065,.12,grip,0,-.004,.21);
   }else if(id==='sniper'){
@@ -100,6 +100,7 @@ class WeaponLootSystem {
  }
  applyActive(equip){
   const spec=this.definition,gun=this.controller;
+  this.avatar.setWeapon?.(spec.id);
   Object.assign(gun,{weaponSpec:spec,magSize:spec.magSize,ammo:this.slots[this.activeSlot].ammo,reserveAmmo:this.reserves[spec.ammoType],fireRate:spec.fireRate,reloadTime:spec.reloadTime,spread:spec.spread,isReloading:false,reloadTimer:0,triggerHeld:false});
   let model=this.heldModels.get(spec.id);
   if(!model){model=createModel(spec.id);this.heldModels.set(spec.id,model);this.avatar.gun.add(model);}
@@ -182,6 +183,7 @@ class WeaponLootSystem {
   this.applyActive(false);
  }
  updateHeldPose(){
+  if(this.avatar.ownsWeaponPose)return;
   if(this.definition.id==='pistol'||!this.controller.isEquipped)return;
   const avatar=this.avatar,root=avatar.group,weight=avatar.aimBlend*(1-avatar.coverBlend);
   if(weight<.001)return;
@@ -214,3 +216,4 @@ class WeaponLootSystem {
 WeaponLootSystem.DEFINITIONS=DEFINITIONS;WeaponLootSystem.AMMO_NAMES=AMMO_NAMES;WeaponLootSystem.createModel=createModel;
 window.WeaponLootSystem=WeaponLootSystem;
 })();
+

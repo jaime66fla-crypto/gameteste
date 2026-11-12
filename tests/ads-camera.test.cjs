@@ -10,7 +10,7 @@ function element() { return { style: {}, setAttribute() {}, classList: { add() {
 const elements = new Map();
 const context = { THREE, window: { addEventListener() {} }, document: { body: element(), getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, addEventListener() {} }, addEventListener() {}, devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, requestAnimationFrame() {}, console, setTimeout() {}, clearTimeout() {}, performance: { now: () => 1000 }, location: { host: 'game.test', protocol: 'https:' }, WebSocket: class {}, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(context);
-for (const path of ['operator-avatar.js', 'combat-bots.js', 'cover-controller.js', 'weapon-loot.js', 'full3d.js']) {
+for (const path of ['operator-motion.js', 'operator-avatar.js', 'combat-bots.js', 'cover-controller.js', 'weapon-loot.js', 'full3d.js']) {
  vm.runInContext(fs.readFileSync('public/' + path, 'utf8'), context);
 }
 const a = vm.runInContext('({player,camera,controller,thirdPersonCamera,mainAvatar,pistolWeapon,weaponLoot,houseParkour,updateCamera,updateAdsViewModel})', context);
@@ -96,3 +96,4 @@ test('all WASD directions work during ADS and releasing it preserves the heading
  a.updateCamera(1 / 60);
  assert(a.camera.getWorldDirection(new THREE.Vector3()).z > .999, 'Release must not rotate toward north');
 });
+

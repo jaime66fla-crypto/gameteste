@@ -1,74 +1,208 @@
-/* Original operator approved in avatar-preview; no remote character asset required. */
-(function(){
+/* Approved 2K operator: real Three.js skinning, existing 18 bones, +Z forward. */
+(()=>{
 'use strict';
-window.OperatorAvatar=class OperatorAvatar{
-constructor({team='player'}={}){
-const mat=(color,roughness=.85,metalness=0)=>new THREE.MeshStandardMaterial({color,roughness,metalness});
-const fabric=mat(team==='red'?'#a24742':'#59634d'),vest=mat(team==='red'?'#693631':'#363e32'),trim=mat('#242c28'),rubber=mat('#171e20'),skin=mat('#b68b6d'),glass=mat('#243b40',.22,.4),metal=mat('#333d40',.35,.65),patch=mat(team==='red'?'#cf9a86':'#a9b99a');
-this.materials={fabric,vest,trim};
-function mesh(parent,geo,material,x=0,y=0,z=0){const m=new THREE.Mesh(geo,material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
-function box(p,w,h,d,m,x=0,y=0,z=0){return mesh(p,new THREE.BoxGeometry(w,h,d),m,x,y,z);}
-function ball(p,r,m,x=0,y=0,z=0,sx=1,sy=1,sz=1){const o=mesh(p,new THREE.SphereGeometry(r,20,14),m,x,y,z);o.scale.set(sx,sy,sz);return o;}
-function joint(p,x,y,z){const g=new THREE.Group();g.position.set(x,y,z);p.add(g);return g;}
-function segment(p,length,top,bottom,material){return mesh(p,new THREE.CylinderGeometry(top,bottom,length,12),material,0,-length/2,0);}
-const root=new THREE.Group(),pelvis=joint(root,0,.91,0),torso=joint(pelvis,0,.06,0);
-ball(pelvis,.2,fabric,0,0,0,1.05,.6,.7);
-const body=mesh(torso,new THREE.CylinderGeometry(.205,.165,.47,12),fabric,0,.235,0);body.scale.z=.65;
-const armor=box(torso,.395,.34,.22,vest,0,.265,.035);ball(torso,.18,vest,0,.415,.035,1,.25,.6);
-for(const s of [-1,1]){box(torso,.065,.43,.035,trim,s*.143,.25,.17);box(torso,.055,.055,.043,metal,s*.143,.38,.18);}
-for(let y=0;y<5;y++)for(let x=0;x<5;x++)box(torso,.052,.009,.013,patch,(x-2)*.061,.18+y*.033,.157);
-for(let i=-1;i<=1;i++){box(torso,.082,.125,.065,vest,i*.1,.12,.184);box(torso,.087,.025,.07,trim,i*.1,.175,.19);}
-box(torso,.17,.28,.1,vest,0,.26,-.14);box(torso,.12,.018,.013,patch,0,.35,-.197);
-const belt=mesh(pelvis,new THREE.CylinderGeometry(.218,.218,.065,16),trim,0,.015,0);belt.scale.z=.69;box(pelvis,.07,.05,.025,metal,0,.016,.153);
-box(pelvis,.09,.15,.07,trim,.235,-.07,0);box(pelvis,.08,.11,.065,vest,-.225,-.04,-.03);
-const neck=joint(torso,0,.51,0);segment(neck,.06,.058,.06,skin);const head=joint(neck,0,.065,0);
-ball(head,.122,skin,0,.05,.005,.8,1.16,.87);ball(head,.117,trim,0,.027,.025,.87,.63,.99);
-const helmet=ball(head,.137,vest,0,.115,-.012,1,.73,1.07);box(head,.245,.027,.245,trim,0,.125,.008);box(head,.08,.035,.055,trim,0,.15,.142);
-for(const s of [-1,1]){ball(head,.045,trim,s*.12,.04,-.01,.3,1,1);box(head,.097,.056,.032,glass,s*.052,.09,.113);box(head,.028,.04,.03,trim,s*.11,.09,.09);}
-box(head,.024,.019,.033,trim,0,.09,.122);box(head,.056,.037,.029,trim,0,.016,.124);
-const legs=[],arms=[];
-for(const s of [-1,1]){
- const hip=joint(pelvis,s*.112,-.06,0);ball(hip,.095,fabric,0,-.08,0,1,1.25,1);segment(hip,.39,.095,.071,fabric);
- box(hip,.07,.145,.108,vest,s*.065,-.18,-.015);box(hip,.075,.027,.115,trim,s*.065,-.115,-.015);
- const knee=joint(hip,0,-.39,0);ball(knee,.071,trim);ball(knee,.075,vest,0,-.018,.045,.84,1,.5);segment(knee,.38,.068,.046,fabric);
- const ankle=joint(knee,0,-.36,0);ball(ankle,.05,rubber);box(ankle,.112,.14,.15,rubber,0,-.008,.012);const boot=ball(ankle,.08,rubber,0,-.065,.058,.76,.6,1.45);box(ankle,.12,.027,.23,trim,0,-.103,.044);
- for(let j=0;j<4;j++)box(ankle,.063,.009,.007,patch,0,-.005+j*.022,.09);
- legs.push({hip,knee,ankle,s});
- const shoulder=joint(torso,s*.236,.438,0);ball(shoulder,.085,fabric,0,-.035,0);segment(shoulder,.265,.075,.056,fabric);box(shoulder,.018,.08,.064,patch,s*.072,-.105,0);
- const elbow=joint(shoulder,0,-.265,0);ball(elbow,.054,trim);segment(elbow,.245,.06,.041,fabric);
- const hand=joint(elbow,0,-.245,0);ball(hand,.046,rubber,0,-.023,.006,.8,1.25,.6);box(elbow,.072,.043,.073,trim,0,-.206,0);
- arms.push({shoulder,elbow,hand,s});
-}
-// Pistol points along local +Z and is anchored to the right hand.
-const gun=joint(arms[1].hand,0,-.018,.035);gun.rotation.x=Math.PI/2;
-box(gun,.039,.049,.175,metal,0,.035,.037);box(gun,.034,.034,.16,rubber,0,-.005,.03);const grip=box(gun,.035,.087,.045,rubber,0,-.051,-.018);grip.rotation.x=-.2;
-box(gun,.006,.024,.043,metal,-.024,-.031,.025);box(gun,.006,.024,.043,metal,.024,-.031,.025);box(gun,.05,.006,.043,metal,0,-.043,.025);
-box(gun,.008,.008,.012,trim,0,.064,.103);box(gun,.035,.008,.014,trim,0,.064,-.03);
-const flash=mesh(gun,new THREE.ConeGeometry(.045,.16,7),new THREE.MeshBasicMaterial({color:0xffe5a2}),0,.035,.2);flash.rotation.x=Math.PI/2;flash.visible=false;
-
-Object.assign(this,{group:root,pelvis,torso,head,legs,arms,gun,flash,leftArm:arms[0].shoulder,rightArm:arms[1].shoulder,leftHand:arms[0].hand,rightHand:arms[1].hand,leftLeg:legs[0].hip,rightLeg:legs[1].hip});
-this.phase=0;this.time=0;this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.gun.visible=false;
-}
-update(dt,{speed=0,grounded=true,armed=false,recoil=0,crouching=false,covering=false,coverSide=1}={}){
-const {pelvis,torso,head,legs,arms,gun}=this;
-this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,crouching&&grounded?1:0,1-Math.exp(-12*dt));
-const crouch=this.crouchBlend;
-this.coverBlend=THREE.MathUtils.lerp(this.coverBlend,covering?1:0,1-Math.exp(-12*dt));
-this.time+=dt;this.speed=THREE.MathUtils.lerp(this.speed,speed,1-Math.exp(-dt*9));this.aimBlend=THREE.MathUtils.lerp(this.aimBlend,armed?1:0,1-Math.exp(-dt*12));
-this.phase+=dt*(this.speed>2.4?10.5:6.5)*(1-crouch*.35);const phase=this.phase,weight=Math.min(1,this.speed/1.5),running=THREE.MathUtils.smoothstep(this.speed,2,3.8),cycle=Math.sin(phase),aimBlend=this.aimBlend;
-pelvis.position.y=.91+(grounded?Math.cos(phase*2)*.013*weight:0);pelvis.rotation.y=cycle*.055*weight;pelvis.rotation.z=cycle*.023*weight;
-torso.rotation.x=.055+running*.11+crouch*.18+Math.sin(this.time*1.6)*.007-aimBlend*.025;torso.rotation.y=-cycle*.065*weight*(1-aimBlend*.65);head.rotation.y=-torso.rotation.y*.65;
-legs.forEach(({hip,knee,ankle,s})=>{const p=phase+(s<0?Math.PI:0);hip.rotation.x=!grounded?-.34:Math.sin(p)*(.48+running*.28)*weight;hip.rotation.z=s*.025;knee.rotation.x=!grounded?.85:Math.max(0,-Math.cos(p))*(.65+running*.65)*weight+.055;hip.rotation.x=THREE.MathUtils.lerp(hip.rotation.x,-1.1+Math.sin(p)*.14*weight,crouch);knee.rotation.x=THREE.MathUtils.lerp(knee.rotation.x,1.95-Math.sin(p)*.12*weight,crouch);ankle.rotation.x=THREE.MathUtils.lerp(-knee.rotation.x*.32,-hip.rotation.x-knee.rotation.x,crouch);});
-// Keep the lowest supporting foot planted while bending the articulated legs.
-if(grounded&&crouch>.001){const support=.06+Math.max(...legs.map(l=>.39*Math.cos(l.hip.rotation.x)+.36*Math.cos(l.hip.rotation.x+l.knee.rotation.x)))+.116;pelvis.position.y=support;}
-
-arms.forEach(({shoulder,elbow,hand,s})=>{const swing=Math.sin(phase+(s<0?0:Math.PI))*.43*weight,right=s>0;shoulder.rotation.x=THREE.MathUtils.lerp(swing,-1.25+(right?0:.17)-crouch*.18,aimBlend);shoulder.rotation.z=THREE.MathUtils.lerp(s*-.055,right?.20:-.53,aimBlend);shoulder.rotation.y=THREE.MathUtils.lerp(0,right?-.18:.31,aimBlend);elbow.rotation.x=THREE.MathUtils.lerp(-.14-running*.6,right?-.32:-1.02,aimBlend);hand.rotation.x=THREE.MathUtils.lerp(0,-.12,aimBlend);});
-// Fold the weapon inward and turn the shoulder against the wall at rest.
-const cover=this.coverBlend;
-torso.rotation.y+=coverSide*.18*cover;
-head.rotation.y-=coverSide*.12*cover;
-arms.forEach(({shoulder,elbow,hand,s})=>{shoulder.rotation.x=THREE.MathUtils.lerp(shoulder.rotation.x,s>0?-.65:-.45,cover);shoulder.rotation.z=THREE.MathUtils.lerp(shoulder.rotation.z,s>0?.08:-.1,cover);elbow.rotation.x=THREE.MathUtils.lerp(elbow.rotation.x,-1.2,cover);hand.rotation.x=THREE.MathUtils.lerp(hand.rotation.x,-.05,cover);});
-gun.rotation.x=Math.PI/2-recoil;
-}
+const M=window.OperatorMotion;
+const {parents,offsets,bind,norm,sub,dot,cross,sp,clamp}=M;
+let sharedGeometry=null,sharedHitGeometry=null,sharedTextures=null;
+function buildGeometry(rings=16,sides=24){
+const palettes={
+cloth:{c:[.105,.135,.15],m:[.87,0,0]},nylon:{c:[.20,.235,.12],m:[.80,0,0]},
+rubber:{c:[.033,.043,.039],m:[.94,0,1]},leather:{c:[.075,.067,.049],m:[.66,0,1]},
+metal:{c:[.20,.23,.20],m:[.38,.8,1]},skin:{c:[.44,.285,.18],m:[.72,0,1]},
+glass:{c:[.028,.065,.075],m:[.14,.5,1]},dark:{c:[.022,.03,.029],m:[.8,0,1]}
 };
+const vertices=[],segments=[],keys=Object.keys(palettes);
+// Two bone weights per vertex. Only the joint region blends into its parent.
+function weights(p,bone,blend){
+ if(!blend||parents[bone]<0)return[bone,bone,1];
+ let joint=bind[bone][13],t=clamp((p[1]-joint+.075)/.15,0,1);
+ t=t*t*(3-2*t);
+ return[bone,parents[bone],1-t*blend];
+}
+function S(x,y,z,rx,ry,rz,mat,bone,exp=1,angle=0,blend=0){
+ const first=vertices.length/20;
+ const points=[],faces=[],normals=[],material=palettes[mat];
+ for(let j=0;j<=rings;j++){
+ let v=-Math.PI/2+Math.PI*(j+.000001)/(rings+.000002);
+ for(let i=0;i<=sides;i++){
+ let u=i/sides*Math.PI*2,a=rx*sp(Math.cos(v),exp)*sp(Math.cos(u),exp),b=ry*sp(Math.sin(v),exp),c=rz*sp(Math.cos(v),exp)*sp(Math.sin(u),exp);
+ points.push([x+a*Math.cos(angle)-b*Math.sin(angle),y+a*Math.sin(angle)+b*Math.cos(angle),z+c]);normals.push([0,0,0]);
+ }
+ }
+ for(let j=0;j<rings;j++)for(let i=0;i<sides;i++){
+ let a=j*(sides+1)+i,f=[a,a+1,a+sides+2,a+sides+1];
+ let n=cross(sub(points[f[1]],points[f[0]]),sub(points[f[2]],points[f[0]]));
+ let center=f.reduce((s,k)=>s.map((v,q)=>v+points[k][q]/4),[0,0,0]);
+ if(dot(n,sub(center,[x,y,z]))<0){f.reverse();n=n.map(v=>-v)}
+ faces.push(f);for(let k of f)for(let q=0;q<3;q++)normals[k][q]+=n[q];
+ }
+ for(let j=0;j<=rings;j++){
+ let a=j*(sides+1),b=a+sides,n=normals[a].map((v,k)=>v+normals[b][k]);normals[a]=n.slice();normals[b]=n.slice();
+ }
+ for(let f of faces){
+ let tri=[f[0],f[1],f[2],f[0],f[2],f[3]];
+ for(let n=0;n<6;n++){
+ let idx=tri[n],j=Math.floor(idx/(sides+1)),i=idx%(sides+1),w=weights(points[idx],bone,blend);
+ let bary=n%3===0?[1,0,0]:n%3===1?[0,1,0]:[0,0,1];
+ vertices.push(...points[idx],...norm(normals[idx]),i/sides,j/rings,...material.c,...material.m,w[0],w[1],w[2],...bary);
+ }
+ }
+ segments.push({first,count:vertices.length/20-first,material:keys.indexOf(mat)});
+}
+S(0,1.045,0,.235,.155,.148,'cloth',1,.7);
+for(let s of [-1,1]){
+ let thigh=s<0?12:15,shin=thigh+1,foot=thigh+2;
+ S(s*.132,.822,-.009,.111,.246,.13,'cloth',thigh,.87,-s*.065,.42);
+ S(s*.149,.597,.012,.087,.094,.102,'cloth',shin,.9,0,.5);
+ S(s*.154,.405,-.02,.085,.195,.103,'cloth',shin,.95,0,.45);
+ S(s*.156,.218,.005,.066,.107,.071,'leather',foot,.7,0,.35);
+ S(s*.155,.112,.067,.102,.094,.178,'leather',foot,.64);
+ S(s*.155,.043,.074,.108,.028,.187,'rubber',foot,.45);
+ S(s*.148,.591,.107,.069,.088,.032,'rubber',shin,.64,0,.35);
+ S(s*.238,.814,.005,.035,.105,.079,'nylon',thigh,.5);
+ S(s*.239,.891,.013,.037,.024,.083,'nylon',thigh,.5);
+ for(let i=0;i<5;i++)S(s*.155,.14+i*.012,.15-i*.012,.035,.0035,.0035,'dark',foot,.55);
+ for(let i=0;i<3;i++)S(s*.156,.34+i*.045,.08,.065,.006,.009,'cloth',shin,.6,s*.09);
+}
+S(0,1.35,-.014,.218,.266,.143,'cloth',2,.88,0,.3);
+S(0,1.477,-.003,.248,.144,.145,'cloth',3,.88,0,.35);
+S(0,1.18,0,.188,.116,.127,'cloth',2,.9,0,.4);
+S(0,1.375,.13,.21,.19,.062,'nylon',3,.46,0,.25);
+S(0,1.398,-.19,.176,.211,.083,'nylon',3,.54);
+S(0,1.431,-.267,.144,.095,.031,'nylon',3,.5);
+S(0,1.258,-.26,.142,.06,.031,'nylon',3,.5);
+for(let s of [-1,1]){
+ let arm=s<0?6:9,fore=arm+1,hand=arm+2;
+ S(s*.258,1.505,-.003,.091,.114,.103,'cloth',arm,.96,0,.45);
+ S(s*.303,1.348,-.002,.078,.171,.088,'cloth',arm,.98,s*.18,.3);
+ S(s*.333,1.204,.012,.07,.072,.078,'rubber',fore,.95,0,.45);
+ S(s*.351,1.096,.032,.067,.137,.078,'cloth',fore,.98,s*.095,.4);
+ S(s*.365,.963,.048,.061,.075,.064,'leather',hand,.81,0,.3);
+ S(s*.366,.975,.104,.045,.035,.019,'rubber',hand,.65);
+ S(s*.32,.965,.072,.02,.042,.032,'leather',hand);
+ for(let i=0;i<4;i++)S(s*.365+(i-1.5)*.023,.925,.066,.011,.037,.027,'leather',hand,.8);
+ S(s*.156,1.538,.147,.034,.112,.021,'nylon',3,.45,s*.10);
+ S(s*.157,1.487,.17,.025,.024,.009,'metal',3,.4);
+}
+for(let row=0;row<3;row++)for(let col=-2;col<=2;col++)S(col*.073,1.443-row*.039,.192,.031,.006,.007,'nylon',3,.45);
+for(let i=-1;i<=1;i++){
+ S(i*.124,1.264,.208,.054,.079,.041,'nylon',3,.46);
+ S(i*.124,1.321,.241,.056,.022,.012,'nylon',3,.46);
+ S(i*.124,1.284,.252,.009,.024,.005,'rubber',3,.45);
+}
+S(0,1.084,.008,.226,.027,.144,'rubber',1,.5);
+S(0,1.083,.153,.037,.027,.01,'metal',1,.4);
+for(let s of [-1,1])S(s*.207,1.073,.066,.038,.052,.06,'nylon',1,.5);
+S(0,1.652,-.012,.067,.083,.067,'skin',4,1,0,.3);
+S(0,1.798,-.004,.117,.155,.116,'skin',5,.96,0,.25);
+S(0,1.731,.086,.087,.065,.039,'cloth',5,.7);
+S(0,1.89,-.02,.143,.104,.134,'nylon',5,.88);
+S(0,1.85,-.009,.146,.022,.135,'rubber',5,.62);
+S(0,1.813,.103,.121,.035,.026,'rubber',5,.5);
+for(let s of [-1,1]){
+ S(s*.061,1.815,.127,.046,.023,.006,'glass',5,.48);
+ S(s*.128,1.783,-.012,.028,.053,.052,'rubber',5,.66);
+ S(s*.135,1.82,-.056,.013,.018,.035,'metal',5,.65);
+ S(s*.1,1.744,.047,.01,.067,.012,'nylon',5,.55,-s*.22);
+}
+S(0,1.917,.089,.027,.03,.026,'metal',5,.45);
+
+
+const count=vertices.length/20,position=new Float32Array(count*3),normal=new Float32Array(count*3),uv=new Float32Array(count*2),color=new Float32Array(count*3),indices=new Uint16Array(count*4),skinWeights=new Float32Array(count*4),geometry=new THREE.BufferGeometry();
+let out=0;
+for(let material=0;material<keys.length;material++){
+ const first=out;
+ for(const segment of segments)if(segment.material===material)for(let i=segment.first;i<segment.first+segment.count;i++){
+  const k=i*20;position.set(vertices.slice(k,k+3),out*3);normal.set(vertices.slice(k+3,k+6),out*3);uv.set(vertices.slice(k+6,k+8),out*2);color.set(vertices.slice(k+8,k+11),out*3);
+  indices.set([vertices[k+14],vertices[k+15],0,0],out*4);skinWeights.set([vertices[k+16],1-vertices[k+16],0,0],out*4);out++;
+ }
+ geometry.addGroup(first,out-first,material);
+}
+geometry.setAttribute('position',new THREE.BufferAttribute(position,3));geometry.setAttribute('normal',new THREE.BufferAttribute(normal,3));geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));geometry.setAttribute('color',new THREE.BufferAttribute(color,3));geometry.setAttribute('skinIndex',new THREE.BufferAttribute(indices,4));geometry.setAttribute('skinWeight',new THREE.BufferAttribute(skinWeights,4));geometry.computeBoundingBox();geometry.computeBoundingSphere();
+return geometry;
+}
+function textures2K(){
+ if(sharedTextures)return sharedTextures;
+ const size=2048,albedo=new Uint8Array(size*size*4),relief=new Uint8Array(size*size*4);let seed=9137;
+ for(let y=0;y<size;y++)for(let x=0;x<size;x++){
+  seed=(Math.imul(seed,1664525)+1013904223)|0;const random=(seed>>>0)/4294967296,k=(y*size+x)*4,weave=((x%4)<2?1:-1)*((y%4)<2?1:-1);
+  const c=clamp(Math.round(238+(random-.5)*18+weave*3),0,255),b=clamp(Math.round(128+weave*27+(random-.5)*30),0,255);
+  albedo[k]=albedo[k+1]=albedo[k+2]=c;albedo[k+3]=255;relief[k]=relief[k+1]=relief[k+2]=b;relief[k+3]=255;
+ }
+ const make=data=>{const map=new THREE.DataTexture(data,size,size,THREE.RGBAFormat);map.wrapS=map.wrapT=THREE.RepeatWrapping;map.magFilter=THREE.LinearFilter;map.minFilter=THREE.LinearMipmapLinearFilter;map.generateMipmaps=true;map.needsUpdate=true;return map};
+ sharedTextures={map:make(albedo),bump:make(relief)};return sharedTextures;
+}
+function materials(team){
+ const maps=textures2K(),rough=[.87,.80,.94,.66,.38,.72,.14,.8],metal=[0,0,0,0,.8,0,.5,0];
+ const list=rough.map((r,i)=>new THREE.MeshStandardMaterial({color:0xffffff,vertexColors:true,roughness:r,metalness:metal[i],skinning:true,map:i<2?maps.map:null,bumpMap:i<2?maps.bump:null,bumpScale:.006}));
+ if(team==='red'){list[0].color.setRGB(2.4,.65,.55);list[1].color.setRGB(1.8,.5,.45)}
+ return list;
+}
+class OperatorAvatar{
+ constructor({team='player'}={}){
+  this.proceduralRig=true;this.ownsWeaponPose=true;this.weaponId='pistol';this.group=new THREE.Group();this.group.name='APPROVED_OPERATOR_2K';this.group.scale.setScalar(.90);
+  const list=materials(team);this.materials={fabric:list[0],vest:list[1],trim:list[2]};
+  this.body=new THREE.SkinnedMesh(sharedGeometry||(sharedGeometry=buildGeometry()),list);this.body.name='OperatorSkin';this.body.castShadow=true;this.body.receiveShadow=true;this.body.frustumCulled=false;
+  this.group.add(this.body);this.bones=offsets.map((off,i)=>{const bone=new THREE.Bone();bone.name='OperatorBone_'+i;bone.position.fromArray(off);bone.rotation.order='ZYX';return bone});
+  for(let i=0;i<18;i++)if(parents[i]<0)this.group.add(this.bones[i]);else this.bones[parents[i]].add(this.bones[i]);
+  this.group.updateMatrixWorld(true);this.skeleton=new THREE.Skeleton(this.bones);this.body.bind(this.skeleton);
+  // Combat uses the same articulated shapes at reduced tessellation. The visible
+  // 2K mesh is unchanged; hits still identify it for damage and team feedback.
+  if(!sharedHitGeometry){sharedHitGeometry=buildGeometry(4,6);sharedHitGeometry.boundingBox=null;sharedHitGeometry.boundingSphere=new THREE.Sphere(new THREE.Vector3(0,1,0),2.4)}
+  this.hitSurface=new THREE.SkinnedMesh(sharedHitGeometry,new THREE.MeshBasicMaterial({skinning:true}));this.hitSurface.bind(this.skeleton,this.body.bindMatrix);
+  this.body.raycast=(raycaster,hits)=>{
+   this.hitSurface.matrixWorld.copy(this.body.matrixWorld);this.hitSurface.bindMatrix.copy(this.body.bindMatrix);this.hitSurface.bindMatrixInverse.copy(this.body.bindMatrixInverse);
+   const found=[];this.hitSurface.raycast(raycaster,found);for(const hit of found){hit.object=this.body;hits.push(hit)}
+  };
+  this.gun=new THREE.Group();this.gun.name='OperatorWeaponMount';this.bones[3].add(this.gun);
+  this.flash=new THREE.Mesh(new THREE.ConeGeometry(.045,.16,7),new THREE.MeshBasicMaterial({color:0xffe5a2}));this.flash.rotation.x=Math.PI/2;this.flash.position.set(0,.035,.24);this.flash.visible=false;this.gun.add(this.flash);
+  if(window.WeaponLootSystem)this.gun.add(window.WeaponLootSystem.createModel('pistol'));
+  this.gun.visible=false;
+  this.pelvis=this.bones[1];this.torso=this.bones[3];this.head=this.bones[5];
+  this.rightHand=this.bones[8];this.leftHand=this.bones[11];this.rightArm=this.bones[6];this.leftArm=this.bones[9];this.rightLeg=this.bones[12];this.leftLeg=this.bones[15];
+  this.arms=[{shoulder:this.bones[9],elbow:this.bones[10],hand:this.bones[11],s:1},{shoulder:this.bones[6],elbow:this.bones[7],hand:this.bones[8],s:-1}];
+  this.legs=[{hip:this.bones[15],knee:this.bones[16],ankle:this.bones[17],s:1},{hip:this.bones[12],knee:this.bones[13],ankle:this.bones[14],s:-1}];
+  this.rotations=Array.from({length:18},()=>[0,0,0]);this.shift=[0,0,0];this.weaponAngles=[.38,0,0];this.weaponGripTargets=[];
+  this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
+  this.update(0,{armed:false});
+ }
+ setWeapon(id){this.weaponId=id;}
+ setRecoil(value){this.recoil=value;}
+ update(dt,{speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1}={}){
+  dt=clamp(Number.isFinite(dt)?dt:0,0,.05);this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
+  if(!grounded){if(this.wasGrounded)this.airTime=0;this.airTime+=dt;this.landingTime=1}
+  else if(!this.wasGrounded)this.landingTime=0;
+  else this.landingTime=Math.min(1,this.landingTime+dt);
+  let state=speed>.1?(sprinting?'run':'walk'):'idle';if(armed&&aiming&&speed<.1)state='aim';
+  const duration=state==='run'?.84:state==='walk'?1.15:4;this.phase+=dt/duration*(1-this.crouchBlend*.45);
+  let phase=this.phase;
+  if(jumpPreparation>0){state='jump';phase=.22*clamp(1-jumpPreparation/.12,0,1)}
+  else if(!grounded){state='jump';const flight=Math.max(.25,2*jumpForce/Math.abs(gravity));phase=this.airTime<.10?.22+.13*M.curveMotion([[0,0],[1,1]],this.airTime/.10):.35+.37*clamp((this.airTime-.10)/(flight-.10),0,1)}
+  else if(this.landingTime<.30){state='jump';phase=.72+.28*clamp(this.landingTime/.30,0,1)}
+  this.wasGrounded=grounded;this.state=state;
+  const pose=M.sampleMotion(state,phase,armed,this.weaponId),r=pose.r;
+  // PlayerController owns the physical jump. Never add the preview's parabola.
+  if(!grounded)pose.root[1]=0;
+  const crouch=this.crouchBlend;
+  if(crouch>.001){
+   for(const [leg,s] of [[12,0],[15,1]]){const cycle=Math.sin(this.phase*Math.PI*2+s*Math.PI)*Math.min(speed/2,1)*.10;r[leg][0]=THREE.MathUtils.lerp(r[leg][0],-.90+cycle,crouch);r[leg+1][0]=THREE.MathUtils.lerp(r[leg+1][0],1.70-cycle,crouch);r[leg+2][0]=THREE.MathUtils.lerp(r[leg+2][0],-.80,crouch)}
+   const support=.22+Math.max(...[12,15].map(i=>.428*Math.cos(r[i][0])+.397*Math.cos(r[i][0]+r[i+1][0])));
+   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],support-1.045,crouch);r[2][0]+=.12*crouch;
+  }
+  if(armed){
+   const a=pose.weaponAngles.slice();a[0]+=.40*this.coverBlend-recoil*.04;a[1]+=coverSide*.12*this.coverBlend;
+   for(let k=0;k<3;k++)this.weaponAngles[k]=M.damp(this.weaponAngles[k],a[k],22,dt);
+   pose.weapon=M.weaponFrame(this.weaponAngles);
+   const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
+   this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
+   const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
+  }
+  for(let i=0;i<18;i++)for(let k=0;k<3;k++)this.rotations[i][k]=M.damp(this.rotations[i][k],r[i][k],22,dt);
+  for(let k=0;k<3;k++)this.shift[k]=M.damp(this.shift[k],pose.root[k],22,dt);
+  for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
+  this.gun.visible=armed;this.group.updateMatrixWorld(true);this.skeleton.update();
+  this.weaponGripTargets=(this.gripBindPoints||[]).map(g=>({bone:g.bone,point:this.group.worldToLocal(this.bones[3].localToWorld(g.point.clone().sub(new THREE.Vector3().fromArray(bind[3].slice(12,15)))))}));
+ }
+}
+window.OperatorAvatar=OperatorAvatar;
 })();

@@ -1375,6 +1375,11 @@ class PistolController {
 
   if(!this.isEquipped)return;
 
+  if(this.avatar.proceduralRig){
+   this.avatar.setRecoil(this.recoil*.55);
+   return;
+  }
+
   if(this.operatorAttached){
    this.pistol.rotation.x=Math.PI/2-this.recoil*.55;
    return;
@@ -1461,6 +1466,7 @@ class PlayerController {
   this.crouchInputs=new Set();
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.jumpForce=8.5;
+  this.jumpPreparation=0;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
@@ -1489,7 +1495,7 @@ class PlayerController {
   const button=document.getElementById('crouchBtn');
   button?.addEventListener('click',()=>{this.keys.crouch=!this.keys.crouch;});
  }
- clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();}
+ clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;}
  canStand(){
   const p=this.mesh.position,r=.45;
   return !houseParkour.solidBoxes.some(b=>p.x+r>b.minX&&p.x-r<b.maxX&&p.z+r>b.minZ&&p.z-r<b.maxZ&&b.maxY>p.y+this.crouchingHeight&&b.minY<p.y+this.standingHeight);
@@ -1510,14 +1516,17 @@ class PlayerController {
    case 'Space':
     this.keys.jetpack=isPressed;
     if(isPressed)this.cover.exit();
-    if(isPressed&&this.isGrounded&&!this.isCrouching){
-     this.velocity.y=this.jumpForce;
-     this.isGrounded=false;
+    if(isPressed&&this.isGrounded&&!this.isCrouching&&this.jumpPreparation<=0){
+     this.jumpPreparation=.12;
     }
     break;
   }
  }
  update(dt){
+  if(this.jumpPreparation>0){
+   if(!this.isGrounded||this.isCrouching)this.jumpPreparation=0;
+   else{this.jumpPreparation=Math.max(0,this.jumpPreparation-dt);if(this.jumpPreparation===0){this.velocity.y=this.jumpForce;this.isGrounded=false;}}
+  }
   this.cover.update(dt,{left:this.keys.left,right:this.keys.right,backward:this.keys.backward,aiming:this.keys.aiming,grounded:this.isGrounded,canStand:this.canStand()});
   const lowPeek=this.cover.active&&this.cover.low&&this.cover.isPeeking;
   const requestedCrouch=!lowPeek&&(this.keys.crouch||this.crouchInputs.size>0||(this.cover.active&&this.cover.low));
@@ -1945,7 +1954,7 @@ pistolWeapon.operatorAttached=true;
 pistolWeapon.muzzlePoint.position.set(0,.035,.2);
 mainAvatar.gun.add(pistolWeapon.muzzlePoint);
 pistolWeapon.holster();
-stateEl.textContent='OPERADOR V01 ATIVO';
+stateEl.textContent='OPERADOR 2K • 18 OSSOS';
 
 // Erika preservada no projeto, mas desativada nesta build.
 const useErika=false;
@@ -2244,7 +2253,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped&&(!controller.cover.active||controller.cover.isPeeking),recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
+  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
@@ -2308,3 +2317,4 @@ function loop(){
  renderer.render(scene,camera);
 }
 loop();
+
