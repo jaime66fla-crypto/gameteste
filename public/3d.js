@@ -1678,7 +1678,7 @@ function remoteState(state){
   const labelCanvas=document.createElement('canvas');labelCanvas.width=256;labelCanvas.height=48;
   const texture=new THREE.CanvasTexture(labelCanvas);texture.colorSpace=THREE.SRGBColorSpace;
   const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));label.position.y=3.7;label.scale.set(3.6,.68,1);actor.add(label);
-  remote={actor,target:new THREE.Vector3(),state,labelCanvas,texture,motion:{velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}}};
+  remote={actor,target:new THREE.Vector3(),state,labelCanvas,texture,nextAnimAt:0,motion:{velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}}};
   remotePlayers.set(state.id,remote);world.add(actor);attachNetworkAvatar(actor);
  }
  remote.state=state;remote.target.set(state.x,state.y,state.z);remote.actor.userData.hp=state.health;remote.actor.userData.alive=state.health>0;
@@ -1696,17 +1696,26 @@ function localNetworkState(){
 }
 function updateMultiplayer(dt){
  multiplayer.update(dt,localNetworkState());
+ const now=performance.now();
  for(const remote of remotePlayers.values()){
   const {actor,state,motion}=remote,before=actor.position.clone();
+  const distToLocal=actor.position.distanceTo(player.position);
   if(actor.position.distanceTo(remote.target)>8){actor.position.copy(remote.target);motion.planted.L=null;motion.planted.R=null}
-  else actor.position.lerp(remote.target,1-Math.exp(-dt*14));
-  const turn=Math.atan2(Math.sin(state.angle-actor.rotation.y),Math.cos(state.angle-actor.rotation.y));actor.rotation.y+=turn*(1-Math.exp(-dt*16));
+  else actor.position.lerp(remote.target,1-Math.exp(-dt*20));
+  const turn=Math.atan2(Math.sin(state.angle-actor.rotation.y),Math.cos(state.angle-actor.rotation.y));actor.rotation.y+=turn*(1-Math.exp(-dt*20));
   const travel=actor.position.clone().sub(before);travel.y=0;motion.speed=Math.min(6,travel.length()/Math.max(dt,.001));
   if(travel.lengthSq()>.00001)motion.direction.copy(travel).normalize();
   actor.userData.climbing=state.climbing;actor.userData.inCar=state.inCar;actor.userData.aiming=state.aiming;
-  attachNetworkAvatar(actor);updateProceduralAvatar(dt,motion.speed>.05,state.running,actor,motion);
-  const target=actor.position.clone().add(new THREE.Vector3(Math.sin(state.angle)*20,1.45+Math.tan(state.pitch||0)*20,Math.cos(state.angle)*20));
-  updateWeaponPose(actor,target,state.aiming&&!state.climbing,state.weapon);
+
+  // Keep movement interpolation every frame, but throttle expensive skeleton IK/weapon posing.
+  const animInterval=distToLocal>35?100:distToLocal>18?66:33;
+  if(!remote.nextAnimAt||now>=remote.nextAnimAt){
+   remote.nextAnimAt=now+animInterval;
+   attachNetworkAvatar(actor);
+   updateProceduralAvatar(animInterval/1000,motion.speed>.05,state.running,actor,motion);
+   const target=actor.position.clone().add(new THREE.Vector3(Math.sin(state.angle)*20,1.45+Math.tan(state.pitch||0)*20,Math.cos(state.angle)*20));
+   updateWeaponPose(actor,target,state.aiming&&!state.climbing,state.weapon);
+  }
   if(!actor.userData.avatar){const gait=Math.sin(t*(state.running?12:8))*(state.moving?.5:0);actor.userData.legs[0].rotation.x=gait;actor.userData.legs[1].rotation.x=-gait}
   if(state.inCar&&!remote.car&&cars[0]){remote.car=cars[0].clone(true);world.add(remote.car)}
   if(remote.car){remote.car.visible=state.inCar;remote.car.position.copy(actor.position);remote.car.rotation.y=actor.rotation.y}
