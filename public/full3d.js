@@ -106,6 +106,29 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
 
+function makeCapsuleGeometry(radius,length,segments=8){
+ const g=new THREE.Group();
+ const matProxy=null;
+ const cylinder=new THREE.CylinderGeometry(radius,radius,length,segments);
+ const top=new THREE.SphereGeometry(radius,segments,Math.max(6,Math.floor(segments*.75)));
+ const bottom=new THREE.SphereGeometry(radius,segments,Math.max(6,Math.floor(segments*.75)));
+ return {cylinder,top,bottom,length,radius};
+}
+
+function makeCapsuleMesh(radius,length,material,segments=8){
+ const group=new THREE.Group();
+ const body=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,segments),material);
+ body.castShadow=true;
+ const top=new THREE.Mesh(new THREE.SphereGeometry(radius,segments,Math.max(6,Math.floor(segments*.75))),material);
+ top.position.y=length/2;
+ top.castShadow=true;
+ const bottom=new THREE.Mesh(new THREE.SphereGeometry(radius,segments,Math.max(6,Math.floor(segments*.75))),material);
+ bottom.position.y=-length/2;
+ bottom.castShadow=true;
+ group.add(body,top,bottom);
+ return group;
+}
+
 class SimpleAvatar {
  constructor(options={}){
   this.group=new THREE.Group();
@@ -117,20 +140,18 @@ class SimpleAvatar {
   const skinMat=new THREE.MeshStandardMaterial({color:skinColor,roughness:.3});
   const visorMat=new THREE.MeshStandardMaterial({color:visorColor,roughness:.1,metalness:.8});
 
-  const legGeo=new THREE.CapsuleGeometry(.11,.45,4,8);
   this.leftLeg=new THREE.Group();
   this.leftLeg.position.set(-.18,.65,0);
-  const leftLegMesh=new THREE.Mesh(legGeo,skinMat);
-  leftLegMesh.position.y=-.32; leftLegMesh.castShadow=true; this.leftLeg.add(leftLegMesh);
+  const leftLegMesh=makeCapsuleMesh(.11,.45,skinMat,8);
+  leftLegMesh.position.y=-.32; this.leftLeg.add(leftLegMesh);
 
   this.rightLeg=new THREE.Group();
   this.rightLeg.position.set(.18,.65,0);
-  const rightLegMesh=new THREE.Mesh(legGeo,skinMat);
-  rightLegMesh.position.y=-.32; rightLegMesh.castShadow=true; this.rightLeg.add(rightLegMesh);
+  const rightLegMesh=makeCapsuleMesh(.11,.45,skinMat,8);
+  rightLegMesh.position.y=-.32; this.rightLeg.add(rightLegMesh);
 
-  const torsoGeo=new THREE.CapsuleGeometry(.32,.5,4,12);
-  this.torso=new THREE.Mesh(torsoGeo,bodyMat);
-  this.torso.position.y=1.05; this.torso.castShadow=true;
+  this.torso=makeCapsuleMesh(.32,.5,bodyMat,12);
+  this.torso.position.y=1.05;
 
   this.head=new THREE.Group();
   this.head.position.y=1.75;
@@ -140,16 +161,15 @@ class SimpleAvatar {
   const visorMesh=new THREE.Mesh(new THREE.BoxGeometry(.36,.14,.15),visorMat);
   visorMesh.position.set(0,.02,.22); this.head.add(visorMesh);
 
-  const armGeo=new THREE.CapsuleGeometry(.09,.45,4,8);
   this.leftArm=new THREE.Group();
   this.leftArm.position.set(-.44,1.32,0);
-  const leftArmMesh=new THREE.Mesh(armGeo,skinMat);
-  leftArmMesh.position.y=-.25; leftArmMesh.castShadow=true; this.leftArm.add(leftArmMesh);
+  const leftArmMesh=makeCapsuleMesh(.09,.45,skinMat,8);
+  leftArmMesh.position.y=-.25; this.leftArm.add(leftArmMesh);
 
   this.rightArm=new THREE.Group();
   this.rightArm.position.set(.44,1.32,0);
-  const rightArmMesh=new THREE.Mesh(armGeo,skinMat);
-  rightArmMesh.position.y=-.25; rightArmMesh.castShadow=true; this.rightArm.add(rightArmMesh);
+  const rightArmMesh=makeCapsuleMesh(.09,.45,skinMat,8);
+  rightArmMesh.position.y=-.25; this.rightArm.add(rightArmMesh);
 
   this.group.add(this.leftLeg,this.rightLeg,this.torso,this.head,this.leftArm,this.rightArm);
   this.walkTime=0;
