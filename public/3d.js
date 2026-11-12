@@ -825,10 +825,10 @@ function updateLadderAvatar(dt,state){
  if(!avatar||!bones)return;
 
  const goingUp=state.dir==='up';
- const direction=goingUp?1:-1;
  const progress=THREE.MathUtils.clamp(state.t/state.total,0,1);
- const phase=state.t*6.35*direction;
- const s=Math.sin(phase),c=Math.cos(phase);
+ const phase=state.t*6.2*(goingUp?1:-1);
+ const wave=Math.sin(phase);
+ const wave2=Math.sin(phase+Math.PI);
  const alpha=1-Math.exp(-dt*22);
  const topExit=goingUp?THREE.MathUtils.smoothstep(progress,.80,1):0;
  const bottomExit=!goingUp?THREE.MathUtils.smoothstep(progress,.82,1):0;
@@ -841,50 +841,44 @@ function updateLadderAvatar(dt,state){
   joint.bone.quaternion.slerp(targetQ,alpha);
  };
 
- // Stronger ladder posture: chest closer to the rungs, hips slightly back.
- pose('hips',THREE.MathUtils.lerp(-.10,.06,exitBlend),0,s*.045*(1-exitBlend));
- pose('spine',THREE.MathUtils.lerp(-.24,-.06,exitBlend),-s*.03,-s*.045*(1-exitBlend));
- pose('spine1',THREE.MathUtils.lerp(-.13,-.03,exitBlend),0,-s*.024*(1-exitBlend));
- pose('spine2',THREE.MathUtils.lerp(-.08,0,exitBlend),0,s*.018*(1-exitBlend));
- pose('shoulderL',0,0,-.10);
- pose('shoulderR',0,0,.10);
-
+ // Body stays square to the ladder instead of twisting sideways.
+ pose('hips',-.08,0,wave*.018*(1-exitBlend));
+ pose('spine',-.18,0,-wave*.022*(1-exitBlend));
+ pose('spine1',-.10,0,-wave*.012*(1-exitBlend));
+ pose('spine2',-.04,0,wave*.008*(1-exitBlend));
+ pose('shoulderL',0,0,-.06);
+ pose('shoulderR',0,0,.06);
  player.updateMatrixWorld(true);
 
- // Hands visibly climb from rung to rung instead of sliding with the torso.
- const handLift=.43*(1-exitBlend);
- const handReach=THREE.MathUtils.lerp(.50,.35,exitBlend);
- const handBaseY=THREE.MathUtils.lerp(2.00,2.20,topExit);
- // Erika's local left/right is mirrored relative to the ladder-facing pose.
- const handL=player.localToWorld(new THREE.Vector3(.40,handBaseY+s*handLift,handReach));
- const handR=player.localToWorld(new THREE.Vector3(-.40,handBaseY-s*handLift,handReach));
- const poleL=player.localToWorld(new THREE.Vector3(.90,1.68,.08));
- const poleR=player.localToWorld(new THREE.Vector3(-.90,1.68,.08));
+ // Lock hands directly to the ladder plane. This avoids mirrored/local-axis drift.
+ const rungStep=.55;
+ const ladderZ=state.ladder.z+.08;
+ const bodyY=player.position.y;
+ const leftHandY=bodyY+1.88+wave*.32*(1-exitBlend);
+ const rightHandY=bodyY+1.88+wave2*.32*(1-exitBlend);
+ const handL=new THREE.Vector3(state.ladder.x-.34,leftHandY,ladderZ);
+ const handR=new THREE.Vector3(state.ladder.x+.34,rightHandY,ladderZ);
+ const poleL=new THREE.Vector3(state.ladder.x-.72,bodyY+1.55,ladderZ+.45);
+ const poleR=new THREE.Vector3(state.ladder.x+.72,bodyY+1.55,ladderZ+.45);
  solveArm('L',handL,poleL,player);
  solveArm('R',handR,poleR,player);
 
- // Feet step onto alternating rungs with a short lift before planting.
- const footLift=.36*(1-exitBlend);
- const footPress=.30;
- const liftL=Math.max(0,c)*.10*(1-exitBlend);
- const liftR=Math.max(0,-c)*.10*(1-exitBlend);
- const footL=player.localToWorld(new THREE.Vector3(.25,.36-s*footLift,footPress+liftL));
- const footR=player.localToWorld(new THREE.Vector3(-.25,.36+s*footLift,footPress+liftR));
+ // Feet are also pinned to the rung plane, alternating with the opposite hand.
+ const footL=new THREE.Vector3(state.ladder.x-.22,bodyY+.28-wave*.25*(1-exitBlend),ladderZ+.02);
+ const footR=new THREE.Vector3(state.ladder.x+.22,bodyY+.28-wave2*.25*(1-exitBlend),ladderZ+.02);
  const hipL=bones.thighL?.bone?.getWorldPosition(new THREE.Vector3());
  const hipR=bones.thighR?.bone?.getWorldPosition(new THREE.Vector3());
  if(hipL){
-  const kneePoleL=hipL.clone().add(new THREE.Vector3(.24,-.10,.72).applyQuaternion(player.quaternion));
+  const kneePoleL=new THREE.Vector3(state.ladder.x-.34,bodyY+.65,ladderZ+.55);
   solveLimb('thighL','calfL','footL',footL,kneePoleL,player);
  }
  if(hipR){
-  const kneePoleR=hipR.clone().add(new THREE.Vector3(-.24,-.10,.72).applyQuaternion(player.quaternion));
+  const kneePoleR=new THREE.Vector3(state.ladder.x+.34,bodyY+.65,ladderZ+.55);
   solveLimb('thighR','calfR','footR',footR,kneePoleR,player);
  }
 
- // Weight transfer makes each rung feel like a step rather than a vertical glide.
- avatar.position.y=(player.userData.avatarBaseY||0)+Math.abs(c)*.030*(1-exitBlend)+topExit*.04;
- avatar.rotation.z=s*.018*(1-exitBlend);
- avatar.rotation.x=THREE.MathUtils.lerp(0,-.06,1-exitBlend);
+ avatar.position.y=(player.userData.avatarBaseY||0)+Math.abs(Math.cos(phase))*.018*(1-exitBlend);
+ avatar.rotation.set(0,0,0);
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState||activeCar)return false;
@@ -925,8 +919,13 @@ function updateClimb(dt){
   ? THREE.MathUtils.smoothstep(p,.78,1)
   : THREE.MathUtils.smoothstep(p,0,.18);
  player.position.z=THREE.MathUtils.lerp(s.startZ,s.endZ,edgeBlend);
- // Face the ladder in both directions: from the ground face -Z, from the roof face +Z.
- player.rotation.y=s.dir==='up'?Math.PI:0;
+ // Going up stays facing the ladder. Going down starts facing the roof edge,
+ // then turns toward the ladder as soon as the body moves onto the exterior side.
+ if(s.dir==='up')player.rotation.y=Math.PI;
+ else{
+  const turn=THREE.MathUtils.smoothstep(p,.04,.22);
+  player.rotation.y=THREE.MathUtils.lerp(0,Math.PI,turn);
+ }
 
  const cycle=Math.sin(s.t*11);
  if(player.userData.legs?.length>=2){
