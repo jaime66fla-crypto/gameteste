@@ -269,13 +269,16 @@ class ThirdPersonCamera {
   this.distance=6.0;
   this.minDistance=2.5;
   this.maxDistance=12.0;
-  this.sensitivity=.0025;
+  this.sensitivity=.005;
   this.smoothness=12.0;
   this.targetOffset=new THREE.Vector3(0,1.5,0);
   this.yaw=0;
   this.pitch=.3;
   this.minPitch=-.3;
   this.maxPitch=1.2;
+  this.isRightMouseDown=false;
+  this.previousMouseX=0;
+  this.previousMouseY=0;
   this.currentPosition=new THREE.Vector3(
    target.position.x,
    target.position.y+2.5,
@@ -285,19 +288,32 @@ class ThirdPersonCamera {
   this._initListeners();
  }
  _initListeners(){
-  this.domElement.addEventListener('click',()=>{
-   if(document.pointerLockElement!==this.domElement){
-    this.domElement.requestPointerLock?.();
+  this.domElement.addEventListener('contextmenu',e=>e.preventDefault());
+
+  this.domElement.addEventListener('mousedown',e=>{
+   if(e.button===2){
+    this.isRightMouseDown=true;
+    this.previousMouseX=e.clientX;
+    this.previousMouseY=e.clientY;
    }
   });
-  document.addEventListener('mousemove',e=>{
-   if(document.pointerLockElement===this.domElement){
-    this.yaw-=e.movementX*this.sensitivity;
-    this.pitch+=e.movementY*this.sensitivity;
-    this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
-   }
+
+  window.addEventListener('mouseup',e=>{
+   if(e.button===2)this.isRightMouseDown=false;
   });
-  document.addEventListener('wheel',e=>{
+
+  window.addEventListener('mousemove',e=>{
+   if(!this.isRightMouseDown)return;
+   const deltaX=e.clientX-this.previousMouseX;
+   const deltaY=e.clientY-this.previousMouseY;
+   this.previousMouseX=e.clientX;
+   this.previousMouseY=e.clientY;
+   this.yaw-=deltaX*this.sensitivity;
+   this.pitch+=deltaY*this.sensitivity;
+   this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
+  });
+
+  this.domElement.addEventListener('wheel',e=>{
    this.distance+=e.deltaY*.005;
    this.distance=Math.max(this.minDistance,Math.min(this.maxDistance,this.distance));
   },{passive:true});
