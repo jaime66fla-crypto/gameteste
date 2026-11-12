@@ -825,15 +825,17 @@ function updateLadderAvatar(dt,state){
  if(!avatar||!bones)return;
 
  const goingUp=state.dir==='up';
+ const dir=goingUp?1:-1;
  const progress=THREE.MathUtils.clamp(state.t/state.total,0,1);
- const phase=state.t*6.2*(goingUp?1:-1);
- const wave=Math.sin(phase);
- const wave2=Math.sin(phase+Math.PI);
- const alpha=1-Math.exp(-dt*22);
- const topExit=goingUp?THREE.MathUtils.smoothstep(progress,.80,1):0;
- const bottomExit=!goingUp?THREE.MathUtils.smoothstep(progress,.82,1):0;
+ const cadence=1.34;
+ const cycle=(state.t*cadence)%1;
+ const support=Math.sin(cycle*Math.PI*2);
+ const alpha=1-Math.exp(-dt*16);
+ const topExit=goingUp?THREE.MathUtils.smoothstep(progress,.82,1):0;
+ const bottomExit=!goingUp?THREE.MathUtils.smoothstep(progress,.84,1):0;
  const exitBlend=Math.max(topExit,bottomExit);
  const tmpEuler=new THREE.Euler(),tmpQ=new THREE.Quaternion(),targetQ=new THREE.Quaternion();
+
  const pose=(key,rx=0,ry=0,rz=0)=>{
   const joint=bones[key];if(!joint)return;
   tmpQ.setFromEuler(tmpEuler.set(rx,ry,rz,'XYZ'));
@@ -841,44 +843,82 @@ function updateLadderAvatar(dt,state){
   joint.bone.quaternion.slerp(targetQ,alpha);
  };
 
- // Body stays square to the ladder instead of twisting sideways.
- pose('hips',-.08,0,wave*.018*(1-exitBlend));
- pose('spine',-.18,0,-wave*.022*(1-exitBlend));
- pose('spine1',-.10,0,-wave*.012*(1-exitBlend));
- pose('spine2',-.04,0,wave*.008*(1-exitBlend));
- pose('shoulderL',0,0,-.06);
- pose('shoulderR',0,0,.06);
+ // Three-point-contact posture: hips shift subtly toward the supporting side,
+ // while chest stays close to the ladder instead of twisting away from it.
+ pose('hips',-.06,0,support*.028*(1-exitBlend));
+ pose('spine',-.16,-support*.018,-support*.022*(1-exitBlend));
+ pose('spine1',-.09,0,-support*.012*(1-exitBlend));
+ pose('spine2',-.035,0,support*.008*(1-exitBlend));
+ pose('shoulderL',0,0,-.055);
+ pose('shoulderR',0,0,.055);
  player.updateMatrixWorld(true);
 
- // Lock hands directly to the ladder plane. This avoids mirrored/local-axis drift.
  const rungStep=.55;
- const ladderZ=state.ladder.z+.08;
+ const firstRung=.50;
+ const ladderZ=state.ladder.z+.06;
  const bodyY=player.position.y;
- const leftHandY=bodyY+1.88+wave*.32*(1-exitBlend);
- const rightHandY=bodyY+1.88+wave2*.32*(1-exitBlend);
- const handL=new THREE.Vector3(state.ladder.x-.34,leftHandY,ladderZ);
- const handR=new THREE.Vector3(state.ladder.x+.34,rightHandY,ladderZ);
- const poleL=new THREE.Vector3(state.ladder.x-.72,bodyY+1.55,ladderZ+.45);
- const poleR=new THREE.Vector3(state.ladder.x+.72,bodyY+1.55,ladderZ+.45);
+
+ if(!state.ladderPose){
+  const rungIndex=y=>Math.round((y-firstRung)/rungStep);
+  state.ladderPose={
+   handL:rungIndex(bodyY+1.92),
+   handR:rungIndex(bodyY+1.62),
+   footL:rungIndex(bodyY+.34),
+   footR:rungIndex(bodyY+.06)
+  };
+ }
+
+ const smooth01=v=>v<=0?0:v>=1?1:v*v*(3-2*v);
+ const stepped=(key,offset)=>{
+  const raw=state.t*cadence+offset;
+  const whole=Math.floor(raw);
+  const local=raw-whole;
+  // Limb remains planted for most of the beat, then travels quickly to next rung.
+  const swing=smooth01((local-.70)/.30);
+  const rung=state.ladderPose[key]+dir*whole;
+  return firstRung+(rung+dir*swing)*rungStep;
+ };
+ const lift=(offset,amount)=>{
+  const local=(state.t*cadence+offset)%1;
+  const p=local<0?local+1:local;
+  if(p<.70)return 0;
+  const u=(p-.70)/.30;
+  return Math.sin(u*Math.PI)*amount*(1-exitBlend);
+ };
+
+ // Contralateral rhythm: left hand moves with right foot, then right hand with left foot.
+ const handLY=stepped('handL',0);
+ const footRY=stepped('footR',.06);
+ const handRY=stepped('handR',.50);
+ const footLY=stepped('footL',.56);
+
+ const handL=new THREE.Vector3(state.ladder.x-.33,handLY,ladderZ-lift(0,.05));
+ const handR=new THREE.Vector3(state.ladder.x+.33,handRY,ladderZ-lift(.50,.05));
+ const poleL=new THREE.Vector3(state.ladder.x-.70,bodyY+1.48,ladderZ+.40);
+ const poleR=new THREE.Vector3(state.ladder.x+.70,bodyY+1.48,ladderZ+.40);
  solveArm('L',handL,poleL,player);
  solveArm('R',handR,poleR,player);
 
- // Feet are also pinned to the rung plane, alternating with the opposite hand.
- const footL=new THREE.Vector3(state.ladder.x-.22,bodyY+.28-wave*.25*(1-exitBlend),ladderZ+.02);
- const footR=new THREE.Vector3(state.ladder.x+.22,bodyY+.28-wave2*.25*(1-exitBlend),ladderZ+.02);
+ const footL=new THREE.Vector3(state.ladder.x-.21,footLY,ladderZ+.02+lift(.56,.13));
+ const footR=new THREE.Vector3(state.ladder.x+.21,footRY,ladderZ+.02+lift(.06,.13));
  const hipL=bones.thighL?.bone?.getWorldPosition(new THREE.Vector3());
  const hipR=bones.thighR?.bone?.getWorldPosition(new THREE.Vector3());
  if(hipL){
-  const kneePoleL=new THREE.Vector3(state.ladder.x-.34,bodyY+.65,ladderZ+.55);
+  const kneePoleL=new THREE.Vector3(state.ladder.x-.31,bodyY+.68,ladderZ+.56);
   solveLimb('thighL','calfL','footL',footL,kneePoleL,player);
  }
  if(hipR){
-  const kneePoleR=new THREE.Vector3(state.ladder.x+.34,bodyY+.65,ladderZ+.55);
+  const kneePoleR=new THREE.Vector3(state.ladder.x+.31,bodyY+.68,ladderZ+.56);
   solveLimb('thighR','calfR','footR',footR,kneePoleR,player);
  }
 
- avatar.position.y=(player.userData.avatarBaseY||0)+Math.abs(Math.cos(phase))*.018*(1-exitBlend);
- avatar.rotation.set(0,0,0);
+ // Small compression on each weight transfer removes the robotic vertical glide.
+ const compression=(1-Math.abs(Math.cos(cycle*Math.PI*2)))*.018*(1-exitBlend);
+ avatar.position.y=(player.userData.avatarBaseY||0)-compression;
+ avatar.position.x=support*.018*(1-exitBlend);
+ avatar.rotation.x=-.025*(1-exitBlend);
+ avatar.rotation.y=0;
+ avatar.rotation.z=-support*.008*(1-exitBlend);
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState||activeCar)return false;
@@ -946,7 +986,7 @@ function updateClimb(dt){
   }
   if(player.userData.gun)player.userData.gun.rotation.z=0;
   if(player.userData.avatar){
-   player.userData.avatar.position.y=player.userData.avatarBaseY||0;
+   player.userData.avatar.position.set(0,player.userData.avatarBaseY||0,0);
    player.userData.avatar.rotation.set(0,0,0);
    locomotion.planted.L=null;locomotion.planted.R=null;
   }
