@@ -338,6 +338,166 @@ class SimpleAvatar {
  }
 }
 
+class ForestAudioSystem {
+ constructor(){
+  this.ctx=null;
+  this.masterGain=null;
+  this.windGain=null;
+  this.enabled=true;
+  this.isAmbiencePlaying=false;
+  this.birdTimer=null;
+  this.lastFootstepAt=0;
+ }
+ init(){
+  if(!this.ctx){
+   const AudioContext=window.AudioContext||window.webkitAudioContext;
+   this.ctx=new AudioContext();
+   this.masterGain=this.ctx.createGain();
+   this.masterGain.gain.value=this.enabled?.8:0;
+   this.masterGain.connect(this.ctx.destination);
+  }
+  if(this.ctx.state==='suspended')this.ctx.resume();
+  if(!this.isAmbiencePlaying)this.startForestAmbience();
+ }
+ setEnabled(state){
+  this.enabled=state;
+  if(this.masterGain&&this.ctx){
+   this.masterGain.gain.setTargetAtTime(state?.8:0,this.ctx.currentTime,.05);
+  }
+ }
+ startForestAmbience(){
+  if(!this.ctx||this.isAmbiencePlaying)return;
+  this.isAmbiencePlaying=true;
+
+  const bufferSize=this.ctx.sampleRate*4;
+  const buffer=this.ctx.createBuffer(1,bufferSize,this.ctx.sampleRate);
+  const data=buffer.getChannelData(0);
+  let lastOut=0;
+  for(let i=0;i<bufferSize;i++){
+   const white=Math.random()*2-1;
+   data[i]=(lastOut+.02*white)/1.02;
+   lastOut=data[i];
+   data[i]*=2.5;
+  }
+
+  const windSource=this.ctx.createBufferSource();
+  windSource.buffer=buffer;
+  windSource.loop=true;
+
+  const windFilter=this.ctx.createBiquadFilter();
+  windFilter.type='bandpass';
+  windFilter.frequency.value=320;
+  windFilter.Q.value=1.2;
+
+  const lfo=this.ctx.createOscillator();
+  lfo.frequency.value=.12;
+  const lfoGain=this.ctx.createGain();
+  lfoGain.gain.value=140;
+  lfo.connect(lfoGain);
+  lfoGain.connect(windFilter.frequency);
+
+  this.windGain=this.ctx.createGain();
+  this.windGain.gain.value=.12;
+
+  windSource.connect(windFilter);
+  windFilter.connect(this.windGain);
+  this.windGain.connect(this.masterGain);
+
+  windSource.start();
+  lfo.start();
+  this._scheduleBird();
+ }
+ _scheduleBird(){
+  if(!this.ctx||!this.isAmbiencePlaying)return;
+  const delay=2200+Math.random()*6500;
+  clearTimeout(this.birdTimer);
+  this.birdTimer=setTimeout(()=>{
+   this.playBird();
+   this._scheduleBird();
+  },delay);
+ }
+ playBird(){
+  if(!this.ctx||!this.enabled)return;
+  const now=this.ctx.currentTime;
+  const osc=this.ctx.createOscillator();
+  const gain=this.ctx.createGain();
+  const pan=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
+
+  osc.type='sine';
+  const base=1500+Math.random()*900;
+  osc.frequency.setValueAtTime(base,now);
+  osc.frequency.linearRampToValueAtTime(base*1.25,now+.08);
+  osc.frequency.linearRampToValueAtTime(base*.9,now+.18);
+  osc.frequency.linearRampToValueAtTime(base*1.18,now+.28);
+
+  gain.gain.setValueAtTime(.0001,now);
+  gain.gain.exponentialRampToValueAtTime(.045,now+.03);
+  gain.gain.exponentialRampToValueAtTime(.0001,now+.35);
+
+  osc.connect(gain);
+  if(pan){
+   pan.pan.value=(Math.random()*2-1)*.8;
+   gain.connect(pan);
+   pan.connect(this.masterGain);
+  }else{
+   gain.connect(this.masterGain);
+  }
+
+  osc.start(now);
+  osc.stop(now+.38);
+ }
+ playShoot(){
+  if(!this.ctx||!this.enabled)return;
+  const now=this.ctx.currentTime;
+  const len=Math.floor(this.ctx.sampleRate*.09);
+  const buffer=this.ctx.createBuffer(1,len,this.ctx.sampleRate);
+  const data=buffer.getChannelData(0);
+  for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*(1-i/len);
+  const src=this.ctx.createBufferSource();
+  src.buffer=buffer;
+  const filter=this.ctx.createBiquadFilter();
+  filter.type='bandpass';
+  filter.frequency.value=1100;
+  const gain=this.ctx.createGain();
+  gain.gain.setValueAtTime(.28,now);
+  gain.gain.exponentialRampToValueAtTime(.001,now+.09);
+  src.connect(filter); filter.connect(gain); gain.connect(this.masterGain);
+  src.start(now);
+ }
+ playHit(){
+  if(!this.ctx||!this.enabled)return;
+  const now=this.ctx.currentTime;
+  const osc=this.ctx.createOscillator();
+  const gain=this.ctx.createGain();
+  osc.type='sine';
+  osc.frequency.setValueAtTime(820,now);
+  osc.frequency.exponentialRampToValueAtTime(380,now+.09);
+  gain.gain.setValueAtTime(.18,now);
+  gain.gain.exponentialRampToValueAtTime(.001,now+.1);
+  osc.connect(gain); gain.connect(this.masterGain);
+  osc.start(now); osc.stop(now+.1);
+ }
+ playFootstep(){
+  if(!this.ctx||!this.enabled)return;
+  const nowMs=performance.now();
+  if(nowMs-this.lastFootstepAt<190)return;
+  this.lastFootstepAt=nowMs;
+  const now=this.ctx.currentTime;
+  const osc=this.ctx.createOscillator();
+  const gain=this.ctx.createGain();
+  osc.type='triangle';
+  osc.frequency.setValueAtTime(95,now);
+  osc.frequency.exponentialRampToValueAtTime(38,now+.055);
+  gain.gain.setValueAtTime(.08,now);
+  gain.gain.exponentialRampToValueAtTime(.001,now+.055);
+  osc.connect(gain); gain.connect(this.masterGain);
+  osc.start(now); osc.stop(now+.06);
+ }
+}
+
+const forestAudio=new ForestAudioSystem();
+canvas.addEventListener('pointerdown',()=>forestAudio.init(),{once:true});
+
 class PlayerController {
  constructor(mesh,camera){
   this.mesh=mesh;
@@ -569,6 +729,8 @@ function shoot(){
  if(firingCooldown>0)return;
  firingCooldown=.13;
  shots++;
+ forestAudio.init();
+ forestAudio.playShoot();
 
  const ray=new THREE.Raycaster();
  const firstHit=getAimRaycastHit(ray,camera,scene,player);
@@ -581,6 +743,7 @@ function shoot(){
   hitCount++;
   score+=10;
   flashHitmarker();
+  forestAudio.playHit();
  }
 
  const geo=new THREE.BufferGeometry().setFromPoints([
@@ -609,6 +772,7 @@ function loop(){
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
  const moving=controller.horizontalSpeed>0.01;
+ if(moving&&controller.isGrounded)forestAudio.playFootstep();
  const stateLabel=!controller.isGrounded?'Pulando':moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
  if(scoreEl)scoreEl.textContent=String(score);
  if(hitsEl)hitsEl.textContent=hitCount+' / '+shots;
