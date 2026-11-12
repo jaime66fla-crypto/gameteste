@@ -498,6 +498,169 @@ class ForestAudioSystem {
 const forestAudio=new ForestAudioSystem();
 canvas.addEventListener('pointerdown',()=>forestAudio.init(),{once:true});
 
+class BowWeaponSystem {
+ constructor(scene,avatar){
+  this.scene=scene;
+  this.avatar=avatar;
+  this.isEquipped=false;
+  this.drawAmount=0;
+  this.recoilOffset=0;
+  this.activeArrows=[];
+  this.bowGroup=this.createBowMesh();
+  this.muzzlePoint=new THREE.Object3D();
+  this.muzzlePoint.position.set(0,0,-.5);
+  this.bowGroup.add(this.muzzlePoint);
+  this.holsterWeapon();
+  this.bindKeys();
+ }
+ createBowMesh(){
+  const bow=new THREE.Group();
+
+  const woodMat=new THREE.MeshStandardMaterial({color:0x5c3a21,roughness:.7,flatShading:true});
+  const gripMat=new THREE.MeshStandardMaterial({color:0x1f2937,roughness:.9});
+  const goldMat=new THREE.MeshStandardMaterial({color:0xd97706,metalness:.8,roughness:.3});
+  const stringMat=new THREE.LineBasicMaterial({color:0x00ffcc});
+
+  const grip=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,.32,8),gripMat);
+  bow.add(grip);
+
+  const trimTop=new THREE.Mesh(new THREE.CylinderGeometry(.036,.036,.04,8),goldMat);
+  trimTop.position.y=.16; bow.add(trimTop);
+  const trimBottom=new THREE.Mesh(new THREE.CylinderGeometry(.036,.036,.04,8),goldMat);
+  trimBottom.position.y=-.16; bow.add(trimBottom);
+
+  const upperLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.55,.045),woodMat);
+  upperLimb.position.set(0,.4,.08); upperLimb.rotation.x=-.32; upperLimb.castShadow=true; bow.add(upperLimb);
+
+  const upperTip=new THREE.Mesh(new THREE.BoxGeometry(.02,.2,.035),goldMat);
+  upperTip.position.set(0,.72,.22); upperTip.rotation.x=-.65; bow.add(upperTip);
+
+  const lowerLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.55,.045),woodMat);
+  lowerLimb.position.set(0,-.4,.08); lowerLimb.rotation.x=.32; lowerLimb.castShadow=true; bow.add(lowerLimb);
+
+  const lowerTip=new THREE.Mesh(new THREE.BoxGeometry(.02,.2,.035),goldMat);
+  lowerTip.position.set(0,-.72,.22); lowerTip.rotation.x=.65; bow.add(lowerTip);
+
+  this.stringPoints=[
+   new THREE.Vector3(0,.8,.28),
+   new THREE.Vector3(0,0,.28),
+   new THREE.Vector3(0,-.8,.28)
+  ];
+  const stringGeo=new THREE.BufferGeometry().setFromPoints(this.stringPoints);
+  this.bowString=new THREE.Line(stringGeo,stringMat);
+  bow.add(this.bowString);
+
+  this.nockedArrow=this.createArrowMesh();
+  this.nockedArrow.position.set(.03,0,-.15);
+  bow.add(this.nockedArrow);
+
+  return bow;
+ }
+ createArrowMesh(){
+  const arrow=new THREE.Group();
+  const shaft=new THREE.Mesh(
+   new THREE.CylinderGeometry(.008,.008,.85,6),
+   new THREE.MeshStandardMaterial({color:0x78350f})
+  );
+  shaft.rotation.x=Math.PI/2;
+  arrow.add(shaft);
+
+  const head=new THREE.Mesh(
+   new THREE.ConeGeometry(.022,.08,4),
+   new THREE.MeshStandardMaterial({color:0x00ffcc,emissive:0x005544})
+  );
+  head.rotation.x=-Math.PI/2;
+  head.position.z=-.45;
+  arrow.add(head);
+  return arrow;
+ }
+ bindKeys(){
+  addEventListener('keydown',e=>{
+   if(e.code==='Digit1'||e.code==='Numpad1'){
+    if(!this.isEquipped)this.equipWeapon();
+   }
+   if(e.code==='KeyH'){
+    if(this.isEquipped)this.holsterWeapon();
+   }
+  });
+ }
+ equipWeapon(){
+  this.isEquipped=true;
+  this.avatar.group.add(this.bowGroup);
+  this.bowGroup.position.set(-.35,1.15,-.45);
+  this.bowGroup.rotation.set(0,0,.25);
+  this.nockedArrow.visible=true;
+ }
+ holsterWeapon(){
+  this.isEquipped=false;
+  this.drawAmount=0;
+  this.avatar.group.add(this.bowGroup);
+  this.bowGroup.position.set(.05,1.15,.28);
+  this.bowGroup.rotation.set(.2,Math.PI,.65);
+  this.nockedArrow.visible=false;
+  this.updateStringGeometry(0);
+ }
+ triggerShot(targetPoint){
+  if(!this.isEquipped)return false;
+
+  this.recoilOffset=.15;
+  this.updateStringGeometry(.35);
+  this.nockedArrow.visible=false;
+  setTimeout(()=>{
+   if(this.isEquipped)this.nockedArrow.visible=true;
+  },250);
+
+  const startPos=new THREE.Vector3();
+  this.muzzlePoint.getWorldPosition(startPos);
+
+  const arrowProjectile=this.createArrowMesh();
+  arrowProjectile.position.copy(startPos);
+  arrowProjectile.lookAt(targetPoint);
+
+  const direction=new THREE.Vector3().subVectors(targetPoint,startPos).normalize();
+  arrowProjectile.userData={
+   velocity:direction.multiplyScalar(65),
+   life:1.5
+  };
+
+  this.scene.add(arrowProjectile);
+  this.activeArrows.push(arrowProjectile);
+  return true;
+ }
+ updateStringGeometry(pullBack){
+  this.stringPoints[1].z=.28+pullBack;
+  this.bowString.geometry.setFromPoints(this.stringPoints);
+ }
+ update(delta,isMoving){
+  if(this.recoilOffset>0){
+   this.recoilOffset=Math.max(0,this.recoilOffset-delta*1.2);
+   this.updateStringGeometry(this.recoilOffset*2);
+  }
+
+  if(this.isEquipped){
+   this.avatar.leftArm.rotation.x=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.x,-1.35+this.recoilOffset,.2);
+   this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,-.1,.2);
+   this.avatar.rightArm.rotation.x=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.x,-1.1-this.recoilOffset,.2);
+   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,.35,.2);
+  }else if(!isMoving){
+   this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,.15,.2);
+   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.2);
+  }
+
+  for(let i=this.activeArrows.length-1;i>=0;i--){
+   const arrow=this.activeArrows[i];
+   arrow.position.addScaledVector(arrow.userData.velocity,delta);
+   arrow.userData.velocity.y-=9.8*delta*.3;
+   arrow.lookAt(arrow.position.clone().add(arrow.userData.velocity));
+   arrow.userData.life-=delta;
+   if(arrow.userData.life<=0){
+    this.scene.remove(arrow);
+    this.activeArrows.splice(i,1);
+   }
+  }
+ }
+}
+
 class PlayerController {
  constructor(mesh,camera){
   this.mesh=mesh;
@@ -692,6 +855,7 @@ addEventListener('mousedown',e=>{if(e.button===0)shoot()});
 
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
 player.add(mainAvatar.group);
+const bowWeapon=new BowWeaponSystem(scene,mainAvatar);
 
 // Erika preservada no projeto, mas desativada nesta build.
 const useErika=false;
@@ -730,14 +894,26 @@ function shoot(){
  firingCooldown=.13;
  shots++;
  forestAudio.init();
- forestAudio.playShoot();
 
  const ray=new THREE.Raycaster();
  const firstHit=getAimRaycastHit(ray,camera,scene,player);
  const dir=new THREE.Vector3();
  camera.getWorldDirection(dir);
  const origin=camera.position.clone();
- const end=firstHit?.point || origin.clone().add(dir.multiplyScalar(90));
+ const targetPoint=firstHit?.point || origin.clone().add(dir.multiplyScalar(90));
+
+ if(bowWeapon.isEquipped){
+  bowWeapon.triggerShot(targetPoint);
+ }else{
+  forestAudio.playShoot();
+  const geo=new THREE.BufferGeometry().setFromPoints([
+   player.position.clone().add(new THREE.Vector3(0,1.45,0)),
+   targetPoint
+  ]);
+  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe48b}));
+  scene.add(line);
+  setTimeout(()=>scene.remove(line),55);
+ }
 
  if(firstHit){
   hitCount++;
@@ -745,14 +921,6 @@ function shoot(){
   flashHitmarker();
   forestAudio.playHit();
  }
-
- const geo=new THREE.BufferGeometry().setFromPoints([
-  player.position.clone().add(new THREE.Vector3(0,1.45,0)),
-  end
- ]);
- const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe48b}));
- scene.add(line);
- setTimeout(()=>scene.remove(line),55);
 }
 
 const controller=new PlayerController(player,camera);
@@ -769,6 +937,7 @@ function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
  controller.update(dt);
  mainAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
+ bowWeapon.update(dt,controller.horizontalSpeed>0.01);
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
  const moving=controller.horizontalSpeed>0.01;
