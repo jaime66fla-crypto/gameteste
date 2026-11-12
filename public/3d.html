@@ -3,7 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Street Prototype 3D Experimental</title>
+<title>Street Prototype 3D</title>
+<script>
+(() => {
+  const p = new URLSearchParams(location.search);
+  const valid = p.get('mode') === 'solo' || p.get('multiplayer') === '1';
+  if (!valid) location.replace('/');
+})();
+</script>
 <style>
 :root{color-scheme:dark;font-family:Inter,system-ui,Segoe UI,Roboto,sans-serif}
 *{box-sizing:border-box}body{margin:0;background:#090d12;color:#eef5f8;overflow:hidden}
@@ -54,7 +61,7 @@ button:hover,a:hover{border-color:#65ff9b}
 <div id="crosshair" class="crosshair" aria-hidden="true"></div>
 <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
 <div class="hud top minimalTop"><p id="status">Carregando…</p><p id="onlineStatus">Solo</p><p id="onlineRoster"></p></div>
-<div class="hud right"><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button></div>
+<div class="hud right"><a href="/" id="menuBtn">Menu</a><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button></div>
 <section id="onlinePanel" class="onlinePanel" hidden>
  <form id="onlineForm">
   <h2>Multiplayer</h2><p>Entre com o mesmo código para jogar na mesma sala.</p>
@@ -83,6 +90,6 @@ button:hover,a:hover{border-color:#65ff9b}
 
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"}}</script>
-<script type="module" src="/3d.js?v=34"></script>
+<script type="module" src="/3d.js?v=35"></script>
 </body>
 </html>
