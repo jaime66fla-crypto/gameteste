@@ -1547,6 +1547,32 @@ player.add(mainAvatar.group);
 const combatAnimator=new RealisticCombatAnimator(player,mainAvatar);
 const humanCharacter=new HumanCharacter(scene,camera);
 let useHumanCharacter=false;
+
+async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
+ try{
+  const model=await humanCharacter.load(url);
+  // Keep existing player root for physics/camera/collisions.
+  if(model.parent)model.parent.remove(model);
+  player.add(model);
+  model.position.set(0,0,0);
+
+  const bounds=new THREE.Box3().setFromObject(model);
+  const height=bounds.max.y-bounds.min.y;
+  if(height>0)model.scale.setScalar(1.8/height);
+  const scaledBounds=new THREE.Box3().setFromObject(model);
+  model.position.y=-scaledBounds.min.y;
+
+  mainAvatar.group.visible=false;
+  useHumanCharacter=true;
+  stateEl.textContent='HUMANO GLB ATIVO';
+  return true;
+ }catch(err){
+  console.warn('Human GLB unavailable, procedural fallback active:',err);
+  mainAvatar.group.visible=true;
+  useHumanCharacter=false;
+  return false;
+ }
+}
 const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
 const katanaWeapon=new KatanaController(player,mainAvatar,[]);
 bowWeapon.onArrowShot=(power,hit)=>{
@@ -1723,7 +1749,13 @@ function loop(){
  const movingNow=controller.horizontalSpeed>0.01;
  if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
-  const aimPoint=camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(20));
+
+  // Player root follows camera aim; keep humanoid locally aligned with root.
+  humanCharacter.model.rotation.y=THREE.MathUtils.lerp(humanCharacter.model.rotation.y,0,1-Math.exp(-10*dt));
+
+  const aimPoint=camera.position.clone().add(
+   camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(20)
+  );
   humanCharacter.lookAtTarget(aimPoint);
   humanCharacter.update(dt);
  }else{
