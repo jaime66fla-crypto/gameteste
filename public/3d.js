@@ -30,8 +30,18 @@ let desktopFiring=false;
 let weaponReadyUntil=0;
 let cameraLastX=0;
 let cameraLastY=0;
-const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
-renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const gameSettings=(()=>{
+ try{
+  const saved=typeof localStorage!=='undefined'?JSON.parse(localStorage.getItem('streetMenuSettings')||'{}'):{};
+  return {
+   volume:Number.isFinite(Number(saved.volume))?THREE.MathUtils.clamp(Number(saved.volume),0,100):70,
+   sound:saved.sound!==false,
+   performance:saved.performance!==false
+  };
+ }catch{return {volume:70,sound:true,performance:true}}
+})();
+const renderer=new THREE.WebGLRenderer({canvas,antialias:!gameSettings.performance,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,gameSettings.performance?1.35:2));
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -49,7 +59,7 @@ camera.lookAt(0,1.6,0);
 scene.add(new THREE.HemisphereLight(0xbfd8e8,0x394236,1.55));
 const sun=new THREE.DirectionalLight(0xffdfb5,3.2);
 sun.position.set(-28,45,18);sun.castShadow=true;
-sun.shadow.mapSize.set(2048,2048);
+sun.shadow.mapSize.set(gameSettings.performance?1024:2048,gameSettings.performance?1024:2048);
 sun.shadow.camera.left=-60;sun.shadow.camera.right=60;sun.shadow.camera.top=60;sun.shadow.camera.bottom=-60;
 scene.add(sun);
 
@@ -64,7 +74,7 @@ function ensureAudio(){
   const AC=window.AudioContext||window.webkitAudioContext;
   if(!AC)return null;
   audioCtx=new AC();
-  masterGain=audioCtx.createGain();masterGain.gain.value=.42;masterGain.connect(audioCtx.destination);
+  masterGain=audioCtx.createGain();masterGain.gain.value=gameSettings.sound?.6*(gameSettings.volume/100):.0001;masterGain.connect(audioCtx.destination);
  }
  if(audioCtx.state==='suspended')audioCtx.resume();
  return audioCtx;
@@ -1678,11 +1688,15 @@ function remoteState(state){
   const labelCanvas=document.createElement('canvas');labelCanvas.width=256;labelCanvas.height=48;
   const texture=new THREE.CanvasTexture(labelCanvas);texture.colorSpace=THREE.SRGBColorSpace;
   const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));label.position.y=3.7;label.scale.set(3.6,.68,1);actor.add(label);
-  remote={actor,target:new THREE.Vector3(),state,labelCanvas,texture,nextAnimAt:0,motion:{velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}}};
+  remote={actor,target:new THREE.Vector3(),state,label,labelCanvas,texture,labelName:'',nextAnimAt:0,motion:{velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}}};
   remotePlayers.set(state.id,remote);world.add(actor);attachNetworkAvatar(actor);
  }
  remote.state=state;remote.target.set(state.x,state.y,state.z);remote.actor.userData.hp=state.health;remote.actor.userData.alive=state.health>0;
- const ctx=remote.labelCanvas.getContext('2d');ctx.clearRect(0,0,256,48);ctx.fillStyle='#071019dd';ctx.fillRect(0,0,256,48);ctx.fillStyle='#8edaff';ctx.font='bold 24px system-ui';ctx.textAlign='center';ctx.fillText(String(state.name||'Jogador').slice(0,18),128,32);remote.texture.needsUpdate=true;
+ const nextName=String(state.name||'Jogador').slice(0,18);
+ if(remote.labelName!==nextName){
+  remote.labelName=nextName;
+  const ctx=remote.labelCanvas.getContext('2d');ctx.clearRect(0,0,256,48);ctx.fillStyle='#071019dd';ctx.fillRect(0,0,256,48);ctx.fillStyle='#8edaff';ctx.font='bold 24px system-ui';ctx.textAlign='center';ctx.fillText(nextName,128,32);remote.texture.needsUpdate=true;
+ }
 }
 function removeRemote(id){
  const remove=remote=>{world.remove(remote.actor);if(remote.car)world.remove(remote.car);remote.texture.dispose()};
@@ -1720,6 +1734,7 @@ function updateMultiplayer(dt){
   if(state.inCar&&!remote.car&&cars[0]){remote.car=cars[0].clone(true);world.add(remote.car)}
   if(remote.car){remote.car.visible=state.inCar;remote.car.position.copy(actor.position);remote.car.rotation.y=actor.rotation.y}
   actor.visible=state.health>0;
+  if(remote.label)remote.label.visible=distToLocal<45&&!state.inCar&&state.health>0;
   if(actor.userData.avatar)actor.userData.avatar.visible=!state.inCar;
  }
 }
@@ -1759,7 +1774,18 @@ document.getElementById('onlineForm')?.addEventListener('submit',event=>{
  multiplayer.connect(document.getElementById('onlineName').value,document.getElementById('onlineRoom').value);
 });
 document.getElementById('offlineBtn')?.addEventListener('click',()=>{multiplayer.disconnect();kills3D=0;player.userData.hp=100;updateHud();document.getElementById('onlinePanel').hidden=true});
-if(typeof location!=='undefined'&&new URLSearchParams(location.search).get('multiplayer')==='1')document.getElementById('onlinePanel').hidden=false;
+if(typeof location!=='undefined'){
+ const params=new URLSearchParams(location.search);
+ if(params.get('multiplayer')==='1'){
+  const name=(params.get('name')||'').trim().slice(0,18);
+  const room=(params.get('room')||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,24);
+  const nameInput=document.getElementById('onlineName'),roomInput=document.getElementById('onlineRoom');
+  if(name&&nameInput)nameInput.value=name;
+  if(room&&roomInput)roomInput.value=room;
+  if(name&&room)multiplayer.connect(name,room);
+  else document.getElementById('onlinePanel').hidden=false;
+ }
+}
 
 let last=performance.now();
 function frame(now){
