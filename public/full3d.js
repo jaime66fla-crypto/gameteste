@@ -1266,15 +1266,8 @@ class PistolController {
   const sy=(Math.random()-.5)*this.spread;
   raycaster.setFromCamera(new THREE.Vector2(sx,sy),this.camera);
 
-  const avatarMeshes=[];
-  this.player.traverse(child=>{
-   if(child.isMesh)avatarMeshes.push(child);
-  });
-  const ignored=new Set(avatarMeshes);
-
-  const targets=this.scene.children.filter(obj=>obj!==this.player);
-  const intersects=raycaster.intersectObjects(targets,true);
-  const hit=intersects.find(h=>!ignored.has(h.object))||null;
+  this.scene.updateMatrixWorld(true);
+  let hit=window.CombatBotSystem.firstHit(this.scene,raycaster,this.player);
 
   const start=new THREE.Vector3();
   this.muzzlePoint.getWorldPosition(start);
@@ -1282,7 +1275,14 @@ class PistolController {
   const dir=new THREE.Vector3();
   this.camera.getWorldDirection(dir);
 
-  const end=hit?.point || start.clone().add(dir.multiplyScalar(80));
+  let end=hit?.point || start.clone().add(dir.multiplyScalar(80));
+  // The camera can see around cover while the muzzle is still obstructed.
+  const muzzleDirection=end.clone().sub(start),muzzleDistance=muzzleDirection.length();
+  if(muzzleDistance>.001){
+   const muzzleRay=new THREE.Raycaster(start,muzzleDirection.normalize(),0,muzzleDistance+.01);
+   const obstruction=window.CombatBotSystem.firstHit(this.scene,muzzleRay,this.player);
+   if(obstruction){hit=obstruction;end=obstruction.point;}
+  }
 
   const tracerGeo=new THREE.BufferGeometry().setFromPoints([start,end]);
   const tracer=new THREE.Line(
@@ -1302,16 +1302,14 @@ class PistolController {
   this.recoilVelocity+=1.0;
 
   shots++;
-  if(hit){
+  const target=hit?.object?.userData?.enemyRef;
+  if(target?.alive){
    hitCount++;
    score+=12;
    flashHitmarker();
    forestAudio.playHit();
 
-   const target=hit.object?.userData?.enemyRef;
-   if(target&&typeof target.takeDamage==='function'){
-    target.takeDamage(30);
-   }
+   target.takeDamage(30);
   }
  }
 
@@ -1532,6 +1530,9 @@ const playerStateEl=document.getElementById('playerState');
 const speedEl=document.getElementById('speed');
 const staminaBarEl=document.getElementById('staminaBar');
 const altitudeEl=document.getElementById('altitude');
+const healthEl=document.getElementById('playerHealth');
+const damageFlashEl=document.getElementById('damageFlash');
+let playerDamageFlash=0;
 const hitmarkerEl=document.getElementById('hitmarker');
 
 function flashHitmarker(){
@@ -1835,6 +1836,17 @@ function setAction(kind){
 
 const controller=new PlayerController(player,camera);
 const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
+const combatBots=new window.CombatBotSystem({
+ scene,player,camera,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:houseParkour.solidBoxes,
+ onKill:()=>{score+=100;},
+ onPlayerHit:()=>{playerDamageFlash=.22;},
+ onPlayerDeath:()=>{
+  player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
+  controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
+  pistolWeapon.ammo=pistolWeapon.magSize;pistolWeapon.reserveAmmo=60;
+  pistolWeapon.isReloading=false;pistolWeapon.reloadTimer=0;
+ }
+});
 
 function updateCamera(dt){
  thirdPersonCamera.update(dt);
@@ -1925,6 +1937,11 @@ function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
  if(!gameStarted){ renderer.render(scene,camera); return; }
  controller.update(dt);
+ player.userData.crouching=controller.isCrouching;
+ combatBots.update(dt);
+ playerDamageFlash=Math.max(0,playerDamageFlash-dt);
+ if(damageFlashEl)damageFlashEl.style.opacity=String(Math.min(1,playerDamageFlash/.12));
+ if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
   mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching});

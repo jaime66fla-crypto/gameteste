@@ -2,9 +2,10 @@
 (function(){
 'use strict';
 window.OperatorAvatar=class OperatorAvatar{
-constructor(){
+constructor({team='player'}={}){
 const mat=(color,roughness=.85,metalness=0)=>new THREE.MeshStandardMaterial({color,roughness,metalness});
-const fabric=mat('#59634d'),vest=mat('#363e32'),trim=mat('#242c28'),rubber=mat('#171e20'),skin=mat('#b68b6d'),glass=mat('#243b40',.22,.4),metal=mat('#333d40',.35,.65),patch=mat('#a9b99a');
+const fabric=mat(team==='red'?'#a24742':'#59634d'),vest=mat(team==='red'?'#693631':'#363e32'),trim=mat('#242c28'),rubber=mat('#171e20'),skin=mat('#b68b6d'),glass=mat('#243b40',.22,.4),metal=mat('#333d40',.35,.65),patch=mat(team==='red'?'#cf9a86':'#a9b99a');
+this.materials={fabric,vest,trim};
 function mesh(parent,geo,material,x=0,y=0,z=0){const m=new THREE.Mesh(geo,material);m.position.set(x,y,z);m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;}
 function box(p,w,h,d,m,x=0,y=0,z=0){return mesh(p,new THREE.BoxGeometry(w,h,d),m,x,y,z);}
 function ball(p,r,m,x=0,y=0,z=0,sx=1,sy=1,sz=1){const o=mesh(p,new THREE.SphereGeometry(r,20,14),m,x,y,z);o.scale.set(sx,sy,sz);return o;}

@@ -3,7 +3,7 @@ THREE.WebGLRenderer=class{constructor(){this.shadowMap={}}setPixelRatio(){}setSi
 const ctx2d=new Proxy({createLinearGradient:()=>({addColorStop(){}}),createRadialGradient:()=>({addColorStop(){}}),measureText:()=>({width:30})},{get:(o,k)=>o[k]||(()=>{})});
 const els=new Map();function element(){return {style:{},setAttribute(){},classList:{add(){},remove(){},contains(){return false}},addEventListener(){},appendChild(){},getContext:()=>ctx2d,getBoundingClientRect:()=>({left:0,top:0,width:1280,height:720})};}function el(id){if(!els.has(id))els.set(id,element());return els.get(id)}
 const context={THREE,window:{addEventListener(){}},document:{getElementById:el,createElement:element,addEventListener(){}},addEventListener(){},devicePixelRatio:1,innerWidth:1280,innerHeight:720,requestAnimationFrame(){},console,setTimeout(){},clearTimeout(){},performance:{now:()=>1000},location:{host:'game.test',protocol:'https:'},WebSocket:class{},localStorage:{getItem(){return null},setItem(){}}};
-vm.createContext(context);vm.runInContext(fs.readFileSync('public/operator-avatar.js','utf8'),context);vm.runInContext(fs.readFileSync('public/full3d.js','utf8')+'\nglobalThis.testApi={mainAvatar,pistolWeapon,scene,player,controller,houseParkour,thirdPersonCamera,frame:loop,start:()=>gameStarted=true};',context);
+vm.createContext(context);vm.runInContext(fs.readFileSync('public/operator-avatar.js','utf8'),context);vm.runInContext(fs.readFileSync('public/combat-bots.js','utf8'),context);vm.runInContext(fs.readFileSync('public/full3d.js','utf8')+'\nglobalThis.testApi={mainAvatar,pistolWeapon,scene,player,controller,combatBots,forestAudio,getStats:()=>({score,hitCount,shots}),houseParkour,thirdPersonCamera,frame:loop,start:()=>gameStarted=true};',context);
 const a=context.testApi;assert(a.mainAvatar instanceof context.window.OperatorAvatar);assert.equal(a.pistolWeapon.pistol,a.mainAvatar.gun);assert.equal(a.mainAvatar.gun.visible,false);a.pistolWeapon.equip();assert.equal(a.mainAvatar.gun.visible,true);a.pistolWeapon.update(.016,true);a.mainAvatar.update(.016,{speed:2,armed:true});a.pistolWeapon.holster();assert.equal(a.mainAvatar.gun.visible,false);a.start();a.frame();a.player.updateMatrixWorld(true);console.log('PASS: full game boot, approved avatar mount, equip/holster and gameplay frame');
 
 a.houseParkour.solidBoxes=[];a.player.position.set(0,0,0);a.controller._onKeyChange('ControlLeft',true);a.controller._onKeyChange('KeyW',true);a.controller._onKeyChange('ShiftLeft',true);
@@ -33,3 +33,13 @@ for(const yaw of [0,.7,Math.PI/2,Math.PI,-1.4]){
  cam.modeIndex=3;cam.update(1/60);view.updateMatrixWorld(true);const firstView=view.getWorldDirection(new THREE.Vector3());firstView.y=0;firstView.normalize();assert(facing.dot(firstView)>.999,'First-person view must preserve the third-person facing direction');
 }
 console.log('TPS camera: correct back view, shoulder separation, all yaw angles and first-person direction pass');
+
+// Exercise the real pistol handler against a bot and then the same bot behind cover.
+a.forestAudio.init=()=>{};a.forestAudio.playShoot=()=>{};a.forestAudio.playHit=()=>{};
+const trainingBot=a.combatBots.bots[0];a.combatBots.bots.forEach(b=>b.group.visible=false);
+trainingBot.group.visible=true;trainingBot.alive=true;trainingBot.health=90;trainingBot.group.position.set(0,0,-8);trainingBot.group.rotation.y=0;
+a.player.position.set(0,0,0);a.player.rotation.y=Math.PI;view.position.set(0,1.25,0);view.lookAt(0,1.25,-8);view.updateMatrixWorld(true);a.scene.updateMatrixWorld(true);
+a.pistolWeapon.equip();a.pistolWeapon.spread=0;a.pistolWeapon.fireCooldown=0;const beforeHits=a.getStats().hitCount;
+a.pistolWeapon.fire();assert.equal(trainingBot.health,60,'Pistol must damage the red bot');assert.equal(a.getStats().hitCount,beforeHits+1);
+const cover=new THREE.Mesh(new THREE.BoxGeometry(5,4,.3),new THREE.MeshBasicMaterial());cover.position.set(0,2,-4);a.scene.add(cover);a.pistolWeapon.fireCooldown=0;a.pistolWeapon.fire();assert.equal(trainingBot.health,60,'Cover must block pistol damage');assert.equal(a.getStats().hitCount,beforeHits+1,'Walls must not count as enemy hits');
+console.log('Pistol integration: red-bot damage, world cover and enemy-only hit counting pass');
