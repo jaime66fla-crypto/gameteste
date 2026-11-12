@@ -1968,75 +1968,126 @@ function flashHitmarker(){
  hitmarkerEl.classList.add('active');
 }
 
-class ThirdPersonCamera {
- constructor(camera,target,domElement,getGroundHeight){
+class GTACameraController {
+ constructor(camera,targetMesh,domElement,getGroundHeight){
   this.camera=camera;
-  this.target=target;
+  this.target=targetMesh;
   this.domElement=domElement;
   this.getGroundHeight=getGroundHeight;
-  this.sensitivity=.005;
-  this.smoothness=12.0;
-  this.yaw=0;
-  this.pitch=.18;
-  this.minPitch=-.3;
-  this.maxPitch=.85;
-  this.isRightMouseDown=false;
-  this.previousMouseX=0;
-  this.previousMouseY=0;
-  this.shoulderOffset=new THREE.Vector3(.85,.35,3.2);
-  this.lookAheadOffset=new THREE.Vector3(.65,.1,-15);
-  this.currentPosition=new THREE.Vector3(target.position.x+.85,target.position.y+1.8,target.position.z+3.2);
-  this.currentLookAt=target.position.clone().add(new THREE.Vector3(0,1.45,-10));
-  this._initListeners();
- }
- _initListeners(){
-  this.domElement.addEventListener('contextmenu',e=>e.preventDefault());
 
-  this.domElement.addEventListener('mousedown',e=>{
-   if(e.button===2){
-    this.isRightMouseDown=true;
-    this.previousMouseX=e.clientX;
-    this.previousMouseY=e.clientY;
+  // Near, medium, far, first person.
+  this.distances=[2.5,5.0,8.0,.05];
+  this.modeIndex=1;
+  this.currentDistance=this.distances[this.modeIndex];
+
+  this.yaw=0;
+  this.pitch=.22;
+  this.sensitivity=.0025;
+  this.offset=new THREE.Vector3(0,1.55,0);
+  this.shoulderOffset=.55;
+  this.isLookingBack=false;
+
+  this.currentPosition=new THREE.Vector3();
+  this.currentLookAt=new THREE.Vector3();
+
+  this._initEvents();
+ }
+
+ _initEvents(){
+  this.domElement.addEventListener('click',()=>{
+   if(!gameStarted)return;
+   if(document.pointerLockElement!==this.domElement){
+    this.domElement.requestPointerLock?.();
    }
   });
 
-  window.addEventListener('mouseup',e=>{
-   if(e.button===2)this.isRightMouseDown=false;
+  document.addEventListener('mousemove',e=>{
+   if(document.pointerLockElement!==this.domElement)return;
+   this.yaw-=e.movementX*this.sensitivity;
+   this.pitch-=e.movementY*this.sensitivity;
+   this.pitch=THREE.MathUtils.clamp(this.pitch,-.5,1.05);
   });
 
-  window.addEventListener('mousemove',e=>{
-   if(!this.isRightMouseDown)return;
-   const deltaX=e.clientX-this.previousMouseX;
-   const deltaY=e.clientY-this.previousMouseY;
-   this.previousMouseX=e.clientX;
-   this.previousMouseY=e.clientY;
-   this.yaw-=deltaX*this.sensitivity;
-   this.pitch-=deltaY*this.sensitivity;
-   this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
+  document.addEventListener('keydown',e=>{
+   if(e.code==='KeyV'){
+    this.modeIndex=(this.modeIndex+1)%this.distances.length;
+   }
+   if(e.code==='KeyC')this.isLookingBack=true;
+  });
+
+  document.addEventListener('keyup',e=>{
+   if(e.code==='KeyC')this.isLookingBack=false;
   });
  }
- update(dt){
-  if(!this.target)return;
-  const pivotPos=new THREE.Vector3(this.target.position.x,this.target.position.y+1.45,this.target.position.z);
-  const euler=new THREE.Euler(this.pitch,this.yaw,0,'YXZ');
 
-  const desiredCamPos=pivotPos.clone().add(this.shoulderOffset.clone().applyEuler(euler));
-  if(typeof this.getGroundHeight==='function'){
-   const minCamY=this.getGroundHeight(desiredCamPos.x,desiredCamPos.z)+.35;
-   if(desiredCamPos.y<minCamY)desiredCamPos.y=minCamY;
+ update(deltaTime){
+  if(!this.target)return;
+
+  const targetDist=this.distances[this.modeIndex];
+  const blend=1-Math.exp(-10*deltaTime);
+  this.currentDistance=THREE.MathUtils.lerp(this.currentDistance,targetDist,blend);
+
+  const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
+  const focusPoint=this.target.position.clone().add(this.offset);
+
+  const cosPitch=Math.cos(this.pitch);
+  const sinPitch=Math.sin(this.pitch);
+
+  const offsetX=Math.sin(activeYaw)*cosPitch*this.currentDistance;
+  const offsetY=sinPitch*this.currentDistance;
+  const offsetZ=Math.cos(activeYaw)*cosPitch*this.currentDistance;
+
+  let desiredPosition=new THREE.Vector3(
+   focusPoint.x+offsetX,
+   focusPoint.y+offsetY,
+   focusPoint.z+offsetZ
+  );
+
+  // Shoulder bias in third person, disabled in first person.
+  if(this.currentDistance>.15){
+   const right=new THREE.Vector3(Math.cos(activeYaw),0,-Math.sin(activeYaw));
+   desiredPosition.addScaledVector(right,this.shoulderOffset);
   }
 
-  const targetPoint=pivotPos.clone().add(this.lookAheadOffset.clone().applyEuler(euler));
-  const t=1-Math.exp(-this.smoothness*dt);
-  this.currentPosition.lerp(desiredCamPos,t);
-  this.currentLookAt.lerp(targetPoint,t);
-  this.camera.position.copy(this.currentPosition);
-  this.camera.lookAt(this.currentLookAt);
+  if(typeof this.getGroundHeight==='function'){
+   const minY=this.getGroundHeight(desiredPosition.x,desiredPosition.z)+.35;
+   if(desiredPosition.y<minY)desiredPosition.y=minY;
+  }
 
-  // Shooter behavior: avatar follows aim yaw, independent from movement direction.
-  this.target.rotation.y=this.yaw+Math.PI;
+  if(this.currentPosition.lengthSq()===0)this.currentPosition.copy(desiredPosition);
+  this.currentPosition.lerp(desiredPosition,blend);
+  this.camera.position.copy(this.currentPosition);
+
+  if(this.currentDistance<=.12){
+   const lookDir=new THREE.Vector3(
+    -Math.sin(activeYaw)*cosPitch,
+    -sinPitch,
+    -Math.cos(activeYaw)*cosPitch
+   ).normalize();
+   const lookTarget=focusPoint.clone().addScaledVector(lookDir,20);
+   this.currentLookAt.lerp(lookTarget,blend);
+   this.camera.lookAt(this.currentLookAt);
+  }else{
+   // GTA-style orbit camera: look back at player focus.
+   this.currentLookAt.lerp(focusPoint,blend);
+   this.camera.lookAt(this.currentLookAt);
+  }
+
+  // Soldier/player always faces aim yaw, except when looking backward with C.
+  if(!this.isLookingBack){
+   this.target.rotation.y=this.yaw+Math.PI;
+  }
+
+  // Hide Soldier body only in first person to avoid clipping into head/torso.
+  if(typeof humanCharacter!=='undefined'&&humanCharacter.model){
+   humanCharacter.model.visible=this.currentDistance>.12;
+  }
+  if(typeof mainAvatar!=='undefined'&&mainAvatar.group){
+   mainAvatar.group.visible=!useHumanCharacter&&this.currentDistance>.12;
+  }
  }
 }
+
 
 function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
  raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
@@ -2186,7 +2237,7 @@ function shoot(){
 }
 
 const controller=new PlayerController(player,camera);
-const thirdPersonCamera=new ThirdPersonCamera(camera,player,canvas,forestEnvironment.getTerrainHeight);
+const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
 
 function updateCamera(dt){
  thirdPersonCamera.update(dt);
