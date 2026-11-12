@@ -820,7 +820,7 @@ class HumanCharacter {
    const r=this.jumpRestPose?.[key];
    return r?r[axis]:0;
   };
-  const setBone=(bone,key,rx=0,ry=0,rz=0,speed=10)=>{
+  const setBone=(bone,key,rx=0,ry=0,rz=0,speed=12)=>{
    if(!bone)return;
    bone.rotation.x=smooth(bone.rotation.x,rest(key,'x')+rx,speed);
    bone.rotation.y=smooth(bone.rotation.y,rest(key,'y')+ry,speed);
@@ -837,59 +837,63 @@ class HumanCharacter {
   }
   this.wasGrounded=isGrounded;
 
-  if(!isGrounded){
-   this.jumpBlend=Math.min(1,this.jumpBlend+delta*6);
+  // Keep Soldier root upright at all times.
+  this.model.rotation.x=smooth(this.model.rotation.x,0,14);
+  this.model.rotation.z=smooth(this.model.rotation.z,0,14);
 
-   if(verticalVelocity>2.2)this.jumpPhase='takeoff';
+  if(!isGrounded){
+   this.jumpBlend=Math.min(1,this.jumpBlend+delta*7);
+
+   if(verticalVelocity>2.0)this.jumpPhase='takeoff';
    else if(verticalVelocity>-1.5)this.jumpPhase='air';
    else this.jumpPhase='fall';
 
    if(this.jumpPhase==='takeoff'){
-    setBone(this.hipsBone,'hips',-.05,0,0,10);
-    setBone(this.spineBone,'spine',.08,0,0,10);
-    setBone(this.leftUpLegBone,'leftUpLeg',.18,0,0,10);
-    setBone(this.rightUpLegBone,'rightUpLeg',.14,0,0,10);
-    setBone(this.leftLegBone,'leftLeg',-.22,0,0,10);
-    setBone(this.rightLegBone,'rightLeg',-.18,0,0,10);
+    setBone(this.hipsBone,'hips',-.02,0,0);
+    setBone(this.spineBone,'spine',.03,0,0);
+    setBone(this.leftUpLegBone,'leftUpLeg',.08,0,0);
+    setBone(this.rightUpLegBone,'rightUpLeg',.08,0,0);
+    setBone(this.leftLegBone,'leftLeg',-.10,0,0);
+    setBone(this.rightLegBone,'rightLeg',-.10,0,0);
    }else if(this.jumpPhase==='air'){
-    setBone(this.hipsBone,'hips',-.02,0,0,8);
-    setBone(this.spineBone,'spine',.04,0,0,8);
-    setBone(this.leftUpLegBone,'leftUpLeg',.28,0,.05,9);
-    setBone(this.rightUpLegBone,'rightUpLeg',.22,0,-.05,9);
-    setBone(this.leftLegBone,'leftLeg',-.38,0,0,9);
-    setBone(this.rightLegBone,'rightLeg',-.32,0,0,9);
+    // Stable airborne pose: legs slightly bent, body upright.
+    setBone(this.hipsBone,'hips',0,0,0);
+    setBone(this.spineBone,'spine',.02,0,0);
+    setBone(this.leftUpLegBone,'leftUpLeg',.12,0,0);
+    setBone(this.rightUpLegBone,'rightUpLeg',.12,0,0);
+    setBone(this.leftLegBone,'leftLeg',-.18,0,0);
+    setBone(this.rightLegBone,'rightLeg',-.18,0,0);
    }else{
-    // Falling: extend legs instead of curling body into a ball.
-    setBone(this.hipsBone,'hips',.03,0,0,9);
-    setBone(this.spineBone,'spine',-.03,0,0,9);
-    setBone(this.leftUpLegBone,'leftUpLeg',.10,0,.03,10);
-    setBone(this.rightUpLegBone,'rightUpLeg',.08,0,-.03,10);
-    setBone(this.leftLegBone,'leftLeg',-.10,0,0,10);
-    setBone(this.rightLegBone,'rightLeg',-.08,0,0,10);
+    // Falling: extend toward landing.
+    setBone(this.hipsBone,'hips',.01,0,0);
+    setBone(this.spineBone,'spine',-.01,0,0);
+    setBone(this.leftUpLegBone,'leftUpLeg',.04,0,0);
+    setBone(this.rightUpLegBone,'rightUpLeg',.04,0,0);
+    setBone(this.leftLegBone,'leftLeg',-.04,0,0);
+    setBone(this.rightLegBone,'rightLeg',-.04,0,0);
    }
-
-   this.model.rotation.x=smooth(this.model.rotation.x,0,10);
   }else{
    if(this.jumpPhase==='landing'){
-    this.landBlend=Math.max(0,this.landBlend-delta*6);
+    this.landBlend=Math.max(0,this.landBlend-delta*7);
     const c=this.landBlend;
-    setBone(this.hipsBone,'hips',.05*c,0,0,14);
-    setBone(this.spineBone,'spine',-.04*c,0,0,14);
-    setBone(this.leftUpLegBone,'leftUpLeg',.12*c,0,0,14);
-    setBone(this.rightUpLegBone,'rightUpLeg',.12*c,0,0,14);
-    setBone(this.leftLegBone,'leftLeg',-.16*c,0,0,14);
-    setBone(this.rightLegBone,'rightLeg',-.16*c,0,0,14);
+
+    setBone(this.hipsBone,'hips',.03*c,0,0,14);
+    setBone(this.spineBone,'spine',-.02*c,0,0,14);
+    setBone(this.leftUpLegBone,'leftUpLeg',.08*c,0,0,14);
+    setBone(this.rightUpLegBone,'rightUpLeg',.08*c,0,0,14);
+    setBone(this.leftLegBone,'leftLeg',-.10*c,0,0,14);
+    setBone(this.rightLegBone,'rightLeg',-.10*c,0,0,14);
+
     if(this.landBlend<=.02)this.jumpPhase='grounded';
    }
 
    if(this.jumpPhase==='grounded'){
-    setBone(this.hipsBone,'hips',0,0,0,10);
-    setBone(this.spineBone,'spine',0,0,0,10);
-    setBone(this.leftUpLegBone,'leftUpLeg',0,0,0,10);
-    setBone(this.rightUpLegBone,'rightUpLeg',0,0,0,10);
-    setBone(this.leftLegBone,'leftLeg',0,0,0,10);
-    setBone(this.rightLegBone,'rightLeg',0,0,0,10);
-    this.model.rotation.x=smooth(this.model.rotation.x,0,10);
+    setBone(this.hipsBone,'hips',0,0,0,12);
+    setBone(this.spineBone,'spine',0,0,0,12);
+    setBone(this.leftUpLegBone,'leftUpLeg',0,0,0,12);
+    setBone(this.rightUpLegBone,'rightUpLeg',0,0,0,12);
+    setBone(this.leftLegBone,'leftLeg',0,0,0,12);
+    setBone(this.rightLegBone,'rightLeg',0,0,0,12);
    }
   }
  }
