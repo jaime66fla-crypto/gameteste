@@ -26,12 +26,34 @@ linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
 .cross-bottom{width:2px;height:10px;left:16px;bottom:0}
 .cross-left{width:10px;height:2px;left:0;top:16px}
 .cross-right{width:10px;height:2px;right:0;top:16px}
+
+.combat-hud{min-width:300px}.hud-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}.hud-grid span{font-size:10px;opacity:.8}.hud-grid strong{display:block;font-size:13px;color:#7ee8ff;margin-top:2px}.stamina-wrap{font-size:10px;margin:8px 0}.stamina-track{height:7px;background:#12202a;border-radius:999px;overflow:hidden;margin-top:4px}.stamina-track>div{height:100%;width:100%;background:#22d3ee;transition:width .08s linear}
+#hitmarker{position:fixed;left:50%;top:50%;width:28px;height:28px;transform:translate(-50%,-50%);pointer-events:none;z-index:10000;opacity:0}
+#hitmarker.active{animation:hitmark .16s ease-out}
+#hitmarker i{position:absolute;width:9px;height:2px;background:#ff3366}
+#hitmarker i:nth-child(1){left:2px;top:5px;transform:rotate(45deg)}
+#hitmarker i:nth-child(2){right:2px;top:5px;transform:rotate(-45deg)}
+#hitmarker i:nth-child(3){left:2px;bottom:5px;transform:rotate(-45deg)}
+#hitmarker i:nth-child(4){right:2px;bottom:5px;transform:rotate(45deg)}
+@keyframes hitmark{0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
+.cross-ring,.cross-line{border-color:#00ffcc!important;background:#00ffcc!important;box-shadow:0 0 8px #00ffcc!important}
 </style>
 </head>
 <body>
 <canvas id="view"></canvas>
-<div class="hud"><b>Gameteste — Full 3D Rebuild</b><small>WASD mover • Shift correr • Espaço pular • mouse mover câmera • clique esquerdo atirar</small></div>
+<div class="hud combat-hud">
+  <b>Gameteste — Floresta 3D</b>
+  <div class="hud-grid">
+    <span>PONTOS <strong id="score">0</strong></span>
+    <span>ACERTOS/TIROS <strong id="hits">0 / 0</strong></span>
+    <span>ESTADO <strong id="playerState">Parado</strong></span>
+    <span>VELOCIDADE <strong id="speed">0.0 m/s</strong></span>
+  </div>
+  <div class="stamina-wrap"><span>STAMINA</span><div class="stamina-track"><div id="staminaBar"></div></div></div>
+  <small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar</small>
+</div>
 <div id="state">carregando...</div>
+<div id="hitmarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 <div id="help">Nova versão 3D — versão anterior preservada em backup</div>
 <div class="cross" aria-hidden="true">
   <span class="cross-ring"></span>
