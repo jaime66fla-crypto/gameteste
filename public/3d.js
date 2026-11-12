@@ -966,7 +966,7 @@ function updateClimb(dt){
 const keys=new Set();let t=0;
 addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
-document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
+document.getElementById('resetBtn')?.addEventListener('click',()=>player.position.set(5,0,8));
 function bindStick(el,knob,state,onMove){
  if(!el||!knob)return;
  let pid=null;
