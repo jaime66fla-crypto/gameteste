@@ -674,6 +674,8 @@ class HumanCharacter {
   this.rightLegBone=null;
   this.rightHandBone=null;
   this.leftHandBone=null;
+  this.rightArmBone=null;
+  this.leftArmBone=null;
   this.rightForeArmBone=null;
   this.leftForeArmBone=null;
   this.jumpPhase='grounded';
@@ -708,6 +710,8 @@ class HumanCharacter {
       if((name.includes('rightleg')||name.includes('right_leg'))&&!name.includes('upleg'))this.rightLegBone=object;
       if(name.includes('righthand')||name.includes('right_hand'))this.rightHandBone=object;
       if(name.includes('lefthand')||name.includes('left_hand'))this.leftHandBone=object;
+      if((name.includes('rightarm')||name.includes('right_arm'))&&!name.includes('fore'))this.rightArmBone=object;
+      if((name.includes('leftarm')||name.includes('left_arm'))&&!name.includes('fore'))this.leftArmBone=object;
       if(name.includes('rightforearm')||name.includes('right_forearm'))this.rightForeArmBone=object;
       if(name.includes('leftforearm')||name.includes('left_forearm'))this.leftForeArmBone=object;
      }
@@ -1473,8 +1477,12 @@ class PistolController {
   this.soldierAttached=false;
   this.rightHandBone=null;
   this.leftHandBone=null;
+  this.rightArmBone=null;
+  this.leftArmBone=null;
+  this.spineBone=null;
   this.rightForeArmBone=null;
   this.leftForeArmBone=null;
+  this.shootingPoseBase=null;
 
   // Fallback: attach to player root until Soldier bones are available.
   this.player.add(this.pistol);
@@ -1581,52 +1589,99 @@ class PistolController {
 
   this.rightHandBone=human.rightHandBone;
   this.leftHandBone=human.leftHandBone;
+  this.rightArmBone=human.rightArmBone;
+  this.leftArmBone=human.leftArmBone;
+  this.spineBone=human.spineBone;
   this.rightForeArmBone=human.rightForeArmBone;
   this.leftForeArmBone=human.leftForeArmBone;
 
   this.rightHandBone.add(this.pistol);
   this.soldierAttached=true;
 
-  // Local offset tuned for Soldier hand orientation.
-  this.pistol.position.set(.02,-.03,-.16);
-  this.pistol.rotation.set(-Math.PI/2,.02,Math.PI);
+  // Exact shooting-pose calibration exported from Soldier Pose Editor.
+  this.pistol.position.set(.055,.010,-.010);
+  this.pistol.rotation.set(
+   THREE.MathUtils.degToRad(92),
+   THREE.MathUtils.degToRad(-2),
+   THREE.MathUtils.degToRad(-115)
+  );
+  this.pistol.scale.setScalar(.40);
+
+  // Capture the neutral upper-body pose as the reference used by editor offsets.
+  this.shootingPoseBase={
+   rightArm:this.rightArmBone?this.rightArmBone.rotation.clone():null,
+   leftArm:this.leftArmBone?this.leftArmBone.rotation.clone():null,
+   spine:this.spineBone?this.spineBone.rotation.clone():null
+  };
 
   return true;
  }
-
  updateSoldierGrip(dt){
   if(!this.soldierAttached||!this.isEquipped)return;
 
-  const smooth=(current,target,speed)=>THREE.MathUtils.lerp(
-   current,target,
-   1-Math.exp(-speed*dt)
+  const pose={
+   gunPosition:[.055,.010,-.010],
+   gunRotationDeg:[92,-2,-115],
+   gunScale:.40,
+   rightArmDeg:[34,-9,39],
+   leftArmDeg:[-49,-39,-4],
+   spineDeg:[0,-13,0],
+   blendSpeed:.13
+  };
+
+  // Convert the editor's blend factor to a stable frame-rate-independent blend.
+  const blend=1-Math.pow(1-pose.blendSpeed,dt*60);
+  const lerpRot=(bone,base,deg)=>{
+   if(!bone||!base)return;
+   bone.rotation.x=THREE.MathUtils.lerp(
+    bone.rotation.x,
+    base.x+THREE.MathUtils.degToRad(deg[0]),
+    blend
+   );
+   bone.rotation.y=THREE.MathUtils.lerp(
+    bone.rotation.y,
+    base.y+THREE.MathUtils.degToRad(deg[1]),
+    blend
+   );
+   bone.rotation.z=THREE.MathUtils.lerp(
+    bone.rotation.z,
+    base.z+THREE.MathUtils.degToRad(deg[2]),
+    blend
+   );
+  };
+
+  if(this.shootingPoseBase){
+   lerpRot(this.rightArmBone,this.shootingPoseBase.rightArm,pose.rightArmDeg);
+   lerpRot(this.leftArmBone,this.shootingPoseBase.leftArm,pose.leftArmDeg);
+   lerpRot(this.spineBone,this.shootingPoseBase.spine,pose.spineDeg);
+  }
+
+  // Glock pose from the editor, with recoil layered on top.
+  this.pistol.position.x=THREE.MathUtils.lerp(this.pistol.position.x,pose.gunPosition[0],blend);
+  this.pistol.position.y=THREE.MathUtils.lerp(this.pistol.position.y,pose.gunPosition[1],blend);
+  this.pistol.position.z=THREE.MathUtils.lerp(
+   this.pistol.position.z,
+   pose.gunPosition[2]+this.recoil*.025,
+   blend
   );
 
-  // Right arm: weapon arm points forward.
-  if(this.rightForeArmBone){
-   this.rightForeArmBone.rotation.x=smooth(this.rightForeArmBone.rotation.x,-1.08,13);
-   this.rightForeArmBone.rotation.y=smooth(this.rightForeArmBone.rotation.y,.08,12);
-   this.rightForeArmBone.rotation.z=smooth(this.rightForeArmBone.rotation.z,-.08,12);
-  }
-
-  // Left support hand closes toward the pistol grip.
-  if(this.leftForeArmBone){
-   this.leftForeArmBone.rotation.x=smooth(this.leftForeArmBone.rotation.x,-1.0,13);
-   this.leftForeArmBone.rotation.y=smooth(this.leftForeArmBone.rotation.y,-.18,12);
-   this.leftForeArmBone.rotation.z=smooth(this.leftForeArmBone.rotation.z,.14,12);
-  }
-
-  if(this.leftHandBone){
-   this.leftHandBone.rotation.x=smooth(this.leftHandBone.rotation.x,-.08,10);
-   this.leftHandBone.rotation.y=smooth(this.leftHandBone.rotation.y,.12,10);
-   this.leftHandBone.rotation.z=smooth(this.leftHandBone.rotation.z,-.10,10);
-  }
-
-  // Local recoil on pistol only.
-  this.pistol.position.z=-.16+this.recoil*.06;
-  this.pistol.rotation.x=-Math.PI/2-this.recoil*.18;
+  this.pistol.rotation.x=THREE.MathUtils.lerp(
+   this.pistol.rotation.x,
+   THREE.MathUtils.degToRad(pose.gunRotationDeg[0])-this.recoil*.14,
+   blend
+  );
+  this.pistol.rotation.y=THREE.MathUtils.lerp(
+   this.pistol.rotation.y,
+   THREE.MathUtils.degToRad(pose.gunRotationDeg[1]),
+   blend
+  );
+  this.pistol.rotation.z=THREE.MathUtils.lerp(
+   this.pistol.rotation.z,
+   THREE.MathUtils.degToRad(pose.gunRotationDeg[2]),
+   blend
+  );
+  this.pistol.scale.setScalar(pose.gunScale);
  }
-
  bindInputs(){
   addEventListener('keydown',e=>{
    if((e.code==='Digit3'||e.code==='Numpad3')&&!this.isReloading){
