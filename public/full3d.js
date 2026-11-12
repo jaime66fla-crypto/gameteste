@@ -2003,8 +2003,8 @@ class SpecialJetpack {
   this.equipped=true;
   this.pickup.visible=false;this.ring.visible=false;this.glow.visible=false;
   this.backpack=this._buildJetpack(true);
-  this.backpack.position.set(0,1.28,.34);
-  this.backpack.rotation.y=Math.PI;
+  this.backpack.position.set(0,1.28,-.34);
+  this.backpack.rotation.y=0;
   this.player.add(this.backpack);
   this.flames=this.backpack.userData.flames||[];
   const hud=document.getElementById('jetpackHud');if(hud)hud.hidden=false;
