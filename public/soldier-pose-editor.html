@@ -168,6 +168,38 @@ function buildWeapon(){
  g.traverse(o=>{if(o.isMesh)o.castShadow=true});
  return g;
 }
+function syncControls(){
+ const ids={
+  gunX:'gunX',gunY:'gunY',gunZ:'gunZ',
+  gunRX:'gunRX',gunRY:'gunRY',gunRZ:'gunRZ',
+  rightArmX:'rightArmX',rightArmY:'rightArmY',rightArmZ:'rightArmZ',
+  leftArmX:'leftArmX',leftArmY:'leftArmY',leftArmZ:'leftArmZ',
+  spineX:'spineX',spineY:'spineY',spineZ:'spineZ'
+ };
+ const rows=[...document.querySelectorAll('.row')];
+ rows.forEach(row=>{
+  const lab=row.querySelector('label')?.textContent||'';
+  const range=row.querySelector('input[type=range]');
+  const num=row.querySelector('input[type=number]');
+  let key=null;
+  if(lab==='X'&&row.parentElement?.id==='gunPos')key='gunX';
+  else if(lab==='Y'&&row.parentElement?.id==='gunPos')key='gunY';
+  else if(lab==='Z'&&row.parentElement?.id==='gunPos')key='gunZ';
+  else if(lab==='Pitch X')key='gunRX';
+  else if(lab==='Yaw Y')key='gunRY';
+  else if(lab==='Roll Z')key='gunRZ';
+  else if(lab==='Dir X')key='rightArmX';
+  else if(lab==='Dir Y')key='rightArmY';
+  else if(lab==='Dir Z')key='rightArmZ';
+  else if(lab==='Esq X')key='leftArmX';
+  else if(lab==='Esq Y')key='leftArmY';
+  else if(lab==='Esq Z')key='leftArmZ';
+  else if(lab==='Tronco X')key='spineX';
+  else if(lab==='Tronco Y')key='spineY';
+  else if(lab==='Tronco Z')key='spineZ';
+  if(key&&range&&num){range.value=state[key];num.value=state[key];}
+ });
+}
 function apply(){
  if(!model)return;
  if(rightArm&&base.rightArm){
@@ -241,7 +273,7 @@ new GLTFLoader().load(soldierUrl,gltf=>{
  model.scale.setScalar(h>0?1.9/h:1);
  const b2=new THREE.Box3().setFromObject(model);model.position.y=-b2.min.y;
  scene.add(model);
- rightHand=findBone(['righthand','right_hand']);
+ rightHand=findBone(['righthand','right_hand','handr','r_hand','rightwrist','right_wrist']);
  rightArm=findBone(['rightarm','right_arm']);
  leftArm=findBone(['leftarm','left_arm']);
  spine=findBone(['spine1','spine']);
@@ -253,8 +285,21 @@ new GLTFLoader().load(soldierUrl,gltf=>{
   mixer.update(.08);idle.paused=true;
  }
  weapon=buildWeapon();
- if(rightHand)rightHand.add(weapon); else model.add(weapon);
- status.textContent='SOLDIER GLB READY • '+(rightHand?'RightHand encontrada':'RightHand não encontrada');
+ weapon.visible=true;
+ if(rightHand){
+  rightHand.add(weapon);
+  // Local grip tuned so the Glock starts visible in the Soldier's right hand.
+  state.gunX=.02; state.gunY=-.03; state.gunZ=-.16;
+  state.gunRX=-90; state.gunRY=1; state.gunRZ=180;
+  status.textContent='SOLDIER GLB READY • RightHand encontrada';
+ }else{
+  // Fallback: keep the Glock visible on the avatar root if bone mapping fails.
+  model.add(weapon);
+  state.gunX=.32; state.gunY=1.28; state.gunZ=-.48;
+  state.gunRX=-5; state.gunRY=0; state.gunRZ=0;
+  status.textContent='SOLDIER GLB READY • Glock em fallback (RightHand não encontrada)';
+ }
+ syncControls();
  apply();
 },undefined,err=>{status.textContent='Erro ao carregar Soldier.glb';console.error(err)});
 
@@ -264,11 +309,8 @@ document.getElementById('side').onclick=()=>setView(Math.PI/2,.1);
 document.getElementById('back').onclick=()=>setView(0,.1);
 document.getElementById('reset').onclick=()=>{
  Object.assign(state,defaults);
- document.querySelectorAll('.row').forEach(row=>{
-  const range=row.querySelector('input[type=range]'),num=row.querySelector('input[type=number]');
-  const key=[...document.querySelectorAll('.row')].indexOf(row);
- });
- location.reload();
+ syncControls();
+ apply();
 };
 canvas.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId)});
 canvas.addEventListener('pointerup',()=>drag=false);
