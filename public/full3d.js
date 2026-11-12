@@ -1959,7 +1959,8 @@ class GTACameraController {
   document.addEventListener('mousemove',e=>{
    if(document.pointerLockElement!==this.domElement)return;
    this.yaw-=e.movementX*this.sensitivity;
-   this.pitch-=e.movementY*this.sensitivity;
+   // Mouse para cima = olhar para cima; mouse para baixo = olhar para baixo.
+   this.pitch+=e.movementY*this.sensitivity;
    this.pitch=THREE.MathUtils.clamp(this.pitch,-.5,1.05);
   });
 
