@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gameteste 3D Rebuild</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;font-family:Inter,system-ui,Arial}
+#view{width:100%;height:100%;display:block;touch-action:none}
+.hud{position:fixed;left:16px;top:16px;z-index:3;background:#0b1118dd;border:1px solid #ffffff20;border-radius:14px;padding:12px 14px;backdrop-filter:blur(10px);max-width:360px}
+.hud b{display:block;margin-bottom:6px}.hud small{display:block;opacity:.78;line-height:1.45}
+.cross{position:fixed;left:50%;top:50%;width:10px;height:10px;margin:-5px;border:2px solid #fff;border-radius:50%;pointer-events:none;box-shadow:0 0 0 1px #0008}
+#state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
+#help{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:12px;opacity:.9}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="hud"><b>Gameteste — Full 3D Rebuild</b><small>WASD mover • Shift correr • Espaço pular • mouse mover câmera • clique esquerdo atirar</small></div>
+<div id="state">carregando...</div>
+<div id="help">Arena 3D isolada — versão antiga preservada</div>
+<div class="cross"></div>
+<script type="module" src="/full3d.js?v=1"></script>
+</body>
+</html>
