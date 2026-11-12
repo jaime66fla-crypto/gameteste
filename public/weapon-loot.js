@@ -2,7 +2,7 @@
 (() => {
 'use strict';
 const DEFINITIONS=Object.freeze({
- pistol:{id:'pistol',name:'Pistola',ammoType:'light',magSize:12,damage:30,fireRate:.22,reloadTime:1.15,spread:.0025,pellets:1,auto:false,range:65,muzzleZ:.2,color:0xd6c49a},
+ pistol:{id:'pistol',name:'Pistola',ammoType:'light',magSize:12,damage:30,fireRate:60/340,reloadTime:1.15,spread:.0025,pellets:1,auto:false,range:65,muzzleZ:.2,color:0xd6c49a},
  smg:{id:'smg',name:'Submetralhadora',ammoType:'light',magSize:24,damage:18,fireRate:.095,reloadTime:1.7,spread:.009,pellets:1,auto:true,range:45,muzzleZ:.29,color:0x80c4de},
  rifle:{id:'rifle',name:'Rifle de assalto',ammoType:'rifle',magSize:30,damage:28,fireRate:.14,reloadTime:2,spread:.004,pellets:1,auto:true,range:85,muzzleZ:.47,color:0x91c388},
  shotgun:{id:'shotgun',name:'Escopeta',ammoType:'shells',magSize:6,damage:11,fireRate:.85,reloadTime:2.2,spread:.05,pellets:6,auto:false,range:28,muzzleZ:.5,color:0xe8b17f}
