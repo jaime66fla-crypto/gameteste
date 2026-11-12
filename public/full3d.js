@@ -105,21 +105,99 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
-const velocity=new THREE.Vector3();
-const desired=new THREE.Vector3();
-const keys=new Set();
-let yaw=0,camYaw=Math.PI,camPitch=.22,vertical=0,grounded=true;
+class PlayerController {
+ constructor(mesh,camera){
+  this.mesh=mesh;
+  this.camera=camera;
+  this.walkSpeed=6.0;
+  this.sprintSpeed=11.0;
+  this.jumpForce=8.5;
+  this.gravity=-22.0;
+  this.rotationSpeed=10.0;
+  this.velocity=new THREE.Vector3();
+  this.isGrounded=true;
+  this.horizontalSpeed=0;
+  this.keys={forward:false,backward:false,left:false,right:false,sprint:false};
+  this._initListeners();
+ }
+ _initListeners(){
+  addEventListener('keydown',e=>this._onKeyChange(e.code,true));
+  addEventListener('keyup',e=>this._onKeyChange(e.code,false));
+ }
+ _onKeyChange(code,isPressed){
+  switch(code){
+   case 'KeyW': case 'ArrowUp': this.keys.forward=isPressed; break;
+   case 'KeyS': case 'ArrowDown': this.keys.backward=isPressed; break;
+   case 'KeyA': case 'ArrowLeft': this.keys.left=isPressed; break;
+   case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
+   case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
+   case 'Space':
+    if(isPressed&&this.isGrounded){
+     this.velocity.y=this.jumpForce;
+     this.isGrounded=false;
+    }
+    break;
+  }
+ }
+ update(dt){
+  const inputDir=new THREE.Vector3();
+  if(this.keys.forward)inputDir.z-=1;
+  if(this.keys.backward)inputDir.z+=1;
+  if(this.keys.left)inputDir.x-=1;
+  if(this.keys.right)inputDir.x+=1;
+
+  let moving=false;
+  if(inputDir.lengthSq()>0){
+   moving=true;
+   inputDir.normalize();
+
+   const cameraDirection=new THREE.Vector3();
+   this.camera.getWorldDirection(cameraDirection);
+   cameraDirection.y=0;
+   cameraDirection.normalize();
+
+   const cameraAngle=Math.atan2(cameraDirection.x,cameraDirection.z);
+   const moveAngle=Math.atan2(inputDir.x,inputDir.z)+cameraAngle+Math.PI;
+   const moveDir=new THREE.Vector3(Math.sin(moveAngle),0,Math.cos(moveAngle));
+
+   const currentSpeed=this.keys.sprint?this.sprintSpeed:this.walkSpeed;
+   this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
+   this.horizontalSpeed=currentSpeed;
+
+   const targetQuaternion=new THREE.Quaternion();
+   targetQuaternion.setFromAxisAngle(new THREE.Vector3(0,1,0),moveAngle);
+   this.mesh.quaternion.slerp(targetQuaternion,Math.min(1,this.rotationSpeed*dt));
+  }else{
+   this.horizontalSpeed=0;
+  }
+
+  this.velocity.y+=this.gravity*dt;
+  this.mesh.position.y+=this.velocity.y*dt;
+
+  if(this.mesh.position.y<=0){
+   this.mesh.position.y=0;
+   this.velocity.y=0;
+   this.isGrounded=true;
+  }
+
+  const actionKind=!this.isGrounded?'jump':moving?(this.keys.sprint?'run':'walk'):'idle';
+  setAction(actionKind);
+  if(mixer)mixer.update(dt);
+  return actionKind;
+ }
+}
+
+let camYaw=Math.PI,camPitch=.22;
 let model=null,mixer=null,actions={},active=null;
 let firingCooldown=0;
 
-addEventListener('keydown',e=>{keys.add(e.code); if(e.code==='Space'&&grounded){vertical=6; grounded=false}});
-addEventListener('keyup',e=>keys.delete(e.code));
 canvas.addEventListener('click',()=>canvas.requestPointerLock?.());
 addEventListener('mousemove',e=>{
  if(document.pointerLockElement!==canvas)return;
- camYaw-=e.movementX*.0026; camPitch=THREE.MathUtils.clamp(camPitch-e.movementY*.0022,-.15,.62);
+ camYaw-=e.movementX*.0026;
+ camPitch=THREE.MathUtils.clamp(camPitch-e.movementY*.0022,-.15,.62);
 });
-addEventListener('mousedown',e=>{ if(e.button===0) shoot(); });
+addEventListener('mousedown',e=>{if(e.button===0)shoot()});
 
 function makeGun(){
  const g=new THREE.Group();
@@ -152,7 +230,9 @@ function pickAction(kind){
 }
 function setAction(kind){
  const next=pickAction(kind); if(next===active)return;
- if(active)active.fadeOut(.14); active=next; if(active)active.reset().fadeIn(.14).play();
+ if(active)active.fadeOut(.14);
+ active=next;
+ if(active)active.reset().fadeIn(.14).play();
 }
 
 function shoot(){
@@ -168,26 +248,8 @@ function shoot(){
  scene.add(line); setTimeout(()=>scene.remove(line),55);
 }
 
-function updateMovement(dt){
- const forward=new THREE.Vector3(Math.sin(camYaw),0,Math.cos(camYaw));
- const right=new THREE.Vector3(forward.z,0,-forward.x);
- let x=(keys.has('KeyD')?1:0)-(keys.has('KeyA')?1:0);
- let z=(keys.has('KeyW')?1:0)-(keys.has('KeyS')?1:0);
- const len=Math.hypot(x,z); if(len>1){x/=len;z/=len}
- desired.set(0,0,0).addScaledVector(forward,z).addScaledVector(right,x);
- const run=keys.has('ShiftLeft')||keys.has('ShiftRight'); const max=run?6.3:3.4;
- const target=desired.multiplyScalar(max); velocity.lerp(target,1-Math.exp(-dt*16));
- player.position.addScaledVector(velocity,dt);
- if(velocity.lengthSq()>.04){
-   const ty=Math.atan2(velocity.x,velocity.z);
-   let d=THREE.MathUtils.euclideanModulo(ty-yaw+Math.PI,Math.PI*2)-Math.PI;
-   yaw+=d*(1-Math.exp(-dt*12)); player.rotation.y=yaw;
- }
- vertical-=14*dt; player.position.y+=vertical*dt; if(player.position.y<=0){player.position.y=0;vertical=0;grounded=true}
- setAction(!grounded?'jump':velocity.length()>4?'run':velocity.length()>.15?'walk':'idle');
- if(mixer)mixer.update(dt);
- firingCooldown=Math.max(0,firingCooldown-dt);
-}
+const controller=new PlayerController(player,camera);
+
 function updateCamera(dt){
  const target=player.position.clone().add(new THREE.Vector3(0,1.45,0));
  const dist=5.2;
@@ -200,8 +262,9 @@ addEventListener('resize',resize);resize();
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
- updateMovement(dt); updateCamera(dt);
- stateEl.textContent=(grounded?'CHÃO':'AR')+' • '+velocity.length().toFixed(1)+' m/s';
+ controller.update(dt); updateCamera(dt);
+ firingCooldown=Math.max(0,firingCooldown-dt);
+ stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s';
  renderer.render(scene,camera);
 }
 loop();
