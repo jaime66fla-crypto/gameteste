@@ -1485,57 +1485,97 @@ class PistolController {
 
  createPistolMesh(){
   const g=new THREE.Group();
+  g.name='Glock17';
 
-  const metal=new THREE.MeshStandardMaterial({
-   color:0x2a2f35,
-   metalness:.8,
-   roughness:.28
+  const slideMat=new THREE.MeshStandardMaterial({
+   color:0x25292d,
+   metalness:.72,
+   roughness:.26
+  });
+  const frameMat=new THREE.MeshStandardMaterial({
+   color:0x15181a,
+   metalness:.08,
+   roughness:.72
+  });
+  const detailMat=new THREE.MeshStandardMaterial({
+   color:0x0b0d0e,
+   metalness:.45,
+   roughness:.4
   });
 
-  const gripMat=new THREE.MeshStandardMaterial({
-   color:0x17191c,
-   roughness:.8
-  });
-
-  const slide=new THREE.Mesh(
-   new THREE.BoxGeometry(.14,.11,.42),
-   metal
-  );
-  slide.position.z=-.16;
+  // Glock-style slide.
+  const slide=new THREE.Mesh(new THREE.BoxGeometry(.20,.16,.56),slideMat);
+  slide.position.set(0,.055,-.18);
   slide.castShadow=true;
   g.add(slide);
 
-  const barrel=new THREE.Mesh(
-   new THREE.BoxGeometry(.07,.06,.16),
-   metal
-  );
-  barrel.position.set(0,.01,-.44);
+  // Slightly narrower lower frame.
+  const frame=new THREE.Mesh(new THREE.BoxGeometry(.18,.105,.39),frameMat);
+  frame.position.set(0,-.055,-.12);
+  frame.castShadow=true;
+  g.add(frame);
+
+  // Exposed muzzle/barrel.
+  const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,.09,14),detailMat);
+  barrel.rotation.x=Math.PI/2;
+  barrel.position.set(0,.045,-.50);
+  barrel.castShadow=true;
   g.add(barrel);
 
-  const grip=new THREE.Mesh(
-   new THREE.BoxGeometry(.12,.28,.12),
-   gripMat
-  );
-  grip.position.set(0,-.16,.02);
-  grip.rotation.x=-.18;
+  // Angled polymer grip.
+  const grip=new THREE.Mesh(new THREE.BoxGeometry(.17,.34,.18),frameMat);
+  grip.position.set(0,-.235,.02);
+  grip.rotation.x=-.16;
+  grip.castShadow=true;
   g.add(grip);
 
-  const triggerGuard=new THREE.Mesh(
-   new THREE.TorusGeometry(.055,.012,6,12,Math.PI),
-   metal
-  );
-  triggerGuard.rotation.z=Math.PI/2;
-  triggerGuard.rotation.y=Math.PI/2;
-  triggerGuard.position.set(0,-.08,-.04);
+  // Magazine base plate.
+  const magazineBase=new THREE.Mesh(new THREE.BoxGeometry(.18,.035,.20),detailMat);
+  magazineBase.position.set(0,-.405,.045);
+  magazineBase.rotation.x=-.16;
+  g.add(magazineBase);
+
+  // Trigger guard.
+  const triggerGuard=new THREE.Mesh(new THREE.TorusGeometry(.072,.014,7,18,Math.PI*1.45),frameMat);
+  triggerGuard.rotation.set(Math.PI/2,0,Math.PI*.76);
+  triggerGuard.position.set(0,-.115,-.13);
   g.add(triggerGuard);
 
+  // Trigger.
+  const trigger=new THREE.Mesh(new THREE.BoxGeometry(.025,.085,.025),detailMat);
+  trigger.position.set(0,-.12,-.13);
+  trigger.rotation.x=-.35;
+  g.add(trigger);
+
+  // Front and rear sights.
+  const frontSight=new THREE.Mesh(new THREE.BoxGeometry(.035,.035,.045),detailMat);
+  frontSight.position.set(0,.155,-.42);
+  g.add(frontSight);
+  const rearSight=new THREE.Mesh(new THREE.BoxGeometry(.09,.045,.045),detailMat);
+  rearSight.position.set(0,.16,.035);
+  g.add(rearSight);
+
+  // Slide serrations.
+  for(let i=0;i<5;i++){
+   const serr=new THREE.Mesh(new THREE.BoxGeometry(.205,.075,.012),detailMat);
+   serr.position.set(0,.055,.005+i*.035);
+   g.add(serr);
+  }
+
+  // Small takedown/slide-stop details.
+  const stop=new THREE.Mesh(new THREE.BoxGeometry(.012,.04,.09),detailMat);
+  stop.position.set(.106,-.005,-.03);
+  g.add(stop);
+
+  // Make the pistol easier to read at gameplay camera distance.
+  g.scale.setScalar(1.18);
+
   this.muzzlePoint=new THREE.Object3D();
-  this.muzzlePoint.position.set(0,.01,-.54);
+  this.muzzlePoint.position.set(0,.045,-.56);
   g.add(this.muzzlePoint);
 
   return g;
  }
-
  attachToSoldier(human){
   if(!human||!human.model||!human.rightHandBone)return false;
 
