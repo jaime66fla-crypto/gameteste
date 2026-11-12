@@ -198,7 +198,7 @@ addControls('pose',[
  ['spineX','Tronco X',-60,60,1],['spineY','Tronco Y',-60,60,1],['spineZ','Tronco Z',-60,60,1]
 ]);
 
-const soldierUrl='https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
+const soldierUrl='https://cdn.jsdelivr.net/gh/mrdoob/three.js@dev/examples/models/gltf/Soldier.glb';
 new GLTFLoader().load(soldierUrl,gltf=>{
  model=gltf.scene;
  model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
