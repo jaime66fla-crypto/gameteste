@@ -781,18 +781,16 @@ class HumanCharacter {
    if(jumpKey){
     this.fadeToAction('jump',.12);
    }else{
-    // Soldier has no jump clip: stop locomotion animation while airborne.
-    if(this.activeAction){
-     this.airborneBaseAction=this.activeAction;
-     this.activeAction.paused=true;
-    }
+    // Soldier has no jump clip: remove locomotion pose entirely while airborne.
+    // Pausing the run clip freezes an arbitrary running frame and twists the body.
+    if(this.mixer)this.mixer.stopAllAction();
+    this.previousAction=null;
+    this.activeAction=null;
+    this.airborneBaseAction=null;
     this.state='jump';
    }
    return;
   }
-
-  // Resume locomotion animations after landing.
-  if(this.activeAction&&this.activeAction.paused)this.activeAction.paused=false;
   if(this.state==='jump'&&isGrounded)this.state='idle';
   if(speed>4.5){
    this.fadeToAction('run',.2);
@@ -836,7 +834,6 @@ class HumanCharacter {
   if(!this.wasGrounded&&isGrounded){
    this.jumpPhase='landing';
    this.landBlend=1;
-   if(this.activeAction&&this.activeAction.paused)this.activeAction.paused=false;
   }
   this.wasGrounded=isGrounded;
 
@@ -871,11 +868,7 @@ class HumanCharacter {
     setBone(this.rightLegBone,'rightLeg',-.08,0,0,10);
    }
 
-   this.model.rotation.x=smooth(
-    this.model.rotation.x,
-    this.jumpPhase==='fall'?.035:this.jumpPhase==='takeoff'?-.025:0,
-    8
-   );
+   this.model.rotation.x=smooth(this.model.rotation.x,0,10);
   }else{
    if(this.jumpPhase==='landing'){
     this.landBlend=Math.max(0,this.landBlend-delta*6);
