@@ -1,3 +1,64 @@
+function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
+
+function deepMotionConfig(env){
+ const host=String(env.DEEPMOTION_API_HOST||'').replace(/\/$/,'');
+ const clientId=String(env.DEEPMOTION_CLIENT_ID||'');
+ const clientSecret=String(env.DEEPMOTION_CLIENT_SECRET||'');
+ return {host,clientId,clientSecret,configured:!!(host&&clientId&&clientSecret)};
+}
+
+async function deepMotionSession(env){
+ const cfg=deepMotionConfig(env);
+ if(!cfg.configured)throw new Error('DEEPMOTION_NOT_CONFIGURED');
+ const basic=btoa(cfg.clientId+':'+cfg.clientSecret);
+ const res=await fetch(cfg.host+'/session/auth',{method:'GET',headers:{Authorization:'Basic '+basic}});
+ if(!res.ok)throw new Error('DEEPMOTION_AUTH_'+res.status);
+ const cookie=res.headers.get('set-cookie');
+ if(!cookie)throw new Error('DEEPMOTION_NO_SESSION_COOKIE');
+ return {cfg,cookie:cookie.split(';')[0]};
+}
+
+async function handleDeepMotion(request,env,url){
+ const cfg=deepMotionConfig(env);
+ if(url.pathname==='/api/deepmotion/status'){
+  return json({configured:cfg.configured,hostConfigured:!!cfg.host,credentialsConfigured:!!(cfg.clientId&&cfg.clientSecret)});
+ }
+ if(!cfg.configured)return json({error:'DeepMotion API ainda não configurada no Worker.'},503);
+ if(request.method!=='GET'&&request.method!=='POST')return json({error:'Método não permitido.'},405);
+ try{
+  const {cfg:active,cookie}=await deepMotionSession(env);
+  if(url.pathname==='/api/deepmotion/upload-url'&&request.method==='GET'){
+   const name=(url.searchParams.get('name')||'motion.mp4').replace(/[^a-zA-Z0-9._-]/g,'_').slice(0,120);
+   const upstream=await fetch(active.host+'/upload?resumable=0&name='+encodeURIComponent(name),{headers:{cookie}});
+   const body=await upstream.text();
+   return new Response(body,{status:upstream.status,headers:{'content-type':upstream.headers.get('content-type')||'application/json','cache-control':'no-store'}});
+  }
+  if(url.pathname==='/api/deepmotion/process'&&request.method==='POST'){
+   const body=await request.json();
+   const uploadUrl=String(body?.url||'');
+   const modelId=String(body?.modelId||'').trim();
+   if(!/^https:\/\//i.test(uploadUrl))return json({error:'URL de upload inválida.'},400);
+   const params=['config=configDefault','formats=fbx,bvh','sim=1','footLockingMode=1','rootAtOrigin=1'];
+   if(modelId)params.push('model='+modelId.replace(/[^a-zA-Z0-9._-]/g,'').slice(0,120));
+   const upstream=await fetch(active.host+'/process',{method:'POST',headers:{cookie,'content-type':'application/json'},body:JSON.stringify({url:uploadUrl,processor:'video2anim',params})});
+   const out=await upstream.text();
+   return new Response(out,{status:upstream.status,headers:{'content-type':upstream.headers.get('content-type')||'application/json','cache-control':'no-store'}});
+  }
+  if(url.pathname.startsWith('/api/deepmotion/status/')&&request.method==='GET'){
+   const rid=url.pathname.split('/').pop().replace(/[^a-zA-Z0-9._-]/g,'');
+   if(!rid)return json({error:'RID inválido.'},400);
+   const upstream=await fetch(active.host+'/status/'+encodeURIComponent(rid),{headers:{cookie}});
+   const out=await upstream.text();
+   return new Response(out,{status:upstream.status,headers:{'content-type':upstream.headers.get('content-type')||'application/json','cache-control':'no-store'}});
+  }
+  return json({error:'Rota DeepMotion não encontrada.'},404);
+ }catch(error){
+  const msg=String(error?.message||error);
+  if(msg==='DEEPMOTION_NOT_CONFIGURED')return json({error:'DeepMotion API não configurada.'},503);
+  return json({error:'Falha ao comunicar com DeepMotion.',detail:msg},502);
+ }
+}
+
 export default {
  async fetch(request, env) {
   const url = new URL(request.url);
@@ -6,6 +67,7 @@ export default {
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);
    return env.GAME_ROOMS.get(id).fetch(request);
   }
+  if(url.pathname.startsWith('/api/deepmotion/'))return handleDeepMotion(request,env,url);
   return env.ASSETS.fetch(request);
  }
 };
