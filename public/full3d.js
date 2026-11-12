@@ -1,5 +1,7 @@
-import * as THREE from 'three';
-import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
+window.addEventListener('error',e=>{const s=document.getElementById('state');if(s)s.textContent='ERRO: '+(e.message||'falha JS')});
+window.addEventListener('unhandledrejection',e=>{const s=document.getElementById('state');if(s)s.textContent='ERRO: '+(e.reason?.message||e.reason||'promise')});
+import * as THREE from 'https://esm.sh/three@0.187.0';
+import { FBXLoader } from 'https://esm.sh/three@0.187.0/examples/jsm/loaders/FBXLoader.js';
 
 const canvas=document.getElementById('view');
 const stateEl=document.getElementById('state');
