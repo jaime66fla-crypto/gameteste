@@ -497,20 +497,9 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  }
 }
 
-const enemies=[makeSoldier(0x4a3434),makeSoldier(0x3f4634)];
-enemies[0].position.set(19,0,-8);world.add(enemies[0]);
-enemies[1].position.set(-12,0,-13);world.add(enemies[1]);
-enemies[0].userData.role='soldier';
-enemies[1].userData.role='sniper';
-
-const bossSpawns=[[-54,-30],[56,-25],[-52,28],[52,38],[0,-40],[38,8]];
-const golias=makeSoldier(0x5b2525);
-golias.scale.set(1.65,1.65,1.65);
-const bossSpawn=bossSpawns[Math.floor(Math.random()*bossSpawns.length)];
-golias.position.set(bossSpawn[0],0,bossSpawn[1]);
-golias.userData.role='boss';
-world.add(golias);
-enemies.push(golias);
+// Free exploration: no AI soldiers, snipers, or boss are spawned.
+const enemies=[];
+const golias=null;
 
 const bossMissiles=[];
 const bossWarnings=[];
@@ -831,6 +820,7 @@ function updateHud(){
  const ammo=ammoState[currentWeapon];
  if(ammoHud)ammoHud.textContent=ammo.mag+' / '+ammo.reserve;
  if(killsHud)killsHud.textContent=kills3D;
+ if(bossHud)bossHud.hidden=!golias?.userData?.alive;
  if(golias?.userData?.maxHp){
   const pct=Math.max(0,golias.userData.hp/golias.userData.maxHp*100);
   if(bossHpFill)bossHpFill.style.width=pct+'%';
@@ -1123,7 +1113,7 @@ function spawnExplosionBurst(pos,scale=1){
  bossDeathFx.push({light,t:.45,max:.45});
 }
 function startBossDeathCutscene(){
- if(bossCutscene.active||bossCutscene.started)return;
+ if(!golias||bossCutscene.active||bossCutscene.started)return;
  bossCutscene={active:true,t:0,total:3.2,started:true};
  const p=golias.position.clone();
  spawnExplosionBurst(p.clone().add(new THREE.Vector3(0,1.6,0)),1.2);
@@ -1145,7 +1135,7 @@ function updateBossDeathFx(dt){
  }
 }
 function updateBossCutscene(dt){
- if(!bossCutscene.active)return false;
+ if(!golias||!bossCutscene.active)return false;
  bossCutscene.t+=dt;
  const p=Math.min(1,bossCutscene.t/bossCutscene.total);
  const focus=golias.position.clone();focus.y=1.5;
