@@ -49,6 +49,7 @@ textarea{width:100%;min-height:210px;background:#091011;color:#bfe8ef;border:1px
       <button id="front">Frente</button>
       <button id="side">Lado</button>
       <button id="back">Costas</button>
+      <button id="weaponView">Focar arma</button>
       <button id="reset" class="primary">Resetar</button>
     </div>
     <div class="group">
@@ -58,6 +59,10 @@ textarea{width:100%;min-height:210px;background:#091011;color:#bfe8ef;border:1px
     <div class="group">
       <h2>Arma — rotação</h2>
       <div id="gunRot"></div>
+    </div>
+    <div class="group">
+      <h2>Arma — tamanho</h2>
+      <div id="gunScale"></div>
     </div>
     <div class="group">
       <h2>Pose — braços e tronco</h2>
@@ -102,7 +107,8 @@ const state={
  gunRX:-7,gunRY:90,gunRZ:0,
  rightArmX:-4,rightArmY:0,rightArmZ:-18,
  leftArmX:58,leftArmY:0,leftArmZ:18,
- spineX:0,spineY:-13,spineZ:0
+ spineX:0,spineY:-13,spineZ:0,
+ gunScale:1.75
 };
 const defaults={...state};
 let model=null,mixer=null,idle=null;
@@ -164,7 +170,7 @@ function buildWeapon(){
  const stop=new THREE.Mesh(new THREE.BoxGeometry(.012,.04,.09),detailMat);
  stop.position.set(.106,-.005,-.03);g.add(stop);
 
- g.scale.setScalar(1.75);
+ g.scale.setScalar(1);
  g.traverse(o=>{if(o.isMesh)o.castShadow=true});
  return g;
 }
@@ -174,7 +180,8 @@ function syncControls(){
   gunRX:'gunRX',gunRY:'gunRY',gunRZ:'gunRZ',
   rightArmX:'rightArmX',rightArmY:'rightArmY',rightArmZ:'rightArmZ',
   leftArmX:'leftArmX',leftArmY:'leftArmY',leftArmZ:'leftArmZ',
-  spineX:'spineX',spineY:'spineY',spineZ:'spineZ'
+  spineX:'spineX',spineY:'spineY',spineZ:'spineZ',
+  gunScale:'gunScale'
  };
  const rows=[...document.querySelectorAll('.row')];
  rows.forEach(row=>{
@@ -197,6 +204,7 @@ function syncControls(){
   else if(lab==='Tronco X')key='spineX';
   else if(lab==='Tronco Y')key='spineY';
   else if(lab==='Tronco Z')key='spineZ';
+  else if(lab==='Escala')key='gunScale';
   if(key&&range&&num){range.value=state[key];num.value=state[key];}
  });
 }
@@ -223,6 +231,9 @@ function apply(){
    base.spine.z+THREE.MathUtils.degToRad(state.spineZ)
   );
  }
+ if(weapon){
+  weapon.scale.setScalar(state.gunScale);
+ }
  if(weapon&&!rightHand){
   weapon.position.set(state.gunX,state.gunY,state.gunZ);
   weapon.rotation.set(
@@ -235,6 +246,7 @@ function apply(){
 `const soldierWeaponPose = {
   gunPosition: [${state.gunX.toFixed(3)}, ${state.gunY.toFixed(3)}, ${state.gunZ.toFixed(3)}],
   gunRotationDeg: [${state.gunRX}, ${state.gunRY}, ${state.gunRZ}],
+  gunScale: ${state.gunScale.toFixed(2)},
   rightArmDeg: [${state.rightArmX}, ${state.rightArmY}, ${state.rightArmZ}],
   leftArmDeg: [${state.leftArmX}, ${state.leftArmY}, ${state.leftArmZ}],
   spineDeg: [${state.spineX}, ${state.spineY}, ${state.spineZ}],
@@ -258,6 +270,9 @@ addControls('gunPos',[
 ]);
 addControls('gunRot',[
  ['gunRX','Pitch X',-180,180,1],['gunRY','Yaw Y',-180,180,1],['gunRZ','Roll Z',-180,180,1]
+]);
+addControls('gunScale',[
+ ['gunScale','Escala',.4,3,.05]
 ]);
 addControls('pose',[
  ['rightArmX','Dir X',-120,120,1],['rightArmY','Dir Y',-120,120,1],['rightArmZ','Dir Z',-120,120,1],
@@ -324,6 +339,14 @@ function setView(y,p,d=5.2){yaw=y;pitch=p;dist=d}
 document.getElementById('front').onclick=()=>setView(Math.PI,.1);
 document.getElementById('side').onclick=()=>setView(Math.PI/2,.1);
 document.getElementById('back').onclick=()=>setView(0,.1);
+document.getElementById('weaponView').onclick=()=>{
+ if(weapon){
+  const p=weapon.position.clone();
+  yaw=Math.PI*.75;
+  pitch=.05;
+  dist=2.2;
+ }
+};
 document.getElementById('reset').onclick=()=>{
  Object.assign(state,defaults);
  syncControls();
