@@ -402,9 +402,7 @@ class PlayerController {
    this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
    this.horizontalSpeed=currentSpeed;
 
-   const targetQuaternion=new THREE.Quaternion();
-   targetQuaternion.setFromAxisAngle(new THREE.Vector3(0,1,0),moveAngle);
-   this.mesh.quaternion.slerp(targetQuaternion,Math.min(1,this.rotationSpeed*dt));
+   // Facing is controlled by the over-the-shoulder camera yaw.
   }else{
    this.horizontalSpeed=0;
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
@@ -447,29 +445,24 @@ function flashHitmarker(){
 }
 
 class ThirdPersonCamera {
- constructor(camera,target,domElement){
+ constructor(camera,target,domElement,getGroundHeight){
   this.camera=camera;
   this.target=target;
   this.domElement=domElement;
-  this.distance=6.0;
-  this.minDistance=2.5;
-  this.maxDistance=12.0;
+  this.getGroundHeight=getGroundHeight;
   this.sensitivity=.005;
   this.smoothness=12.0;
-  this.targetOffset=new THREE.Vector3(0,1.5,0);
   this.yaw=0;
-  this.pitch=.3;
+  this.pitch=.18;
   this.minPitch=-.3;
-  this.maxPitch=1.2;
+  this.maxPitch=.85;
   this.isRightMouseDown=false;
   this.previousMouseX=0;
   this.previousMouseY=0;
-  this.currentPosition=new THREE.Vector3(
-   target.position.x,
-   target.position.y+2.5,
-   target.position.z+this.distance
-  );
-  this.currentLookAt=target.position.clone().add(this.targetOffset);
+  this.shoulderOffset=new THREE.Vector3(.85,.35,3.2);
+  this.lookAheadOffset=new THREE.Vector3(.65,.1,-15);
+  this.currentPosition=new THREE.Vector3(target.position.x+.85,target.position.y+1.8,target.position.z+3.2);
+  this.currentLookAt=target.position.clone().add(new THREE.Vector3(0,1.45,-10));
   this._initListeners();
  }
  _initListeners(){
@@ -497,28 +490,42 @@ class ThirdPersonCamera {
    this.pitch+=deltaY*this.sensitivity;
    this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
   });
-
-  this.domElement.addEventListener('wheel',e=>{
-   this.distance+=e.deltaY*.005;
-   this.distance=Math.max(this.minDistance,Math.min(this.maxDistance,this.distance));
-  },{passive:true});
  }
  update(dt){
   if(!this.target)return;
-  const focusPoint=this.target.position.clone().add(this.targetOffset);
-  const horizontalDistance=this.distance*Math.cos(this.pitch);
-  const verticalDistance=this.distance*Math.sin(this.pitch);
-  const idealPosition=new THREE.Vector3(
-   focusPoint.x+horizontalDistance*Math.sin(this.yaw),
-   focusPoint.y+verticalDistance,
-   focusPoint.z+horizontalDistance*Math.cos(this.yaw)
-  );
+  const pivotPos=new THREE.Vector3(this.target.position.x,this.target.position.y+1.45,this.target.position.z);
+  const euler=new THREE.Euler(this.pitch,this.yaw,0,'YXZ');
+
+  const desiredCamPos=pivotPos.clone().add(this.shoulderOffset.clone().applyEuler(euler));
+  if(typeof this.getGroundHeight==='function'){
+   const minCamY=this.getGroundHeight(desiredCamPos.x,desiredCamPos.z)+.35;
+   if(desiredCamPos.y<minCamY)desiredCamPos.y=minCamY;
+  }
+
+  const targetPoint=pivotPos.clone().add(this.lookAheadOffset.clone().applyEuler(euler));
   const t=1-Math.exp(-this.smoothness*dt);
-  this.currentPosition.lerp(idealPosition,t);
-  this.currentLookAt.lerp(focusPoint,t);
+  this.currentPosition.lerp(desiredCamPos,t);
+  this.currentLookAt.lerp(targetPoint,t);
   this.camera.position.copy(this.currentPosition);
   this.camera.lookAt(this.currentLookAt);
+
+  // Shooter behavior: avatar follows aim yaw, independent from movement direction.
+  this.target.rotation.y=this.yaw;
  }
+}
+
+function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
+ raycaster.setFromCamera(new THREE.Vector2(0,0),camera);
+
+ const avatarMeshes=[];
+ avatarGroup.traverse(child=>{
+  if(child.isMesh)avatarMeshes.push(child);
+ });
+ const allIgnored=new Set([...avatarMeshes,...ignoredObjects]);
+
+ const validTargets=scene.children.filter(obj=>!allIgnored.has(obj)&&obj!==avatarGroup);
+ const intersects=raycaster.intersectObjects(validTargets,true);
+ return intersects.find(hit=>!allIgnored.has(hit.object))||null;
 }
 
 addEventListener('mousedown',e=>{if(e.button===0)shoot()});
@@ -562,24 +569,31 @@ function shoot(){
  if(firingCooldown>0)return;
  firingCooldown=.13;
  shots++;
- const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
+
+ const ray=new THREE.Raycaster();
+ const firstHit=getAimRaycastHit(ray,camera,scene,player);
+ const dir=new THREE.Vector3();
+ camera.getWorldDirection(dir);
  const origin=camera.position.clone();
- const ray=new THREE.Raycaster(origin,dir,0,100);
- const hits=ray.intersectObjects(scene.children.filter(o=>o!==player),true);
- const firstHit=hits[0];
  const end=firstHit?.point || origin.clone().add(dir.multiplyScalar(90));
+
  if(firstHit){
   hitCount++;
   score+=10;
   flashHitmarker();
  }
- const geo=new THREE.BufferGeometry().setFromPoints([player.position.clone().add(new THREE.Vector3(0,1.45,0)),end]);
+
+ const geo=new THREE.BufferGeometry().setFromPoints([
+  player.position.clone().add(new THREE.Vector3(0,1.45,0)),
+  end
+ ]);
  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe48b}));
- scene.add(line); setTimeout(()=>scene.remove(line),55);
+ scene.add(line);
+ setTimeout(()=>scene.remove(line),55);
 }
 
 const controller=new PlayerController(player,camera);
-const thirdPersonCamera=new ThirdPersonCamera(camera,player,canvas);
+const thirdPersonCamera=new ThirdPersonCamera(camera,player,canvas,forestEnvironment.getTerrainHeight);
 
 function updateCamera(dt){
  thirdPersonCamera.update(dt);
