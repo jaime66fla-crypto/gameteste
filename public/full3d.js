@@ -796,6 +796,7 @@ class RealisticCombatAnimator {
   this.updateLowerBody(dt,movement);
   if(this.weapon==='bow')this.updateBowPose(dt,movement);
   else if(this.weapon==='katana')this.updateKatanaPose(dt,movement);
+  else if(this.weapon==='pistol')this.updatePistolPose(dt,movement);
   else this.updateUnarmedPose(dt,movement);
   this.updateBodyInertia(dt,movement);
  }
@@ -1035,6 +1036,7 @@ class BowAnimationSystem {
  }
  equip(){
   if(typeof katanaWeapon!=='undefined'&&katanaWeapon?.isEquipped)katanaWeapon.holster();
+  if(typeof pistolWeapon!=='undefined'&&pistolWeapon?.isEquipped)pistolWeapon.holster();
   this.state='ready';
   this.drawProgress=0;
   if(typeof combatAnimator!=='undefined')combatAnimator.setWeapon('bow');
@@ -1242,6 +1244,7 @@ class KatanaController {
  equip(){
   this.isEquipped=true;
   if(bowWeapon&&bowWeapon.state!=='holstered')bowWeapon.holster();
+  if(typeof pistolWeapon!=='undefined'&&pistolWeapon?.isEquipped)pistolWeapon.holster();
   if(typeof combatAnimator!=='undefined')combatAnimator.setWeapon('katana');
   this.katana.visible=true;
   this.katana.position.set(.42,1.12,-.42);
@@ -1347,6 +1350,306 @@ class KatanaController {
    this.heavy=false;
    this.attackTimer=0;
    this.avatar.torso.rotation.y=0;
+  }
+ }
+}
+
+class PistolController {
+ constructor(scene,player,avatar,camera){
+  this.scene=scene;
+  this.player=player;
+  this.avatar=avatar;
+  this.camera=camera;
+
+  this.isEquipped=false;
+  this.isReloading=false;
+  this.isAiming=true;
+
+  this.magSize=12;
+  this.ammo=this.magSize;
+  this.reserveAmmo=60;
+
+  this.fireRate=.22;
+  this.fireCooldown=0;
+  this.reloadTime=1.15;
+  this.reloadTimer=0;
+
+  this.recoil=0;
+  this.recoilVelocity=0;
+  this.spread=.0025;
+
+  this.pistol=this.createPistolMesh();
+  this.avatar.group.add(this.pistol);
+  this.holster();
+
+  this.bindInputs();
+ }
+
+ createPistolMesh(){
+  const g=new THREE.Group();
+
+  const metal=new THREE.MeshStandardMaterial({
+   color:0x2a2f35,
+   metalness:.8,
+   roughness:.28
+  });
+
+  const gripMat=new THREE.MeshStandardMaterial({
+   color:0x17191c,
+   roughness:.8
+  });
+
+  const slide=new THREE.Mesh(
+   new THREE.BoxGeometry(.14,.11,.42),
+   metal
+  );
+  slide.position.z=-.16;
+  slide.castShadow=true;
+  g.add(slide);
+
+  const barrel=new THREE.Mesh(
+   new THREE.BoxGeometry(.07,.06,.16),
+   metal
+  );
+  barrel.position.set(0,.01,-.44);
+  g.add(barrel);
+
+  const grip=new THREE.Mesh(
+   new THREE.BoxGeometry(.12,.28,.12),
+   gripMat
+  );
+  grip.position.set(0,-.16,.02);
+  grip.rotation.x=-.18;
+  g.add(grip);
+
+  const triggerGuard=new THREE.Mesh(
+   new THREE.TorusGeometry(.055,.012,6,12,Math.PI),
+   metal
+  );
+  triggerGuard.rotation.z=Math.PI/2;
+  triggerGuard.rotation.y=Math.PI/2;
+  triggerGuard.position.set(0,-.08,-.04);
+  g.add(triggerGuard);
+
+  this.muzzlePoint=new THREE.Object3D();
+  this.muzzlePoint.position.set(0,.01,-.54);
+  g.add(this.muzzlePoint);
+
+  return g;
+ }
+
+ bindInputs(){
+  addEventListener('keydown',e=>{
+   if((e.code==='Digit3'||e.code==='Numpad3')&&!this.isReloading){
+    this.toggle();
+   }
+   if(e.code==='KeyR'&&this.isEquipped){
+    this.reload();
+   }
+  });
+
+  addEventListener('mousedown',e=>{
+   if(!gameStarted||!this.isEquipped||this.isReloading)return;
+   if(e.button===0)this.fire();
+  });
+ }
+
+ toggle(){
+  if(this.isEquipped)this.holster();
+  else this.equip();
+ }
+
+ equip(){
+  if(bowWeapon&&bowWeapon.state!=='holstered')bowWeapon.holster();
+  if(katanaWeapon&&katanaWeapon.isEquipped)katanaWeapon.holster();
+
+  this.isEquipped=true;
+  this.isReloading=false;
+  this.pistol.visible=true;
+
+  // Right-hand / two-handed TPS posture.
+  this.pistol.position.set(.36,1.18,-.48);
+  this.pistol.rotation.set(-.05,0,0);
+
+  if(typeof combatAnimator!=='undefined'){
+   combatAnimator.setWeapon('pistol');
+  }
+ }
+
+ holster(){
+  this.isEquipped=false;
+  this.isReloading=false;
+  this.pistol.visible=true;
+
+  // Holster on right hip/back side, not inside torso.
+  this.pistol.position.set(.34,.88,-.20);
+  this.pistol.rotation.set(0,.05,-.16);
+
+  if(typeof combatAnimator!=='undefined'&&combatAnimator.weapon==='pistol'){
+   combatAnimator.setWeapon('none');
+  }
+ }
+
+ reload(){
+  if(this.isReloading||this.ammo>=this.magSize||this.reserveAmmo<=0)return;
+  this.isReloading=true;
+  this.reloadTimer=0;
+ }
+
+ finishReload(){
+  const needed=this.magSize-this.ammo;
+  const loaded=Math.min(needed,this.reserveAmmo);
+  this.ammo+=loaded;
+  this.reserveAmmo-=loaded;
+  this.isReloading=false;
+ }
+
+ fire(){
+  if(this.fireCooldown>0)return;
+  if(this.ammo<=0){
+   this.reload();
+   return;
+  }
+
+  this.fireCooldown=this.fireRate;
+  this.ammo--;
+
+  forestAudio.init();
+  forestAudio.playShoot();
+
+  const raycaster=new THREE.Raycaster();
+
+  // Center-screen aim with tiny spread.
+  const sx=(Math.random()-.5)*this.spread;
+  const sy=(Math.random()-.5)*this.spread;
+  raycaster.setFromCamera(new THREE.Vector2(sx,sy),this.camera);
+
+  const avatarMeshes=[];
+  this.player.traverse(child=>{
+   if(child.isMesh)avatarMeshes.push(child);
+  });
+  const ignored=new Set(avatarMeshes);
+
+  const targets=this.scene.children.filter(obj=>obj!==this.player);
+  const intersects=raycaster.intersectObjects(targets,true);
+  const hit=intersects.find(h=>!ignored.has(h.object))||null;
+
+  const start=new THREE.Vector3();
+  this.muzzlePoint.getWorldPosition(start);
+
+  const dir=new THREE.Vector3();
+  this.camera.getWorldDirection(dir);
+
+  const end=hit?.point || start.clone().add(dir.multiplyScalar(80));
+
+  const tracerGeo=new THREE.BufferGeometry().setFromPoints([start,end]);
+  const tracer=new THREE.Line(
+   tracerGeo,
+   new THREE.LineBasicMaterial({color:0xffe8a3})
+  );
+  this.scene.add(tracer);
+  setTimeout(()=>this.scene.remove(tracer),45);
+
+  // Muzzle flash
+  const flash=new THREE.PointLight(0xffd27a,1.5,3);
+  flash.position.copy(start);
+  this.scene.add(flash);
+  setTimeout(()=>this.scene.remove(flash),40);
+
+  // Recoil impulse
+  this.recoilVelocity+=1.0;
+
+  shots++;
+  if(hit){
+   hitCount++;
+   score+=12;
+   flashHitmarker();
+   forestAudio.playHit();
+
+   const target=hit.object?.userData?.enemyRef;
+   if(target&&typeof target.takeDamage==='function'){
+    target.takeDamage(30);
+   }
+  }
+ }
+
+ update(dt,isMoving){
+  this.fireCooldown=Math.max(0,this.fireCooldown-dt);
+
+  if(this.isReloading){
+   this.reloadTimer+=dt;
+   if(this.reloadTimer>=this.reloadTime){
+    this.finishReload();
+   }
+  }
+
+  // Critically damped-ish recoil.
+  this.recoilVelocity-=this.recoilVelocity*Math.min(1,10*dt);
+  this.recoil+=this.recoilVelocity*dt;
+  this.recoil-=this.recoil*Math.min(1,14*dt);
+
+  if(!this.isEquipped)return;
+
+  const leftArm=this.avatar.leftArm;
+  const rightArm=this.avatar.rightArm;
+  const torso=this.avatar.torso;
+
+  if(this.isReloading){
+   // Bring pistol slightly inward/down during reload.
+   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-.75,.2);
+   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,-.05,.2);
+   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-.55,.2);
+   leftArm.rotation.z=THREE.MathUtils.lerp(leftArm.rotation.z,.18,.2);
+   this.pistol.position.y=THREE.MathUtils.lerp(this.pistol.position.y,1.04,.2);
+   this.pistol.position.z=THREE.MathUtils.lerp(this.pistol.position.z,-.28,.2);
+   return;
+  }
+
+  // Two-handed shooting stance.
+  const breath=Math.sin(performance.now()*.0022)*.018;
+
+  rightArm.rotation.x=THREE.MathUtils.lerp(
+   rightArm.rotation.x,
+   -1.28-this.recoil*.55+breath,
+   .24
+  );
+  rightArm.rotation.z=THREE.MathUtils.lerp(
+   rightArm.rotation.z,
+   -.12,
+   .2
+  );
+
+  leftArm.rotation.x=THREE.MathUtils.lerp(
+   leftArm.rotation.x,
+   -1.18-this.recoil*.25+breath,
+   .22
+  );
+  leftArm.rotation.z=THREE.MathUtils.lerp(
+   leftArm.rotation.z,
+   .18,
+   .2
+  );
+
+  torso.rotation.y=THREE.MathUtils.lerp(
+   torso.rotation.y,
+   -.06,
+   .16
+  );
+
+  // Recoil affects weapon, not whole player.
+  this.pistol.position.set(
+   .36,
+   1.18+this.recoil*.035,
+   -.48+this.recoil*.10
+  );
+  this.pistol.rotation.x=-.05-this.recoil*.22;
+
+  if(isMoving){
+   // Slight gun sway while walking.
+   const sway=Math.sin(performance.now()*.009)*.018;
+   this.pistol.rotation.z=sway;
+  }else{
+   this.pistol.rotation.z=THREE.MathUtils.lerp(this.pistol.rotation.z,0,.18);
   }
  }
 }
@@ -1584,6 +1887,7 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
 }
 const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
 const katanaWeapon=new KatanaController(player,mainAvatar,[]);
+const pistolWeapon=new PistolController(scene,player,mainAvatar,camera);
 bowWeapon.onArrowShot=(power,hit)=>{
  shots++;
  forestAudio.init();
@@ -1789,6 +2093,7 @@ function loop(){
  }
  bowWeapon.update(dt,movingNow);
  katanaWeapon.update(dt,movingNow);
+ pistolWeapon.update(dt,movingNow);
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
  const moving=controller.horizontalSpeed>0.01;
