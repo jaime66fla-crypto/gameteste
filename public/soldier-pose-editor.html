@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gameteste • Soldier Pose Editor</title>
+<style>
+:root{color-scheme:dark;font-family:Inter,system-ui,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:#101617;color:#eef5f6;min-height:100vh}
+#app{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:100vh}
+#stage{position:relative;min-height:680px;background:radial-gradient(circle at 50% 35%,#33413e 0,#18201f 55%,#0e1313 100%)}
+#view{width:100%;height:100%;display:block;touch-action:none}
+#status{position:absolute;left:14px;top:14px;padding:8px 10px;border:1px solid #ffffff25;border-radius:10px;background:#091010cc;font-size:12px}
+#help{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);padding:8px 12px;border-radius:999px;background:#091010cc;border:1px solid #ffffff20;font-size:12px;white-space:nowrap}
+.panel{padding:16px;background:#11191a;border-left:1px solid #ffffff18;overflow:auto;max-height:100vh}
+h1{font-size:18px;margin:0 0 4px}p{margin:0 0 14px;color:#aab7b8;font-size:12px;line-height:1.45}
+.group{border:1px solid #ffffff18;border-radius:12px;padding:12px;margin-bottom:12px;background:#0d1415}
+.group h2{font-size:13px;margin:0 0 10px}
+.row{display:grid;grid-template-columns:76px 1fr 70px;gap:8px;align-items:center;margin:8px 0}
+label{font-size:11px;color:#bac5c7}
+input[type=range]{width:100%}
+input[type=number]{width:70px;background:#0b1112;color:#fff;border:1px solid #ffffff25;border-radius:7px;padding:6px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+button{background:#1b292b;color:#eef5f6;border:1px solid #ffffff28;border-radius:8px;padding:8px 10px;cursor:pointer}
+button:hover{background:#233638}
+button.primary{background:#214f59}
+textarea{width:100%;min-height:210px;background:#091011;color:#bfe8ef;border:1px solid #ffffff20;border-radius:9px;padding:10px;font:11px/1.45 ui-monospace,monospace;resize:vertical}
+.badge{display:inline-block;padding:4px 7px;border-radius:999px;background:#ffffff10;font-size:10px;margin:0 5px 8px 0}
+@media(max-width:900px){#app{grid-template-columns:1fr}#stage{min-height:56vh}.panel{max-height:none;border-left:0;border-top:1px solid #ffffff18}#help{display:none}}
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="stage">
+    <canvas id="view"></canvas>
+    <div id="status">Carregando Soldier.glb…</div>
+    <div id="help">Arraste: girar câmera • roda: zoom</div>
+  </section>
+  <aside class="panel">
+    <h1>Soldier Pose Editor</h1>
+    <p>Este editor usa o mesmo Soldier.glb carregado atualmente no Gameteste.</p>
+    <div>
+      <span class="badge">Soldier.glb</span>
+      <span class="badge">Skeleton real</span>
+      <span class="badge">Grip na RightHand</span>
+    </div>
+    <div class="actions">
+      <button id="front">Frente</button>
+      <button id="side">Lado</button>
+      <button id="back">Costas</button>
+      <button id="reset" class="primary">Resetar</button>
+    </div>
+    <div class="group">
+      <h2>Arma — posição local da mão direita</h2>
+      <div id="gunPos"></div>
+    </div>
+    <div class="group">
+      <h2>Arma — rotação</h2>
+      <div id="gunRot"></div>
+    </div>
+    <div class="group">
+      <h2>Pose — braços e tronco</h2>
+      <div id="pose"></div>
+    </div>
+    <div class="group">
+      <h2>Configuração</h2>
+      <textarea id="output" readonly></textarea>
+    </div>
+  </aside>
+</div>
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js';
+import {GLTFLoader} from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/loaders/GLTFLoader.js';
+
+const canvas=document.getElementById('view');
+const stage=document.getElementById('stage');
+const status=document.getElementById('status');
+const output=document.getElementById('output');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.8));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.08;
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x17201f);
+scene.fog=new THREE.Fog(0x17201f,12,30);
+const camera=new THREE.PerspectiveCamera(46,1,.1,80);
+scene.add(new THREE.HemisphereLight(0xd8eef0,0x27302c,2.2));
+const sun=new THREE.DirectionalLight(0xffe0b8,3.4);
+sun.position.set(-5,10,7);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);scene.add(sun);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(20,20),new THREE.MeshStandardMaterial({color:0x394440,roughness:.98}));
+floor.rotation.x=-Math.PI/2;floor.receiveShadow=true;scene.add(floor);
+const grid=new THREE.GridHelper(20,20,0x64706c,0x414946);grid.position.y=.01;scene.add(grid);
+
+const state={
+ gunX:.02,gunY:-.03,gunZ:-.09,
+ gunRX:-7,gunRY:90,gunRZ:0,
+ rightArmX:-4,rightArmY:0,rightArmZ:-18,
+ leftArmX:58,leftArmY:0,leftArmZ:18,
+ spineX:0,spineY:-13,spineZ:0
+};
+const defaults={...state};
+let model=null,mixer=null,idle=null;
+let rightHand=null,rightArm=null,leftArm=null,spine=null;
+let base={};
+let weapon=null;
+let yaw=.45,pitch=.12,dist=5.2,drag=false,lx=0,ly=0;
+
+function norm(s){return (s||'').toLowerCase().replace(/[^a-z0-9]/g,'')}
+function findBone(names){
+ let found=null;
+ model?.traverse(o=>{
+  if(found||!o.isBone)return;
+  const n=norm(o.name);
+  if(names.some(x=>n.includes(x)))found=o;
+ });
+ return found;
+}
+function remember(key,bone){if(bone)base[key]=bone.rotation.clone()}
+function buildWeapon(){
+ const g=new THREE.Group();
+ const metal=new THREE.MeshStandardMaterial({color:0x171c1f,roughness:.32,metalness:.72});
+ const dark=new THREE.MeshStandardMaterial({color:0x252a2b,roughness:.55,metalness:.35});
+ const receiver=new THREE.Mesh(new THREE.BoxGeometry(.72,.12,.13),metal);receiver.position.x=.28;g.add(receiver);
+ const barrel=new THREE.Mesh(new THREE.CylinderGeometry(.025,.025,.8,12),metal);barrel.rotation.z=Math.PI/2;barrel.position.x=.93;g.add(barrel);
+ const pump=new THREE.Mesh(new THREE.BoxGeometry(.3,.16,.16),dark);pump.position.x=.62;g.add(pump);
+ const stock=new THREE.Mesh(new THREE.BoxGeometry(.38,.16,.15),dark);stock.position.x=-.3;stock.rotation.z=-.12;g.add(stock);
+ const grip=new THREE.Mesh(new THREE.BoxGeometry(.1,.28,.11),dark);grip.position.set(.02,-.16,0);grip.rotation.z=-.22;g.add(grip);
+ g.traverse(o=>{if(o.isMesh)o.castShadow=true});
+ return g;
+}
+function apply(){
+ if(!model)return;
+ if(rightArm&&base.rightArm){
+  rightArm.rotation.set(
+   base.rightArm.x+THREE.MathUtils.degToRad(state.rightArmX),
+   base.rightArm.y+THREE.MathUtils.degToRad(state.rightArmY),
+   base.rightArm.z+THREE.MathUtils.degToRad(state.rightArmZ)
+  );
+ }
+ if(leftArm&&base.leftArm){
+  leftArm.rotation.set(
+   base.leftArm.x+THREE.MathUtils.degToRad(state.leftArmX),
+   base.leftArm.y+THREE.MathUtils.degToRad(state.leftArmY),
+   base.leftArm.z+THREE.MathUtils.degToRad(state.leftArmZ)
+  );
+ }
+ if(spine&&base.spine){
+  spine.rotation.set(
+   base.spine.x+THREE.MathUtils.degToRad(state.spineX),
+   base.spine.y+THREE.MathUtils.degToRad(state.spineY),
+   base.spine.z+THREE.MathUtils.degToRad(state.spineZ)
+  );
+ }
+ if(weapon){
+  weapon.position.set(state.gunX,state.gunY,state.gunZ);
+  weapon.rotation.set(
+   THREE.MathUtils.degToRad(state.gunRX),
+   THREE.MathUtils.degToRad(state.gunRY),
+   THREE.MathUtils.degToRad(state.gunRZ)
+  );
+ }
+ output.value=
+`const soldierWeaponPose = {
+  gunPosition: [${state.gunX.toFixed(3)}, ${state.gunY.toFixed(3)}, ${state.gunZ.toFixed(3)}],
+  gunRotationDeg: [${state.gunRX}, ${state.gunRY}, ${state.gunRZ}],
+  rightArmDeg: [${state.rightArmX}, ${state.rightArmY}, ${state.rightArmZ}],
+  leftArmDeg: [${state.leftArmX}, ${state.leftArmY}, ${state.leftArmZ}],
+  spineDeg: [${state.spineX}, ${state.spineY}, ${state.spineZ}],
+  blendSpeed: 0.13
+};`;
+}
+function addControls(hostId,defs){
+ const host=document.getElementById(hostId);
+ defs.forEach(([key,label,min,max,step])=>{
+  const row=document.createElement('div');row.className='row';
+  const lab=document.createElement('label');lab.textContent=label;
+  const range=document.createElement('input');range.type='range';range.min=min;range.max=max;range.step=step;range.value=state[key];
+  const num=document.createElement('input');num.type='number';num.min=min;num.max=max;num.step=step;num.value=state[key];
+  function change(v){const n=Math.max(min,Math.min(max,Number(v)));if(!Number.isFinite(n))return;state[key]=n;range.value=n;num.value=n;apply()}
+  range.addEventListener('input',()=>change(range.value));num.addEventListener('input',()=>change(num.value));
+  row.append(lab,range,num);host.appendChild(row);
+ });
+}
+addControls('gunPos',[
+ ['gunX','X',-1,1,.005],['gunY','Y',-1,1,.005],['gunZ','Z',-1,1,.005]
+]);
+addControls('gunRot',[
+ ['gunRX','Pitch X',-180,180,1],['gunRY','Yaw Y',-180,180,1],['gunRZ','Roll Z',-180,180,1]
+]);
+addControls('pose',[
+ ['rightArmX','Dir X',-120,120,1],['rightArmY','Dir Y',-120,120,1],['rightArmZ','Dir Z',-120,120,1],
+ ['leftArmX','Esq X',-120,120,1],['leftArmY','Esq Y',-120,120,1],['leftArmZ','Esq Z',-120,120,1],
+ ['spineX','Tronco X',-60,60,1],['spineY','Tronco Y',-60,60,1],['spineZ','Tronco Z',-60,60,1]
+]);
+
+const soldierUrl='https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
+new GLTFLoader().load(soldierUrl,gltf=>{
+ model=gltf.scene;
+ model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
+ const box=new THREE.Box3().setFromObject(model),h=box.max.y-box.min.y;
+ model.scale.setScalar(h>0?1.9/h:1);
+ const b2=new THREE.Box3().setFromObject(model);model.position.y=-b2.min.y;
+ scene.add(model);
+ rightHand=findBone(['righthand','right_hand']);
+ rightArm=findBone(['rightarm','right_arm']);
+ leftArm=findBone(['leftarm','left_arm']);
+ spine=findBone(['spine1','spine']);
+ remember('rightArm',rightArm);remember('leftArm',leftArm);remember('spine',spine);
+ mixer=new THREE.AnimationMixer(model);
+ const idleClip=(gltf.animations||[]).find(c=>/idle/i.test(c.name))||gltf.animations?.[0];
+ if(idleClip){
+  idle=mixer.clipAction(idleClip);idle.play();
+  mixer.update(.08);idle.paused=true;
+ }
+ weapon=buildWeapon();
+ if(rightHand)rightHand.add(weapon); else model.add(weapon);
+ status.textContent='SOLDIER GLB READY • '+(rightHand?'RightHand encontrada':'RightHand não encontrada');
+ apply();
+},undefined,err=>{status.textContent='Erro ao carregar Soldier.glb';console.error(err)});
+
+function setView(y,p,d=5.2){yaw=y;pitch=p;dist=d}
+document.getElementById('front').onclick=()=>setView(0,.1);
+document.getElementById('side').onclick=()=>setView(Math.PI/2,.1);
+document.getElementById('back').onclick=()=>setView(Math.PI,.1);
+document.getElementById('reset').onclick=()=>{
+ Object.assign(state,defaults);
+ document.querySelectorAll('.row').forEach(row=>{
+  const range=row.querySelector('input[type=range]'),num=row.querySelector('input[type=number]');
+  const key=[...document.querySelectorAll('.row')].indexOf(row);
+ });
+ location.reload();
+};
+canvas.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;canvas.setPointerCapture?.(e.pointerId)});
+canvas.addEventListener('pointerup',()=>drag=false);
+canvas.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-lx,dy=e.clientY-ly;lx=e.clientX;ly=e.clientY;yaw-=dx*.007;pitch=THREE.MathUtils.clamp(pitch-dy*.005,-.35,.75)});
+canvas.addEventListener('wheel',e=>{e.preventDefault();dist=THREE.MathUtils.clamp(dist+e.deltaY*.004,2.8,9)},{passive:false});
+function resize(){const w=stage.clientWidth,h=stage.clientHeight;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix()}
+new ResizeObserver(resize).observe(stage);resize();
+const clock=new THREE.Clock();
+function animate(){
+ requestAnimationFrame(animate);
+ const dt=Math.min(clock.getDelta(),.033);
+ if(mixer&&!idle?.paused)mixer.update(dt);
+ const target=new THREE.Vector3(0,1.05,0);
+ camera.position.set(Math.sin(yaw)*Math.cos(pitch)*dist,target.y+Math.sin(pitch)*dist,Math.cos(yaw)*Math.cos(pitch)*dist);
+ camera.lookAt(target);
+ renderer.render(scene,camera);
+}
+animate();
+</script>
+</body>
+</html>
