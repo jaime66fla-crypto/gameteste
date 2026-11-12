@@ -73,6 +73,12 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 #view-multiplayer .menu-btn{font-size:12px;font-weight:650;border-radius:7px;padding:14px 12px;letter-spacing:.1em}#btn-create-room{background:#e1c795;color:#192032}#view-multiplayer .menu-input{border-radius:7px;min-height:44px;border-color:#566277;background:#0a1220}#input-room-code{text-transform:uppercase;letter-spacing:.15em}#view-multiplayer .menu-input:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.menu-btn:disabled{opacity:.5;cursor:wait;transform:none}
 #multi-status-msg{line-height:1.5}#room-hud{position:fixed;top:64px;right:16px;z-index:14;max-width:290px;background:#0b1118ec;border:1px solid #6d968766;border-radius:9px;padding:10px;color:#bfe6d9;font:11px/1.5 system-ui}#room-hud[hidden]{display:none}#btn-leave-room{display:block;margin-top:7px;background:#233b3c;color:white;border:1px solid #ffffff30;border-radius:5px;padding:5px 10px;cursor:pointer}
 @media(max-height:700px){.menu-title{font-size:2.8rem;margin-bottom:1rem}.menu-content{padding:10px}#view-multiplayer{padding:18px;gap:11px}.multi-heading h2{font-size:20px}}
+#damageFlash{z-index:18;box-shadow:inset 0 0 130px 45px #d71e20aa;background:radial-gradient(ellipse at center,transparent 40%,#a600003d)}
+#vitals{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:19;width:180px;background:#0b1118e6;padding:10px 12px;border:1px solid #ffffff30;border-radius:9px;font:700 11px system-ui}#vitals span{color:#b9c9c5;letter-spacing:.12em}#vitals b{float:right;color:#f3fff6}.vital-track{height:9px;margin-top:7px;border-radius:5px;background:#552927;overflow:hidden}#vitalFill{display:block;height:100%;width:100%;background:#72d39e;transition:width .18s}
+#receivedDamage{position:fixed;top:32%;left:50%;transform:translateX(-50%);z-index:19;font:800 20px system-ui;color:#ffb2a6;text-shadow:0 2px 8px #000;opacity:0;pointer-events:none}
+body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-color:#ff665c;animation:dangerPulse 1s ease-in-out infinite}@keyframes dangerPulse{50%{box-shadow:0 0 22px #ff332560}}
+#deathOverlay{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;padding-bottom:120px;box-sizing:border-box;background:linear-gradient(transparent 20%,#19080988);pointer-events:none;text-align:center}#deathOverlay[hidden]{display:none}#deathOverlay span{color:#ff8d81;font:700 12px system-ui;letter-spacing:.18em}#deathOverlay h2{font:750 26px system-ui;color:white;margin:10px}#deathOverlay p{font:12px system-ui;color:#d9c8c2}
+@media(max-width:700px){#vitals{bottom:75px;width:150px}#receivedDamage{top:28%;font-size:17px}#deathOverlay{padding-bottom:155px}}
 </style>
 </head>
 <body>
@@ -142,17 +148,21 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 <div id="jetpackHud" hidden>JETPACK <span id="jetpackFuelText">100%</span><div class="fuelTrack"><i id="jetpackFuelFill"></i></div></div>
 <div id="lootPrompt" hidden><span id="lootPromptText"></span><button id="pickupBtn" hidden>PEGAR</button></div>
 <div id="weaponHud" aria-label="Armas e munição"><button id="weaponSlot0" aria-pressed="false"><b>1</b><span id="weaponName0">Pistola</span><small id="weaponAmmo0">12 / 60</small></button><button id="weaponSlot1" aria-pressed="false"><b>2</b><span id="weaponName1">Vazio</span><small id="weaponAmmo1">—</small></button></div>
+<div id="vitals" aria-label="Vida"><span>VIDA</span><b id="vitalValue">100 / 100</b><div class="vital-track"><i id="vitalFill"></i></div></div>
+<div id="receivedDamage" role="status" aria-live="polite"></div>
+<div id="deathOverlay" hidden><div><span>VOCÊ FOI ABATIDO</span><h2 id="deathCountdown">RENASCENDO EM 5s</h2><p>Aguarde para voltar ao combate.</p></div></div>
 <div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="/operator-motion.js?v=1"></script>
-<script src="/operator-avatar.js?v=5"></script>
-<script src="/combat-bots.js?v=2"></script>
+<script src="/operator-avatar.js?v=6"></script>
+<script src="/combat-bots.js?v=3"></script>
 <script src="/cover-controller.js?v=1"></script>
 <script src="/weapon-loot.js?v=3"></script>
 <script src="/multiplayer-client.js?v=1"></script>
-<script src="/multiplayer-world.js?v=1"></script>
-<script src="/full3d.js?v=21"></script>
+<script src="/multiplayer-world.js?v=2"></script>
+<script src="/player-life.js?v=1"></script>
+<script src="/full3d.js?v=22"></script>
 </body>
 </html>

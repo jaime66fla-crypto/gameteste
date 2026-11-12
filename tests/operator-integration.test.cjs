@@ -52,3 +52,8 @@ test('combat uses a bounded skinned hit surface and maps hits back to the visibl
  const hits=new THREE.Raycaster(new THREE.Vector3(0,1.2,3),new THREE.Vector3(0,0,-1)).intersectObject(a.body,false);
  assert.ok(hits.length>0);assert.ok(hits.every(h=>h.object===a.body),'hit feedback and enemy attribution must still target visible body');
 });
+test('death lowers the articulated body to the ground and respawn restores its standing rig',()=>{
+ const {a}=actor();a.group.position.set(12,0,8);for(let i=0;i<100;i++)a.update(1/60,{dead:true,armed:true});
+ assert.equal(a.state,'dead');assert(a.bones[5].getWorldPosition(new THREE.Vector3()).y<.45,'head must lie near ground');assert.equal(a.group.position.x,12);assert.equal(a.group.position.z,8);assert(!a.gun.visible);
+ settle(a,{dead:false,armed:false});assert(a.bones[5].getWorldPosition(new THREE.Vector3()).y>1.4);
+});

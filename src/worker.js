@@ -164,13 +164,14 @@ export class GameRoom {
   if(data.type==='state3d'){
    if(!finite(data.x,-160,160)||!finite(data.y,-25,150)||!finite(data.z,-160,160)||!finite(data.angle,-1000,1000))return;
    const prev=this.players.get(meta.id);
+   if(prev?.dead){this.broadcast3D(prev);return;}
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,inCar:!!data.inCar,
     grounded:data.grounded!==false,crouching:!!data.crouching,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
-    health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0};
+    dead:false,deadUntil:0,health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0};
    this.players.set(meta.id,state);this.save3D(meta.id);this.broadcast3D(state);if(!prev)this.broadcastRanking();return;
   }
-  const shooter=this.players.get(meta.id);if(!shooter)return;
+  const shooter=this.players.get(meta.id);if(!shooter||shooter.dead)return;
   if(data.type==='shot3d'){
    const spec=weapons[data.weapon];if(!spec||now-shooter.lastShot<spec.delay*.72)return;
    if(!/^[a-z0-9-]{1,32}$/.test(String(data.shotId||'')))return;
@@ -190,23 +191,34 @@ export class GameRoom {
   if(data.type==='hit3d'){
    const shot=this.shots3D.get(meta.id+':'+String(data.shotId));
    const pellet=data.pellet,target=this.players.get(String(data.targetId));
-   if(!shot||!Number.isInteger(pellet)||!shot.rays[pellet]||shot.used[pellet]||!target||target.id===meta.id)return;
+   if(!shot||!Number.isInteger(pellet)||!shot.rays[pellet]||shot.used[pellet]||!target||target.dead||target.id===meta.id)return;
    const ray=shot.rays[pellet],spec=weapons[shot.weapon];
    const dx=target.x-shot.origin.x,dy=target.y+1.5-shot.origin.y,dz=target.z-shot.origin.z;
    const along=dx*ray.x+dy*ray.y+dz*ray.z;
    if(along<-.25||along>spec.range+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
    shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
    const killed=target.health===0;
-   if(killed)shooter.kills++;
-   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,kills:shooter.kills});
+   if(killed){shooter.kills++;target.dead=true;target.deadUntil=now+5000;target.moving=false;target.running=false;target.aiming=false;}
+   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,respawnIn:killed?5:0,kills:shooter.kills});
    if(killed){
-    target.health=100;target.x=4;target.y=0;target.z=8;target.moving=false;
-    this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100});this.broadcastRanking();
+    this.broadcast3D(target);this.scheduleRespawns();this.broadcastRanking();
    }
    this.save3D(meta.id);this.save3D(target.id);
   }
  }
 
+ scheduleRespawns(){
+  const deadlines=[...this.players.values()].filter(p=>p.dead).map(p=>p.deadUntil);
+  if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.min(...deadlines)));
+ }
+ async alarm(){
+  const now=Date.now();
+  for(const target of this.players.values())if(target.dead&&target.deadUntil<=now){
+   Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0});
+   this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
+  }
+  this.scheduleRespawns();
+ }
  broadcastRanking(){
   const players=[...this.players.entries()].map(([id,p])=>({id,name:p.name||"Jogador",kills:p.kills||0})).sort((a,b)=>b.kills-a.kills);
   const out=JSON.stringify({type:"ranking",players});

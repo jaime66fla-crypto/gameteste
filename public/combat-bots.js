@@ -40,10 +40,12 @@ class CombatBotSystem {
   this.scene.add(line);this.effects.push({line,life:.07});
  }
  damagePlayer(amount){
-  this.health=Math.max(0,this.health-amount);this.onPlayerHit(this.health);
-  if(this.health===0){this.health=100;for(const bot of this.bots)bot.cooldown=3+bot.index*.7;this.onPlayerDeath();}
+  if(this.health<=0)return;
+  this.health=Math.max(0,this.health-amount);this.onPlayerHit(this.health,amount);
+  if(this.health===0){for(const bot of this.bots)bot.cooldown=3+bot.index*.7;this.onPlayerDeath();}
  }
  shoot(bot){
+  if(this.health<=0)return;
   this.scene.updateMatrixWorld(true);
   const start=bot.avatar.gun.localToWorld(new THREE.Vector3(0,.035,.2));
   const target=this.player.position.clone().add(new THREE.Vector3(0,this.player.userData.crouching?.9:1.2,0));
@@ -87,3 +89,4 @@ class CombatBotSystem {
 }
 window.CombatBotSystem=CombatBotSystem;
 })();
+

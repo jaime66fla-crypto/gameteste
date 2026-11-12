@@ -1,7 +1,7 @@
 /* Visible remote operators. Shared rig geometry/textures stay owned by OperatorAvatar. */
 (()=>{'use strict';
 class MultiplayerWorld{
- constructor(scene){this.scene=scene;this.players=new Map();this.effects=[];}
+ constructor(scene,terrainHeight=()=>0){this.scene=scene;this.terrainHeight=terrainHeight;this.players=new Map();this.effects=[];}
  receive(state){
   if(!state?.id||![state.x,state.y,state.z,state.angle].every(Number.isFinite))return;
   let remote=this.players.get(state.id);
@@ -15,11 +15,12 @@ class MultiplayerWorld{
  }
  update(dt){for(const remote of this.players.values()){
   const a=remote.avatar,s=remote.state,k=1-Math.exp(-16*dt);
-  if(a.group.position.distanceTo(new THREE.Vector3(s.x,s.y,s.z))>8)a.group.position.set(s.x,s.y,s.z);
-  else a.group.position.lerp(new THREE.Vector3(s.x,s.y,s.z),k);
+  const y=s.dead?this.terrainHeight(s.x,s.z,s.y):s.y;
+  if(a.group.position.distanceTo(new THREE.Vector3(s.x,y,s.z))>8)a.group.position.set(s.x,y,s.z);
+  else a.group.position.lerp(new THREE.Vector3(s.x,y,s.z),k);
   a.group.rotation.y+=Math.atan2(Math.sin(s.angle-a.group.rotation.y),Math.cos(s.angle-a.group.rotation.y))*k;
   remote.flashTime=Math.max(0,remote.flashTime-dt);a.flash.visible=remote.flashTime>0;a.setRecoil((a.recoil||0)*Math.exp(-15*dt));
-  a.update(dt,{speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
+  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }

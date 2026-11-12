@@ -168,8 +168,18 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1}={}){
-  dt=clamp(Number.isFinite(dt)?dt:0,0,.05);this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1}={}){
+  dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
+  if(dead){
+   this.state='dead';this.gun.visible=false;this.flash.visible=false;
+   const fallen=Array.from({length:18},()=>[0,0,0]);fallen[0]=[Math.PI/2,0,.07];fallen[1]=[-.12,0,0];fallen[5]=[.08,0,.12];
+   fallen[6]=[-.18,0,.52];fallen[9]=[-.30,0,-.65];fallen[7]=[-.35,0,0];fallen[10]=[-.60,0,0];fallen[12]=[-.16,0,-.09];fallen[13]=[.25,0,0];fallen[15]=[-.3,0,.12];fallen[16]=[.5,0,0];
+   for(let i=0;i<18;i++)for(let k=0;k<3;k++)this.rotations[i][k]=M.damp(this.rotations[i][k],fallen[i][k],8,dt);
+   for(let k=0;k<3;k++)this.shift[k]=M.damp(this.shift[k],k===1?.17:0,8,dt);
+   for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
+   this.group.updateMatrixWorld(true);this.skeleton.update();return;
+  }
+  this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
   if(!grounded){if(this.wasGrounded)this.airTime=0;this.airTime+=dt;this.landingTime=1}
   else if(!this.wasGrounded)this.landingTime=0;
   else this.landingTime=Math.min(1,this.landingTime+dt);

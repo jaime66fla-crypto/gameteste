@@ -532,6 +532,13 @@ class ForestAudioSystem {
   if(this.ctx.state==='suspended')this.ctx.resume();
   if(!this.isAmbiencePlaying)this.startForestAmbience();
  }
+ playPlayerHit(){
+  if(!this.ctx||!this.masterGain||!this.enabled)return;
+  const t=this.ctx.currentTime,osc=this.ctx.createOscillator(),gain=this.ctx.createGain();
+  osc.type='triangle';osc.frequency.setValueAtTime(155,t);osc.frequency.exponentialRampToValueAtTime(48,t+.13);
+  gain.gain.setValueAtTime(.0001,t);gain.gain.exponentialRampToValueAtTime(.65,t+.008);gain.gain.exponentialRampToValueAtTime(.0001,t+.18);
+  osc.connect(gain);gain.connect(this.masterGain);osc.start(t);osc.stop(t+.19);osc.onended=()=>{osc.disconnect();gain.disconnect();};
+ }
  setEnabled(state){
   this.enabled=state;
   if(this.masterGain&&this.ctx){
@@ -1239,14 +1246,14 @@ class PistolController {
  }
  bindInputs(){
   addEventListener('keydown',e=>{
-   if(!gameStarted||e.repeat)return;
+   if(!gameStarted||player.userData.dead||e.repeat)return;
    if(e.code==='Digit1'||e.code==='Numpad1')this.loot?.select(0);
    if(e.code==='Digit2'||e.code==='Numpad2')this.loot?.select(1);
    if(e.code==='Digit3'||e.code==='Numpad3'){this.triggerHeld=false;this.toggle();}
    if(e.code==='KeyR'&&this.isEquipped)this.reload();
   });
   addEventListener('mousedown',e=>{
-   if(e.target!==canvas||!gameStarted||!this.isEquipped||this.isReloading)return;
+   if(e.target!==canvas||!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading)return;
    if(e.button===0){this.triggerHeld=true;this.fire();}
   });
   addEventListener('mouseup',e=>{if(e.button===0)this.triggerHeld=false;});
@@ -1311,7 +1318,7 @@ class PistolController {
  }
 
  fire(){
-  if(!gameStarted||!this.isEquipped||this.isReloading)return;
+  if(!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading)return;
   if(controller.cover.active){
    this.player.updateMatrixWorld(true);
    if(!controller.cover.canFireFrom(this.muzzlePoint.getWorldPosition(new THREE.Vector3())))return;
@@ -1486,22 +1493,22 @@ class PlayerController {
  }
  _initListeners(){
   addEventListener('keydown',e=>{
-   if(!gameStarted)return;
+   if(!gameStarted||player.userData.dead)return;
    if((e.code==='KeyC'||e.code==='KeyQ')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
   });
   addEventListener('keyup',e=>this._onKeyChange(e.code,false));
   addEventListener('blur',()=>this.clearInput());
-  addEventListener('mousedown',e=>{if(e.button===2&&e.target===canvas&&gameStarted)this.keys.aiming=true;});
+  addEventListener('mousedown',e=>{if(e.button===2&&e.target===canvas&&gameStarted&&!player.userData.dead)this.keys.aiming=true;});
   addEventListener('mouseup',e=>{if(e.button===2)this.keys.aiming=false;});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
-  document.getElementById('coverBtn')?.addEventListener('click',()=>{if(gameStarted&&this.isGrounded)this.cover.toggle();});
+  document.getElementById('coverBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead&&this.isGrounded)this.cover.toggle();});
   const peekButton=document.getElementById('peekBtn');
-  peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted)this.keys.aiming=true;});
+  peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted&&!player.userData.dead)this.keys.aiming=true;});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])peekButton?.addEventListener(type,()=>{this.keys.aiming=false;});
   const button=document.getElementById('crouchBtn');
-  button?.addEventListener('click',()=>{this.keys.crouch=!this.keys.crouch;});
+  button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.keys.crouch=!this.keys.crouch;});
  }
  clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;}
  canStand(){
@@ -1509,6 +1516,7 @@ class PlayerController {
   return !houseParkour.solidBoxes.some(b=>p.x+r>b.minX&&p.x-r<b.maxX&&p.z+r>b.minZ&&p.z-r<b.maxZ&&b.maxY>p.y+this.crouchingHeight&&b.minY<p.y+this.standingHeight);
  }
  _onKeyChange(code,isPressed){
+  if(this.mesh.userData.dead&&isPressed)return;
   if(code==='ControlLeft'||code==='ControlRight'){
    if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
    return;
@@ -1665,7 +1673,7 @@ class GTACameraController {
 
  _initEvents(){
   this.domElement.addEventListener('mousedown',e=>{
-   if(!gameStarted)return;
+   if(!gameStarted||player.userData.dead)return;
    this.isMouseDown=true;
    this.previousMouseX=e.clientX;
    this.previousMouseY=e.clientY;
@@ -1699,7 +1707,7 @@ class GTACameraController {
   });
 
   document.addEventListener('keydown',e=>{
-   if(!gameStarted)return;
+   if(!gameStarted||player.userData.dead)return;
    if(e.code==='KeyV'){
     this.modeIndex=(this.modeIndex+1)%this.distances.length;
     this.targetDistance=this.distances[this.modeIndex];
@@ -2059,7 +2067,7 @@ class SpecialJetpack {
  }
  _bind(){
   addEventListener('keydown',e=>{
-   if(e.code!=='KeyE'||e.repeat||!gameStarted||this.equipped)return;
+   if(e.code!=='KeyE'||e.repeat||!gameStarted||player.userData.dead||this.equipped)return;
    if(this.player.position.distanceTo(this.pickupPosition)<=this.pickupRadius)this.pickupNow();
   });
  }
@@ -2108,24 +2116,46 @@ const jetpackSystem=new SpecialJetpack(scene,player,forestEnvironment.getTerrain
 const controller=new PlayerController(player,camera);
 const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
 const weaponLoot=new window.WeaponLootSystem({scene,player,avatar:mainAvatar,controller:pistolWeapon,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:()=>houseParkour.solidBoxes});
-addEventListener('keydown',e=>{if(gameStarted&&e.code==='KeyE'&&!e.repeat)weaponLoot.pickup();});
-document.getElementById('pickupBtn')?.addEventListener('click',()=>{if(gameStarted)weaponLoot.pickup();});
-for(let slot=0;slot<2;slot++)document.getElementById('weaponSlot'+slot)?.addEventListener('click',()=>{if(gameStarted)weaponLoot.select(slot);});
+addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='KeyE'&&!e.repeat)weaponLoot.pickup();});
+document.getElementById('pickupBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)weaponLoot.pickup();});
+for(let slot=0;slot<2;slot++)document.getElementById('weaponSlot'+slot)?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)weaponLoot.select(slot);});
 
+function corpseFloorAt(x,z,fromY){
+ let floor=forestEnvironment.getTerrainHeight(x,z);
+ for(const box of houseParkour.solidBoxes)if(x>=box.minX&&x<=box.maxX&&z>=box.minZ&&z<=box.maxZ&&box.maxY<=fromY+.10)floor=Math.max(floor,box.maxY);
+ return floor;
+}
+let corpseFallVelocity=0;
+const playerLife=new window.PlayerLife({
+ onDamage:damage=>{
+  playerDamageFlash=.65;lastReceivedDamage=damage;forestAudio.playPlayerHit();thirdPersonCamera.addShotRecoil(.3,.85,8);
+ },
+ onDeath:()=>{
+  corpseFallVelocity=Math.min(0,controller.velocity.y);player.userData.dead=true;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.horizontalSpeed=0;
+  pistolWeapon.triggerHeld=false;pistolWeapon.isReloading=false;pistolWeapon.reloadTimer=0;
+ },
+ onRespawn:()=>{
+  player.userData.dead=false;combatBots.health=100;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
+  if(!multiplayer.active)player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
+  weaponLoot.refillForTraining();playerDamageFlash=0;
+ }
+});
+let lastReceivedDamage=0;
 const combatBots=new window.CombatBotSystem({
  scene,player,camera,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:houseParkour.solidBoxes,
  onKill:bot=>{score+=100;weaponLoot.dropFromBot(bot.group.position);},
- onPlayerHit:()=>{playerDamageFlash=.22;},
- onPlayerDeath:()=>{
-  controller.cover.exit();controller.clearInput();
-  player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
-  controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
-  weaponLoot.refillForTraining();
-  pistolWeapon.isReloading=false;pistolWeapon.reloadTimer=0;
- }
+ onPlayerHit:health=>playerLife.receiveHealth(health),
+ onPlayerDeath:()=>playerLife.die(5)
 });
 
 function updateCamera(dt){
+ if(playerLife.dead){
+  mainAvatar.group.visible=true;adsViewModel.visible=false;
+  document.getElementById('opticReticle')?.classList.remove('active');document.getElementById('sniperScope')?.classList.remove('active');document.getElementById('aimDot')?.classList.add('ads-hidden');document.body.classList.remove('ads-optic','ads-scope');
+  const focus=player.position.clone().add(new THREE.Vector3(0,.35,0));
+  const offset=new THREE.Vector3(2,2.8,-3.7).applyAxisAngle(new THREE.Vector3(0,1,0),player.rotation.y);
+  camera.position.lerp(focus.clone().add(offset),1-Math.exp(-5*dt));camera.lookAt(focus);camera.fov=THREE.MathUtils.lerp(camera.fov,58,1-Math.exp(-5*dt));camera.updateProjectionMatrix();return;
+ }
  const ads=controller.keys.aiming&&pistolWeapon.isEquipped;
  const aimDot=document.getElementById('aimDot');
  const optic=document.getElementById('opticReticle');
@@ -2201,7 +2231,7 @@ document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMe
 document.getElementById('btn-mode-solo')?.addEventListener('click',hideGameMenu);
 document.getElementById('btn-mode-multi')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
 document.getElementById('btn-multi-back')?.addEventListener('click',()=>{leaveRoom();switchMenuView('view-modes');});
-const multiplayerWorld=new window.MultiplayerWorld(scene);
+const multiplayerWorld=new window.MultiplayerWorld(scene,corpseFloorAt);
 let networkTick=0,multiplayerShotSequence=0;
 const confirmedNetworkShots=new Set();
 function roomStatus(message){
@@ -2217,7 +2247,7 @@ function setMultiplayerBots(active){for(const bot of combatBots.bots)bot.group.v
 const multiplayer=new window.MultiplayerClient({
  onStatus:message=>roomStatus(message),
  onReady:welcome=>{
-  multiplayerWorld.clear();combatBots.health=100;setMultiplayerBots(false);
+  multiplayerWorld.clear();playerLife.reset();player.userData.dead=false;combatBots.health=100;setMultiplayerBots(false);
   controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;
   const slot=welcome.players.length;player.position.set(-4+(slot%4)*2.5,0,6+Math.floor(slot/4)*3);
   player.position.y=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
@@ -2230,20 +2260,21 @@ const multiplayer=new window.MultiplayerClient({
   else if(data.type==='leave')multiplayerWorld.remove(data.id);
   else if(data.type==='shot3d'&&data.ownerId!==multiplayer.id)multiplayerWorld.shot(data);
   else if(data.type==='hit3d'){
-   if(data.targetId===multiplayer.id){combatBots.health=data.health;playerDamageFlash=.22;}
+   if(data.targetId===multiplayer.id){combatBots.health=data.health;playerLife.receiveHealth(data.health,data.respawnIn||5);}
+   else{const remote=multiplayerWorld.players.get(data.targetId);if(remote)multiplayerWorld.receive({...remote.state,health:data.health,dead:data.killed||false});}
    if(data.attackerId===multiplayer.id){
     if(!confirmedNetworkShots.has(data.shotId)){confirmedNetworkShots.add(data.shotId);if(confirmedNetworkShots.size>128)confirmedNetworkShots.delete(confirmedNetworkShots.values().next().value);hitCount++;score+=12;flashHitmarker();forestAudio.playHit();}
     if(data.killed)score+=100;
    }
   }else if(data.type==='respawn3d'){
-   if(data.id===multiplayer.id){player.position.set(data.x,forestEnvironment.getTerrainHeight(data.x,data.z),data.z);controller.velocity.set(0,0,0);controller.clearInput();controller.cover.exit();combatBots.health=100;weaponLoot.refillForTraining();}
-   else{const remote=multiplayerWorld.players.get(data.id);if(remote)multiplayerWorld.receive({...remote.state,...data});}
+   if(data.id===multiplayer.id){player.position.set(data.x,forestEnvironment.getTerrainHeight(data.x,data.z),data.z);controller.velocity.set(0,0,0);controller.clearInput();controller.cover.exit();combatBots.health=100;playerLife.respawn();}
+   else{const remote=multiplayerWorld.players.get(data.id);if(remote)multiplayerWorld.receive({...remote.state,...data,dead:false});}
   }
   roomHud();
  }
 });
 function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none'});}
-function leaveRoom(){confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
+function leaveRoom(){confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);playerLife.reset();player.userData.dead=false;combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
 function enterRoom(action){
  if(multiplayer.pending)return;
  const input=document.getElementById('input-room-code');
@@ -2271,7 +2302,7 @@ document.getElementById('btn-toggle-shadows')?.addEventListener('click',e=>{
  e.currentTarget.textContent='SOMBRAS: '+(menuSettings.shadows?'ATIVADAS':'DESATIVADAS');
 });
 document.getElementById('btn-settings-back')?.addEventListener('click',()=>switchMenuView('view-main'));
-addEventListener('keydown',e=>{if(gameStarted&&e.code==='KeyM')showGameMenu()});
+addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='KeyM')showGameMenu()});
 
 (function initMenuParticles(){
  const c=document.getElementById('menu-particles-canvas'); if(!c)return;
@@ -2296,19 +2327,26 @@ addEventListener('keydown',e=>{if(gameStarted&&e.code==='KeyM')showGameMenu()});
 
 const clock=new THREE.Clock();
 function loop(){
- requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
+ requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
  if(!gameStarted){ renderer.render(scene,camera); return; }
- controller.update(dt);
- weaponLoot.update(dt);
+ playerLife.update(elapsed,multiplayer.active);
+ if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
+ else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
  player.userData.crouching=controller.isCrouching;
  if(!multiplayer.active)combatBots.update(dt);
  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
- if(damageFlashEl)damageFlashEl.style.opacity=String(Math.min(1,playerDamageFlash/.12));
+ const damageText=document.getElementById('receivedDamage');if(damageText){damageText.textContent='−'+Math.round(lastReceivedDamage)+' · ATINGIDO';damageText.style.opacity=String(Math.min(1,playerDamageFlash/.35));}
+ const lifeFill=document.getElementById('vitalFill');if(lifeFill)lifeFill.style.width=combatBots.health+'%';
+ const lifeValue=document.getElementById('vitalValue');if(lifeValue)lifeValue.textContent=combatBots.health+' / 100';
+ document.body.classList.toggle('low-health',combatBots.health>0&&combatBots.health<=30);
+ const deathOverlay=document.getElementById('deathOverlay');if(deathOverlay)deathOverlay.hidden=!playerLife.dead;
+ const deathCountdown=document.getElementById('deathCountdown');if(deathCountdown)deathCountdown.textContent=playerLife.remaining>0?'RENASCENDO EM '+Math.ceil(playerLife.remaining)+'s':'RENASCENDO…';
+ if(damageFlashEl)damageFlashEl.style.opacity=String(Math.min(.9,playerDamageFlash/.30));
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
@@ -2342,7 +2380,7 @@ function loop(){
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
- const stateLabel=controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const stateLabel=playerLife.dead?'Caído · renascendo':controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
  const coverPrompt=document.getElementById('coverPrompt');
  if(coverPrompt){
   const near=controller.cover.active?null:controller.cover.findNearby();

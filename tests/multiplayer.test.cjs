@@ -3,9 +3,9 @@ function server(){
  let clock=10000;const sockets=[];class Socket{constructor(){this.messages=[]}send(s){this.messages.push(JSON.parse(s))}serializeAttachment(m){assert.ok(require('node:v8').serialize(m).length<=2048,'Cloudflare attachment exceeds 2048 bytes');this.meta=structuredClone(m)}deserializeAttachment(){return this.meta}}
  const c={crypto:require('node:crypto').webcrypto,Response:class{constructor(body,opts){Object.assign(this,opts);this.body=body}},URL,Date:class extends Date{static now(){return clock}},TextDecoder,WebSocketPair:class{constructor(){this[0]=new Socket();this[1]=new Socket()}},console};vm.createContext(c);
  vm.runInContext(fs.readFileSync('src/worker.js','utf8').replace('export default','const worker =').replace('export class GameRoom','class GameRoom')+'\nglobalThis.Room=GameRoom;',c);
- const room=new c.Room({getWebSockets:()=>[],acceptWebSocket:s=>sockets.push(s)},{});
+ const ctx={getWebSockets:()=>sockets,acceptWebSocket:s=>sockets.push(s),waitUntil(){},storage:{setAlarm:()=>Promise.resolve()}};let room=new c.Room(ctx,{});
  async function connect(action){const response=await room.fetch({headers:{get:()=> 'websocket'},url:'https://game.test/ws?room=FLR-ABCDE&mode=3d&action='+action});return {response,ws:sockets.at(-1)}}
- return {room,connect,sockets,advance:ms=>clock+=ms};
+ return {get room(){return room},connect,sockets,advance:ms=>clock+=ms,hibernate:()=>{room=new c.Room(ctx,{})}};
 }
 test('join missing room and duplicate create do not report success',async()=>{
  const s=server();let r=await s.connect('join');assert.equal(r.response.status,404);assert.equal(s.sockets.length,0);
@@ -41,4 +41,13 @@ test('full SMG magazine stays within hibernation attachment limit and damage is 
  assert.equal(b.messages.filter(m=>m.type==='shot3d').length,24);
  const hit={type:'hit3d',shotId:'burst-23',pellet:0,targetId:b.meta.id};s.room.webSocketMessage(a,JSON.stringify(hit));assert.equal(s.room.players.get(b.meta.id).health,82);
  s.room.webSocketMessage(a,JSON.stringify(hit));assert.equal(s.room.players.get(b.meta.id).health,82);
+});
+
+test('death keeps corpse position, blocks actions and respawns only after five seconds',async()=>{
+ const s=server(),a=(await s.connect('create')).ws,b=(await s.connect('join')).ws;
+ for(const [ws,z]of[[a,0],[b,8]])s.room.webSocketMessage(ws,JSON.stringify({type:'state3d',x:0,y:0,z,angle:0,weapon:'sniper'}));
+ for(let i=0;i<2;i++){s.advance(1050);s.room.webSocketMessage(a,JSON.stringify({type:'shot3d',shotId:'kill-'+i,weapon:'sniper',origin:{x:0,y:1.3,z:0},rays:[{x:0,y:0,z:1}]}));s.room.webSocketMessage(a,JSON.stringify({type:'hit3d',shotId:'kill-'+i,pellet:0,targetId:b.meta.id}));}
+ let victim=s.room.players.get(b.meta.id);assert.equal(victim.health,0);assert.equal(victim.dead,true);assert.equal(victim.z,8);assert(!b.messages.some(m=>m.type==='respawn3d'));
+ s.room.webSocketMessage(b,JSON.stringify({type:'state3d',x:90,y:0,z:90,angle:2,weapon:'sniper'}));assert.equal(s.room.players.get(b.meta.id).z,8,'dead client cannot move corpse');
+ s.hibernate();victim=s.room.players.get(b.meta.id);assert(victim.dead,"Death deadline must survive hibernation");s.advance(4999);await s.room.alarm();assert.equal(victim.health,0);s.advance(1);await s.room.alarm();assert.equal(victim.health,100);assert.equal(victim.dead,false);assert.equal(b.messages.filter(m=>m.type==='respawn3d').length,1);
 });
