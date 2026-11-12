@@ -977,10 +977,10 @@ const ammoState={
  shotgun:{mag:8,reserve:40}
 };
 const weapons3D={
- pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:42,spread:.012,pellets:1,color:0xffdf78,recoil:.18,scale:[.72,.82,.72],impact:4},
- smg:{label:'SMG',cooldown:.085,damage:.55,speed:46,spread:.045,pellets:1,color:0xffc85a,recoil:.12,scale:[1.0,.92,.82],impact:4},
- rifle:{label:'RIFLE',cooldown:.19,damage:1.7,speed:58,spread:.009,pellets:1,color:0xffefad,recoil:.28,scale:[1.35,1,1],impact:6},
- shotgun:{label:'ESCOPETA',cooldown:.62,damage:.52,speed:38,spread:.12,pellets:7,color:0xffb85c,recoil:.42,scale:[1.48,1.12,1.05],impact:8}
+ pistol:{label:'PISTOLA',cooldown:.24,damage:1,speed:56,spread:.012,pellets:1,color:0xffdf78,recoil:.18,scale:[.72,.82,.72],impact:4,tracerLength:1.15,tracerRadius:.022,tracerGlow:.055},
+ smg:{label:'SMG',cooldown:.085,damage:.55,speed:64,spread:.045,pellets:1,color:0xffc85a,recoil:.12,scale:[1.0,.92,.82],impact:4,tracerLength:1.35,tracerRadius:.018,tracerGlow:.05},
+ rifle:{label:'RIFLE',cooldown:.19,damage:1.7,speed:82,spread:.009,pellets:1,color:0xffefad,recoil:.28,scale:[1.35,1,1],impact:6,tracerLength:2.2,tracerRadius:.024,tracerGlow:.065},
+ shotgun:{label:'ESCOPETA',cooldown:.62,damage:.52,speed:52,spread:.12,pellets:7,color:0xffb85c,recoil:.42,scale:[1.48,1.12,1.05],impact:8,tracerLength:.75,tracerRadius:.014,tracerGlow:.038}
 };
 const muzzleFx=[],impactFx=[];
 let recoilKick=0;
@@ -1045,10 +1045,43 @@ function makeTracer(origin,target,weapon){
  dir.y+=(Math.random()-.5)*spread*.55;
  dir.z+=(Math.random()-.5)*spread;
  dir.normalize();
- const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.9,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.95}));
- mesh.rotation.x=Math.PI/2;
- mesh.position.copy(origin);mesh.castShadow=false;world.add(mesh);
- const bullet={mesh,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color};
+
+ const length=weapon.tracerLength||1.1;
+ const radius=weapon.tracerRadius||.02;
+ const glowRadius=weapon.tracerGlow||radius*2.4;
+ const group=new THREE.Group();
+
+ // Bright projectile core.
+ const core=new THREE.Mesh(
+  new THREE.CylinderGeometry(radius,radius*.72,length,6,1,true),
+  new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.98,depthWrite:false,blending:THREE.AdditiveBlending})
+ );
+ group.add(core);
+
+ // Soft halo around the tracer gives speed without making the projectile look like a rod.
+ const glow=new THREE.Mesh(
+  new THREE.CylinderGeometry(glowRadius,glowRadius*.6,length*1.18,6,1,true),
+  new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.20,depthWrite:false,blending:THREE.AdditiveBlending})
+ );
+ group.add(glow);
+
+ // Tiny hot tip, especially visible on pistol/rifle shots.
+ const tip=new THREE.Mesh(
+  new THREE.SphereGeometry(Math.max(radius*1.8,.028),6,4),
+  new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.9,depthWrite:false,blending:THREE.AdditiveBlending})
+ );
+ tip.position.y=length*.5;
+ group.add(tip);
+
+ // Cylinder geometry points along +Y; rotate the whole tracer into its actual flight direction.
+ group.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),dir);
+ group.position.copy(origin).addScaledVector(dir,length*.5);
+ world.add(group);
+
+ const bullet={
+  mesh:group,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color,
+  tracerLength:length,core,glow,tip
+ };
  bullets.push(bullet);return bullet;
 }
 
@@ -1442,9 +1475,16 @@ function segmentHitsBuilding(a,bp){
 }
 function updateBullets3D(dt){
  for(const b of bullets){
-  const old=b.mesh.position.clone();
-  const next=old.clone().addScaledVector(b.dir,b.speed*dt);
+  const center=b.mesh.position.clone();
+  const half=b.tracerLength*.5;
+  const old=center.clone().addScaledVector(b.dir,-half);
+  const next=center.clone().addScaledVector(b.dir,b.speed*dt);
+  const nextHead=next.clone().addScaledVector(b.dir,half);
   b.life-=dt;
+  const fade=THREE.MathUtils.clamp(b.life/.18,0,1);
+  if(b.core)b.core.material.opacity=.98*fade;
+  if(b.glow)b.glow.material.opacity=.20*fade;
+  if(b.tip)b.tip.material.opacity=.9*fade;
 
   if(b.enemyShot){
    const center=player.position.clone();center.y+=1.15;
@@ -1458,13 +1498,13 @@ function updateBullets3D(dt){
     else statusEl.textContent='Você foi atingido';
     updateHud();continue
    }
-   if(segmentHitsBuilding(old,next)){b.mesh.position.copy(next);spawnImpact(next,b.color,4);b.life=0;continue}
+   if(segmentHitsBuilding(old,nextHead)){b.mesh.position.copy(next);spawnImpact(nextHead,b.color,4);b.life=0;continue}
    b.mesh.position.copy(next);continue;
   }
 
-  const segment=next.clone().sub(old);
+  const segment=nextHead.clone().sub(old);
   const hit=traceAimRay(new THREE.Ray(old,segment.clone().normalize()),segment.length(),true,b.ownerId||null);
-  b.mesh.position.copy(hit?hit.point:next);
+  b.mesh.position.copy(hit?hit.point.clone().addScaledVector(b.dir,-half):next);
   if(hit){
    b.life=0;
    spawnImpact(hit.point,hit.kind==='enemy'?0xff6b6b:b.color,5);
