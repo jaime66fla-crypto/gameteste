@@ -235,6 +235,155 @@ const forestEnvironment=buildForestEnvironment(scene,{
  seed:42
 });
 
+class HouseParkourBuilder {
+ constructor(scene,getGroundHeight=()=>0){
+  this.scene=scene;
+  this.getGroundHeight=getGroundHeight;
+  this.structuresGroup=new THREE.Group();
+  this.scene.add(this.structuresGroup);
+  this.solidBoxes=[];
+  this.initMaterials();
+ }
+ initMaterials(){
+  this.materials={
+   stoneWall:new THREE.MeshStandardMaterial({color:0x7c858e,roughness:.85,flatShading:true}),
+   woodWall:new THREE.MeshStandardMaterial({color:0x8b5a2b,roughness:.8,flatShading:true}),
+   darkWood:new THREE.MeshStandardMaterial({color:0x4a3219,roughness:.9,flatShading:true}),
+   roof:new THREE.MeshStandardMaterial({color:0x8f3a2b,roughness:.75,flatShading:true}),
+   crate:new THREE.MeshStandardMaterial({color:0xb07d48,roughness:.8,flatShading:true}),
+   windowGlow:new THREE.MeshStandardMaterial({color:0xffe49e,emissive:0xffb732,emissiveIntensity:.45})
+  };
+ }
+ registerSolidBox(mesh,width,height,depth){
+  mesh.updateMatrixWorld(true);
+  const pos=new THREE.Vector3();
+  mesh.getWorldPosition(pos);
+  this.solidBoxes.push({
+   minX:pos.x-width/2,maxX:pos.x+width/2,
+   minY:pos.y-height/2,maxY:pos.y+height/2,
+   minZ:pos.z-depth/2,maxZ:pos.z+depth/2
+  });
+ }
+ buildHouseWithParkour(config={}){
+  const {x=0,z=0,width=8,height=5.2,depth=7,rotationY=0}=config;
+  const baseY=this.getGroundHeight(x,z);
+  const houseContainer=new THREE.Group();
+  houseContainer.position.set(x,baseY,z);
+  houseContainer.rotation.y=rotationY;
+  this.structuresGroup.add(houseContainer);
+
+  const wallMesh=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),this.materials.stoneWall);
+  wallMesh.position.y=height/2;
+  wallMesh.castShadow=true; wallMesh.receiveShadow=true;
+  houseContainer.add(wallMesh);
+
+  const pillarGeo=new THREE.BoxGeometry(.45,height+.1,.45);
+  [[-width/2,-depth/2],[width/2,-depth/2],[-width/2,depth/2],[width/2,depth/2]].forEach(([cx,cz])=>{
+   const pillar=new THREE.Mesh(pillarGeo,this.materials.darkWood);
+   pillar.position.set(cx,height/2,cz); pillar.castShadow=true; houseContainer.add(pillar);
+  });
+
+  const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.4,.18),this.materials.darkWood);
+  door.position.set(0,1.2,depth/2+.05); houseContainer.add(door);
+
+  const winGeo=new THREE.BoxGeometry(1.1,1.1,.15);
+  [-width*.28,width*.28].forEach(wx=>{
+   const win=new THREE.Mesh(winGeo,this.materials.windowGlow);
+   win.position.set(wx,height*.58,depth/2+.04); houseContainer.add(win);
+  });
+
+  const roofHeight=2.4;
+  const roofGeo=new THREE.ConeGeometry(Math.max(width,depth)*.78,roofHeight,4);
+  roofGeo.rotateY(Math.PI/4);
+  const roofMesh=new THREE.Mesh(roofGeo,this.materials.roof);
+  roofMesh.scale.set(width/Math.max(width,depth),1,depth/Math.max(width,depth));
+  roofMesh.position.y=height+roofHeight/2-.1;
+  roofMesh.castShadow=true; roofMesh.receiveShadow=true; houseContainer.add(roofMesh);
+
+  const supports=[
+   {px:width/2+1.1,py:.6,pz:depth*.25,w:1.5,h:1.2,d:1.5,mat:this.materials.crate},
+   {px:width/2+1,py:1.25,pz:-depth*.15,w:1.5,h:2.5,d:1.5,mat:this.materials.crate},
+   {px:width/2+.85,py:3.65,pz:-depth*.35,w:1.7,h:.35,d:2,mat:this.materials.woodWall},
+   {px:width*.25,py:height-.15,pz:-depth/2-.75,w:2.2,h:.35,d:1.5,mat:this.materials.darkWood}
+  ];
+
+  houseContainer.updateMatrixWorld(true);
+  const isRotated90=Math.abs(Math.sin(rotationY))>.7;
+  const worldW=isRotated90?depth:width;
+  const worldD=isRotated90?width:depth;
+  this.registerSolidBox(wallMesh,worldW,height,worldD);
+
+  const roofTopCollider=new THREE.Object3D();
+  roofTopCollider.position.set(0,height+.45,0);
+  houseContainer.add(roofTopCollider);
+  this.registerSolidBox(roofTopCollider,worldW*.85,.9,worldD*.85);
+
+  supports.forEach(s=>{
+   const sup=new THREE.Mesh(new THREE.BoxGeometry(s.w,s.h,s.d),s.mat);
+   sup.position.set(s.px,s.py,s.pz);
+   sup.castShadow=true; sup.receiveShadow=true; houseContainer.add(sup);
+   if(s.py>2.5){
+    const bracket=new THREE.Mesh(new THREE.BoxGeometry(s.w*.7,.2,.2),this.materials.darkWood);
+    bracket.position.set(s.px-.15,s.py-.35,s.pz);
+    bracket.rotation.z=.55; houseContainer.add(bracket);
+   }
+   this.registerSolidBox(sup,isRotated90?s.d:s.w,s.h,isRotated90?s.w:s.d);
+  });
+
+  return houseContainer;
+ }
+ convertExistingBlocksToHouses(blockMeshes=[]){
+  blockMeshes.forEach(oldMesh=>{
+   if(!oldMesh||!oldMesh.geometry)return;
+   oldMesh.geometry.computeBoundingBox();
+   const box=oldMesh.geometry.boundingBox;
+   const size=new THREE.Vector3(); box.getSize(size);
+   const width=Math.max(5,size.x*oldMesh.scale.x);
+   const height=Math.max(4.5,size.y*oldMesh.scale.y);
+   const depth=Math.max(5,size.z*oldMesh.scale.z);
+   this.buildHouseWithParkour({
+    x:oldMesh.position.x,z:oldMesh.position.z,width,height,depth,rotationY:oldMesh.rotation.y
+   });
+   if(oldMesh.parent)oldMesh.parent.remove(oldMesh);
+  });
+ }
+ resolvePlayerCollision(controller,playerRadius=.45,playerHeight=1.6){
+  let highestPlatformY=-Infinity;
+  const p=controller.mesh.position;
+  for(const b of this.solidBoxes){
+   const withinX=p.x+playerRadius>b.minX&&p.x-playerRadius<b.maxX;
+   const withinZ=p.z+playerRadius>b.minZ&&p.z-playerRadius<b.maxZ;
+   if(!withinX||!withinZ)continue;
+
+   const footY=p.y;
+   if(footY>=b.maxY-.35&&controller.velocity.y<=0){
+    if(b.maxY>highestPlatformY)highestPlatformY=b.maxY;
+    continue;
+   }
+
+   const headY=p.y+playerHeight;
+   if(headY>b.minY+.1&&footY<b.maxY-.35){
+    const overlapLeft=(p.x+playerRadius)-b.minX;
+    const overlapRight=b.maxX-(p.x-playerRadius);
+    const overlapFront=(p.z+playerRadius)-b.minZ;
+    const overlapBack=b.maxZ-(p.z-playerRadius);
+    const minOverlap=Math.min(overlapLeft,overlapRight,overlapFront,overlapBack);
+    if(minOverlap===overlapLeft)p.x=b.minX-playerRadius;
+    else if(minOverlap===overlapRight)p.x=b.maxX+playerRadius;
+    else if(minOverlap===overlapFront)p.z=b.minZ-playerRadius;
+    else if(minOverlap===overlapBack)p.z=b.maxZ+playerRadius;
+   }
+  }
+  if(highestPlatformY>-Infinity&&p.y<=highestPlatformY+.05){
+   p.y=highestPlatformY;
+   controller.velocity.y=0;
+   controller.isGrounded=true;
+   return true;
+  }
+  return false;
+ }
+}
+
 function box(x,y,z,sx,sy,sz,color=0x7f8a86){
  const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshStandardMaterial({color,roughness:.9}));
  m.position.set(x,y+sy/2,z); m.castShadow=true; m.receiveShadow=true; scene.add(m); return m;
@@ -758,155 +907,6 @@ class BowAnimationSystem {
     this.activeArrows.splice(i,1);
    }
   }
- }
-}
-
-class HouseParkourBuilder {
- constructor(scene,getGroundHeight=()=>0){
-  this.scene=scene;
-  this.getGroundHeight=getGroundHeight;
-  this.structuresGroup=new THREE.Group();
-  this.scene.add(this.structuresGroup);
-  this.solidBoxes=[];
-  this.initMaterials();
- }
- initMaterials(){
-  this.materials={
-   stoneWall:new THREE.MeshStandardMaterial({color:0x7c858e,roughness:.85,flatShading:true}),
-   woodWall:new THREE.MeshStandardMaterial({color:0x8b5a2b,roughness:.8,flatShading:true}),
-   darkWood:new THREE.MeshStandardMaterial({color:0x4a3219,roughness:.9,flatShading:true}),
-   roof:new THREE.MeshStandardMaterial({color:0x8f3a2b,roughness:.75,flatShading:true}),
-   crate:new THREE.MeshStandardMaterial({color:0xb07d48,roughness:.8,flatShading:true}),
-   windowGlow:new THREE.MeshStandardMaterial({color:0xffe49e,emissive:0xffb732,emissiveIntensity:.45})
-  };
- }
- registerSolidBox(mesh,width,height,depth){
-  mesh.updateMatrixWorld(true);
-  const pos=new THREE.Vector3();
-  mesh.getWorldPosition(pos);
-  this.solidBoxes.push({
-   minX:pos.x-width/2,maxX:pos.x+width/2,
-   minY:pos.y-height/2,maxY:pos.y+height/2,
-   minZ:pos.z-depth/2,maxZ:pos.z+depth/2
-  });
- }
- buildHouseWithParkour(config={}){
-  const {x=0,z=0,width=8,height=5.2,depth=7,rotationY=0}=config;
-  const baseY=this.getGroundHeight(x,z);
-  const houseContainer=new THREE.Group();
-  houseContainer.position.set(x,baseY,z);
-  houseContainer.rotation.y=rotationY;
-  this.structuresGroup.add(houseContainer);
-
-  const wallMesh=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),this.materials.stoneWall);
-  wallMesh.position.y=height/2;
-  wallMesh.castShadow=true; wallMesh.receiveShadow=true;
-  houseContainer.add(wallMesh);
-
-  const pillarGeo=new THREE.BoxGeometry(.45,height+.1,.45);
-  [[-width/2,-depth/2],[width/2,-depth/2],[-width/2,depth/2],[width/2,depth/2]].forEach(([cx,cz])=>{
-   const pillar=new THREE.Mesh(pillarGeo,this.materials.darkWood);
-   pillar.position.set(cx,height/2,cz); pillar.castShadow=true; houseContainer.add(pillar);
-  });
-
-  const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.4,.18),this.materials.darkWood);
-  door.position.set(0,1.2,depth/2+.05); houseContainer.add(door);
-
-  const winGeo=new THREE.BoxGeometry(1.1,1.1,.15);
-  [-width*.28,width*.28].forEach(wx=>{
-   const win=new THREE.Mesh(winGeo,this.materials.windowGlow);
-   win.position.set(wx,height*.58,depth/2+.04); houseContainer.add(win);
-  });
-
-  const roofHeight=2.4;
-  const roofGeo=new THREE.ConeGeometry(Math.max(width,depth)*.78,roofHeight,4);
-  roofGeo.rotateY(Math.PI/4);
-  const roofMesh=new THREE.Mesh(roofGeo,this.materials.roof);
-  roofMesh.scale.set(width/Math.max(width,depth),1,depth/Math.max(width,depth));
-  roofMesh.position.y=height+roofHeight/2-.1;
-  roofMesh.castShadow=true; roofMesh.receiveShadow=true; houseContainer.add(roofMesh);
-
-  const supports=[
-   {px:width/2+1.1,py:.6,pz:depth*.25,w:1.5,h:1.2,d:1.5,mat:this.materials.crate},
-   {px:width/2+1,py:1.25,pz:-depth*.15,w:1.5,h:2.5,d:1.5,mat:this.materials.crate},
-   {px:width/2+.85,py:3.65,pz:-depth*.35,w:1.7,h:.35,d:2,mat:this.materials.woodWall},
-   {px:width*.25,py:height-.15,pz:-depth/2-.75,w:2.2,h:.35,d:1.5,mat:this.materials.darkWood}
-  ];
-
-  houseContainer.updateMatrixWorld(true);
-  const isRotated90=Math.abs(Math.sin(rotationY))>.7;
-  const worldW=isRotated90?depth:width;
-  const worldD=isRotated90?width:depth;
-  this.registerSolidBox(wallMesh,worldW,height,worldD);
-
-  const roofTopCollider=new THREE.Object3D();
-  roofTopCollider.position.set(0,height+.45,0);
-  houseContainer.add(roofTopCollider);
-  this.registerSolidBox(roofTopCollider,worldW*.85,.9,worldD*.85);
-
-  supports.forEach(s=>{
-   const sup=new THREE.Mesh(new THREE.BoxGeometry(s.w,s.h,s.d),s.mat);
-   sup.position.set(s.px,s.py,s.pz);
-   sup.castShadow=true; sup.receiveShadow=true; houseContainer.add(sup);
-   if(s.py>2.5){
-    const bracket=new THREE.Mesh(new THREE.BoxGeometry(s.w*.7,.2,.2),this.materials.darkWood);
-    bracket.position.set(s.px-.15,s.py-.35,s.pz);
-    bracket.rotation.z=.55; houseContainer.add(bracket);
-   }
-   this.registerSolidBox(sup,isRotated90?s.d:s.w,s.h,isRotated90?s.w:s.d);
-  });
-
-  return houseContainer;
- }
- convertExistingBlocksToHouses(blockMeshes=[]){
-  blockMeshes.forEach(oldMesh=>{
-   if(!oldMesh||!oldMesh.geometry)return;
-   oldMesh.geometry.computeBoundingBox();
-   const box=oldMesh.geometry.boundingBox;
-   const size=new THREE.Vector3(); box.getSize(size);
-   const width=Math.max(5,size.x*oldMesh.scale.x);
-   const height=Math.max(4.5,size.y*oldMesh.scale.y);
-   const depth=Math.max(5,size.z*oldMesh.scale.z);
-   this.buildHouseWithParkour({
-    x:oldMesh.position.x,z:oldMesh.position.z,width,height,depth,rotationY:oldMesh.rotation.y
-   });
-   if(oldMesh.parent)oldMesh.parent.remove(oldMesh);
-  });
- }
- resolvePlayerCollision(controller,playerRadius=.45,playerHeight=1.6){
-  let highestPlatformY=-Infinity;
-  const p=controller.mesh.position;
-  for(const b of this.solidBoxes){
-   const withinX=p.x+playerRadius>b.minX&&p.x-playerRadius<b.maxX;
-   const withinZ=p.z+playerRadius>b.minZ&&p.z-playerRadius<b.maxZ;
-   if(!withinX||!withinZ)continue;
-
-   const footY=p.y;
-   if(footY>=b.maxY-.35&&controller.velocity.y<=0){
-    if(b.maxY>highestPlatformY)highestPlatformY=b.maxY;
-    continue;
-   }
-
-   const headY=p.y+playerHeight;
-   if(headY>b.minY+.1&&footY<b.maxY-.35){
-    const overlapLeft=(p.x+playerRadius)-b.minX;
-    const overlapRight=b.maxX-(p.x-playerRadius);
-    const overlapFront=(p.z+playerRadius)-b.minZ;
-    const overlapBack=b.maxZ-(p.z-playerRadius);
-    const minOverlap=Math.min(overlapLeft,overlapRight,overlapFront,overlapBack);
-    if(minOverlap===overlapLeft)p.x=b.minX-playerRadius;
-    else if(minOverlap===overlapRight)p.x=b.maxX+playerRadius;
-    else if(minOverlap===overlapFront)p.z=b.minZ-playerRadius;
-    else if(minOverlap===overlapBack)p.z=b.maxZ+playerRadius;
-   }
-  }
-  if(highestPlatformY>-Infinity&&p.y<=highestPlatformY+.05){
-   p.y=highestPlatformY;
-   controller.velocity.y=0;
-   controller.isGrounded=true;
-   return true;
-  }
-  return false;
  }
 }
 
