@@ -410,11 +410,13 @@ class PlayerController {
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }
 
+  const terrainY=forestEnvironment.getTerrainHeight(this.mesh.position.x,this.mesh.position.z);
+
   this.velocity.y+=this.gravity*dt;
   this.mesh.position.y+=this.velocity.y*dt;
 
-  if(this.mesh.position.y<=0){
-   this.mesh.position.y=0;
+  if(this.mesh.position.y<=terrainY){
+   this.mesh.position.y=terrainY;
    this.velocity.y=0;
    this.isGrounded=true;
   }
@@ -434,6 +436,7 @@ const hitsEl=document.getElementById('hits');
 const playerStateEl=document.getElementById('playerState');
 const speedEl=document.getElementById('speed');
 const staminaBarEl=document.getElementById('staminaBar');
+const altitudeEl=document.getElementById('altitude');
 const hitmarkerEl=document.getElementById('hitmarker');
 
 function flashHitmarker(){
@@ -598,7 +601,8 @@ function loop(){
  if(playerStateEl)playerStateEl.textContent=stateLabel;
  if(speedEl)speedEl.textContent=controller.horizontalSpeed.toFixed(1)+' m/s';
  if(staminaBarEl)staminaBarEl.style.width=(controller.stamina/controller.maxStamina*100).toFixed(0)+'%';
- stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • AVATAR SIMPLES';
+ if(altitudeEl)altitudeEl.textContent=player.position.y.toFixed(1)+' m';
+ stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • Y '+player.position.y.toFixed(1)+' m';
  renderer.render(scene,camera);
 }
 loop();
