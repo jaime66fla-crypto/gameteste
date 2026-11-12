@@ -932,9 +932,88 @@ function updateCamera(dt){
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
 
+let gameStarted=false;
+const menuOverlay=document.getElementById('aventura-menu-overlay');
+const menuSettings={soundEnabled:true,sensitivity:1,shadows:true};
+const menuViews=['view-main','view-modes','view-multiplayer','view-settings'];
+function switchMenuView(id){
+ menuViews.forEach(v=>document.getElementById(v)?.classList.add('hidden-view'));
+ document.getElementById(id)?.classList.remove('hidden-view');
+}
+function hideGameMenu(){
+ menuOverlay?.classList.add('hidden-menu');
+ gameStarted=true;
+ forestAudio.init();
+}
+function showGameMenu(){
+ gameStarted=false;
+ switchMenuView('view-main');
+ menuOverlay?.classList.remove('hidden-menu');
+}
+
+const nickname='Arqueiro_'+Math.floor(100+Math.random()*900);
+const nameInput=document.getElementById('input-player-name');
+if(nameInput)nameInput.value=nickname;
+document.getElementById('btn-menu-play')?.addEventListener('click',()=>switchMenuView('view-modes'));
+document.getElementById('btn-menu-settings')?.addEventListener('click',()=>switchMenuView('view-settings'));
+document.getElementById('btn-menu-exit')?.addEventListener('click',()=>{ try{window.close()}catch(_){} });
+document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMenuView('view-main'));
+document.getElementById('btn-mode-solo')?.addEventListener('click',hideGameMenu);
+document.getElementById('btn-mode-multi')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
+document.getElementById('btn-multi-back')?.addEventListener('click',()=>switchMenuView('view-modes'));
+document.getElementById('btn-create-room')?.addEventListener('click',()=>{
+ const code='FLR-'+Math.floor(100+Math.random()*899);
+ const s=document.getElementById('multi-status-msg');
+ if(s)s.textContent='Sala '+code+' criada. Multiplayer ainda em preparação.';
+});
+document.getElementById('btn-join-room')?.addEventListener('click',()=>{
+ const code=(document.getElementById('input-room-code')?.value||'').trim().toUpperCase();
+ const s=document.getElementById('multi-status-msg');
+ if(s)s.textContent=code?'Sala '+code+' selecionada. Multiplayer ainda em preparação.':'Digite um código de sala.';
+});
+document.getElementById('btn-toggle-audio')?.addEventListener('click',e=>{
+ menuSettings.soundEnabled=!menuSettings.soundEnabled;
+ forestAudio.setEnabled(menuSettings.soundEnabled);
+ e.currentTarget.textContent='SOM: '+(menuSettings.soundEnabled?'ATIVADO':'DESATIVADO');
+});
+document.getElementById('range-sens')?.addEventListener('input',e=>{
+ menuSettings.sensitivity=parseFloat(e.target.value);
+ document.getElementById('lbl-sens').textContent=menuSettings.sensitivity.toFixed(1);
+ thirdPersonCamera.sensitivity=.005*menuSettings.sensitivity;
+});
+document.getElementById('btn-toggle-shadows')?.addEventListener('click',e=>{
+ menuSettings.shadows=!menuSettings.shadows;
+ renderer.shadowMap.enabled=menuSettings.shadows;
+ e.currentTarget.textContent='SOMBRAS: '+(menuSettings.shadows?'ATIVADAS':'DESATIVADAS');
+});
+document.getElementById('btn-settings-back')?.addEventListener('click',()=>switchMenuView('view-main'));
+addEventListener('keydown',e=>{if(e.code==='KeyM')showGameMenu()});
+
+(function initMenuParticles(){
+ const c=document.getElementById('menu-particles-canvas'); if(!c)return;
+ const ctx=c.getContext('2d'); let w,h;
+ const particles=[];
+ function resizeP(){w=c.width=innerWidth;h=c.height=innerHeight}
+ resizeP(); addEventListener('resize',resizeP);
+ for(let i=0;i<45;i++)particles.push({x:Math.random()*innerWidth,y:Math.random()*innerHeight,r:Math.random()*2.2+.8,vx:(Math.random()-.5)*.35,vy:-Math.random()*.4-.1,a:Math.random()*.8+.2,p:Math.random()*Math.PI*2});
+ function draw(){
+  requestAnimationFrame(draw);
+  if(menuOverlay?.classList.contains('hidden-menu'))return;
+  ctx.clearRect(0,0,w,h);
+  for(const p of particles){
+   p.x+=p.vx;p.y+=p.vy;p.p+=.03;
+   if(p.y<-10)p.y=h+10;if(p.x<-10)p.x=w+10;if(p.x>w+10)p.x=-10;
+   const a=p.a*(.6+.4*Math.sin(p.p));
+   ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle='rgba(255,223,150,'+a+')';ctx.shadowBlur=10;ctx.shadowColor='#ffd27d';ctx.fill();
+  }
+ }
+ draw();
+})();
+
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
+ if(!gameStarted){ renderer.render(scene,camera); return; }
  controller.update(dt);
  mainAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
  bowWeapon.update(dt,controller.horizontalSpeed>0.01);
