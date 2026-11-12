@@ -13,3 +13,12 @@ for(let i=0;i<120;i++)a.update(1/60,{speed:0,grounded:true,armed:false});assert(
 a.group.updateMatrixWorld(true);a.group.traverse(o=>assert(o.matrixWorld.elements.every(Number.isFinite)));
 const bounds=new THREE.Box3().setFromObject(a.group);assert(bounds.max.y-bounds.min.y>1.65&&bounds.max.y-bounds.min.y<1.95);assert(bounds.min.y>-.04);
 console.log('Operator: mount, run, armed blending, jump, idle, finite transforms and height pass');
+const standingTop=new THREE.Box3().setFromObject(a.group).max.y;
+for(let i=0;i<90;i++)a.update(1/60,{speed:0,grounded:true,armed:true,crouching:true});
+assert(a.crouchBlend>.99,'Crouch must settle smoothly');a.group.updateMatrixWorld(true);
+const crouchedBounds=new THREE.Box3().setFromObject(a.group);
+assert(crouchedBounds.max.y<standingTop-.25,'Crouching must lower the real silhouette');assert(crouchedBounds.min.y>-.04,'Feet must remain above the ground');assert(a.aimBlend>.99,'Aiming must remain available while crouched');
+for(let i=0;i<90;i++)a.update(1/60,{speed:1.8,grounded:true,crouching:true});
+assert(a.legs.every(l=>l.knee.rotation.x>1.4),'Crouch walking must keep knees bent');
+for(let i=0;i<90;i++)a.update(1/60,{speed:0,grounded:true,crouching:false});assert(a.crouchBlend<.001,'Release must restore standing');
+console.log('Crouch: silhouette, feet, aiming, crouch walking and release pass');

@@ -40,6 +40,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 .menu-label{font-size:.72rem;letter-spacing:.12em;text-transform:uppercase;color:#ead3a8;margin-bottom:.25rem;display:block}
 .hidden-view{display:none!important}
 .menu-version{position:absolute;bottom:18px;right:24px;z-index:10;font-size:.85rem;color:rgba(234,211,168,.55)}
+#crouchBtn{display:none;position:fixed;right:22px;bottom:95px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323cc;color:#fff;font-weight:700;touch-action:manipulation}#crouchBtn[aria-pressed="true"]{background:#667a45}
+@media(pointer:coarse){#crouchBtn{display:block}}
 </style>
 </head>
 <body>
@@ -86,8 +88,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
     <span>ALTITUDE <strong id="altitude">0.0 m</strong></span>
   </div>
   <div class="stamina-wrap"><span>STAMINA</span><div class="stamina-track"><div id="staminaBar"></div></div></div>
-  <small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1 equipar pistola • R recarregar</small>
+  <small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1 equipar pistola • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás</small>
 </div>
+<button id="crouchBtn" aria-pressed="false" aria-label="Alternar agachamento">AGACHAR</button>
 <div id="state">carregando...</div>
 <div class="aim-dot" aria-hidden="true"></div>
 <div id="hitmarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
@@ -95,7 +98,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="/operator-avatar.js?v=1"></script>
-<script src="/full3d.js?v=6"></script>
+<script src="/operator-avatar.js?v=2"></script>
+<script src="/full3d.js?v=7"></script>
 </body>
 </html>

@@ -1398,22 +1398,43 @@ class PlayerController {
   this.camera=camera;
   this.walkSpeed=6.0;
   this.sprintSpeed=11.0;
+  this.crouchSpeed=2.1;
+  this.standingHeight=1.8;this.crouchingHeight=1.45;
+  this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
+  this.crouchInputs=new Set();
   this.jumpForce=8.5;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
   this.isGrounded=true;
   this.horizontalSpeed=0;
-  this.keys={forward:false,backward:false,left:false,right:false,sprint:false};
+  this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false};
   this.stamina=100;
   this.maxStamina=100;
   this._initListeners();
  }
  _initListeners(){
-  addEventListener('keydown',e=>this._onKeyChange(e.code,true));
+  addEventListener('keydown',e=>{
+   if(e.code==='KeyC'&&e.repeat)return;
+   if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
+   this._onKeyChange(e.code,true);
+  });
   addEventListener('keyup',e=>this._onKeyChange(e.code,false));
+  addEventListener('blur',()=>this.clearInput());
+  const button=document.getElementById('crouchBtn');
+  button?.addEventListener('click',()=>{this.keys.crouch=!this.keys.crouch;});
+ }
+ clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();}
+ canStand(){
+  const p=this.mesh.position,r=.45;
+  return !houseParkour.solidBoxes.some(b=>p.x+r>b.minX&&p.x-r<b.maxX&&p.z+r>b.minZ&&p.z-r<b.maxZ&&b.maxY>p.y+this.crouchingHeight&&b.minY<p.y+this.standingHeight);
  }
  _onKeyChange(code,isPressed){
+  if(code==='ControlLeft'||code==='ControlRight'){
+   if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
+   return;
+  }
+  if(code==='KeyC'){if(isPressed)this.keys.crouch=!this.keys.crouch;return;}
   switch(code){
    case 'KeyW': case 'ArrowUp': this.keys.forward=isPressed; break;
    case 'KeyS': case 'ArrowDown': this.keys.backward=isPressed; break;
@@ -1421,7 +1442,7 @@ class PlayerController {
    case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
    case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
    case 'Space':
-    if(isPressed&&this.isGrounded){
+    if(isPressed&&this.isGrounded&&!this.isCrouching){
      this.velocity.y=this.jumpForce;
      this.isGrounded=false;
     }
@@ -1429,6 +1450,13 @@ class PlayerController {
   }
  }
  update(dt){
+  const requestedCrouch=this.keys.crouch||this.crouchInputs.size>0;
+  this.isCrouching=this.isGrounded&&(requestedCrouch||(this.isCrouching&&!this.canStand()));
+  this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,this.isCrouching?1:0,1-Math.exp(-12*dt));
+  this.collisionHeight=THREE.MathUtils.lerp(this.standingHeight,this.crouchingHeight,this.crouchBlend);
+  const crouchButton=document.getElementById('crouchBtn');
+  crouchButton?.setAttribute('aria-pressed',String(this.isCrouching));
+  if(crouchButton)crouchButton.textContent=this.isCrouching?'LEVANTAR':'AGACHAR';
   const inputDir=new THREE.Vector3();
   if(this.keys.forward)inputDir.z-=1;
   if(this.keys.backward)inputDir.z+=1;
@@ -1449,8 +1477,8 @@ class PlayerController {
    const moveAngle=Math.atan2(inputDir.x,inputDir.z)+cameraAngle+Math.PI;
    const moveDir=new THREE.Vector3(Math.sin(moveAngle),0,Math.cos(moveAngle));
 
-   const canSprint=this.keys.sprint&&this.stamina>0;
-   const currentSpeed=canSprint?this.sprintSpeed:this.walkSpeed;
+   const canSprint=this.keys.sprint&&this.stamina>0&&!this.isCrouching;
+   const currentSpeed=this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
    this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
@@ -1473,9 +1501,9 @@ class PlayerController {
    this.isGrounded=true;
   }
 
-  houseParkour.resolvePlayerCollision(this);
+  houseParkour.resolvePlayerCollision(this,.45,this.collisionHeight);
 
-  const actionKind=!this.isGrounded?'jump':moving?((this.keys.sprint&&this.stamina>0)?'run':'walk'):'idle';
+  const actionKind=!this.isGrounded?'jump':this.isCrouching?'idle':moving?((this.keys.sprint&&this.stamina>0)?'run':'walk'):'idle';
   setAction(actionKind);
   if(mixer)mixer.update(dt);
   return actionKind;
@@ -1571,11 +1599,11 @@ class GTACameraController {
     this.modeIndex=(this.modeIndex+1)%this.distances.length;
     this.targetDistance=this.distances[this.modeIndex];
    }
-   if(e.code==='KeyC')this.isLookingBack=true;
+   if(e.code==='KeyB')this.isLookingBack=true;
   });
 
   document.addEventListener('keyup',e=>{
-   if(e.code==='KeyC')this.isLookingBack=false;
+   if(e.code==='KeyB')this.isLookingBack=false;
   });
 
   window.addEventListener('wheel',e=>{
@@ -1629,6 +1657,7 @@ class GTACameraController {
    blend
   );
 
+  this.offset.y=1.5-controller.crouchBlend*.35;
   const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
   const focusPoint=this.target.position.clone().add(this.offset);
 
@@ -1878,7 +1907,7 @@ function loop(){
  controller.update(dt);
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,recoil:pistolWeapon.recoil*.55});
+  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
@@ -1910,7 +1939,7 @@ function loop(){
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
- const stateLabel=!controller.isGrounded?'Pulando':moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const stateLabel=!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
  if(scoreEl)scoreEl.textContent=String(score);
  if(hitsEl)hitsEl.textContent=hitCount+' / '+shots;
  if(playerStateEl)playerStateEl.textContent=stateLabel;

@@ -46,16 +46,21 @@ box(gun,.008,.008,.012,trim,0,.064,.103);box(gun,.035,.008,.014,trim,0,.064,-.03
 const flash=mesh(gun,new THREE.ConeGeometry(.045,.16,7),new THREE.MeshBasicMaterial({color:0xffe5a2}),0,.035,.2);flash.rotation.x=Math.PI/2;flash.visible=false;
 
 Object.assign(this,{group:root,pelvis,torso,head,legs,arms,gun,flash,leftArm:arms[0].shoulder,rightArm:arms[1].shoulder,leftHand:arms[0].hand,rightHand:arms[1].hand,leftLeg:legs[0].hip,rightLeg:legs[1].hip});
-this.phase=0;this.time=0;this.speed=0;this.aimBlend=0;this.gun.visible=false;
+this.phase=0;this.time=0;this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.gun.visible=false;
 }
-update(dt,{speed=0,grounded=true,armed=false,recoil=0}={}){
+update(dt,{speed=0,grounded=true,armed=false,recoil=0,crouching=false}={}){
 const {pelvis,torso,head,legs,arms,gun}=this;
+this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,crouching&&grounded?1:0,1-Math.exp(-12*dt));
+const crouch=this.crouchBlend;
 this.time+=dt;this.speed=THREE.MathUtils.lerp(this.speed,speed,1-Math.exp(-dt*9));this.aimBlend=THREE.MathUtils.lerp(this.aimBlend,armed?1:0,1-Math.exp(-dt*12));
-this.phase+=dt*(this.speed>2.4?10.5:6.5);const phase=this.phase,weight=Math.min(1,this.speed/1.5),running=THREE.MathUtils.smoothstep(this.speed,2,3.8),cycle=Math.sin(phase),aimBlend=this.aimBlend;
+this.phase+=dt*(this.speed>2.4?10.5:6.5)*(1-crouch*.35);const phase=this.phase,weight=Math.min(1,this.speed/1.5),running=THREE.MathUtils.smoothstep(this.speed,2,3.8),cycle=Math.sin(phase),aimBlend=this.aimBlend;
 pelvis.position.y=.91+(grounded?Math.cos(phase*2)*.013*weight:0);pelvis.rotation.y=cycle*.055*weight;pelvis.rotation.z=cycle*.023*weight;
-torso.rotation.x=.055+running*.11+Math.sin(this.time*1.6)*.007-aimBlend*.025;torso.rotation.y=-cycle*.065*weight*(1-aimBlend*.65);head.rotation.y=-torso.rotation.y*.65;
-legs.forEach(({hip,knee,ankle,s})=>{const p=phase+(s<0?Math.PI:0);hip.rotation.x=!grounded?-.34:Math.sin(p)*(.48+running*.28)*weight;hip.rotation.z=s*.025;knee.rotation.x=!grounded?.85:Math.max(0,-Math.cos(p))*(.65+running*.65)*weight+.055;ankle.rotation.x=-knee.rotation.x*.32;});
-arms.forEach(({shoulder,elbow,hand,s})=>{const swing=Math.sin(phase+(s<0?0:Math.PI))*.43*weight,right=s>0;shoulder.rotation.x=THREE.MathUtils.lerp(swing,-1.25+(right?0:.17),aimBlend);shoulder.rotation.z=THREE.MathUtils.lerp(s*-.055,right?.20:-.53,aimBlend);shoulder.rotation.y=THREE.MathUtils.lerp(0,right?-.18:.31,aimBlend);elbow.rotation.x=THREE.MathUtils.lerp(-.14-running*.6,right?-.32:-1.02,aimBlend);hand.rotation.x=THREE.MathUtils.lerp(0,-.12,aimBlend);});
+torso.rotation.x=.055+running*.11+crouch*.18+Math.sin(this.time*1.6)*.007-aimBlend*.025;torso.rotation.y=-cycle*.065*weight*(1-aimBlend*.65);head.rotation.y=-torso.rotation.y*.65;
+legs.forEach(({hip,knee,ankle,s})=>{const p=phase+(s<0?Math.PI:0);hip.rotation.x=!grounded?-.34:Math.sin(p)*(.48+running*.28)*weight;hip.rotation.z=s*.025;knee.rotation.x=!grounded?.85:Math.max(0,-Math.cos(p))*(.65+running*.65)*weight+.055;hip.rotation.x=THREE.MathUtils.lerp(hip.rotation.x,-1.1+Math.sin(p)*.14*weight,crouch);knee.rotation.x=THREE.MathUtils.lerp(knee.rotation.x,1.95-Math.sin(p)*.12*weight,crouch);ankle.rotation.x=THREE.MathUtils.lerp(-knee.rotation.x*.32,-hip.rotation.x-knee.rotation.x,crouch);});
+// Keep the lowest supporting foot planted while bending the articulated legs.
+if(grounded&&crouch>.001){const support=.06+Math.max(...legs.map(l=>.39*Math.cos(l.hip.rotation.x)+.36*Math.cos(l.hip.rotation.x+l.knee.rotation.x)))+.116;pelvis.position.y=support;}
+
+arms.forEach(({shoulder,elbow,hand,s})=>{const swing=Math.sin(phase+(s<0?0:Math.PI))*.43*weight,right=s>0;shoulder.rotation.x=THREE.MathUtils.lerp(swing,-1.25+(right?0:.17)-crouch*.18,aimBlend);shoulder.rotation.z=THREE.MathUtils.lerp(s*-.055,right?.20:-.53,aimBlend);shoulder.rotation.y=THREE.MathUtils.lerp(0,right?-.18:.31,aimBlend);elbow.rotation.x=THREE.MathUtils.lerp(-.14-running*.6,right?-.32:-1.02,aimBlend);hand.rotation.x=THREE.MathUtils.lerp(0,-.12,aimBlend);});
 gun.rotation.x=Math.PI/2-recoil;
 }
 };
