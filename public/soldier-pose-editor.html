@@ -164,7 +164,7 @@ function buildWeapon(){
  const stop=new THREE.Mesh(new THREE.BoxGeometry(.012,.04,.09),detailMat);
  stop.position.set(.106,-.005,-.03);g.add(stop);
 
- g.scale.setScalar(1.18);
+ g.scale.setScalar(1.75);
  g.traverse(o=>{if(o.isMesh)o.castShadow=true});
  return g;
 }
@@ -223,7 +223,7 @@ function apply(){
    base.spine.z+THREE.MathUtils.degToRad(state.spineZ)
   );
  }
- if(weapon){
+ if(weapon&&!rightHand){
   weapon.position.set(state.gunX,state.gunY,state.gunZ);
   weapon.rotation.set(
    THREE.MathUtils.degToRad(state.gunRX),
@@ -286,23 +286,40 @@ new GLTFLoader().load(soldierUrl,gltf=>{
  }
  weapon=buildWeapon();
  weapon.visible=true;
+ scene.add(weapon);
  if(rightHand){
-  rightHand.add(weapon);
-  // Local grip tuned so the Glock starts visible in the Soldier's right hand.
-  state.gunX=.02; state.gunY=-.03; state.gunZ=-.16;
-  state.gunRX=-90; state.gunRY=1; state.gunRZ=180;
-  status.textContent='SOLDIER GLB READY • RightHand encontrada';
+  // Follow the real hand in world space instead of parenting to the bone.
+  state.gunX=.03; state.gunY=-.015; state.gunZ=-.12;
+  state.gunRX=-90; state.gunRY=0; state.gunRZ=180;
+  status.textContent='SOLDIER GLB READY • Glock seguindo RightHand';
  }else{
-  // Fallback: keep the Glock visible on the avatar root if bone mapping fails.
-  model.add(weapon);
   state.gunX=.32; state.gunY=1.28; state.gunZ=-.48;
   state.gunRX=-5; state.gunRY=0; state.gunRZ=0;
-  status.textContent='SOLDIER GLB READY • Glock em fallback (RightHand não encontrada)';
+  status.textContent='SOLDIER GLB READY • Glock em fallback';
  }
  syncControls();
  apply();
 },undefined,err=>{status.textContent='Erro ao carregar Soldier.glb';console.error(err)});
 
+function updateWeaponFollower(){
+ if(!weapon||!rightHand)return;
+ model.updateMatrixWorld(true);
+ const handPos=new THREE.Vector3();
+ const handQuat=new THREE.Quaternion();
+ rightHand.getWorldPosition(handPos);
+ rightHand.getWorldQuaternion(handQuat);
+
+ const localOffset=new THREE.Vector3(state.gunX,state.gunY,state.gunZ).applyQuaternion(handQuat);
+ weapon.position.copy(handPos).add(localOffset);
+
+ const localRot=new THREE.Quaternion().setFromEuler(new THREE.Euler(
+  THREE.MathUtils.degToRad(state.gunRX),
+  THREE.MathUtils.degToRad(state.gunRY),
+  THREE.MathUtils.degToRad(state.gunRZ),
+  'XYZ'
+ ));
+ weapon.quaternion.copy(handQuat).multiply(localRot);
+}
 function setView(y,p,d=5.2){yaw=y;pitch=p;dist=d}
 document.getElementById('front').onclick=()=>setView(Math.PI,.1);
 document.getElementById('side').onclick=()=>setView(Math.PI/2,.1);
@@ -323,6 +340,7 @@ function animate(){
  requestAnimationFrame(animate);
  const dt=Math.min(clock.getDelta(),.033);
  if(mixer&&!idle?.paused)mixer.update(dt);
+ updateWeaponFollower();
  const target=new THREE.Vector3(0,1.05,0);
  camera.position.set(Math.sin(yaw)*Math.cos(pitch)*dist,target.y+Math.sin(pitch)*dist,Math.cos(yaw)*Math.cos(pitch)*dist);
  camera.lookAt(target);
