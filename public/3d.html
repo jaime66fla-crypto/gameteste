@@ -11,8 +11,8 @@
 #view{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
 .crosshair{position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);z-index:7;pointer-events:none;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #000a,0 0 8px #0008}
 .hud{position:absolute;z-index:4;pointer-events:none}
-.top{left:14px;top:14px;background:#071019d9;border:1px solid #38505e;border-radius:10px;padding:12px 14px;min-width:220px}
-.top small{color:#64ff9b;font-weight:900;letter-spacing:.12em}.top h1{font-size:20px;margin:5px 0}.top p{margin:3px 0;color:#b7c4cc;font-size:12px}
+.top{left:14px;top:14px;background:#071019a8;border:1px solid #38505e66;border-radius:8px;padding:7px 9px;min-width:0}
+.top small,.top h1,.badge{display:none}.top p{margin:1px 0;color:#b7c4cc;font-size:10px}.minimalTop #status{display:none}
 .badge{display:inline-block;margin-top:6px;border:1px solid #3b5260;padding:4px 7px;border-radius:6px;font-size:10px;color:#d8e5eb}
 .bottom{left:50%;bottom:14px;transform:translateX(-50%);background:#071019d9;border:1px solid #38505e;border-radius:9px;padding:8px 12px;font-size:11px;white-space:nowrap}
 .right{right:14px;top:14px;display:flex;gap:8px;pointer-events:auto}
@@ -20,7 +20,7 @@ button,a{appearance:none;border:1px solid #38505e;background:#0d1821;color:#eef5
 button:hover,a:hover{border-color:#65ff9b}
 .mode{right:14px;bottom:14px;background:#071019d9;border:1px solid #38505e;border-radius:10px;padding:10px 12px;max-width:270px}
 .mode b{color:#65ff9b}.mode p{font-size:11px;line-height:1.35;color:#b8c5cd;margin:5px 0 0}
-.combatHud{left:14px;bottom:14px;width:290px;background:#071019e8;border:1px solid #38505e;border-radius:12px;padding:10px 12px}
+.combatHud{left:14px;bottom:14px;width:220px;background:#071019b8;border:1px solid #38505e88;border-radius:10px;padding:8px 10px}
 .hudRow{display:flex;justify-content:space-between;gap:12px;align-items:center;font-size:11px;margin:4px 0}.hudRow strong{font-size:12px}.bar{height:8px;background:#18242c;border:1px solid #31434f;border-radius:99px;overflow:hidden;margin:5px 0 8px}.bar>i{display:block;height:100%;width:100%;background:#65ff9b;transition:width .12s linear}
 .weaponLine{font-weight:900;letter-spacing:.05em}.ammo{font-size:18px;font-weight:900}
 .bossHud{left:50%;top:14px;transform:translateX(-50%);width:min(520px,46vw);background:#15090be8;border:1px solid #7a3138;border-radius:12px;padding:9px 12px;text-align:center}
@@ -33,7 +33,7 @@ button:hover,a:hover{border-color:#65ff9b}
 .mobileAction{position:absolute;right:166px;bottom:44px;width:62px;height:62px;border-radius:50%;border:2px solid #65ff9baa;background:#0d1821dd;color:#fff;font-weight:900;pointer-events:auto;touch-action:none}
 .rotateNotice{display:none;position:absolute;inset:0;z-index:20;background:#05090de8;align-items:center;justify-content:center;text-align:center;padding:30px;font-weight:900;letter-spacing:.05em}
 @media(pointer:coarse),(max-width:900px){
- .mobileControls{display:block}.bottom,.mode{display:none}.combatHud{width:220px;bottom:auto;top:96px;padding:8px 10px}.top{min-width:170px;max-width:42vw}.right{top:auto;bottom:160px}.bossHud{width:54vw}
+ .mobileControls{display:block}.combatHud{width:180px;bottom:auto;top:14px;padding:7px 8px}.top{display:none}.right{top:auto;bottom:160px}.bossHud{width:54vw}
 }
 @media(max-width:700px){.top{transform:scale(.84);transform-origin:top left}.right{display:none}.combatHud{transform:scale(.86);transform-origin:top left}}
 @media(max-width:700px) and (orientation:portrait){.rotateNotice{display:flex}.mobileControls{display:none}}
@@ -53,8 +53,8 @@ button:hover,a:hover{border-color:#65ff9b}
 <canvas id="view"></canvas>
 <div id="crosshair" class="crosshair" aria-hidden="true"></div>
 <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
-<div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">MIRA CENTRAL • BOTÃO DIREITO GIRA</span><p id="onlineStatus">Solo • sem bots</p><p id="onlineRoster"></p></div>
-<div class="hud right"><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
+<div class="hud top minimalTop"><p id="status">Carregando…</p><p id="onlineStatus">Solo</p><p id="onlineRoster"></p></div>
+<div class="hud right"><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button></div>
 <section id="onlinePanel" class="onlinePanel" hidden>
  <form id="onlineForm">
   <h2>Multiplayer</h2><p>Entre com o mesmo código para jogar na mesma sala.</p>
@@ -80,10 +80,9 @@ button:hover,a:hover{border-color:#65ff9b}
   <button class="mobileAction" id="actionBtn">E</button>
 </div>
 <div class="rotateNotice">GIRE O CELULAR PARA JOGAR EM PAISAGEM</div>
-<div class="hud bottom">WASD mover • SHIFT correr • segure o clique para atirar • ESC solta o mouse • 1-4 arma • E interagir</div>
-<div class="hud mode"><b>Mira em terceira pessoa</b><p>Mire pelo ponto central. Trave o mouse ou segure o botão direito para girar. No celular, puxe o analógico direito para mirar e atirar.</p></div>
+
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"}}</script>
-<script type="module" src="/3d.js?v=30"></script>
+<script type="module" src="/3d.js?v=31"></script>
 </body>
 </html>
