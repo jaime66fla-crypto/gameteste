@@ -969,6 +969,15 @@ class PistolController {
 
   this.recoil=0;
   this.recoilVelocity=0;
+  // Recoil preset validated in the Soldier test app.
+  this.recoilPreset=Object.freeze({
+   weaponKick:1.15,
+   bodyKick:.28,
+   aimKickDeg:1.60,
+   cameraShake:.46,
+   recovery:16,
+   cadenceRpm:340
+  });
   this.spread=.0025;
   this.weaponSpec=window.WeaponLootSystem.DEFINITIONS.pistol;
   this.triggerHeld=false;
@@ -1154,6 +1163,8 @@ class PistolController {
    lerpRot(this.rightArmBone,this.shootingPoseBase.rightArm,pose.rightArmDeg);
    lerpRot(this.leftArmBone,this.shootingPoseBase.leftArm,pose.leftArmDeg);
    lerpRot(this.spineBone,this.shootingPoseBase.spine,pose.spineDeg);
+   // The torso absorbs a smaller part of the shot than the hands/weapon.
+   if(this.spineBone)this.spineBone.rotation.x-=this.recoil*this.recoilPreset.bodyKick;
   }
 
   // Glock pose from the editor, with recoil layered on top.
@@ -1161,13 +1172,13 @@ class PistolController {
   this.pistol.position.y=THREE.MathUtils.lerp(this.pistol.position.y,pose.gunPosition[1],blend);
   this.pistol.position.z=THREE.MathUtils.lerp(
    this.pistol.position.z,
-   pose.gunPosition[2]+this.recoil*.025,
+   pose.gunPosition[2]+this.recoil*.025*this.recoilPreset.weaponKick,
    blend
   );
 
   this.pistol.rotation.x=THREE.MathUtils.lerp(
    this.pistol.rotation.x,
-   THREE.MathUtils.degToRad(pose.gunRotationDeg[0])-this.recoil*.14,
+   THREE.MathUtils.degToRad(pose.gunRotationDeg[0])-this.recoil*.14*this.recoilPreset.weaponKick,
    blend
   );
   this.pistol.rotation.y=THREE.MathUtils.lerp(
@@ -1289,7 +1300,15 @@ class PistolController {
    }
   }
   const flash=new THREE.PointLight(0xffd27a,1.5,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
-  this.recoilVelocity+=spec.id==='shotgun'?1.8:spec.id==='smg'?.65:1;shots++;
+  const weaponScale=spec.id==='shotgun'?1.45:spec.id==='smg'?.68:spec.id==='rifle'?1.08:1;
+  this.recoil=Math.min(2.4,this.recoil+this.recoilPreset.weaponKick*weaponScale);
+  this.recoilVelocity=0;
+  if(typeof thirdPersonCamera!=='undefined')thirdPersonCamera.addShotRecoil(
+   this.recoilPreset.aimKickDeg*weaponScale,
+   this.recoilPreset.cameraShake*weaponScale,
+   this.recoilPreset.recovery
+  );
+  shots++;
   if(damageByTarget.size){hitCount++;score+=12;flashHitmarker();forestAudio.playHit();for(const [target,damage]of damageByTarget)target.takeDamage(damage);}
   this.loot?.saveActive();
  }
@@ -1306,10 +1325,9 @@ class PistolController {
 
   if(this.triggerHeld&&this.weaponSpec.auto&&!this.isReloading&&this.isEquipped)this.fire();
 
-  // Critically damped-ish recoil.
-  this.recoilVelocity-=this.recoilVelocity*Math.min(1,10*dt);
-  this.recoil+=this.recoilVelocity*dt;
-  this.recoil-=this.recoil*Math.min(1,14*dt);
+  // Fast kick, controlled spring-like recovery. The shot impulse is applied instantly in fire().
+  this.recoil*=Math.exp(-this.recoilPreset.recovery*dt);
+  if(this.recoil<.001)this.recoil=0;
 
   if(!this.isEquipped)return;
 
@@ -1567,6 +1585,10 @@ class GTACameraController {
   this.isMouseDown=false;
   this.previousMouseX=0;
   this.previousMouseY=0;
+  this.recoilPitch=0;
+  this.recoilShake=0;
+  this.recoilRecovery=16;
+  this.recoilTime=0;
 
   this.raycaster=new THREE.Raycaster();
   this.collisionMargin=.3;
@@ -1628,6 +1650,13 @@ class GTACameraController {
   },{passive:true});
  }
 
+ addShotRecoil(aimKickDeg=1.6,shake=.46,recovery=16){
+  this.recoilPitch=Math.min(THREE.MathUtils.degToRad(7),this.recoilPitch+THREE.MathUtils.degToRad(aimKickDeg));
+  this.recoilShake=Math.min(1.4,this.recoilShake+shake);
+  this.recoilRecovery=Math.max(1,recovery);
+  this.recoilTime=.11;
+ }
+
  _cameraCollision(focusPoint,desiredPosition){
   const rayDirection=desiredPosition.clone().sub(focusPoint);
   const maxDistance=rayDirection.length();
@@ -1673,6 +1702,11 @@ class GTACameraController {
    blend
   );
 
+  this.recoilPitch*=Math.exp(-this.recoilRecovery*delta);
+  this.recoilShake*=Math.exp(-this.recoilRecovery*1.25*delta);
+  this.recoilTime=Math.max(0,this.recoilTime-delta);
+  const effectivePitch=THREE.MathUtils.clamp(this.pitch-this.recoilPitch,this.minPitch,this.maxPitch);
+
   this.offset.y=1.5-controller.crouchBlend*.35;
   const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
   const bodyFocus=this.target.position.clone().add(this.offset);
@@ -1682,9 +1716,9 @@ class GTACameraController {
    this.camera.position.copy(focusPoint);
 
    const lookDir=new THREE.Vector3(
-    -Math.sin(activeYaw)*Math.cos(this.pitch),
-    -Math.sin(this.pitch),
-    -Math.cos(activeYaw)*Math.cos(this.pitch)
+    -Math.sin(activeYaw)*Math.cos(effectivePitch),
+    -Math.sin(effectivePitch),
+    -Math.cos(activeYaw)*Math.cos(effectivePitch)
    ).normalize();
 
    this.camera.lookAt(focusPoint.clone().add(lookDir));
@@ -1707,9 +1741,9 @@ class GTACameraController {
   this.currentShoulderOffset=THREE.MathUtils.lerp(this.currentShoulderOffset,this.shoulderOffset*controller.cover.shoulderSign(activeYaw),blend);
   focusPoint.addScaledVector(screenRight,this.currentShoulderOffset);
 
-  const offsetX=Math.sin(activeYaw)*Math.cos(this.pitch)*this.currentDistance;
-  const offsetY=Math.sin(this.pitch)*this.currentDistance;
-  const offsetZ=Math.cos(activeYaw)*Math.cos(this.pitch)*this.currentDistance;
+  const offsetX=Math.sin(activeYaw)*Math.cos(effectivePitch)*this.currentDistance;
+  const offsetY=Math.sin(effectivePitch)*this.currentDistance;
+  const offsetZ=Math.cos(activeYaw)*Math.cos(effectivePitch)*this.currentDistance;
 
   let desiredPosition=new THREE.Vector3(
    focusPoint.x+offsetX,
@@ -1724,6 +1758,11 @@ class GTACameraController {
    if(desiredPosition.y<minY)desiredPosition.y=minY;
   }
 
+  if(this.recoilShake>.001&&this.recoilTime>0){
+   const shakeAmount=this.recoilShake*.018;
+   desiredPosition.x+=(Math.random()-.5)*shakeAmount;
+   desiredPosition.y+=(Math.random()-.5)*shakeAmount;
+  }
   this.camera.position.copy(desiredPosition);
   this.camera.lookAt(focusPoint);
 
