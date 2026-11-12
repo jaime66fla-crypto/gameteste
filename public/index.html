@@ -68,6 +68,11 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #sniperScope .scope-marks{position:absolute;left:50%;top:50%;width:180px;height:180px;transform:translate(-50%,-50%);background:repeating-linear-gradient(to bottom,transparent 0 15px,rgba(15,15,15,.9) 15px 17px,transparent 17px 30px);clip-path:polygon(48% 50%,52% 50%,52% 100%,48% 100%)}
 body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #state{opacity:.22}
 
+#view-multiplayer{box-sizing:border-box;width:min(390px,calc(100vw - 32px));border-radius:16px;padding:24px;gap:15px;background:linear-gradient(145deg,#182237f5,#0c1322f5);border-color:#d4af6e55}
+.multi-heading span{font-size:10px;letter-spacing:.2em;color:#e1c795}.multi-heading h2{font-size:23px;line-height:1.2;font-weight:550;margin:10px 0}.multi-heading p{font-size:12px;line-height:1.6;color:#a5b3c8;margin:0 0 5px}
+#view-multiplayer .menu-btn{font-size:12px;font-weight:650;border-radius:7px;padding:14px 12px;letter-spacing:.1em}#btn-create-room{background:#e1c795;color:#192032}#view-multiplayer .menu-input{border-radius:7px;min-height:44px;border-color:#566277;background:#0a1220}#input-room-code{text-transform:uppercase;letter-spacing:.15em}#view-multiplayer .menu-input:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.menu-btn:disabled{opacity:.5;cursor:wait;transform:none}
+#multi-status-msg{line-height:1.5}#room-hud{position:fixed;top:64px;right:16px;z-index:14;max-width:290px;background:#0b1118ec;border:1px solid #6d968766;border-radius:9px;padding:10px;color:#bfe6d9;font:11px/1.5 system-ui}#room-hud[hidden]{display:none}#btn-leave-room{display:block;margin-top:7px;background:#233b3c;color:white;border:1px solid #ffffff30;border-radius:5px;padding:5px 10px;cursor:pointer}
+@media(max-height:700px){.menu-title{font-size:2.8rem;margin-bottom:1rem}.menu-content{padding:10px}#view-multiplayer{padding:18px;gap:11px}.multi-heading h2{font-size:20px}}
 </style>
 </head>
 <body>
@@ -88,11 +93,12 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
       <button id="btn-modes-back" class="menu-btn menu-btn-secondary">VOLTAR</button>
     </div>
     <div id="view-multiplayer" class="menu-panel-box hidden-view">
-      <div><label class="menu-label">Seu Nome</label><input id="input-player-name" class="menu-input" maxlength="16"></div>
-      <button id="btn-create-room" class="menu-btn">CRIAR SALA</button>
-      <div><label class="menu-label">Código da Sala</label><input id="input-room-code" class="menu-input" maxlength="8"></div>
-      <button id="btn-join-room" class="menu-btn">ENTRAR</button>
-      <div id="multi-status-msg" style="font-size:.78rem;color:#34d399;text-align:center;min-height:18px"></div>
+      <div class="multi-heading"><span>JOGAR ONLINE</span><h2>Seu esquadrão começa aqui.</h2><p>Crie uma sala e compartilhe o código. Até 8 jogadores.</p></div>
+      <div><label class="menu-label" for="input-player-name">Seu nome</label><input id="input-player-name" class="menu-input" maxlength="16"></div>
+      <button id="btn-create-room" class="menu-btn">CRIAR NOVA SALA</button>
+      <div><label class="menu-label" for="input-room-code">Código da sala</label><input id="input-room-code" class="menu-input" maxlength="9" placeholder="FLR-XXXXX" autocomplete="off" spellcheck="false" autocapitalize="characters"></div>
+      <button id="btn-join-room" class="menu-btn">ENTRAR NA SALA</button>
+      <div id="multi-status-msg" role="status" aria-live="polite" style="font-size:.78rem;color:#34d399;text-align:center;min-height:18px"></div>
       <button id="btn-multi-back" class="menu-btn menu-btn-secondary">VOLTAR</button>
     </div>
     <div id="view-settings" class="menu-panel-box hidden-view">
@@ -136,6 +142,7 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 <div id="jetpackHud" hidden>JETPACK <span id="jetpackFuelText">100%</span><div class="fuelTrack"><i id="jetpackFuelFill"></i></div></div>
 <div id="lootPrompt" hidden><span id="lootPromptText"></span><button id="pickupBtn" hidden>PEGAR</button></div>
 <div id="weaponHud" aria-label="Armas e munição"><button id="weaponSlot0" aria-pressed="false"><b>1</b><span id="weaponName0">Pistola</span><small id="weaponAmmo0">12 / 60</small></button><button id="weaponSlot1" aria-pressed="false"><b>2</b><span id="weaponName1">Vazio</span><small id="weaponAmmo1">—</small></button></div>
+<div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -144,6 +151,8 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 <script src="/combat-bots.js?v=2"></script>
 <script src="/cover-controller.js?v=1"></script>
 <script src="/weapon-loot.js?v=3"></script>
-<script src="/full3d.js?v=20"></script>
+<script src="/multiplayer-client.js?v=1"></script>
+<script src="/multiplayer-world.js?v=1"></script>
+<script src="/full3d.js?v=21"></script>
 </body>
 </html>

@@ -85,6 +85,13 @@ export class GameRoom {
  }
  async fetch(request) {
   if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket required", {status: 426});
+  const query=new URL(request.url).searchParams;
+  if(query.get('mode')==='3d'){
+   const action=query.get('action');
+   if(action==='join'&&!this.sessions.size)return new Response('Sala não encontrada ou encerrada', {status:404});
+   if(action==='create'&&this.sessions.size)return new Response('Código já em uso', {status:409});
+   if(this.sessions.size>=8)return new Response('Sala cheia', {status:409});
+  }
   const pair = new WebSocketPair();
   const client = pair[0], server = pair[1];
   const id = crypto.randomUUID().slice(0, 8);
@@ -145,19 +152,21 @@ export class GameRoom {
  save3D(id){
   const ws=this.sessions.get(id);if(!ws)return;
   const meta=ws.deserializeAttachment();
-  const shots=[...this.shots3D.values()].filter(s=>s.ownerId===id&&Date.now()-s.at<2000);
+  // Keep only the latest ordered shot across hibernation (attachments are 2 KiB).
+  // The active room retains the full short-lived cache in memory.
+  const shots=[...this.shots3D.values()].filter(s=>s.ownerId===id&&Date.now()-s.at<2000).slice(-1);
   ws.serializeAttachment({...meta,state:this.players.get(id),shots});
  }
  handle3D(ws,meta,data){
   const finite=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max;
-  const weapons={pistol:{damage:12,speed:42,delay:240,pellets:1},smg:{damage:7,speed:46,delay:85,pellets:1},rifle:{damage:20,speed:58,delay:190,pellets:1},shotgun:{damage:6,speed:38,delay:620,pellets:7}};
+  const weapons={pistol:{damage:30,range:65,delay:60/340*1000,pellets:1},smg:{damage:18,range:45,delay:95,pellets:1},rifle:{damage:28,range:85,delay:140,pellets:1},shotgun:{damage:11,range:28,delay:850,pellets:6},sniper:{damage:95,range:220,delay:1050,pellets:1}};
   const now=Date.now();for(const [id,shot]of this.shots3D)if(now-shot.at>2000)this.shots3D.delete(id);
   if(data.type==='state3d'){
-   if(!finite(data.x,-100,100)||!finite(data.y,-2,25)||!finite(data.z,-100,100)||!finite(data.angle,-1000,1000))return;
+   if(!finite(data.x,-160,160)||!finite(data.y,-25,150)||!finite(data.z,-160,160)||!finite(data.angle,-1000,1000))return;
    const prev=this.players.get(meta.id);
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,inCar:!!data.inCar,
-    weapon:weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
+    grounded:data.grounded!==false,crouching:!!data.crouching,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
     health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0};
    this.players.set(meta.id,state);this.save3D(meta.id);this.broadcast3D(state);if(!prev)this.broadcastRanking();return;
   }
@@ -185,11 +194,11 @@ export class GameRoom {
    const ray=shot.rays[pellet],spec=weapons[shot.weapon];
    const dx=target.x-shot.origin.x,dy=target.y+1.5-shot.origin.y,dz=target.z-shot.origin.z;
    const along=dx*ray.x+dy*ray.y+dz*ray.z;
-   if(along<-.25||along>spec.speed*1.15+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
+   if(along<-.25||along>spec.range+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
    shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
    const killed=target.health===0;
    if(killed)shooter.kills++;
-   this.broadcast3D({type:'hit3d',attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,kills:shooter.kills});
+   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,kills:shooter.kills});
    if(killed){
     target.health=100;target.x=4;target.y=0;target.z=8;target.moving=false;
     this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100});this.broadcastRanking();

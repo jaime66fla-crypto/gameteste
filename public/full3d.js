@@ -1322,7 +1322,7 @@ class PistolController {
   this.fireCooldown=spec.fireRate;this.ammo--;
   forestAudio.init();forestAudio.playShoot(spec.id);
   this.scene.updateMatrixWorld(true);
-  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map();
+  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),networkRays=[],networkHits=[];
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
@@ -1335,6 +1335,8 @@ class PistolController {
     const obstruction=window.CombatBotSystem.firstHit(this.scene,muzzleRay,this.player);
     if(obstruction){hit=obstruction;end=obstruction.point;}
    }
+   networkRays.push(end.clone().sub(start).normalize());
+   if(hit?.object?.userData?.remoteId)networkHits.push({targetId:hit.object.userData.remoteId,pellet});
    const tracer=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffe8a3}));this.scene.add(tracer);
    setTimeout(()=>{this.scene.remove(tracer);tracer.geometry.dispose();tracer.material.dispose();},45);
    const target=hit?.object?.userData?.enemyRef;
@@ -1342,6 +1344,11 @@ class PistolController {
     const falloff=spec.id==='shotgun'?THREE.MathUtils.clamp(1-Math.max(0,start.distanceTo(end)-8)/25,.25,1):1;
     damageByTarget.set(target,(damageByTarget.get(target)||0)+spec.damage*falloff);
    }
+  }
+  if(multiplayer.active){
+   const shotId=Date.now().toString(36)+'-'+(++multiplayerShotSequence).toString(36);
+   multiplayer.send({type:'shot3d',shotId,weapon:spec.id,origin:{x:start.x,y:start.y,z:start.z},rays:networkRays.map(r=>({x:r.x,y:r.y,z:r.z}))});
+   for(const hit of networkHits)multiplayer.send({type:'hit3d',shotId,...hit});
   }
   const flash=new THREE.PointLight(0xffd27a,1.5,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
   const weaponScale=spec.id==='shotgun'?1.45:spec.id==='smg'?.68:spec.id==='rifle'?1.08:1;
@@ -1479,6 +1486,7 @@ class PlayerController {
  }
  _initListeners(){
   addEventListener('keydown',e=>{
+   if(!gameStarted)return;
    if((e.code==='KeyC'||e.code==='KeyQ')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
@@ -1691,6 +1699,7 @@ class GTACameraController {
   });
 
   document.addEventListener('keydown',e=>{
+   if(!gameStarted)return;
    if(e.code==='KeyV'){
     this.modeIndex=(this.modeIndex+1)%this.distances.length;
     this.targetDistance=this.distances[this.modeIndex];
@@ -2175,6 +2184,7 @@ function hideGameMenu(){
  forestAudio.init();
 }
 function showGameMenu(){
+ if(multiplayer.active||multiplayer.pending)leaveRoom();
  controller.clearInput();pistolWeapon.triggerHeld=false;
  gameStarted=false;
  switchMenuView('view-main');
@@ -2190,17 +2200,61 @@ document.getElementById('btn-menu-exit')?.addEventListener('click',()=>{ try{win
 document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMenuView('view-main'));
 document.getElementById('btn-mode-solo')?.addEventListener('click',hideGameMenu);
 document.getElementById('btn-mode-multi')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
-document.getElementById('btn-multi-back')?.addEventListener('click',()=>switchMenuView('view-modes'));
-document.getElementById('btn-create-room')?.addEventListener('click',()=>{
- const code='FLR-'+Math.floor(100+Math.random()*899);
- const s=document.getElementById('multi-status-msg');
- if(s)s.textContent='Sala '+code+' criada. Multiplayer ainda em preparação.';
+document.getElementById('btn-multi-back')?.addEventListener('click',()=>{leaveRoom();switchMenuView('view-modes');});
+const multiplayerWorld=new window.MultiplayerWorld(scene);
+let networkTick=0,multiplayerShotSequence=0;
+const confirmedNetworkShots=new Set();
+function roomStatus(message){
+ const status=document.getElementById('multi-status-msg');if(status)status.textContent=message;
+ for(const id of ['btn-create-room','btn-join-room']){const button=document.getElementById(id);if(button)button.disabled=multiplayer?.pending||false;}
+}
+function roomHud(){
+ const badge=document.getElementById('room-hud');if(!badge)return;
+ badge.hidden=!multiplayer.active;
+ const text=document.getElementById('room-hud-text');if(text)text.textContent=multiplayer.room+' · '+(multiplayerWorld.players.size+1)+'/8 jogadores · '+[multiplayer.name,...[...multiplayerWorld.players.values()].map(p=>p.state.name)].join(', ');
+}
+function setMultiplayerBots(active){for(const bot of combatBots.bots)bot.group.visible=active&&bot.alive;}
+const multiplayer=new window.MultiplayerClient({
+ onStatus:message=>roomStatus(message),
+ onReady:welcome=>{
+  multiplayerWorld.clear();combatBots.health=100;setMultiplayerBots(false);
+  controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;
+  const slot=welcome.players.length;player.position.set(-4+(slot%4)*2.5,0,6+Math.floor(slot/4)*3);
+  player.position.y=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
+  for(const state of welcome.players)if(state.id!==welcome.id)multiplayerWorld.receive(state);
+  networkTick=1;sendNetworkState();roomHud();hideGameMenu();
+ },
+ onDisconnect:wasActive=>{multiplayerWorld.clear();setMultiplayerBots(true);roomHud();if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
+ onMessage:data=>{
+  if(data.type==='state3d'&&data.id!==multiplayer.id)multiplayerWorld.receive(data);
+  else if(data.type==='leave')multiplayerWorld.remove(data.id);
+  else if(data.type==='shot3d'&&data.ownerId!==multiplayer.id)multiplayerWorld.shot(data);
+  else if(data.type==='hit3d'){
+   if(data.targetId===multiplayer.id){combatBots.health=data.health;playerDamageFlash=.22;}
+   if(data.attackerId===multiplayer.id){
+    if(!confirmedNetworkShots.has(data.shotId)){confirmedNetworkShots.add(data.shotId);if(confirmedNetworkShots.size>128)confirmedNetworkShots.delete(confirmedNetworkShots.values().next().value);hitCount++;score+=12;flashHitmarker();forestAudio.playHit();}
+    if(data.killed)score+=100;
+   }
+  }else if(data.type==='respawn3d'){
+   if(data.id===multiplayer.id){player.position.set(data.x,forestEnvironment.getTerrainHeight(data.x,data.z),data.z);controller.velocity.set(0,0,0);controller.clearInput();controller.cover.exit();combatBots.health=100;weaponLoot.refillForTraining();}
+   else{const remote=multiplayerWorld.players.get(data.id);if(remote)multiplayerWorld.receive({...remote.state,...data});}
+  }
+  roomHud();
+ }
 });
-document.getElementById('btn-join-room')?.addEventListener('click',()=>{
- const code=(document.getElementById('input-room-code')?.value||'').trim().toUpperCase();
- const s=document.getElementById('multi-status-msg');
- if(s)s.textContent=code?'Sala '+code+' selecionada. Multiplayer ainda em preparação.':'Digite um código de sala.';
-});
+function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none'});}
+function leaveRoom(){confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
+function enterRoom(action){
+ if(multiplayer.pending)return;
+ const input=document.getElementById('input-room-code');
+ let code=input?.value||'';
+ if(action==='create'){const letters='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';code='FLR-';for(let i=0;i<5;i++)code+=letters[Math.floor(Math.random()*letters.length)];if(input)input.value=code;}
+ multiplayer.connect(action,code,nameInput?.value||'');
+}
+document.getElementById('btn-create-room')?.addEventListener('click',()=>enterRoom('create'));
+document.getElementById('btn-join-room')?.addEventListener('click',()=>enterRoom('join'));
+document.getElementById('input-room-code')?.addEventListener('keydown',e=>{if(e.key==='Enter')enterRoom('join');});
+document.getElementById('btn-leave-room')?.addEventListener('click',()=>{leaveRoom();showGameMenu();});
 document.getElementById('btn-toggle-audio')?.addEventListener('click',e=>{
  menuSettings.soundEnabled=!menuSettings.soundEnabled;
  forestAudio.setEnabled(menuSettings.soundEnabled);
@@ -2217,7 +2271,7 @@ document.getElementById('btn-toggle-shadows')?.addEventListener('click',e=>{
  e.currentTarget.textContent='SOMBRAS: '+(menuSettings.shadows?'ATIVADAS':'DESATIVADAS');
 });
 document.getElementById('btn-settings-back')?.addEventListener('click',()=>switchMenuView('view-main'));
-addEventListener('keydown',e=>{if(e.code==='KeyM')showGameMenu()});
+addEventListener('keydown',e=>{if(gameStarted&&e.code==='KeyM')showGameMenu()});
 
 (function initMenuParticles(){
  const c=document.getElementById('menu-particles-canvas'); if(!c)return;
@@ -2247,7 +2301,8 @@ function loop(){
  controller.update(dt);
  weaponLoot.update(dt);
  player.userData.crouching=controller.isCrouching;
- combatBots.update(dt);
+ if(!multiplayer.active)combatBots.update(dt);
+ if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
  if(damageFlashEl)damageFlashEl.style.opacity=String(Math.min(1,playerDamageFlash/.12));
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
