@@ -225,9 +225,9 @@ new GLTFLoader().load(soldierUrl,gltf=>{
 },undefined,err=>{status.textContent='Erro ao carregar Soldier.glb';console.error(err)});
 
 function setView(y,p,d=5.2){yaw=y;pitch=p;dist=d}
-document.getElementById('front').onclick=()=>setView(0,.1);
+document.getElementById('front').onclick=()=>setView(Math.PI,.1);
 document.getElementById('side').onclick=()=>setView(Math.PI/2,.1);
-document.getElementById('back').onclick=()=>setView(Math.PI,.1);
+document.getElementById('back').onclick=()=>setView(0,.1);
 document.getElementById('reset').onclick=()=>{
  Object.assign(state,defaults);
  document.querySelectorAll('.row').forEach(row=>{
