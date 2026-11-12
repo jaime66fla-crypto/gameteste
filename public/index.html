@@ -5,30 +5,26 @@
   <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=1">
   <link rel="icon" type="image/x-icon" href="/favicon.ico?v=1" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=1">
-  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css?v=simple-menu-1">
+  <title>Street Prototype V5</title><link rel="stylesheet" href="style.css?v=main-flow-1">
 </head>
 <body>
 <header class="hero landing-only launcher-screen">
-  <div class="launcher-shell">
+  <div class="launcher-shell simplified-launcher">
     <nav class="launcher-nav">
       <div class="launcher-brand">
         <span class="brand-mark">J</span>
         <div><strong>STREET PROTOTYPE</strong><small>3D ONLINE</small></div>
       </div>
-      <div class="launcher-nav-actions">
-        <button class="launcher-link" data-open-panel="shopPanel">Loja</button>
-      </div>
     </nav>
 
-    <div class="launcher-main">
-      <section class="launcher-copy">
+    <div class="launcher-main simplified-main">
+      <section class="launcher-copy simplified-copy">
         <span class="launcher-kicker">STREET PROTOTYPE</span>
-        <h1>ENTRE<br><em>NA CIDADE</em></h1>
-        <p>Escolha como quer jogar.</p>
-        <div class="launcher-buttons">
-          <button class="btn open-game main-play-btn">Jogar</button>
-          <a class="btn" href="/3d.html?multiplayer=1">Multiplayer</a>
-          <button class="launcher-secondary" data-open-panel="shopPanel">Loja</button>
+        <h1>MENU<br><em>PRINCIPAL</em></h1>
+        <div class="launcher-buttons main-menu-actions">
+          <a class="btn main-play-btn" href="/3d.html">Jogar Solo</a>
+          <button class="btn" id="mainMultiplayerBtn" type="button">Jogar Multiplayer</button>
+          <button class="launcher-secondary" id="mainSettingsBtn" type="button">Configurações</button>
         </div>
       </section>
 
@@ -47,6 +43,34 @@
     </div>
   </div>
 </header>
+
+<div class="launcher-panel" id="mainMultiplayerPanel" aria-hidden="true">
+  <div class="launcher-panel-card">
+    <button class="panel-close" data-close-main-menu-panel type="button">×</button>
+    <span class="launcher-kicker">MULTIPLAYER</span>
+    <h2>Entrar em uma sala</h2>
+    <p class="panel-lead">Use o mesmo código dos seus amigos.</p>
+    <form id="mainMultiplayerForm">
+      <label>Seu nome<input id="mainPlayerName" maxlength="18" value="Jogador" required autocomplete="nickname"></label>
+      <label>Código da sala<input id="mainRoomCode" maxlength="24" value="cidade-1" pattern="[A-Za-z0-9-]+" required autocapitalize="none" spellcheck="false"></label>
+      <button class="btn" type="submit">Entrar no Multiplayer</button>
+    </form>
+  </div>
+</div>
+
+<div class="launcher-panel" id="mainSettingsPanel" aria-hidden="true">
+  <div class="launcher-panel-card">
+    <button class="panel-close" data-close-main-menu-panel type="button">×</button>
+    <span class="launcher-kicker">CONFIGURAÇÕES</span>
+    <h2>Configurações</h2>
+    <div class="character-options">
+      <label>Volume <input id="menuVolume" type="range" min="0" max="100" value="70"></label>
+      <label><input id="menuSound" type="checkbox" checked> Som ativado</label>
+      <label><input id="menuPerformance" type="checkbox" checked> Modo desempenho</label>
+      <button class="btn" id="saveMenuSettings" type="button">Salvar</button>
+    </div>
+  </div>
+</div>
 
 <div class="launcher-panel" id="updatesPanel" aria-hidden="true">
   <div class="launcher-panel-card wide">
@@ -198,6 +222,42 @@
 <script src="game.js?v=shop-grenade-1"></script>
 <script>
 const gameModal=document.getElementById('gameModal');
+
+const mainMultiplayerPanel=document.getElementById('mainMultiplayerPanel');
+const mainSettingsPanel=document.getElementById('mainSettingsPanel');
+function closeMainMenuPanels(){
+  [mainMultiplayerPanel,mainSettingsPanel].forEach(panel=>{
+    panel?.classList.remove('show');
+    panel?.setAttribute('aria-hidden','true');
+  });
+}
+document.getElementById('mainMultiplayerBtn')?.addEventListener('click',()=>{
+  closeMainMenuPanels();
+  mainMultiplayerPanel?.classList.add('show');
+  mainMultiplayerPanel?.setAttribute('aria-hidden','false');
+});
+document.getElementById('mainSettingsBtn')?.addEventListener('click',()=>{
+  closeMainMenuPanels();
+  mainSettingsPanel?.classList.add('show');
+  mainSettingsPanel?.setAttribute('aria-hidden','false');
+});
+document.querySelectorAll('[data-close-main-menu-panel]').forEach(btn=>btn.addEventListener('click',closeMainMenuPanels));
+[mainMultiplayerPanel,mainSettingsPanel].forEach(panel=>panel?.addEventListener('click',e=>{if(e.target===panel)closeMainMenuPanels()}));
+document.getElementById('mainMultiplayerForm')?.addEventListener('submit',e=>{
+  e.preventDefault();
+  const name=(document.getElementById('mainPlayerName')?.value||'Jogador').trim().slice(0,18)||'Jogador';
+  const room=(document.getElementById('mainRoomCode')?.value||'cidade-1').trim().toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,24)||'cidade-1';
+  location.href='/3d.html?multiplayer=1&name='+encodeURIComponent(name)+'&room='+encodeURIComponent(room);
+});
+const savedMenuSettings=(()=>{try{return JSON.parse(localStorage.getItem('streetMenuSettings')||'{}')}catch(_){return{}}})();
+if(Number.isFinite(Number(savedMenuSettings.volume)))document.getElementById('menuVolume').value=String(savedMenuSettings.volume);
+if(typeof savedMenuSettings.sound==='boolean')document.getElementById('menuSound').checked=savedMenuSettings.sound;
+if(typeof savedMenuSettings.performance==='boolean')document.getElementById('menuPerformance').checked=savedMenuSettings.performance;
+document.getElementById('saveMenuSettings')?.addEventListener('click',()=>{
+  const cfg={volume:Number(document.getElementById('menuVolume').value),sound:document.getElementById('menuSound').checked,performance:document.getElementById('menuPerformance').checked};
+  localStorage.setItem('streetMenuSettings',JSON.stringify(cfg));
+  const btn=document.getElementById('saveMenuSettings');btn.textContent='Salvo ✓';setTimeout(()=>btn.textContent='Salvar',1000);
+});
 async function forceMobileLandscape(){
   if(!document.body.classList.contains('platform-mobile'))return;
   const target=document.getElementById('gameModal');
