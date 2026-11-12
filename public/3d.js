@@ -1188,12 +1188,25 @@ function fire(){
 }
 
 canvas.addEventListener('contextmenu',e=>e.preventDefault());
-canvas.addEventListener('pointerdown',e=>{
- if(e.pointerType==='touch')return;
- if(e.button===2){cameraRightDrag=true;cameraLastX=e.clientX;cameraLastY=e.clientY;return}
- if(e.button===0){desktopFiring=true;fire()}
+// Mouse uses mousedown/mouseup instead of pointerdown so a second button
+// still fires while another mouse button is already held (RMB aim + LMB shoot).
+canvas.addEventListener('mousedown',e=>{
+ if(e.button===2){
+  cameraRightDrag=true;
+  cameraLastX=e.clientX;cameraLastY=e.clientY;
+  e.preventDefault();
+ }
+ if(e.button===0){
+  desktopFiring=true;
+  fire();
+  e.preventDefault();
+ }
 });
-addEventListener('pointerup',e=>{if(e.button===2)cameraRightDrag=false;if(e.button===0)desktopFiring=false});
+addEventListener('mouseup',e=>{
+ if(e.button===2)cameraRightDrag=false;
+ if(e.button===0)desktopFiring=false;
+});
+// Touch aiming/firing remains handled by the on-screen sticks.
 canvas.addEventListener('pointercancel',()=>{desktopFiring=false;cameraRightDrag=false});
 addEventListener('blur',()=>{keys.clear();cameraRightDrag=false;desktopFiring=false;mobileMove.active=false;mobileAim.active=false;mobileAim.firing=false});
 aimLockBtn?.addEventListener('click',()=>{
