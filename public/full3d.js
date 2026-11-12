@@ -1865,8 +1865,9 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
   if(model.parent)model.parent.remove(model);
   player.add(model);
   model.position.set(0,0,0);
-  // Keep Soldier local forward aligned with the player root.
-  model.rotation.y=0;
+  // Soldier GLB local forward is opposite our TPS forward.
+  model.userData.forwardYawOffset=Math.PI;
+  model.rotation.y=model.userData.forwardYawOffset;
 
   const bounds=new THREE.Box3().setFromObject(model);
   const height=bounds.max.y-bounds.min.y;
@@ -2073,8 +2074,13 @@ function loop(){
  if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
-  // Player root follows camera aim; keep humanoid locally aligned with root.
-  humanCharacter.model.rotation.y=THREE.MathUtils.lerp(humanCharacter.model.rotation.y,0,1-Math.exp(-10*dt));
+  // Player root follows camera aim; preserve the Soldier's local forward correction.
+  const humanForwardOffset=humanCharacter.model.userData.forwardYawOffset||0;
+  humanCharacter.model.rotation.y=THREE.MathUtils.lerp(
+   humanCharacter.model.rotation.y,
+   humanForwardOffset,
+   1-Math.exp(-10*dt)
+  );
 
   const aimPoint=camera.position.clone().add(
    camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(20)
