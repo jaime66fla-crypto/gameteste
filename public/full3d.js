@@ -1921,11 +1921,11 @@ function updateAdsViewModel(dt){
  const recoil=pistolWeapon.recoil||0;
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
  const poses={
-  pistol:{p:[.19,-.23,-.52],r:[-.02,.02,0],s:2.4},
-  smg:{p:[.18,-.22,-.64],r:[-.015,.015,0],s:2.15},
-  rifle:{p:[.17,-.24,-.76],r:[-.01,.01,0],s:2.05},
-  shotgun:{p:[.2,-.25,-.77],r:[-.015,.015,0],s:1.95},
-  sniper:{p:[.17,-.26,-.88],r:[-.008,.008,0],s:1.9}
+  pistol:{p:[.12,-.16,-.38],r:[-.02,.01,0],s:.82},
+  smg:{p:[.11,-.17,-.48],r:[-.012,.008,0],s:.78},
+  rifle:{p:[.10,-.18,-.56],r:[-.01,.006,0],s:.74},
+  shotgun:{p:[.12,-.19,-.58],r:[-.012,.008,0],s:.72},
+  sniper:{p:[.09,-.20,-.68],r:[-.008,.004,0],s:.68}
  };
  const pose=poses[id]||poses.pistol;
  const t=1-Math.exp(-dt*20);
