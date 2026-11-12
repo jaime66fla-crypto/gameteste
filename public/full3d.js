@@ -187,16 +187,68 @@ class PlayerController {
  }
 }
 
-let camYaw=Math.PI,camPitch=.22;
 let model=null,mixer=null,actions={},active=null;
 let firingCooldown=0;
 
-canvas.addEventListener('click',()=>canvas.requestPointerLock?.());
-addEventListener('mousemove',e=>{
- if(document.pointerLockElement!==canvas)return;
- camYaw-=e.movementX*.0026;
- camPitch=THREE.MathUtils.clamp(camPitch-e.movementY*.0022,-.15,.62);
-});
+class ThirdPersonCamera {
+ constructor(camera,target,domElement){
+  this.camera=camera;
+  this.target=target;
+  this.domElement=domElement;
+  this.distance=6.0;
+  this.minDistance=2.5;
+  this.maxDistance=12.0;
+  this.sensitivity=.0025;
+  this.smoothness=12.0;
+  this.targetOffset=new THREE.Vector3(0,1.5,0);
+  this.yaw=0;
+  this.pitch=.3;
+  this.minPitch=-.3;
+  this.maxPitch=1.2;
+  this.currentPosition=new THREE.Vector3(
+   target.position.x,
+   target.position.y+2.5,
+   target.position.z+this.distance
+  );
+  this.currentLookAt=target.position.clone().add(this.targetOffset);
+  this._initListeners();
+ }
+ _initListeners(){
+  this.domElement.addEventListener('click',()=>{
+   if(document.pointerLockElement!==this.domElement){
+    this.domElement.requestPointerLock?.();
+   }
+  });
+  document.addEventListener('mousemove',e=>{
+   if(document.pointerLockElement===this.domElement){
+    this.yaw-=e.movementX*this.sensitivity;
+    this.pitch+=e.movementY*this.sensitivity;
+    this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
+   }
+  });
+  document.addEventListener('wheel',e=>{
+   this.distance+=e.deltaY*.005;
+   this.distance=Math.max(this.minDistance,Math.min(this.maxDistance,this.distance));
+  },{passive:true});
+ }
+ update(dt){
+  if(!this.target)return;
+  const focusPoint=this.target.position.clone().add(this.targetOffset);
+  const horizontalDistance=this.distance*Math.cos(this.pitch);
+  const verticalDistance=this.distance*Math.sin(this.pitch);
+  const idealPosition=new THREE.Vector3(
+   focusPoint.x+horizontalDistance*Math.sin(this.yaw),
+   focusPoint.y+verticalDistance,
+   focusPoint.z+horizontalDistance*Math.cos(this.yaw)
+  );
+  const t=1-Math.exp(-this.smoothness*dt);
+  this.currentPosition.lerp(idealPosition,t);
+  this.currentLookAt.lerp(focusPoint,t);
+  this.camera.position.copy(this.currentPosition);
+  this.camera.lookAt(this.currentLookAt);
+ }
+}
+
 addEventListener('mousedown',e=>{if(e.button===0)shoot()});
 
 function makeGun(){
@@ -249,12 +301,10 @@ function shoot(){
 }
 
 const controller=new PlayerController(player,camera);
+const thirdPersonCamera=new ThirdPersonCamera(camera,player,canvas);
 
 function updateCamera(dt){
- const target=player.position.clone().add(new THREE.Vector3(0,1.45,0));
- const dist=5.2;
- const pos=target.clone().add(new THREE.Vector3(Math.sin(camYaw)*Math.cos(camPitch)*dist,1.5+Math.sin(camPitch)*dist,Math.cos(camYaw)*Math.cos(camPitch)*dist));
- camera.position.lerp(pos,1-Math.exp(-dt*10)); camera.lookAt(target.clone().add(new THREE.Vector3(0,.15,0)));
+ thirdPersonCamera.update(dt);
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
