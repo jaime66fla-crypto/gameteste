@@ -1631,6 +1631,8 @@ class GTACameraController {
   this.recoilShake=0;
   this.recoilRecovery=16;
   this.recoilTime=0;
+  this.adsBlend=0;
+  this.baseFov=camera.fov;
 
   this.raycaster=new THREE.Raycaster();
   this.collisionMargin=.3;
@@ -1667,9 +1669,10 @@ class GTACameraController {
     return;
    }
 
-   this.yaw-=mx*this.sensitivity;
+   const aimScale=(controller?.keys?.aiming?0.68:1);
+   this.yaw-=mx*this.sensitivity*aimScale;
    // Same vertical direction as the supplied tester.
-   this.pitch+=my*this.sensitivity;
+   this.pitch+=my*this.sensitivity*aimScale;
    this.pitch=THREE.MathUtils.clamp(this.pitch,this.minPitch,this.maxPitch);
   });
 
@@ -1738,11 +1741,19 @@ class GTACameraController {
   if(!this.target)return;
 
   const blend=1-Math.exp(-this.zoomSpeed*delta);
+  const adsTarget=controller.keys.aiming&&!this.isLookingBack&&this.modeIndex!==3?1:0;
+  this.adsBlend=THREE.MathUtils.lerp(this.adsBlend,adsTarget,1-Math.exp(-delta*(adsTarget?14:10)));
+  const adsDistance=THREE.MathUtils.lerp(this.targetDistance,Math.min(this.targetDistance,2.8),this.adsBlend);
   this.currentDistance=THREE.MathUtils.lerp(
    this.currentDistance,
-   this.modeIndex===3&&controller.cover.active?2.5:this.targetDistance,
+   this.modeIndex===3&&controller.cover.active?2.5:adsDistance,
    blend
   );
+  const targetFov=THREE.MathUtils.lerp(this.baseFov,50,this.adsBlend);
+  if(Math.abs(this.camera.fov-targetFov)>.01){
+   this.camera.fov=THREE.MathUtils.lerp(this.camera.fov,targetFov,1-Math.exp(-delta*14));
+   this.camera.updateProjectionMatrix();
+  }
 
   this.recoilPitch*=Math.exp(-this.recoilRecovery*delta);
   this.recoilShake*=Math.exp(-this.recoilRecovery*1.25*delta);
@@ -1780,7 +1791,8 @@ class GTACameraController {
 
   // Shift both the camera and its aim pivot; keep the white dot at raycast center.
   const screenRight=new THREE.Vector3(Math.cos(activeYaw),0,-Math.sin(activeYaw));
-  this.currentShoulderOffset=THREE.MathUtils.lerp(this.currentShoulderOffset,this.shoulderOffset*controller.cover.shoulderSign(activeYaw),blend);
+  const adsShoulder=THREE.MathUtils.lerp(this.shoulderOffset,.92,this.adsBlend);
+  this.currentShoulderOffset=THREE.MathUtils.lerp(this.currentShoulderOffset,adsShoulder*controller.cover.shoulderSign(activeYaw),blend);
   focusPoint.addScaledVector(screenRight,this.currentShoulderOffset);
 
   const offsetX=Math.sin(activeYaw)*Math.cos(effectivePitch)*this.currentDistance;
@@ -1939,6 +1951,9 @@ const combatBots=new window.CombatBotSystem({
 
 function updateCamera(dt){
  thirdPersonCamera.update(dt);
+ const ads=controller.keys.aiming&&pistolWeapon.isEquipped;
+ document.getElementById('adsReticle')?.classList.toggle('active',ads);
+ document.getElementById('aimDot')?.classList.toggle('ads-hidden',ads);
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
