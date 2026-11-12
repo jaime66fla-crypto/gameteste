@@ -498,63 +498,71 @@ class ForestAudioSystem {
 const forestAudio=new ForestAudioSystem();
 canvas.addEventListener('pointerdown',()=>forestAudio.init(),{once:true});
 
-class BowWeaponSystem {
+class BowAnimationSystem {
  constructor(scene,avatar){
   this.scene=scene;
   this.avatar=avatar;
-  this.isEquipped=false;
-  this.drawAmount=0;
-  this.recoilOffset=0;
+  this.state='holstered';
+  this.stateTimer=0;
+  this.drawProgress=0;
+  this.maxDrawTime=.65;
+  this.fireDuration=.18;
+  this.reloadDuration=.55;
   this.activeArrows=[];
-  this.bowGroup=this.createBowMesh();
-  this.muzzlePoint=new THREE.Object3D();
-  this.muzzlePoint.position.set(0,0,-.5);
-  this.bowGroup.add(this.muzzlePoint);
-  this.holsterWeapon();
-  this.bindKeys();
+  this.onArrowShot=null;
+  this.buildBowAndArrow();
+  this.bindControls();
+  this.holster();
  }
- createBowMesh(){
-  const bow=new THREE.Group();
-
+ buildBowAndArrow(){
+  this.bowGroup=new THREE.Group();
   const woodMat=new THREE.MeshStandardMaterial({color:0x5c3a21,roughness:.7,flatShading:true});
   const gripMat=new THREE.MeshStandardMaterial({color:0x1f2937,roughness:.9});
   const goldMat=new THREE.MeshStandardMaterial({color:0xd97706,metalness:.8,roughness:.3});
   const stringMat=new THREE.LineBasicMaterial({color:0x00ffcc});
 
   const grip=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,.32,8),gripMat);
-  bow.add(grip);
+  this.bowGroup.add(grip);
 
-  const trimTop=new THREE.Mesh(new THREE.CylinderGeometry(.036,.036,.04,8),goldMat);
-  trimTop.position.y=.16; bow.add(trimTop);
-  const trimBottom=new THREE.Mesh(new THREE.CylinderGeometry(.036,.036,.04,8),goldMat);
-  trimBottom.position.y=-.16; bow.add(trimBottom);
+  this.upperLimbPivot=new THREE.Group();
+  this.upperLimbPivot.position.set(0,.16,0);
+  const upperLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.58,.045),woodMat);
+  upperLimb.position.set(0,.28,.06);
+  upperLimb.rotation.x=-.25;
+  upperLimb.castShadow=true;
+  this.upperLimbPivot.add(upperLimb);
+  this.upperTip=new THREE.Object3D();
+  this.upperTip.position.set(0,.56,.16);
+  this.upperLimbPivot.add(this.upperTip);
+  this.bowGroup.add(this.upperLimbPivot);
 
-  const upperLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.55,.045),woodMat);
-  upperLimb.position.set(0,.4,.08); upperLimb.rotation.x=-.32; upperLimb.castShadow=true; bow.add(upperLimb);
-
-  const upperTip=new THREE.Mesh(new THREE.BoxGeometry(.02,.2,.035),goldMat);
-  upperTip.position.set(0,.72,.22); upperTip.rotation.x=-.65; bow.add(upperTip);
-
-  const lowerLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.55,.045),woodMat);
-  lowerLimb.position.set(0,-.4,.08); lowerLimb.rotation.x=.32; lowerLimb.castShadow=true; bow.add(lowerLimb);
-
-  const lowerTip=new THREE.Mesh(new THREE.BoxGeometry(.02,.2,.035),goldMat);
-  lowerTip.position.set(0,-.72,.22); lowerTip.rotation.x=.65; bow.add(lowerTip);
+  this.lowerLimbPivot=new THREE.Group();
+  this.lowerLimbPivot.position.set(0,-.16,0);
+  const lowerLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.58,.045),woodMat);
+  lowerLimb.position.set(0,-.28,.06);
+  lowerLimb.rotation.x=.25;
+  lowerLimb.castShadow=true;
+  this.lowerLimbPivot.add(lowerLimb);
+  this.lowerTip=new THREE.Object3D();
+  this.lowerTip.position.set(0,-.56,.16);
+  this.lowerLimbPivot.add(this.lowerTip);
+  this.bowGroup.add(this.lowerLimbPivot);
 
   this.stringPoints=[
-   new THREE.Vector3(0,.8,.28),
-   new THREE.Vector3(0,0,.28),
-   new THREE.Vector3(0,-.8,.28)
+   new THREE.Vector3(0,.72,.16),
+   new THREE.Vector3(0,0,.16),
+   new THREE.Vector3(0,-.72,.16)
   ];
   const stringGeo=new THREE.BufferGeometry().setFromPoints(this.stringPoints);
   this.bowString=new THREE.Line(stringGeo,stringMat);
-  bow.add(this.bowString);
+  this.bowGroup.add(this.bowString);
 
-  this.nockedArrow=this.createArrowMesh();
-  this.nockedArrow.position.set(.03,0,-.15);
-  bow.add(this.nockedArrow);
+  this.handArrow=this.createArrowMesh();
+  this.bowGroup.add(this.handArrow);
 
-  return bow;
+  this.muzzlePoint=new THREE.Object3D();
+  this.muzzlePoint.position.set(0,0,-.4);
+  this.bowGroup.add(this.muzzlePoint);
  }
  createArrowMesh(){
   const arrow=new THREE.Group();
@@ -574,83 +582,170 @@ class BowWeaponSystem {
   arrow.add(head);
   return arrow;
  }
- bindKeys(){
+ bindControls(){
   addEventListener('keydown',e=>{
    if(e.code==='Digit1'||e.code==='Numpad1'){
-    if(!this.isEquipped)this.equipWeapon();
+    if(this.state==='holstered')this.equip();
    }
    if(e.code==='KeyH'){
-    if(this.isEquipped)this.holsterWeapon();
+    if(this.state!=='holstered')this.holster();
+   }
+  });
+  addEventListener('mousedown',e=>{
+   if(e.button!==0)return;
+   if(!gameStarted)return;
+   if(this.state==='ready'){
+    this.state='drawing';
+    this.drawProgress=0;
+   }
+  });
+  addEventListener('mouseup',e=>{
+   if(e.button!==0)return;
+   if(this.state==='drawing'){
+    if(this.drawProgress>=.2)this.releaseArrow();
+    else{
+     this.state='ready';
+     this.drawProgress=0;
+    }
    }
   });
  }
- equipWeapon(){
-  this.isEquipped=true;
+ equip(){
+  this.state='ready';
+  this.drawProgress=0;
   this.avatar.group.add(this.bowGroup);
-  this.bowGroup.position.set(-.35,1.15,-.45);
-  this.bowGroup.rotation.set(0,0,.25);
-  this.nockedArrow.visible=true;
+  this.bowGroup.position.set(-.38,1.15,-.42);
+  this.bowGroup.rotation.set(0,0,.22);
+  this.handArrow.visible=true;
+  this.resetArrowNockedPose();
  }
- holsterWeapon(){
-  this.isEquipped=false;
-  this.drawAmount=0;
+ holster(){
+  this.state='holstered';
+  this.drawProgress=0;
   this.avatar.group.add(this.bowGroup);
   this.bowGroup.position.set(-.18,1.22,-.34);
   this.bowGroup.rotation.set(.18,.15,.78);
-  this.nockedArrow.visible=false;
-  this.updateStringGeometry(0);
+  this.handArrow.visible=false;
+  this.updateBowDeformation(0);
  }
- triggerShot(targetPoint){
-  if(!this.isEquipped)return false;
-
-  this.recoilOffset=.15;
-  this.updateStringGeometry(.35);
-  this.nockedArrow.visible=false;
-  setTimeout(()=>{
-   if(this.isEquipped)this.nockedArrow.visible=true;
-  },250);
+ releaseArrow(){
+  const power=Math.max(.35,this.drawProgress);
+  this.state='firing';
+  this.stateTimer=0;
+  this.handArrow.visible=false;
 
   const startPos=new THREE.Vector3();
   this.muzzlePoint.getWorldPosition(startPos);
 
-  const arrowProjectile=this.createArrowMesh();
-  arrowProjectile.position.copy(startPos);
-  arrowProjectile.lookAt(targetPoint);
-
+  const ray=new THREE.Raycaster();
+  const hit=getAimRaycastHit(ray,camera,scene,player);
+  const targetPoint=hit?.point || camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(100));
   const direction=new THREE.Vector3().subVectors(targetPoint,startPos).normalize();
-  arrowProjectile.userData={
-   velocity:direction.multiplyScalar(65),
-   life:1.5
-  };
 
-  this.scene.add(arrowProjectile);
-  this.activeArrows.push(arrowProjectile);
-  return true;
+  const arrowProj=this.createArrowMesh();
+  arrowProj.position.copy(startPos);
+  arrowProj.lookAt(startPos.clone().add(direction));
+
+  const speed=35+power*45;
+  arrowProj.userData={velocity:direction.multiplyScalar(speed),life:2};
+  this.scene.add(arrowProj);
+  this.activeArrows.push(arrowProj);
+
+  if(typeof this.onArrowShot==='function')this.onArrowShot(power,hit);
+  this.drawProgress=0;
+  this.updateBowDeformation(0);
  }
- updateStringGeometry(pullBack){
-  this.stringPoints[1].z=.28+pullBack;
+ resetArrowNockedPose(){
+  this.handArrow.position.set(.03,0,-.18);
+  this.handArrow.rotation.set(0,0,0);
+ }
+ updateBowDeformation(t){
+  this.upperLimbPivot.rotation.x=t*.22;
+  this.lowerLimbPivot.rotation.x=-t*.22;
+  const tipY=.72-t*.04;
+  const tipZ=.16+t*.11;
+  const pullZ=.16+t*.42;
+  this.stringPoints[0].set(0,tipY,tipZ);
+  this.stringPoints[1].set(0,0,pullZ);
+  this.stringPoints[2].set(0,-tipY,tipZ);
   this.bowString.geometry.setFromPoints(this.stringPoints);
  }
  update(delta,isMoving){
-  if(this.recoilOffset>0){
-   this.recoilOffset=Math.max(0,this.recoilOffset-delta*1.2);
-   this.updateStringGeometry(this.recoilOffset*2);
+  this.updateFlyingArrows(delta);
+
+  if(this.state==='holstered'){
+   if(!isMoving){
+    this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,.15,.15);
+    this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.15);
+   }
+   return;
   }
 
-  if(this.isEquipped){
-   this.avatar.leftArm.rotation.x=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.x,-1.35+this.recoilOffset,.2);
-   this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,-.1,.2);
-   this.avatar.rightArm.rotation.x=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.x,-1.1-this.recoilOffset,.2);
-   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,.35,.2);
-  }else if(!isMoving){
-   this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,.15,.2);
-   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.2);
-  }
+  const leftArm=this.avatar.leftArm;
+  const rightArm=this.avatar.rightArm;
 
+  if(this.state==='ready'){
+   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.35,.2);
+   leftArm.rotation.z=THREE.MathUtils.lerp(leftArm.rotation.z,-.1,.2);
+   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-1.15,.2);
+   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,.35,.2);
+   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,0,.2);
+   this.resetArrowNockedPose();
+   this.updateBowDeformation(0);
+  }else if(this.state==='drawing'){
+   this.drawProgress=Math.min(1,this.drawProgress+delta/this.maxDrawTime);
+   const easedPull=1-Math.pow(1-this.drawProgress,2);
+   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.42,.25);
+   leftArm.rotation.z=THREE.MathUtils.lerp(leftArm.rotation.z,-.12,.25);
+   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-1.35+easedPull*.45,.25);
+   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,.35-easedPull*.15,.25);
+   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,easedPull*.18,.25);
+   this.handArrow.position.set(.03,0,-.18+easedPull*.42);
+   this.updateBowDeformation(easedPull);
+  }else if(this.state==='firing'){
+   this.stateTimer+=delta;
+   const t=Math.min(1,this.stateTimer/this.fireDuration);
+   const kick=Math.sin(t*Math.PI)*.22;
+   leftArm.rotation.x=-1.42-kick;
+   rightArm.rotation.x=-.85-kick;
+   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,.1,.3);
+   if(this.stateTimer>=this.fireDuration){
+    this.state='reloading';
+    this.stateTimer=0;
+   }
+  }else if(this.state==='reloading'){
+   this.stateTimer+=delta;
+   const t=Math.min(1,this.stateTimer/this.reloadDuration);
+   if(t<.5){
+    const reachPhase=t*2;
+    rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-2.55,reachPhase);
+    rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,-.25,reachPhase);
+    rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,.12,reachPhase);
+   }else{
+    const nockPhase=(t-.5)*2;
+    this.handArrow.visible=true;
+    rightArm.rotation.x=THREE.MathUtils.lerp(-2.55,-1.15,nockPhase);
+    rightArm.rotation.z=THREE.MathUtils.lerp(-.25,.35,nockPhase);
+    rightArm.position.z=THREE.MathUtils.lerp(.12,0,nockPhase);
+    this.handArrow.position.set(
+     .03+(1-nockPhase)*.25,
+     (1-nockPhase)*.45,
+     -.18+(1-nockPhase)*.35
+    );
+    this.handArrow.rotation.x=(1-nockPhase)*.6;
+   }
+   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.1,.15);
+   if(this.stateTimer>=this.reloadDuration){
+    this.state='ready';
+    this.resetArrowNockedPose();
+   }
+  }
+ }
+ updateFlyingArrows(delta){
   for(let i=this.activeArrows.length-1;i>=0;i--){
    const arrow=this.activeArrows[i];
    arrow.position.addScaledVector(arrow.userData.velocity,delta);
-   arrow.userData.velocity.y-=9.8*delta*.3;
+   arrow.userData.velocity.y-=9.8*delta*.35;
    arrow.lookAt(arrow.position.clone().add(arrow.userData.velocity));
    arrow.userData.life-=delta;
    if(arrow.userData.life<=0){
@@ -851,11 +946,24 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
  return intersects.find(hit=>!allIgnored.has(hit.object))||null;
 }
 
-addEventListener('mousedown',e=>{if(e.button===0)shoot()});
+addEventListener('mousedown',e=>{
+ if(e.button===0&&bowWeapon?.state==='holstered')shoot();
+});
 
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
 player.add(mainAvatar.group);
-const bowWeapon=new BowWeaponSystem(scene,mainAvatar);
+const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
+bowWeapon.onArrowShot=(power,hit)=>{
+ shots++;
+ forestAudio.init();
+ forestAudio.playShoot();
+ if(hit){
+  hitCount++;
+  score+=Math.round(10+power*10);
+  flashHitmarker();
+  forestAudio.playHit();
+ }
+};
 
 // Erika preservada no projeto, mas desativada nesta build.
 const useErika=false;
