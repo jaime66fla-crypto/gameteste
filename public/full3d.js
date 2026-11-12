@@ -2063,31 +2063,61 @@ const combatBots=new window.CombatBotSystem({
 
 function updateCamera(dt){
  const ads=controller.keys.aiming&&pistolWeapon.isEquipped&&pistolWeapon.rearSight&&pistolWeapon.frontSight;
+ const aimDot=document.getElementById('aimDot');
+ const optic=document.getElementById('opticReticle');
+ const scope=document.getElementById('sniperScope');
+ const weaponId=weaponLoot?.definition?.id||'pistol';
+
  if(!ads){
   thirdPersonCamera.update(dt);
-  document.getElementById('aimDot')?.classList.remove('ads-hidden');
+  aimDot?.classList.remove('ads-hidden');
+  optic?.classList.remove('active');
+  scope?.classList.remove('active');
+  document.body.classList.remove('ads-optic','ads-scope');
   return;
  }
 
- // Real ADS: align camera behind the rear sight and look through the front sight.
  scene.updateMatrixWorld(true);
  const rear=pistolWeapon.rearSight.getWorldPosition(new THREE.Vector3());
  const front=pistolWeapon.frontSight.getWorldPosition(new THREE.Vector3());
  const sightDir=front.clone().sub(rear).normalize();
-
- // Camera sits just behind and slightly above the rear sight to preserve sight picture.
- const desired=rear.clone().addScaledVector(sightDir,-.115).add(new THREE.Vector3(0,.008,0));
  const blend=1-Math.exp(-dt*18);
+
+ let cameraBack=.115;
+ let cameraUp=.008;
+ let targetFov=46;
+ let mode='iron';
+
+ if(weaponId==='smg'||weaponId==='rifle'){
+  mode='optic';
+  cameraBack=.16;
+  cameraUp=.012;
+  targetFov=38;
+ }else if(weaponId==='sniper'){
+  mode='scope';
+  cameraBack=.2;
+  cameraUp=.01;
+  targetFov=20;
+ }else if(weaponId==='shotgun'){
+  cameraBack=.14;
+  targetFov=43;
+ }
+
+ const desired=rear.clone().addScaledVector(sightDir,-cameraBack).add(new THREE.Vector3(0,cameraUp,0));
  camera.position.lerp(desired,blend);
 
- const lookTarget=front.clone().addScaledVector(sightDir,18);
+ const lookTarget=front.clone().addScaledVector(sightDir,weaponId==='sniper'?120:28);
  const lookQuat=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(camera.position,lookTarget,camera.up));
  camera.quaternion.slerp(lookQuat,blend);
 
- const targetFov=46;
- camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*14));
+ camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*(weaponId==='sniper'?10:14)));
  camera.updateProjectionMatrix();
- document.getElementById('aimDot')?.classList.add('ads-hidden');
+
+ aimDot?.classList.add('ads-hidden');
+ optic?.classList.toggle('active',mode==='optic');
+ scope?.classList.toggle('active',mode==='scope');
+ document.body.classList.toggle('ads-optic',mode==='optic');
+ document.body.classList.toggle('ads-scope',mode==='scope');
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
@@ -2228,7 +2258,7 @@ function loop(){
  const lootText=document.getElementById('lootPromptText');
  if(lootPrompt){lootPrompt.hidden=!weaponLoot.prompt;if(lootText&&lootText.textContent!==weaponLoot.prompt)lootText.textContent=weaponLoot.prompt;}
  const pickupButton=document.getElementById('pickupBtn');if(pickupButton)pickupButton.hidden=!weaponLoot.nearest;
- const shortNames={pistol:'Pistola',smg:'SMG',rifle:'Rifle',shotgun:'Escopeta'};
+ const shortNames={pistol:'Pistola',smg:'SMG',rifle:'Rifle',shotgun:'Escopeta',sniper:'Sniper'};
  for(let slot=0;slot<2;slot++){
   const item=weaponLoot.slots[slot],button=document.getElementById('weaponSlot'+slot),label=document.getElementById('weaponName'+slot),ammo=document.getElementById('weaponAmmo'+slot);
   if(label)label.textContent=item?shortNames[item.id]:'Vazio';
