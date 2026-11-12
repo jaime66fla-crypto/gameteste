@@ -690,6 +690,11 @@ class HumanCharacter {
      }
     });
     this.mixer=new THREE.AnimationMixer(this.model);
+    console.table((gltf.animations||[]).map((clip,index)=>({
+     indice:index,
+     nomeOriginal:clip.name,
+     duracaoSegundos:Number(clip.duration.toFixed(2))
+    })));
     (gltf.animations||[]).forEach(clip=>{
      const action=this.mixer.clipAction(clip);
      const cleanName=clip.name.toLowerCase();
@@ -737,7 +742,9 @@ class HumanCharacter {
  }
  updateLocomotion(speed,isGrounded=true){
   if(!isGrounded){
-   this.fadeToAction('jump',.12);
+   const jumpKey=this.findActionKey(['jump']);
+   if(jumpKey)this.fadeToAction('jump',.12);
+   else this.fadeToAction('run',.12);
    return;
   }
   if(this.state==='jump'&&!isGrounded)return;
@@ -1555,6 +1562,8 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
   if(model.parent)model.parent.remove(model);
   player.add(model);
   model.position.set(0,0,0);
+  // Three.js Soldier faces the opposite local forward used by this TPS.
+  model.rotation.y=Math.PI;
 
   const bounds=new THREE.Box3().setFromObject(model);
   const height=bounds.max.y-bounds.min.y;
@@ -1586,6 +1595,16 @@ bowWeapon.onArrowShot=(power,hit)=>{
   forestAudio.playHit();
  }
 };
+
+const soldierModelUrl='https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
+activateHumanCharacter(soldierModelUrl).then(active=>{
+ if(active){
+  stateEl.textContent='SOLDIER GLB • Idle/Walk/Run';
+ }else{
+  stateEl.textContent='AVATAR PROCEDURAL • fallback';
+ }
+});
+
 
 // Erika preservada no projeto, mas desativada nesta build.
 const useErika=false;
