@@ -1113,6 +1113,8 @@ class PistolController {
   const rearSight=new THREE.Mesh(new THREE.BoxGeometry(.09,.045,.045),detailMat);
   rearSight.position.set(0,.16,.035);
   g.add(rearSight);
+  this.frontSight=frontSight;
+  this.rearSight=rearSight;
 
   // Slide serrations.
   for(let i=0;i<5;i++){
@@ -1743,7 +1745,7 @@ class GTACameraController {
   if(!this.target)return;
 
   const blend=1-Math.exp(-this.zoomSpeed*delta);
-  const adsTarget=controller.keys.aiming&&!this.isLookingBack&&this.modeIndex!==3?1:0;
+  const adsTarget=0;
   this.adsBlend=THREE.MathUtils.lerp(this.adsBlend,adsTarget,1-Math.exp(-delta*(adsTarget?14:10)));
   const adsDistance=THREE.MathUtils.lerp(this.targetDistance,Math.min(this.targetDistance,2.8),this.adsBlend);
   this.currentDistance=THREE.MathUtils.lerp(
@@ -2060,10 +2062,32 @@ const combatBots=new window.CombatBotSystem({
 });
 
 function updateCamera(dt){
- thirdPersonCamera.update(dt);
- const ads=controller.keys.aiming&&pistolWeapon.isEquipped;
- document.getElementById('adsReticle')?.classList.toggle('active',ads);
- document.getElementById('aimDot')?.classList.toggle('ads-hidden',ads);
+ const ads=controller.keys.aiming&&pistolWeapon.isEquipped&&pistolWeapon.rearSight&&pistolWeapon.frontSight;
+ if(!ads){
+  thirdPersonCamera.update(dt);
+  document.getElementById('aimDot')?.classList.remove('ads-hidden');
+  return;
+ }
+
+ // Real ADS: align camera behind the rear sight and look through the front sight.
+ scene.updateMatrixWorld(true);
+ const rear=pistolWeapon.rearSight.getWorldPosition(new THREE.Vector3());
+ const front=pistolWeapon.frontSight.getWorldPosition(new THREE.Vector3());
+ const sightDir=front.clone().sub(rear).normalize();
+
+ // Camera sits just behind and slightly above the rear sight to preserve sight picture.
+ const desired=rear.clone().addScaledVector(sightDir,-.115).add(new THREE.Vector3(0,.008,0));
+ const blend=1-Math.exp(-dt*18);
+ camera.position.lerp(desired,blend);
+
+ const lookTarget=front.clone().addScaledVector(sightDir,18);
+ const lookQuat=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(camera.position,lookTarget,camera.up));
+ camera.quaternion.slerp(lookQuat,blend);
+
+ const targetFov=46;
+ camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*14));
+ camera.updateProjectionMatrix();
+ document.getElementById('aimDot')?.classList.add('ads-hidden');
 }
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
