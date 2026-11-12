@@ -65,8 +65,70 @@ function plane(w,d,color,x,y,z=.01){
  m.position.set(x,z,y);m.receiveShadow=true;world.add(m);return m;
 }
 
+// Lightweight procedural urban textures: no external image downloads.
+function makeUrbanTexture(kind,size=256){
+ const cv=document.createElement('canvas');cv.width=cv.height=size;
+ const g=cv.getContext('2d');
+ if(kind==='asphalt'){
+  g.fillStyle='#303738';g.fillRect(0,0,size,size);
+  for(let i=0;i<2400;i++){
+   const v=38+Math.floor(Math.random()*34);
+   g.fillStyle=`rgba(${v},${v+2},${v+3},${.035+Math.random()*.07})`;
+   const r=Math.random()*1.6+.25;g.fillRect(Math.random()*size,Math.random()*size,r,r);
+  }
+  for(let i=0;i<12;i++){
+   g.strokeStyle=`rgba(12,15,16,${.12+Math.random()*.16})`;g.lineWidth=.6+Math.random()*1.5;
+   g.beginPath();let x=Math.random()*size,y=Math.random()*size;g.moveTo(x,y);
+   for(let k=0;k<5;k++){x+=Math.random()*30-15;y+=Math.random()*28-14;g.lineTo(x,y)}g.stroke();
+  }
+  for(let i=0;i<5;i++){
+   const x=Math.random()*size,y=Math.random()*size,w=18+Math.random()*42,h=8+Math.random()*25;
+   g.fillStyle='rgba(18,22,23,.16)';g.fillRect(x,y,w,h);
+   g.strokeStyle='rgba(112,118,116,.09)';g.strokeRect(x+.5,y+.5,w-1,h-1);
+  }
+ }else if(kind==='sidewalk'){
+  g.fillStyle='#777c75';g.fillRect(0,0,size,size);
+  g.strokeStyle='rgba(35,40,38,.30)';g.lineWidth=1;
+  const tile=32;
+  for(let x=0;x<=size;x+=tile){g.beginPath();g.moveTo(x,0);g.lineTo(x,size);g.stroke()}
+  for(let y=0;y<=size;y+=tile){g.beginPath();g.moveTo(0,y);g.lineTo(size,y);g.stroke()}
+  for(let i=0;i<700;i++){
+   const a=.025+Math.random()*.05;g.fillStyle=`rgba(20,25,22,${a})`;
+   g.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*2,1+Math.random()*2);
+  }
+ }else{
+  g.fillStyle='#3d493d';g.fillRect(0,0,size,size);
+  for(let i=0;i<1800;i++){
+   const green=52+Math.floor(Math.random()*34);
+   g.fillStyle=`rgba(${green-10},${green},${green-12},${.035+Math.random()*.08})`;
+   g.fillRect(Math.random()*size,Math.random()*size,1+Math.random()*2,1+Math.random()*2);
+  }
+  for(let i=0;i<30;i++){
+   g.fillStyle='rgba(73,64,48,.06)';
+   g.beginPath();g.arc(Math.random()*size,Math.random()*size,3+Math.random()*8,0,Math.PI*2);g.fill();
+  }
+ }
+ const tex=new THREE.CanvasTexture(cv);
+ tex.wrapS=tex.wrapT=THREE.RepeatWrapping;
+ tex.colorSpace=THREE.SRGBColorSpace;
+ tex.anisotropy=Math.min(8,renderer.capabilities.getMaxAnisotropy());
+ return tex;
+}
+const urbanTextures={
+ asphalt:makeUrbanTexture('asphalt'),
+ sidewalk:makeUrbanTexture('sidewalk'),
+ ground:makeUrbanTexture('ground')
+};
+function texturedPlane(w,d,texture,x,y,z=.01,repeatScale=6){
+ const material=new THREE.MeshStandardMaterial({map:texture.clone(),roughness:.96,metalness:.01});
+ material.map.needsUpdate=true;material.map.wrapS=material.map.wrapT=THREE.RepeatWrapping;
+ material.map.repeat.set(Math.max(1,w/repeatScale),Math.max(1,d/repeatScale));
+ const m=new THREE.Mesh(new THREE.BoxGeometry(w,.08,d),material);
+ m.position.set(x,z,y);m.receiveShadow=true;world.add(m);return m;
+}
+
 const MAP_W=146,MAP_H=104;
-plane(MAP_W,MAP_H,0x3d493d,0,0,-.08);
+texturedPlane(MAP_W,MAP_H,urbanTextures.ground,0,0,-.08,9);
 const road=0x303738,sidewalk=0x777c75;
 const mapScale=.035,mapOffsetX=2000,mapOffsetY=1400;
 const mx=v=>(v-mapOffsetX)*mapScale;
@@ -77,14 +139,14 @@ const streetX=[580,1145,1705,2245,2900,3500].map(mx);
 const streetZ=[440,950,1450,2050,2520].map(mz);
 const roadW=mw(160),walkW=mw(24);
 for(const z of streetZ){
- plane(MAP_W,roadW,road,0,z,.02);
- plane(MAP_W,walkW,sidewalk,0,z-roadW/2-walkW/2,.04);
- plane(MAP_W,walkW,sidewalk,0,z+roadW/2+walkW/2,.04);
+ texturedPlane(MAP_W,roadW,urbanTextures.asphalt,0,z,.02,8);
+ texturedPlane(MAP_W,walkW,urbanTextures.sidewalk,0,z-roadW/2-walkW/2,.04,4);
+ texturedPlane(MAP_W,walkW,urbanTextures.sidewalk,0,z+roadW/2+walkW/2,.04,4);
 }
 for(const x of streetX){
- plane(roadW,MAP_H,road,x,0,.03);
- plane(walkW,MAP_H,sidewalk,x-roadW/2-walkW/2,0,.05);
- plane(walkW,MAP_H,sidewalk,x+roadW/2+walkW/2,0,.05);
+ texturedPlane(roadW,MAP_H,urbanTextures.asphalt,x,0,.03,8);
+ texturedPlane(walkW,MAP_H,urbanTextures.sidewalk,x-roadW/2-walkW/2,0,.05,4);
+ texturedPlane(walkW,MAP_H,urbanTextures.sidewalk,x+roadW/2+walkW/2,0,.05,4);
 }
 
 const sourceBuildings=[
