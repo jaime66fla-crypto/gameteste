@@ -1,4 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js';
+import { createMultiplayer3D } from '/multiplayer3d.js?v=1';
 import { FBXLoader } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/loaders/FBXLoader.js';
 
 const canvas=document.getElementById('view');
@@ -227,12 +228,18 @@ function makeSoldier(color=0x28313a){
 }
 
 const player=makeSoldier(0x344154);player.scale.setScalar(.68);player.position.set(4,0,8);world.add(player);
+configurePlayerWeapon(player);
+function configurePlayerWeapon(actor){
 // Recenter this weapon at its grip before mounting it on the avatar.
-player.userData.weaponParts.receiver.position.set(.22,0,0);
-player.userData.weaponParts.barrel.position.set(.85,0,0);
-player.userData.gun.rotation.y=-Math.PI/2;
+actor.userData.weaponParts.receiver.position.set(.22,0,0);
+actor.userData.weaponParts.barrel.position.set(.85,0,0);
+actor.userData.gun.rotation.y=-Math.PI/2;
+}
 player.userData.hp=100;player.userData.maxHp=100;
 const locomotion={velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}};
+
+let avatarTemplate=null;
+const remotePlayers=new Map();
 
 // Avatar loader for Erika Archer
 const fbxLoader=new FBXLoader();
@@ -246,46 +253,11 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  const center=new THREE.Vector3();bb.getCenter(center);
  model.position.set(-center.x*model.scale.x,-bb.min.y*model.scale.y,-center.z*model.scale.z);
  model.rotation.y=0; // Erika faces +Z, the same forward axis used by aiming.
+ avatarTemplate=cloneSkinnedAvatar(model);
  player.add(model);
  player.userData.avatar=model;
  player.userData.avatarBaseY=model.position.y;
- player.userData.avatarBones={};
- const mixamoMap={
-  'mixamorig:hips':'hips',
-  'mixamorig:leftfoot':'footL',
-  'mixamorig:rightfoot':'footR',
-  'mixamorig:leftarm':'upperArmL',
-  'mixamorig:rightarm':'upperArmR',
-  'mixamorig:leftforearm':'foreArmL',
-  'mixamorig:rightforearm':'foreArmR',
-  'mixamorig:lefthand':'handL',
-  'mixamorig:righthand':'handR',
-  'mixamorig:leftupleg':'thighL',
-  'mixamorig:rightupleg':'thighR',
-  'mixamorig:leftleg':'calfL',
-  'mixamorig:rightleg':'calfR',
-  'mixamorig:spine':'spine',
-  'mixamorig:spine1':'spine1',
-  'mixamorig:spine2':'spine2',
-  'mixamorig:leftshoulder':'shoulderL',
-  'mixamorig:rightshoulder':'shoulderR'
- };
- const registerBone=(bone)=>{
-  // FBXLoader removes punctuation; duplicate skin bones inherit the real joint.
-  const normalize=name=>(name||'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/^mixamorig/,'');
-  while(bone?.parent?.isBone&&normalize(bone.parent.name)===normalize(bone.name))bone=bone.parent;
-  const n='mixamorig:'+normalize(bone?.name);
-  const key=mixamoMap[n];
-  if(key&&!player.userData.avatarBones[key]){
-   player.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone(),basePosition:bone.position.clone(),baseModelPosition:player.worldToLocal(bone.getWorldPosition(new THREE.Vector3())),baseModelQuaternion:player.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(bone.getWorldQuaternion(new THREE.Quaternion()))};
-  }
- };
- model.traverse(function(child){
-  if(child.isSkinnedMesh&&child.skeleton?.bones){
-   for(const bone of child.skeleton.bones)registerBone(bone);
-  }
-  if(child.isBone)registerBone(child);
- });
+ registerAvatarBones(player,model);
  // Ignore bind-pose exports and empty takes: they contain no usable motion.
  const motionClips=(model.animations||[]).filter(clip=>{
   if(clip.duration<.1)return false;
@@ -319,12 +291,52 @@ fbxLoader.load('/assets/models/erika-archer.fbx',function(model){
  statusEl.textContent='Avatar externo indisponível • usando personagem padrão';
 });
 
+function registerAvatarBones(actor,model){
+ actor.userData.avatarBones={};
+ const mixamoMap={
+  'mixamorig:hips':'hips',
+  'mixamorig:leftfoot':'footL',
+  'mixamorig:rightfoot':'footR',
+  'mixamorig:leftarm':'upperArmL',
+  'mixamorig:rightarm':'upperArmR',
+  'mixamorig:leftforearm':'foreArmL',
+  'mixamorig:rightforearm':'foreArmR',
+  'mixamorig:lefthand':'handL',
+  'mixamorig:righthand':'handR',
+  'mixamorig:leftupleg':'thighL',
+  'mixamorig:rightupleg':'thighR',
+  'mixamorig:leftleg':'calfL',
+  'mixamorig:rightleg':'calfR',
+  'mixamorig:spine':'spine',
+  'mixamorig:spine1':'spine1',
+  'mixamorig:spine2':'spine2',
+  'mixamorig:leftshoulder':'shoulderL',
+  'mixamorig:rightshoulder':'shoulderR'
+ };
+ const registerBone=(bone)=>{
+  // FBXLoader removes punctuation; duplicate skin bones inherit the real joint.
+  const normalize=name=>(name||'').toLowerCase().replace(/[^a-z0-9]/g,'').replace(/^mixamorig/,'');
+  while(bone?.parent?.isBone&&normalize(bone.parent.name)===normalize(bone.name))bone=bone.parent;
+  const n='mixamorig:'+normalize(bone?.name);
+  const key=mixamoMap[n];
+  if(key&&!actor.userData.avatarBones[key]){
+   actor.userData.avatarBones[key]={bone,base:bone.rotation.clone(),baseQuaternion:bone.quaternion.clone(),basePosition:bone.position.clone(),baseModelPosition:actor.worldToLocal(bone.getWorldPosition(new THREE.Vector3())),baseModelQuaternion:actor.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(bone.getWorldQuaternion(new THREE.Quaternion()))};
+  }
+ };
+ model.traverse(function(child){
+  if(child.isSkinnedMesh&&child.skeleton?.bones){
+   for(const bone of child.skeleton.bones)registerBone(bone);
+  }
+  if(child.isBone)registerBone(child);
+ });
+}
+
 function isWeaponReady(){
  return !climbState&&!activeCar&&(desktopFiring||cameraRightDrag||document.pointerLockElement===canvas||
   (mobileAim.active&&Math.hypot(mobileAim.x,mobileAim.y)>.12)||t<weaponReadyUntil);
 }
-function rotateJointToward(joint,tip,target){
- player.updateMatrixWorld(true);
+function rotateJointToward(joint,tip,target,actor=player){
+ actor.updateMatrixWorld(true);
  const origin=joint.getWorldPosition(new THREE.Vector3());
  const from=tip.getWorldPosition(new THREE.Vector3()).sub(origin).normalize();
  const to=target.clone().sub(origin).normalize();
@@ -333,14 +345,14 @@ function rotateJointToward(joint,tip,target){
  const worldRotation=joint.getWorldQuaternion(new THREE.Quaternion()).premultiply(delta);
  const parentRotation=joint.parent.getWorldQuaternion(new THREE.Quaternion()).invert();
  joint.quaternion.copy(parentRotation.multiply(worldRotation));
- player.updateMatrixWorld(true);
+ actor.updateMatrixWorld(true);
 }
-function solveArm(side,target,pole){return solveLimb('upperArm'+side,'foreArm'+side,'hand'+side,target,pole)}
-function solveLimb(upperKey,lowerKey,endKey,target,pole){
- const bones=player.userData.avatarBones;
+function solveArm(side,target,pole,actor=player){return solveLimb('upperArm'+side,'foreArm'+side,'hand'+side,target,pole,actor)}
+function solveLimb(upperKey,lowerKey,endKey,target,pole,actor=player){
+ const bones=actor.userData.avatarBones;
  const upper=bones?.[upperKey]?.bone,lower=bones?.[lowerKey]?.bone,hand=bones?.[endKey]?.bone;
  if(!upper||!lower||!hand)return;
- player.updateMatrixWorld(true);
+ actor.updateMatrixWorld(true);
  const shoulder=upper.getWorldPosition(new THREE.Vector3());
  const elbow=lower.getWorldPosition(new THREE.Vector3());
  const wrist=hand.getWorldPosition(new THREE.Vector3());
@@ -354,31 +366,31 @@ function solveLimb(upperKey,lowerKey,endKey,target,pole){
  const height=Math.sqrt(Math.max(0,l1*l1-along*along));
  const elbowTarget=shoulder.clone().addScaledVector(direction,along).addScaledVector(bend,height);
  const wristTarget=shoulder.clone().addScaledVector(direction,distance);
- rotateJointToward(upper,lower,elbowTarget);
- rotateJointToward(lower,hand,wristTarget);
+ rotateJointToward(upper,lower,elbowTarget,actor);
+ rotateJointToward(lower,hand,wristTarget,actor);
 }
-function updateWeaponPose(){
- const gun=player.userData.gun;if(!gun)return;
- const bones=player.userData.avatarBones,ready=isWeaponReady();
+function updateWeaponPose(actor=player,aimTarget=aimPoint,ready=isWeaponReady(),weaponName=currentWeapon){
+ const gun=actor.userData.gun;if(!gun)return;
+ const bones=actor.userData.avatarBones;
  // Weapon meshes use +X as the barrel axis, with the trigger at the mount origin.
- const weapon=weapons3D[currentWeapon];
+ const weapon=weapons3D[weaponName]||weapons3D.pistol;
  const scale=new THREE.Vector3(...weapon.scale).multiplyScalar(.5);
- const rootRotation=player.getWorldQuaternion(new THREE.Quaternion());
- let mount=player,position,rotation;
+ const rootRotation=actor.getWorldQuaternion(new THREE.Quaternion());
+ let mount=actor,position,rotation;
  if(ready){
-  const pitch=Math.atan2(aimPoint.y-player.position.y-1.45,Math.hypot(aimPoint.x-player.position.x,aimPoint.z-player.position.z));
+  const pitch=Math.atan2(aimTarget.y-actor.position.y-1.45,Math.hypot(aimTarget.x-actor.position.x,aimTarget.z-actor.position.z));
   const aimRotation=rootRotation.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-pitch,0,0)));
-  const rightTarget=player.localToWorld(new THREE.Vector3(-.25,2.12,.3));
+  const rightTarget=actor.localToWorld(new THREE.Vector3(-.25,2.12,.3));
   const direction=new THREE.Vector3(0,0,1).applyQuaternion(aimRotation);
   const supportTarget=rightTarget.clone().addScaledVector(direction,.18*weapon.scale[0]);
-  solveArm('R',rightTarget,player.localToWorld(new THREE.Vector3(-.9,1.6,.1)));
-  solveArm('L',supportTarget,player.localToWorld(new THREE.Vector3(.85,1.6,.2)));
-  mount=bones?.handR?.bone||player;
+  solveArm('R',rightTarget,actor.localToWorld(new THREE.Vector3(-.9,1.6,.1)),actor);
+  solveArm('L',supportTarget,actor.localToWorld(new THREE.Vector3(.85,1.6,.2)),actor);
+  mount=bones?.handR?.bone||actor;
   position=bones?.handR?mount.getWorldPosition(new THREE.Vector3()):rightTarget;
   rotation=aimRotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(0,-Math.PI/2,0)));
  }else{
-  mount=bones?.spine2?.bone||player;
-  position=player.localToWorld(new THREE.Vector3(-.38,1.8,-.42));
+  mount=bones?.spine2?.bone||actor;
+  position=actor.localToWorld(new THREE.Vector3(-.38,1.8,-.42));
   rotation=rootRotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(.15,0,.95)));
  }
  if(gun.parent!==mount)mount.add(gun);
@@ -386,9 +398,9 @@ function updateWeaponPose(){
  gun.position.copy(mount.worldToLocal(position));
  gun.quaternion.copy(mount.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation));
  gun.scale.copy(scale).divide(mount.getWorldScale(new THREE.Vector3()));
- gun.visible=!activeCar;
+ gun.visible=actor===player?!activeCar:!actor.userData.inCar;
  gun.updateMatrixWorld(true);
- player.userData.weaponPose=ready?'aim':'rest';
+ actor.userData.weaponPose=ready?'aim':'rest';
 }
 
 function findAvatarAction(kind){
@@ -419,11 +431,10 @@ function setAvatarMotion(kind,force=false){
   for(const a of Object.values(actions))a.stop();
  }
 }
-function updateProceduralAvatar(dt,moving=false,running=false){
- const avatar=player.userData.avatar,bones=player.userData.avatarBones;
- if(!avatar||!bones||player.userData.avatarActiveAction)return;
- const climbing=!!player.userData.climbing;
- const gait=locomotion;
+function updateProceduralAvatar(dt,moving=false,running=false,actor=player,gait=locomotion){
+ const avatar=actor.userData.avatar,bones=actor.userData.avatarBones;
+ if(!avatar||!bones||actor.userData.avatarActiveAction)return;
+ const climbing=!!actor.userData.climbing;
  const fade=1-Math.exp(-dt*10);
  gait.blend=THREE.MathUtils.lerp(gait.blend,moving?1:0,fade);
  gait.run=THREE.MathUtils.lerp(gait.run,running?1:0,fade);
@@ -440,7 +451,7 @@ function updateProceduralAvatar(dt,moving=false,running=false){
   targetQ.copy(joint.baseQuaternion).multiply(tmpQ);
   joint.bone.quaternion.slerp(targetQ,alpha);
  };
- const localVelocity=gait.direction.clone().applyQuaternion(player.quaternion.clone().invert());
+ const localVelocity=gait.direction.clone().applyQuaternion(actor.quaternion.clone().invert());
  const armSwing=weight*THREE.MathUtils.lerp(.22,.42,gait.run);
  pose('shoulderL',0,0,-.06);pose('shoulderR',0,0,.06);
  pose('upperArmL',climbing?-1.2+s*.3:1.28,0,climbing?0:-s*armSwing);
@@ -454,9 +465,9 @@ function updateProceduralAvatar(dt,moving=false,running=false){
  if(bones.hips){
   const hip=bones.hips;
   hip.bone.position.copy(hip.basePosition);
-  hip.bone.position.y-=(climbing?0:weight*(.145+gait.run*.035))/(player.scale.y*avatar.scale.y);
+  hip.bone.position.y-=(climbing?0:weight*(.145+gait.run*.035))/(actor.scale.y*avatar.scale.y);
  }
- avatar.position.y=(player.userData.avatarBaseY||0)+(climbing?Math.abs(s)*.025:
+ avatar.position.y=(actor.userData.avatarBaseY||0)+(climbing?Math.abs(s)*.025:
   (1-double)*(.012+gait.run*.012)*weight+Math.sin(t*2)*.004*(1-weight));
  for(const [side,offset] of [['L',0],['R',.5]]){
   const cycle=(phase/(Math.PI*2)+offset)%1;
@@ -470,8 +481,8 @@ function updateProceduralAvatar(dt,moving=false,running=false){
   pose('foot'+side,0,0,0);
   const foot=bones['foot'+side];
   if(climbing||weight<.025||!foot){gait.planted[side]=null;continue}
-  player.updateMatrixWorld(true);
-  const neutral=player.localToWorld(foot.baseModelPosition.clone());
+  actor.updateMatrixWorld(true);
+  const neutral=actor.localToWorld(foot.baseModelPosition.clone());
   const reach=stride*stance*.5;
   let target;
   if(cycle<=stance){
@@ -487,10 +498,10 @@ function updateProceduralAvatar(dt,moving=false,running=false){
   const current=foot.bone.getWorldPosition(new THREE.Vector3());
   target.lerpVectors(current,target,weight);
   const hip=bones['thigh'+side].bone.getWorldPosition(new THREE.Vector3());
-  const pole=hip.clone().add(new THREE.Vector3(0,-.2,.7).applyQuaternion(player.quaternion));
-  solveLimb('thigh'+side,'calf'+side,'foot'+side,target,pole);
+  const pole=hip.clone().add(new THREE.Vector3(0,-.2,.7).applyQuaternion(actor.quaternion));
+  solveLimb('thigh'+side,'calf'+side,'foot'+side,target,pole,actor);
   // Keep the sole level in stance; add a small toe lift during the swing.
-  const rotation=player.getWorldQuaternion(new THREE.Quaternion()).multiply(foot.baseModelQuaternion);
+  const rotation=actor.getWorldQuaternion(new THREE.Quaternion()).multiply(foot.baseModelQuaternion);
   rotation.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.sin(swing*Math.PI)*.18,0,0)));
   const local=foot.bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation);
   foot.bone.quaternion.slerp(local,weight);
@@ -697,7 +708,7 @@ function updateClimb(dt){
 
 
 const keys=new Set();let t=0;
-addEventListener('keydown',e=>{const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
+addEventListener('keydown',e=>{if(['INPUT','TEXTAREA','SELECT'].includes(e.target?.tagName))return;const k=e.key.toLowerCase();keys.add(k);if(k==='1')setWeapon('pistol');if(k==='2')setWeapon('smg');if(k==='3')setWeapon('rifle');if(k==='4')setWeapon('shotgun');if(k==='e'){if(!toggleVehicle()){if(player.position.y<1)startClimb('up');else startClimb('down')}}});
 addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
 document.getElementById('resetBtn').addEventListener('click',()=>player.position.set(5,0,8));
 function bindStick(el,knob,state,onMove){
@@ -863,7 +874,8 @@ function makeTracer(origin,target,weapon){
  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(.035,.035,.9,6),new THREE.MeshBasicMaterial({color:weapon.color||0xffdd75,transparent:true,opacity:.95}));
  mesh.rotation.x=Math.PI/2;
  mesh.position.copy(origin);mesh.castShadow=false;world.add(mesh);
- bullets.push({mesh,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color});
+ const bullet={mesh,dir,speed:weapon.speed,life:1.15,damage:weapon.damage,color:weapon.color};
+ bullets.push(bullet);return bullet;
 }
 
 function topSurfaceAt(x,z){
@@ -875,7 +887,7 @@ function topSurfaceAt(x,z){
  return y;
 }
 // The same volumes resolve the reticle and each projectile segment.
-function traceAimRay(ray,maxDistance=100,includeGround=false){
+function traceAimRay(ray,maxDistance=100,includeGround=false,excludedId=null){
  let best=null;
  const consider=(point,kind,object=null)=>{
   if(!point)return;
@@ -888,8 +900,8 @@ function traceAimRay(ray,maxDistance=100,includeGround=false){
   if(volume.containsPoint(ray.origin))consider(ray.origin,'wall',b);
   else consider(ray.intersectBox(volume,new THREE.Vector3()),'wall',b);
  }
- for(const e of enemies){
-  if(!e.userData.alive)continue;
+ for(const e of [...enemies,...[...remotePlayers.values()].map(remote=>remote.actor)]){
+  if(!e.userData.alive||(excludedId&&e.userData.networkId===excludedId))continue;
   const center=e.position.clone().add(new THREE.Vector3(0,1.5,0));
   const volume=new THREE.Sphere(center,1);
   if(volume.containsPoint(ray.origin))consider(ray.origin,'enemy',e);
@@ -961,7 +973,9 @@ function fire(){
  const target=aimPoint.clone();
  spawnMuzzle(origin);
  recoilKick=Math.min(.55,recoilKick+weapon.recoil);
- for(let i=0;i<weapon.pellets;i++)makeTracer(origin,target,weapon);
+ const fired=[];for(let i=0;i<weapon.pellets;i++)fired.push(makeTracer(origin,target,weapon));
+ const shotId=multiplayer.shoot({weapon:currentWeapon,origin:{x:origin.x,y:origin.y,z:origin.z},rays:fired.map(b=>({x:b.dir.x,y:b.dir.y,z:b.dir.z}))});
+ fired.forEach((bullet,pellet)=>{bullet.networkShotId=shotId;bullet.pellet=pellet});
  updateHud();
 }
 
@@ -1274,13 +1288,15 @@ function updateBullets3D(dt){
   }
 
   const segment=next.clone().sub(old);
-  const hit=traceAimRay(new THREE.Ray(old,segment.clone().normalize()),segment.length(),true);
+  const hit=traceAimRay(new THREE.Ray(old,segment.clone().normalize()),segment.length(),true,b.ownerId||null);
   b.mesh.position.copy(hit?hit.point:next);
   if(hit){
    b.life=0;
    spawnImpact(hit.point,hit.kind==='enemy'?0xff6b6b:b.color,5);
    if(hit.kind==='enemy'){
     const enemyHit=hit.object;
+    if(b.remoteShot)continue;
+    if(enemyHit.userData.networkId){if(b.networkShotId)multiplayer.hit(b.networkShotId,b.pellet,enemyHit.userData.networkId);continue}
     enemyHit.userData.hp-=b.damage;
     const killed=enemyHit.userData.hp<=0;
     showHitmarker(killed);
@@ -1324,9 +1340,111 @@ function updateThirdPersonCamera(dt,targetObj){
  camera.lookAt(camera.position.clone().add(viewDirection));
  camera.updateMatrixWorld(true);
 }
+function cloneSkinnedAvatar(source){
+ const clone=source.clone(true),originals=[],copies=[],lookup=new Map();
+ source.traverse(node=>originals.push(node));clone.traverse(node=>copies.push(node));
+ originals.forEach((node,i)=>lookup.set(node,copies[i]));
+ for(let i=0;i<copies.length;i++)if(originals[i].isSkinnedMesh){
+  const mesh=copies[i],original=originals[i];
+  mesh.skeleton=original.skeleton.clone();mesh.skeleton.bones=original.skeleton.bones.map(bone=>lookup.get(bone));
+  mesh.bind(mesh.skeleton,original.bindMatrix);
+ }
+ return clone;
+}
+function attachNetworkAvatar(actor){
+ if(!avatarTemplate||actor.userData.avatar)return;
+ const model=cloneSkinnedAvatar(avatarTemplate);actor.add(model);
+ actor.userData.avatar=model;actor.userData.avatarBaseY=model.position.y;
+ registerAvatarBones(actor,model);
+ actor.children.forEach(child=>{if(child.isMesh)child.visible=false});
+}
+function remoteState(state){
+ if(!state?.id||![state.x,state.y,state.z,state.angle].every(Number.isFinite))return;
+ let remote=remotePlayers.get(state.id);
+ if(!remote){
+  const actor=makeSoldier(0x385778);actor.scale.setScalar(.68);configurePlayerWeapon(actor);
+  actor.position.set(state.x,state.y,state.z);actor.userData.networkId=state.id;actor.userData.alive=true;
+  const labelCanvas=document.createElement('canvas');labelCanvas.width=256;labelCanvas.height=48;
+  const texture=new THREE.CanvasTexture(labelCanvas);texture.colorSpace=THREE.SRGBColorSpace;
+  const label=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,depthTest:false}));label.position.y=3.7;label.scale.set(3.6,.68,1);actor.add(label);
+  remote={actor,target:new THREE.Vector3(),state,labelCanvas,texture,motion:{velocity:new THREE.Vector3(),direction:new THREE.Vector3(0,0,1),speed:0,phase:0,blend:0,run:0,planted:{L:null,R:null}}};
+  remotePlayers.set(state.id,remote);world.add(actor);attachNetworkAvatar(actor);
+ }
+ remote.state=state;remote.target.set(state.x,state.y,state.z);remote.actor.userData.hp=state.health;remote.actor.userData.alive=state.health>0;
+ const ctx=remote.labelCanvas.getContext('2d');ctx.clearRect(0,0,256,48);ctx.fillStyle='#071019dd';ctx.fillRect(0,0,256,48);ctx.fillStyle='#8edaff';ctx.font='bold 24px system-ui';ctx.textAlign='center';ctx.fillText(String(state.name||'Jogador').slice(0,18),128,32);remote.texture.needsUpdate=true;
+}
+function removeRemote(id){
+ const remove=remote=>{world.remove(remote.actor);if(remote.car)world.remove(remote.car);remote.texture.dispose()};
+ if(id===null){for(const remote of remotePlayers.values())remove(remote);remotePlayers.clear();return}
+ const remote=remotePlayers.get(id);if(remote)remove(remote);remotePlayers.delete(id);
+}
+function localNetworkState(){
+ return {x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,weapon:currentWeapon,
+  moving:locomotion.speed>.05,running:locomotion.run>.5,climbing:!!climbState,aiming:isWeaponReady(),inCar:!!activeCar,
+  pitch:Math.atan2(aimPoint.y-player.position.y-1.45,Math.hypot(aimPoint.x-player.position.x,aimPoint.z-player.position.z))};
+}
+function updateMultiplayer(dt){
+ multiplayer.update(dt,localNetworkState());
+ for(const remote of remotePlayers.values()){
+  const {actor,state,motion}=remote,before=actor.position.clone();
+  if(actor.position.distanceTo(remote.target)>8){actor.position.copy(remote.target);motion.planted.L=null;motion.planted.R=null}
+  else actor.position.lerp(remote.target,1-Math.exp(-dt*14));
+  const turn=Math.atan2(Math.sin(state.angle-actor.rotation.y),Math.cos(state.angle-actor.rotation.y));actor.rotation.y+=turn*(1-Math.exp(-dt*16));
+  const travel=actor.position.clone().sub(before);travel.y=0;motion.speed=Math.min(6,travel.length()/Math.max(dt,.001));
+  if(travel.lengthSq()>.00001)motion.direction.copy(travel).normalize();
+  actor.userData.climbing=state.climbing;actor.userData.inCar=state.inCar;
+  attachNetworkAvatar(actor);updateProceduralAvatar(dt,motion.speed>.05,state.running,actor,motion);
+  const target=actor.position.clone().add(new THREE.Vector3(Math.sin(state.angle)*20,1.45+Math.tan(state.pitch||0)*20,Math.cos(state.angle)*20));
+  updateWeaponPose(actor,target,state.aiming&&!state.climbing,state.weapon);
+  if(!actor.userData.avatar){const gait=Math.sin(t*(state.running?12:8))*(state.moving?.5:0);actor.userData.legs[0].rotation.x=gait;actor.userData.legs[1].rotation.x=-gait}
+  if(state.inCar&&!remote.car&&cars[0]){remote.car=cars[0].clone(true);world.add(remote.car)}
+  if(remote.car){remote.car.visible=state.inCar;remote.car.position.copy(actor.position);remote.car.rotation.y=actor.rotation.y}
+  actor.visible=state.health>0;
+  if(actor.userData.avatar)actor.userData.avatar.visible=!state.inCar;
+ }
+}
+const multiplayer=createMultiplayer3D({
+ url:room=>(location.protocol==='https:'?'wss:':'ws:')+'//'+location.host+'/ws?mode=3d&room='+encodeURIComponent(room),
+ onState:remoteState,onLeave:removeRemote,
+ onStatus:(status,room)=>{
+  const labels={solo:'Solo • sem bots',connecting:'Conectando à sala '+room+'…',connected:'Online • sala '+room,offline:'Desconectado • tentando reconectar',error:'Falha na conexão • tentando reconectar'};
+  const label=document.getElementById('onlineStatus');if(label)label.textContent=labels[status]||status;
+  if(status==='connected'){document.getElementById('onlinePanel').hidden=true;multiplayer.update(1,localNetworkState())}
+ },
+ onRanking:players=>{
+  const roster=document.getElementById('onlineRoster');if(roster)roster.textContent=players.length?players.length+' jogador(es)\n'+players.slice(0,5).map((p,i)=>(i+1)+'. '+p.name+' — '+p.kills).join('\n'):'';
+  const me=players.find(p=>p.id===multiplayer.id);if(me)kills3D=me.kills;
+ },
+ onShot:shot=>{
+  const weapon=weapons3D[shot.weapon];if(!weapon)return;
+  const origin=new THREE.Vector3(shot.origin.x,shot.origin.y,shot.origin.z);spawnMuzzle(origin);
+  for(const direction of shot.rays){const dir=new THREE.Vector3(direction.x,direction.y,direction.z);const bullet=makeTracer(origin,origin.clone().add(dir),{...weapon,spread:0});bullet.remoteShot=true;bullet.ownerId=shot.ownerId}
+ },
+ onHit:(hit,id)=>{
+  if(hit.attackerId===id){showHitmarker(hit.killed);kills3D=hit.kills}
+  if(hit.targetId===id){player.userData.hp=hit.health;statusEl.textContent=hit.killed?'Você foi eliminado • retornando ao mapa':'Você foi atingido';updateHud()}
+  else{const remote=remotePlayers.get(hit.targetId);if(remote){remote.actor.userData.hp=hit.health;remote.actor.userData.alive=hit.health>0;remote.actor.visible=hit.health>0}}
+ },
+ onRespawn:(state,id)=>{
+  if(state.id===id){
+   if(activeCar){activeCar=null;player.visible=true}climbState=null;player.userData.climbing=false;
+   player.position.set(state.x,state.y,state.z);player.userData.hp=100;locomotion.velocity.set(0,0,0);locomotion.planted.L=null;locomotion.planted.R=null;
+   desktopFiring=false;mobileAim.firing=false;updateHud();multiplayer.update(1,localNetworkState());
+  }else{const remote=remotePlayers.get(state.id);if(remote){remote.actor.position.set(state.x,state.y,state.z);remote.target.copy(remote.actor.position);remote.state.health=100;remote.actor.userData.alive=true;remote.actor.userData.hp=100}}
+ }
+});
+document.getElementById('multiplayerBtn')?.addEventListener('click',()=>{const panel=document.getElementById('onlinePanel');panel.hidden=!panel.hidden;keys.clear();desktopFiring=false;document.exitPointerLock?.()});
+document.getElementById('onlineForm')?.addEventListener('submit',event=>{
+ event.preventDefault();desktopFiring=false;
+ multiplayer.connect(document.getElementById('onlineName').value,document.getElementById('onlineRoom').value);
+});
+document.getElementById('offlineBtn')?.addEventListener('click',()=>{multiplayer.disconnect();kills3D=0;player.userData.hp=100;updateHud();document.getElementById('onlinePanel').hidden=true});
+if(typeof location!=='undefined'&&new URLSearchParams(location.search).get('multiplayer')==='1')document.getElementById('onlinePanel').hidden=false;
+
 let last=performance.now();
 function frame(now){
  const dt=Math.min(.033,(now-last)/1000);last=now;t+=dt;
+ updateMultiplayer(dt);
  if(player.userData.avatarMixer)player.userData.avatarMixer.update(dt);
  if(updateClimb(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateAimFromPointer();updateEnemies3D(dt);updateBullets3D(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,player);updateAimFromPointer();updateWeaponPose();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
  if(updateVehicle(dt)){shotCooldown=Math.max(0,shotCooldown-dt);updateEnemies3D(dt);updateBullets3D(dt);updateWeaponFx(dt);updateVehicleSmoke(dt);updateBossMissiles(dt);updateBossDeathFx(dt);if(updateBossCutscene(dt)){renderer.render(scene,camera);requestAnimationFrame(frame);return}updateThirdPersonCamera(dt,activeCar);updateBuildingVisibility();updateHud();renderer.render(scene,camera);requestAnimationFrame(frame);return}
