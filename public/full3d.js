@@ -667,6 +667,15 @@ class HumanCharacter {
   this.direction=new THREE.Vector3();
   this.neckBone=null;
   this.spineBone=null;
+  this.hipsBone=null;
+  this.leftUpLegBone=null;
+  this.rightUpLegBone=null;
+  this.leftLegBone=null;
+  this.rightLegBone=null;
+  this.jumpPhase='grounded';
+  this.jumpBlend=0;
+  this.landBlend=0;
+  this.wasGrounded=true;
  }
  load(url){
   // Current runtime is classic Three.js r128. Use GLTFLoader only if available globally.
@@ -687,6 +696,11 @@ class HumanCharacter {
       const name=object.name.toLowerCase();
       if(name.includes('neck'))this.neckBone=object;
       if(name.includes('spine1')||name==='spine')this.spineBone=object;
+      if(name.includes('hips'))this.hipsBone=object;
+      if(name.includes('leftupleg')||name.includes('left_up_leg'))this.leftUpLegBone=object;
+      if(name.includes('rightupleg')||name.includes('right_up_leg'))this.rightUpLegBone=object;
+      if((name.includes('leftleg')||name.includes('left_leg'))&&!name.includes('upleg'))this.leftLegBone=object;
+      if((name.includes('rightleg')||name.includes('right_leg'))&&!name.includes('upleg'))this.rightLegBone=object;
      }
     });
     this.mixer=new THREE.AnimationMixer(this.model);
@@ -765,6 +779,85 @@ class HumanCharacter {
   const clampedY=THREE.MathUtils.clamp(angleY,-.8,.8);
   this.neckBone.rotation.y=THREE.MathUtils.lerp(this.neckBone.rotation.y,clampedY,.1);
  }
+ updateJumpPose(delta,verticalVelocity,isGrounded){
+  if(!this.model)return;
+
+  const smooth=(current,target,speed)=>THREE.MathUtils.lerp(
+   current,target,
+   1-Math.exp(-speed*delta)
+  );
+
+  // Detect takeoff / landing.
+  if(this.wasGrounded&&!isGrounded){
+   this.jumpPhase='takeoff';
+   this.jumpBlend=0;
+  }
+  if(!this.wasGrounded&&isGrounded){
+   this.jumpPhase='landing';
+   this.landBlend=1;
+  }
+  this.wasGrounded=isGrounded;
+
+  if(!isGrounded){
+   this.jumpBlend=Math.min(1,this.jumpBlend+delta*7);
+
+   if(verticalVelocity>2.2)this.jumpPhase='takeoff';
+   else if(verticalVelocity>-2.0)this.jumpPhase='air';
+   else this.jumpPhase='fall';
+
+   const t=this.jumpBlend;
+
+   // Hips: small compression/extension and forward lean.
+   if(this.hipsBone){
+    const hipsX=this.jumpPhase==='takeoff'?-0.12:
+                this.jumpPhase==='air'?-0.04:.08;
+    this.hipsBone.rotation.x=smooth(this.hipsBone.rotation.x,hipsX,10);
+   }
+
+   if(this.spineBone){
+    const spineX=this.jumpPhase==='takeoff'?.14:
+                 this.jumpPhase==='air'?.05:-.06;
+    this.spineBone.rotation.x=smooth(this.spineBone.rotation.x,spineX,9);
+   }
+
+   // Legs tuck slightly in air, then extend for landing.
+   const tuck=this.jumpPhase==='air'?.62:
+              this.jumpPhase==='takeoff'?.38:.18;
+   const calf=this.jumpPhase==='air'?-1.0:
+              this.jumpPhase==='takeoff'?-0.62:-0.28;
+
+   if(this.leftUpLegBone)this.leftUpLegBone.rotation.x=smooth(this.leftUpLegBone.rotation.x,tuck,12);
+   if(this.rightUpLegBone)this.rightUpLegBone.rotation.x=smooth(this.rightUpLegBone.rotation.x,tuck*.92,12);
+   if(this.leftLegBone)this.leftLegBone.rotation.x=smooth(this.leftLegBone.rotation.x,calf,12);
+   if(this.rightLegBone)this.rightLegBone.rotation.x=smooth(this.rightLegBone.rotation.x,calf*.94,12);
+
+   // Slight whole-model pitch makes the jump read better.
+   const modelPitch=this.jumpPhase==='takeoff'?-0.05:
+                    this.jumpPhase==='air'?0.02:.07;
+   this.model.rotation.x=smooth(this.model.rotation.x,modelPitch,8);
+  }else{
+   // Landing compression then recover.
+   if(this.jumpPhase==='landing'){
+    this.landBlend=Math.max(0,this.landBlend-delta*5.5);
+    const compression=this.landBlend;
+
+    if(this.hipsBone)this.hipsBone.rotation.x=smooth(this.hipsBone.rotation.x,.14*compression,14);
+    if(this.spineBone)this.spineBone.rotation.x=smooth(this.spineBone.rotation.x,-.08*compression,14);
+    if(this.leftUpLegBone)this.leftUpLegBone.rotation.x=smooth(this.leftUpLegBone.rotation.x,.35*compression,14);
+    if(this.rightUpLegBone)this.rightUpLegBone.rotation.x=smooth(this.rightUpLegBone.rotation.x,.35*compression,14);
+    if(this.leftLegBone)this.leftLegBone.rotation.x=smooth(this.leftLegBone.rotation.x,-.45*compression,14);
+    if(this.rightLegBone)this.rightLegBone.rotation.x=smooth(this.rightLegBone.rotation.x,-.45*compression,14);
+
+    if(this.landBlend<=.02)this.jumpPhase='grounded';
+   }
+
+   // Return procedural offsets toward mixer pose when fully grounded.
+   if(this.jumpPhase==='grounded'){
+    this.model.rotation.x=smooth(this.model.rotation.x,0,10);
+   }
+  }
+ }
+
  update(delta){
   if(this.mixer)this.mixer.update(delta);
  }
@@ -2088,6 +2181,7 @@ function loop(){
   );
   humanCharacter.lookAtTarget(aimPoint);
   humanCharacter.update(dt);
+  humanCharacter.updateJumpPose(dt,controller.velocity.y,controller.isGrounded);
  }else{
   combatAnimator.update(dt,{
   moving:movingNow,
