@@ -20,6 +20,14 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 <div id="state">carregando...</div>
 <div id="help">Nova versão 3D — versão anterior preservada em backup</div>
 <div class="cross"></div>
-<script type="module" src="/full3d.js?v=1"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module" src="/full3d.js?v=2"></script>
 </body>
 </html>
