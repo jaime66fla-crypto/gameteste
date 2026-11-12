@@ -672,6 +672,10 @@ class HumanCharacter {
   this.rightUpLegBone=null;
   this.leftLegBone=null;
   this.rightLegBone=null;
+  this.rightHandBone=null;
+  this.leftHandBone=null;
+  this.rightForeArmBone=null;
+  this.leftForeArmBone=null;
   this.jumpPhase='grounded';
   this.jumpBlend=0;
   this.landBlend=0;
@@ -701,6 +705,10 @@ class HumanCharacter {
       if(name.includes('rightupleg')||name.includes('right_up_leg'))this.rightUpLegBone=object;
       if((name.includes('leftleg')||name.includes('left_leg'))&&!name.includes('upleg'))this.leftLegBone=object;
       if((name.includes('rightleg')||name.includes('right_leg'))&&!name.includes('upleg'))this.rightLegBone=object;
+      if(name.includes('righthand')||name.includes('right_hand'))this.rightHandBone=object;
+      if(name.includes('lefthand')||name.includes('left_hand'))this.leftHandBone=object;
+      if(name.includes('rightforearm')||name.includes('right_forearm'))this.rightForeArmBone=object;
+      if(name.includes('leftforearm')||name.includes('left_forearm'))this.leftForeArmBone=object;
      }
     });
     this.mixer=new THREE.AnimationMixer(this.model);
@@ -1472,7 +1480,13 @@ class PistolController {
   this.spread=.0025;
 
   this.pistol=this.createPistolMesh();
-  // Attach to player root so it remains visible when the procedural avatar is hidden by the Soldier GLB.
+  this.soldierAttached=false;
+  this.rightHandBone=null;
+  this.leftHandBone=null;
+  this.rightForeArmBone=null;
+  this.leftForeArmBone=null;
+
+  // Fallback: attach to player root until Soldier bones are available.
   this.player.add(this.pistol);
   this.holster();
 
@@ -1532,6 +1546,57 @@ class PistolController {
   return g;
  }
 
+ attachToSoldier(human){
+  if(!human||!human.model||!human.rightHandBone)return false;
+
+  this.rightHandBone=human.rightHandBone;
+  this.leftHandBone=human.leftHandBone;
+  this.rightForeArmBone=human.rightForeArmBone;
+  this.leftForeArmBone=human.leftForeArmBone;
+
+  this.rightHandBone.add(this.pistol);
+  this.soldierAttached=true;
+
+  // Local offset tuned for Soldier hand orientation.
+  this.pistol.position.set(.02,-.03,-.16);
+  this.pistol.rotation.set(-Math.PI/2,.02,Math.PI);
+
+  return true;
+ }
+
+ updateSoldierGrip(dt){
+  if(!this.soldierAttached||!this.isEquipped)return;
+
+  const smooth=(current,target,speed)=>THREE.MathUtils.lerp(
+   current,target,
+   1-Math.exp(-speed*dt)
+  );
+
+  // Right arm: weapon arm points forward.
+  if(this.rightForeArmBone){
+   this.rightForeArmBone.rotation.x=smooth(this.rightForeArmBone.rotation.x,-1.08,13);
+   this.rightForeArmBone.rotation.y=smooth(this.rightForeArmBone.rotation.y,.08,12);
+   this.rightForeArmBone.rotation.z=smooth(this.rightForeArmBone.rotation.z,-.08,12);
+  }
+
+  // Left support hand closes toward the pistol grip.
+  if(this.leftForeArmBone){
+   this.leftForeArmBone.rotation.x=smooth(this.leftForeArmBone.rotation.x,-1.0,13);
+   this.leftForeArmBone.rotation.y=smooth(this.leftForeArmBone.rotation.y,-.18,12);
+   this.leftForeArmBone.rotation.z=smooth(this.leftForeArmBone.rotation.z,.14,12);
+  }
+
+  if(this.leftHandBone){
+   this.leftHandBone.rotation.x=smooth(this.leftHandBone.rotation.x,-.08,10);
+   this.leftHandBone.rotation.y=smooth(this.leftHandBone.rotation.y,.12,10);
+   this.leftHandBone.rotation.z=smooth(this.leftHandBone.rotation.z,-.10,10);
+  }
+
+  // Local recoil on pistol only.
+  this.pistol.position.z=-.16+this.recoil*.06;
+  this.pistol.rotation.x=-Math.PI/2-this.recoil*.18;
+ }
+
  bindInputs(){
   addEventListener('keydown',e=>{
    if((e.code==='Digit3'||e.code==='Numpad3')&&!this.isReloading){
@@ -1562,8 +1627,10 @@ class PistolController {
   this.pistol.visible=true;
 
   // Right-hand / two-handed TPS posture.
-  this.pistol.position.set(.38,1.28,-.52);
-  this.pistol.rotation.set(-.08,0,0);
+  if(!this.soldierAttached){
+   this.pistol.position.set(.38,1.28,-.52);
+   this.pistol.rotation.set(-.08,0,0);
+  }
 
   if(typeof combatAnimator!=='undefined'){
    combatAnimator.setWeapon('pistol');
@@ -1576,8 +1643,13 @@ class PistolController {
   this.pistol.visible=true;
 
   // Holster on right hip/back side, not inside torso.
-  this.pistol.position.set(.34,.92,.12);
-  this.pistol.rotation.set(.08,.12,-.28);
+  if(this.soldierAttached){
+   // Holstered pistol stays attached to hand but hidden for now.
+   this.pistol.visible=false;
+  }else{
+   this.pistol.position.set(.34,.92,.12);
+   this.pistol.rotation.set(.08,.12,-.28);
+  }
 
   if(typeof combatAnimator!=='undefined'&&combatAnimator.weapon==='pistol'){
    combatAnimator.setWeapon('none');
@@ -1683,6 +1755,11 @@ class PistolController {
   this.recoil-=this.recoil*Math.min(1,14*dt);
 
   if(!this.isEquipped)return;
+
+  if(useHumanCharacter&&this.soldierAttached){
+   this.updateSoldierGrip(dt);
+   return;
+  }
 
   const leftArm=this.avatar.leftArm;
   const rightArm=this.avatar.rightArm;
@@ -1971,6 +2048,7 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
 
   mainAvatar.group.visible=false;
   useHumanCharacter=true;
+  if(typeof pistolWeapon!=='undefined')pistolWeapon.attachToSoldier(humanCharacter);
   stateEl.textContent='HUMANO GLB ATIVO';
   return true;
  }catch(err){
