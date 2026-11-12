@@ -829,9 +829,13 @@ function updateLadderAvatar(dt,state){
 
  const goingUp=state.dir==='up';
  const direction=goingUp?1:-1;
- const phase=state.t*5.6*direction;
+ const progress=THREE.MathUtils.clamp(state.t/state.total,0,1);
+ const phase=state.t*6.35*direction;
  const s=Math.sin(phase),c=Math.cos(phase);
- const alpha=1-Math.exp(-dt*18);
+ const alpha=1-Math.exp(-dt*22);
+ const topExit=goingUp?THREE.MathUtils.smoothstep(progress,.80,1):0;
+ const bottomExit=!goingUp?THREE.MathUtils.smoothstep(progress,.82,1):0;
+ const exitBlend=Math.max(topExit,bottomExit);
  const tmpEuler=new THREE.Euler(),tmpQ=new THREE.Quaternion(),targetQ=new THREE.Quaternion();
  const pose=(key,rx=0,ry=0,rz=0)=>{
   const joint=bones[key];if(!joint)return;
@@ -840,42 +844,49 @@ function updateLadderAvatar(dt,state){
   joint.bone.quaternion.slerp(targetQ,alpha);
  };
 
- // Keep the torso close to the ladder, with a small natural side-to-side weight shift.
- pose('hips',-.08,0,s*.035);
- pose('spine',-.18,-s*.025,-s*.035);
- pose('spine1',-.10,0,-s*.018);
- pose('spine2',-.06,0,s*.012);
- pose('shoulderL',0,0,-.08);
- pose('shoulderR',0,0,.08);
+ // Stronger ladder posture: chest closer to the rungs, hips slightly back.
+ pose('hips',THREE.MathUtils.lerp(-.10,.06,exitBlend),0,s*.045*(1-exitBlend));
+ pose('spine',THREE.MathUtils.lerp(-.24,-.06,exitBlend),-s*.03,-s*.045*(1-exitBlend));
+ pose('spine1',THREE.MathUtils.lerp(-.13,-.03,exitBlend),0,-s*.024*(1-exitBlend));
+ pose('spine2',THREE.MathUtils.lerp(-.08,0,exitBlend),0,s*.018*(1-exitBlend));
+ pose('shoulderL',0,0,-.10);
+ pose('shoulderR',0,0,.10);
 
  player.updateMatrixWorld(true);
 
- // Hands alternate one rung apart. Targets are expressed in player-local space,
- // so the same animation works while going up or down.
- const handL=player.localToWorld(new THREE.Vector3(-.38,2.05+s*.30,.48));
- const handR=player.localToWorld(new THREE.Vector3(.38,2.05-s*.30,.48));
- const poleL=player.localToWorld(new THREE.Vector3(-.82,1.70,.12));
- const poleR=player.localToWorld(new THREE.Vector3(.82,1.70,.12));
+ // Hands visibly climb from rung to rung instead of sliding with the torso.
+ const handLift=.43*(1-exitBlend);
+ const handReach=THREE.MathUtils.lerp(.50,.35,exitBlend);
+ const handBaseY=THREE.MathUtils.lerp(2.00,2.20,topExit);
+ const handL=player.localToWorld(new THREE.Vector3(-.40,handBaseY+s*handLift,handReach));
+ const handR=player.localToWorld(new THREE.Vector3(.40,handBaseY-s*handLift,handReach));
+ const poleL=player.localToWorld(new THREE.Vector3(-.90,1.68,.08));
+ const poleR=player.localToWorld(new THREE.Vector3(.90,1.68,.08));
  solveArm('L',handL,poleL,player);
  solveArm('R',handR,poleR,player);
 
- // Feet follow the opposite hand, pressing toward the ladder before lifting.
- const footL=player.localToWorld(new THREE.Vector3(-.24,.38-s*.27,.28+Math.max(0,c)*.05));
- const footR=player.localToWorld(new THREE.Vector3(.24,.38+s*.27,.28+Math.max(0,-c)*.05));
+ // Feet step onto alternating rungs with a short lift before planting.
+ const footLift=.36*(1-exitBlend);
+ const footPress=.30;
+ const liftL=Math.max(0,c)*.10*(1-exitBlend);
+ const liftR=Math.max(0,-c)*.10*(1-exitBlend);
+ const footL=player.localToWorld(new THREE.Vector3(-.25,.36-s*footLift,footPress+liftL));
+ const footR=player.localToWorld(new THREE.Vector3(.25,.36+s*footLift,footPress+liftR));
  const hipL=bones.thighL?.bone?.getWorldPosition(new THREE.Vector3());
  const hipR=bones.thighR?.bone?.getWorldPosition(new THREE.Vector3());
  if(hipL){
-  const kneePoleL=hipL.clone().add(new THREE.Vector3(-.22,-.15,.62).applyQuaternion(player.quaternion));
+  const kneePoleL=hipL.clone().add(new THREE.Vector3(-.24,-.10,.72).applyQuaternion(player.quaternion));
   solveLimb('thighL','calfL','footL',footL,kneePoleL,player);
  }
  if(hipR){
-  const kneePoleR=hipR.clone().add(new THREE.Vector3(.22,-.15,.62).applyQuaternion(player.quaternion));
+  const kneePoleR=hipR.clone().add(new THREE.Vector3(.24,-.10,.72).applyQuaternion(player.quaternion));
   solveLimb('thighR','calfR','footR',footR,kneePoleR,player);
  }
 
- // Subtle body compression when transferring weight between rungs.
- avatar.position.y=(player.userData.avatarBaseY||0)+Math.abs(c)*.018;
- avatar.rotation.z=s*.012;
+ // Weight transfer makes each rung feel like a step rather than a vertical glide.
+ avatar.position.y=(player.userData.avatarBaseY||0)+Math.abs(c)*.030*(1-exitBlend)+topExit*.04;
+ avatar.rotation.z=s*.018*(1-exitBlend);
+ avatar.rotation.x=THREE.MathUtils.lerp(0,-.06,1-exitBlend);
 }
 function startClimb(dir){
  const l=nearLadder();if(!l||climbState||activeCar)return false;
@@ -908,8 +919,10 @@ function updateClimb(dt){
  const p=s.t/s.total;
  const travel=THREE.MathUtils.smoothstep(p,0,1);
  player.position.x=s.ladder.x;
+ // Keep a steady climb for most of the ladder, then ease into the roof/floor transition.
  player.position.y=THREE.MathUtils.lerp(s.startY,s.endY,travel);
- const edgeBlend=THREE.MathUtils.smoothstep(p,.84,1);
+ const edgeStart=s.dir==='up'?.78:.84;
+ const edgeBlend=THREE.MathUtils.smoothstep(p,edgeStart,1);
  player.position.z=THREE.MathUtils.lerp(s.startZ,s.endZ,edgeBlend);
  player.rotation.y=s.dir==='up'?Math.PI:0;
 
@@ -933,7 +946,7 @@ function updateClimb(dt){
   if(player.userData.gun)player.userData.gun.rotation.z=0;
   if(player.userData.avatar){
    player.userData.avatar.position.y=player.userData.avatarBaseY||0;
-   player.userData.avatar.rotation.z=0;
+   player.userData.avatar.rotation.set(0,0,0);
    locomotion.planted.L=null;locomotion.planted.R=null;
   }
   player.userData.climbing=false;
