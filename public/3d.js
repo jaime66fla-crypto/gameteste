@@ -19,6 +19,7 @@ const aimStick=document.getElementById('aimStick');
 const aimKnob=document.getElementById('aimKnob');
 const actionBtn=document.getElementById('actionBtn');
 const crosshairEl=document.getElementById('crosshair');
+const adsReticleEl=document.getElementById('adsReticle');
 const hitmarkerEl=document.getElementById('hitmarker');
 const aimLockBtn=document.getElementById('aimLockBtn');
 const mobileMove={x:0,y:0,active:false};
@@ -1135,6 +1136,9 @@ function updateHud(){
   if(bossHud)bossHud.hidden=!golias.userData.alive;
  }
  if(missileAlert)missileAlert.hidden=bossWarnings.length===0;
+ const ads=isADS();
+ adsReticleEl?.classList.toggle('active',ads);
+ crosshairEl?.classList.toggle('ads-hidden',ads);
 }
 function setWeapon(name){
  if(!weapons3D[name])return;
