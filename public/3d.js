@@ -922,9 +922,13 @@ function updateClimb(dt){
  player.position.x=s.ladder.x;
  // Keep a steady climb for most of the ladder, then ease into the roof/floor transition.
  player.position.y=THREE.MathUtils.lerp(s.startY,s.endY,travel);
- const edgeStart=s.dir==='up'?.78:.84;
- const edgeBlend=THREE.MathUtils.smoothstep(p,edgeStart,1);
+ // Going up: stay outside the facade until the final roof transition.
+ // Going down: step over the roof edge immediately, then descend on the exterior side.
+ const edgeBlend=s.dir==='up'
+  ? THREE.MathUtils.smoothstep(p,.78,1)
+  : THREE.MathUtils.smoothstep(p,0,.18);
  player.position.z=THREE.MathUtils.lerp(s.startZ,s.endZ,edgeBlend);
+ // Face the ladder in both directions: from the ground face -Z, from the roof face +Z.
  player.rotation.y=s.dir==='up'?Math.PI:0;
 
  const cycle=Math.sin(s.t*11);
