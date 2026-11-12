@@ -647,7 +647,7 @@ class ThirdPersonCamera {
    this.previousMouseX=e.clientX;
    this.previousMouseY=e.clientY;
    this.yaw-=deltaX*this.sensitivity;
-   this.pitch+=deltaY*this.sensitivity;
+   this.pitch-=deltaY*this.sensitivity;
    this.pitch=Math.max(this.minPitch,Math.min(this.maxPitch,this.pitch));
   });
  }
@@ -670,7 +670,7 @@ class ThirdPersonCamera {
   this.camera.lookAt(this.currentLookAt);
 
   // Shooter behavior: avatar follows aim yaw, independent from movement direction.
-  this.target.rotation.y=this.yaw;
+  this.target.rotation.y=this.yaw+Math.PI;
  }
 }
 
