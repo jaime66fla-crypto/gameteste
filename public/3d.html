@@ -43,6 +43,9 @@ button:hover,a:hover{border-color:#65ff9b}
 .hitmarker.active{animation:confirmHit .2s ease-out forwards}
 @keyframes confirmHit{0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
 @media(pointer:coarse){#aimLockBtn{display:none}}
+.onlinePanel{position:absolute;right:14px;top:72px;z-index:15;width:300px;max-width:calc(100vw - 28px);background:#0b1723f5;border:1px solid #57829b;border-radius:12px;padding:16px;pointer-events:auto;box-shadow:0 12px 36px #0008}
+.onlinePanel[hidden]{display:none}.onlinePanel h2{margin:0 0 7px;font-size:18px}.onlinePanel p{font-size:12px;color:#b7c4cc}.onlinePanel label{display:block;margin:12px 0 5px;font-size:12px}.onlinePanel input{width:100%;padding:10px;border:1px solid #567182;background:#071019;color:#fff;border-radius:7px;font:inherit}.onlineActions{display:flex;gap:7px;margin-top:14px}.onlineActions button{padding:9px;font-size:12px}#onlineRoster{white-space:pre-line;font-size:11px;line-height:1.5}#onlineStatus{color:#8edaff}
+@media(max-width:900px){.right{gap:4px}.right button,.right a{font-size:10px;padding:8px}.onlinePanel{top:50%;transform:translateY(-50%);max-height:85vh;overflow:auto}}
 </style>
 </head>
 <body>
@@ -50,8 +53,16 @@ button:hover,a:hover{border-color:#65ff9b}
 <canvas id="view"></canvas>
 <div id="crosshair" class="crosshair" aria-hidden="true"></div>
 <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
-<div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">MIRA CENTRAL • BOTÃO DIREITO GIRA</span></div>
-<div class="hud right"><button id="aimLockBtn">Travar mouse</button><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
+<div class="hud top"><small>EXPERIMENTAL • 3D/2.5D</small><h1>Street Prototype</h1><p id="status">Carregando mundo 3D…</p><span class="badge">MIRA CENTRAL • BOTÃO DIREITO GIRA</span><p id="onlineStatus">Solo • sem bots</p><p id="onlineRoster"></p></div>
+<div class="hud right"><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button><button id="resetBtn">Reiniciar posição</button><a href="/">Voltar ao jogo</a></div>
+<section id="onlinePanel" class="onlinePanel" hidden>
+ <form id="onlineForm">
+  <h2>Multiplayer</h2><p>Entre com o mesmo código para jogar na mesma sala.</p>
+  <label for="onlineName">Seu nome</label><input id="onlineName" maxlength="18" value="Jogador" required autocomplete="nickname">
+  <label for="onlineRoom">Código da sala</label><input id="onlineRoom" maxlength="24" value="cidade-1" pattern="[A-Za-z0-9-]+" required autocapitalize="none" spellcheck="false">
+  <div class="onlineActions"><button type="submit">Entrar na sala</button><button id="offlineBtn" type="button">Jogar solo</button></div>
+ </form>
+</section>
 <div class="hud combatHud">
   <div class="hudRow"><strong>VIDA</strong><span id="hpText">100</span></div>
   <div class="bar"><i id="hpFill"></i></div>
@@ -73,6 +84,6 @@ button:hover,a:hover{border-color:#65ff9b}
 <div class="hud mode"><b>Mira em terceira pessoa</b><p>Mire pelo ponto central. Trave o mouse ou segure o botão direito para girar. No celular, puxe o analógico direito para mirar e atirar.</p></div>
 </div>
 <script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js"}}</script>
-<script type="module" src="/3d.js?v=19"></script>
+<script type="module" src="/3d.js?v=20"></script>
 </body>
 </html>
