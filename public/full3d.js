@@ -652,6 +652,117 @@ class ForestAudioSystem {
 const forestAudio=new ForestAudioSystem();
 canvas.addEventListener('pointerdown',()=>forestAudio.init(),{once:true});
 
+class HumanCharacter {
+ constructor(scene,camera){
+  this.scene=scene;
+  this.camera=camera;
+  this.model=null;
+  this.mixer=null;
+  this.skeleton=null;
+  this.actions={};
+  this.activeAction=null;
+  this.previousAction=null;
+  this.state='idle';
+  this.velocity=new THREE.Vector3();
+  this.direction=new THREE.Vector3();
+  this.neckBone=null;
+  this.spineBone=null;
+ }
+ load(url){
+  // Current runtime is classic Three.js r128. Use GLTFLoader only if available globally.
+  if(!THREE.GLTFLoader){
+   return Promise.reject(new Error('GLTFLoader indisponivel nesta build'));
+  }
+  const loader=new THREE.GLTFLoader();
+  return new Promise((resolve,reject)=>{
+   loader.load(url,gltf=>{
+    this.model=gltf.scene;
+    this.scene.add(this.model);
+    this.model.traverse(object=>{
+     if(object.isMesh){
+      object.castShadow=true;
+      object.receiveShadow=true;
+     }
+     if(object.isBone){
+      const name=object.name.toLowerCase();
+      if(name.includes('neck'))this.neckBone=object;
+      if(name.includes('spine1')||name==='spine')this.spineBone=object;
+     }
+    });
+    this.mixer=new THREE.AnimationMixer(this.model);
+    (gltf.animations||[]).forEach(clip=>{
+     const action=this.mixer.clipAction(clip);
+     const cleanName=clip.name.toLowerCase();
+     this.actions[cleanName]=action;
+     if(cleanName.includes('jump')||cleanName.includes('land')||cleanName.includes('attack')||cleanName.includes('slash')){
+      action.setLoop(THREE.LoopOnce);
+      action.clampWhenFinished=true;
+     }
+    });
+    const idleKey=this.findActionKey(['idle','stand']);
+    if(idleKey){
+     this.activeAction=this.actions[idleKey];
+     this.activeAction.play();
+     this.state='idle';
+    }
+    this.mixer.addEventListener('finished',e=>{
+     const jumpKey=this.findActionKey(['jump']);
+     if(jumpKey&&e.action===this.actions[jumpKey])this.fadeToAction('idle',.2);
+    });
+    resolve(this.model);
+   },undefined,reject);
+  });
+ }
+ findActionKey(names){
+  return Object.keys(this.actions).find(k=>names.some(n=>k.includes(n)))||null;
+ }
+ fadeToAction(name,duration=.25){
+  let key=this.actions[name.toLowerCase()]?name.toLowerCase():null;
+  if(!key){
+   const aliases={
+    idle:['idle','stand'],
+    walk:['walk','walking'],
+    run:['run','sprint','running'],
+    jump:['jump']
+   };
+   key=this.findActionKey(aliases[name.toLowerCase()]||[name.toLowerCase()]);
+  }
+  const nextAction=key?this.actions[key]:null;
+  if(!nextAction||nextAction===this.activeAction)return;
+  this.previousAction=this.activeAction;
+  this.activeAction=nextAction;
+  if(this.previousAction)this.previousAction.fadeOut(duration);
+  this.activeAction.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).fadeIn(duration).play();
+  this.state=name.toLowerCase();
+ }
+ updateLocomotion(speed,isGrounded=true){
+  if(!isGrounded){
+   this.fadeToAction('jump',.12);
+   return;
+  }
+  if(this.state==='jump'&&!isGrounded)return;
+  if(speed>4.5){
+   this.fadeToAction('run',.2);
+   if(this.activeAction)this.activeAction.setEffectiveTimeScale(Math.max(.7,speed/6));
+  }else if(speed>.2){
+   this.fadeToAction('walk',.25);
+   if(this.activeAction)this.activeAction.setEffectiveTimeScale(Math.max(.65,speed/2));
+  }else{
+   this.fadeToAction('idle',.3);
+  }
+ }
+ lookAtTarget(targetPoint){
+  if(!this.neckBone||!this.model)return;
+  const localTarget=this.model.worldToLocal(targetPoint.clone());
+  const angleY=Math.atan2(localTarget.x,localTarget.z);
+  const clampedY=THREE.MathUtils.clamp(angleY,-.8,.8);
+  this.neckBone.rotation.y=THREE.MathUtils.lerp(this.neckBone.rotation.y,clampedY,.1);
+ }
+ update(delta){
+  if(this.mixer)this.mixer.update(delta);
+ }
+}
+
 class RealisticCombatAnimator {
  constructor(player,avatar){
   this.player=player;
@@ -1434,6 +1545,8 @@ addEventListener('mousedown',e=>{
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
 player.add(mainAvatar.group);
 const combatAnimator=new RealisticCombatAnimator(player,mainAvatar);
+const humanCharacter=new HumanCharacter(scene,camera);
+let useHumanCharacter=false;
 const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
 const katanaWeapon=new KatanaController(player,mainAvatar,[]);
 bowWeapon.onArrowShot=(power,hit)=>{
@@ -1608,14 +1721,21 @@ function loop(){
  if(!gameStarted){ renderer.render(scene,camera); return; }
  controller.update(dt);
  const movingNow=controller.horizontalSpeed>0.01;
- combatAnimator.update(dt,{
+ if(useHumanCharacter&&humanCharacter.model){
+  humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
+  const aimPoint=camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(20));
+  humanCharacter.lookAtTarget(aimPoint);
+  humanCharacter.update(dt);
+ }else{
+  combatAnimator.update(dt,{
   moving:movingNow,
   sprinting:controller.keys.sprint&&controller.stamina>0,
   grounded:controller.isGrounded,
   speed:controller.horizontalSpeed,
   moveX:0,
   moveZ:0
- });
+  });
+ }
  bowWeapon.update(dt,movingNow);
  katanaWeapon.update(dt,movingNow);
  updateCamera(dt);
