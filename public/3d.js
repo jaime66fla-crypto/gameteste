@@ -437,8 +437,10 @@ function updateProceduralAvatar(dt,moving=false,running=false,actor=player,gait=
  const climbing=!!actor.userData.climbing;
  const fade=1-Math.exp(-dt*10);
  gait.blend=THREE.MathUtils.lerp(gait.blend,moving?1:0,fade);
- gait.run=THREE.MathUtils.lerp(gait.run,running?1:0,fade);
- const stride=THREE.MathUtils.lerp(1.55,2.4,gait.run);
+ // Let the sprint pose build with actual speed, including acceleration/stops.
+ const sprint=running?THREE.MathUtils.smoothstep(gait.speed,2.6,5.2):0;
+ gait.run=THREE.MathUtils.lerp(gait.run,sprint,fade);
+ const stride=THREE.MathUtils.lerp(1.55,2.65,gait.run);
  // Advance only by measured travel, so feet stop cycling against a wall.
  if(!climbing)gait.phase=(gait.phase+gait.speed*dt/stride*Math.PI*2)%(Math.PI*2);
  const phase=climbing?t*11:gait.phase;
@@ -458,10 +460,11 @@ function updateProceduralAvatar(dt,moving=false,running=false,actor=player,gait=
  pose('upperArmR',climbing?-1.2-s*.3:1.28,0,climbing?0:s*armSwing);
  pose('foreArmL',climbing?-.6+s*.25:.16+Math.max(0,-s)*armSwing,0,-.1);
  pose('foreArmR',climbing?-.6-s*.25:.16+Math.max(0,s)*armSwing,0,.1);
- const hipTwist=s*.055*weight,hipSway=s*.035*weight;
- pose('hips',weight*(.025+gait.run*.055),hipTwist,hipSway);
- pose('spine',weight*(.025+gait.run*.035),-hipTwist*.55,-hipSway*.75+Math.sin(t*2)*.008);
- pose('spine1',0,-hipTwist*.25,0);pose('spine2',0,-hipTwist*.2,0);
+ const hipTwist=Math.cos(phase)*(.065+gait.run*.035)*weight,hipSway=s*.025*weight;
+ const lean=weight*(.035+gait.run*.085);
+ pose('hips',lean*localVelocity.z,hipTwist,hipSway-lean*localVelocity.x);
+ pose('spine',lean*.65*localVelocity.z,-hipTwist*.8,-hipSway*.75-lean*.45*localVelocity.x+Math.sin(t*2)*.008);
+ pose('spine1',0,-hipTwist*.35,0);pose('spine2',0,-hipTwist*.2,0);
  if(bones.hips){
   const hip=bones.hips;
   hip.bone.position.copy(hip.basePosition);
@@ -493,7 +496,8 @@ function updateProceduralAvatar(dt,moving=false,running=false,actor=player,gait=
   }else{
    gait.planted[side]=null;
    target=neutral.clone().addScaledVector(gait.direction,THREE.MathUtils.lerp(-reach,reach,THREE.MathUtils.smoothstep(swing,0,1)));
-   target.y+=Math.sin(swing*Math.PI)*(.15+gait.run*.13);
+   // More heel recovery in sprint, with a soft landing at either end.
+   target.y+=Math.pow(Math.sin(swing*Math.PI),1.35)*(.15+gait.run*.18);
   }
   const current=foot.bone.getWorldPosition(new THREE.Vector3());
   target.lerpVectors(current,target,weight);
@@ -506,6 +510,30 @@ function updateProceduralAvatar(dt,moving=false,running=false,actor=player,gait=
   const local=foot.bone.parent.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(rotation);
   foot.bone.quaternion.slerp(local,weight);
  }
+ // Resting arms need anatomical targets: rotating FBX local X alone leaves
+ // the elbows stiff. Aim IK is applied afterwards by updateWeaponPose.
+ const aiming=actor===player?isWeaponReady():!!actor.userData.aiming;
+ if(!climbing&&!aiming){
+  gait.armTargets??={};
+  for(const [side,sign] of [['L',1],['R',-1]]){
+   const upper=bones['upperArm'+side],fore=bones['foreArm'+side],hand=bones['hand'+side];
+   if(!upper||!fore||!hand)continue;
+   actor.updateMatrixWorld(true);
+   const shoulder=upper.bone.getWorldPosition(new THREE.Vector3());
+   const elbow=fore.bone.getWorldPosition(new THREE.Vector3());
+   const wrist=hand.bone.getWorldPosition(new THREE.Vector3());
+   const length=shoulder.distanceTo(elbow)+elbow.distanceTo(wrist);
+   const swing=-sign*Math.cos(phase)*weight;
+   const offset=new THREE.Vector3(sign*.07,-length*(.91-gait.run*.2),
+    length*(.12+gait.run*.22+swing*(.28+gait.run*.16))).applyQuaternion(actor.quaternion);
+   const target=shoulder.clone().add(offset);
+   const smoothed=gait.armTargets[side]??(gait.armTargets[side]=target.clone());
+   if(smoothed.distanceTo(target)>length*2)smoothed.copy(target);
+   else smoothed.lerp(target,alpha);
+   const pole=shoulder.clone().add(new THREE.Vector3(sign*.25,-.35,-.5).applyQuaternion(actor.quaternion));
+   solveArm(side,smoothed,pole,actor);
+  }
+ }else gait.armTargets=null;
 }
 
 // Free exploration: no AI soldiers, snipers, or boss are spawned.
@@ -1392,7 +1420,7 @@ function updateMultiplayer(dt){
   const turn=Math.atan2(Math.sin(state.angle-actor.rotation.y),Math.cos(state.angle-actor.rotation.y));actor.rotation.y+=turn*(1-Math.exp(-dt*16));
   const travel=actor.position.clone().sub(before);travel.y=0;motion.speed=Math.min(6,travel.length()/Math.max(dt,.001));
   if(travel.lengthSq()>.00001)motion.direction.copy(travel).normalize();
-  actor.userData.climbing=state.climbing;actor.userData.inCar=state.inCar;
+  actor.userData.climbing=state.climbing;actor.userData.inCar=state.inCar;actor.userData.aiming=state.aiming;
   attachNetworkAvatar(actor);updateProceduralAvatar(dt,motion.speed>.05,state.running,actor,motion);
   const target=actor.position.clone().add(new THREE.Vector3(Math.sin(state.angle)*20,1.45+Math.tan(state.pitch||0)*20,Math.cos(state.angle)*20));
   updateWeaponPose(actor,target,state.aiming&&!state.climbing,state.weapon);
