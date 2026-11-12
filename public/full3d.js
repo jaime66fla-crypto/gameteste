@@ -595,8 +595,8 @@ class BowWeaponSystem {
   this.isEquipped=false;
   this.drawAmount=0;
   this.avatar.group.add(this.bowGroup);
-  this.bowGroup.position.set(.05,1.15,.28);
-  this.bowGroup.rotation.set(.2,Math.PI,.65);
+  this.bowGroup.position.set(-.18,1.22,-.34);
+  this.bowGroup.rotation.set(.18,.15,.78);
   this.nockedArrow.visible=false;
   this.updateStringGeometry(0);
  }
