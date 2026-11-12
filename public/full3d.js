@@ -351,6 +351,8 @@ class PlayerController {
   this.isGrounded=true;
   this.horizontalSpeed=0;
   this.keys={forward:false,backward:false,left:false,right:false,sprint:false};
+  this.stamina=100;
+  this.maxStamina=100;
   this._initListeners();
  }
  _initListeners(){
@@ -393,7 +395,10 @@ class PlayerController {
    const moveAngle=Math.atan2(inputDir.x,inputDir.z)+cameraAngle+Math.PI;
    const moveDir=new THREE.Vector3(Math.sin(moveAngle),0,Math.cos(moveAngle));
 
-   const currentSpeed=this.keys.sprint?this.sprintSpeed:this.walkSpeed;
+   const canSprint=this.keys.sprint&&this.stamina>0;
+   const currentSpeed=canSprint?this.sprintSpeed:this.walkSpeed;
+   if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
+   else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
    this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
    this.horizontalSpeed=currentSpeed;
 
@@ -402,6 +407,7 @@ class PlayerController {
    this.mesh.quaternion.slerp(targetQuaternion,Math.min(1,this.rotationSpeed*dt));
   }else{
    this.horizontalSpeed=0;
+   this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }
 
   this.velocity.y+=this.gravity*dt;
@@ -413,7 +419,7 @@ class PlayerController {
    this.isGrounded=true;
   }
 
-  const actionKind=!this.isGrounded?'jump':moving?(this.keys.sprint?'run':'walk'):'idle';
+  const actionKind=!this.isGrounded?'jump':moving?((this.keys.sprint&&this.stamina>0)?'run':'walk'):'idle';
   setAction(actionKind);
   if(mixer)mixer.update(dt);
   return actionKind;
@@ -422,6 +428,20 @@ class PlayerController {
 
 let model=null,mixer=null,actions={},active=null;
 let firingCooldown=0;
+let score=0,shots=0,hitCount=0;
+const scoreEl=document.getElementById('score');
+const hitsEl=document.getElementById('hits');
+const playerStateEl=document.getElementById('playerState');
+const speedEl=document.getElementById('speed');
+const staminaBarEl=document.getElementById('staminaBar');
+const hitmarkerEl=document.getElementById('hitmarker');
+
+function flashHitmarker(){
+ if(!hitmarkerEl)return;
+ hitmarkerEl.classList.remove('active');
+ void hitmarkerEl.offsetWidth;
+ hitmarkerEl.classList.add('active');
+}
 
 class ThirdPersonCamera {
  constructor(camera,target,domElement){
@@ -538,11 +558,18 @@ function setAction(kind){
 function shoot(){
  if(firingCooldown>0)return;
  firingCooldown=.13;
+ shots++;
  const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
  const origin=camera.position.clone();
  const ray=new THREE.Raycaster(origin,dir,0,100);
  const hits=ray.intersectObjects(scene.children.filter(o=>o!==player),true);
- const end=hits[0]?.point || origin.clone().add(dir.multiplyScalar(90));
+ const firstHit=hits[0];
+ const end=firstHit?.point || origin.clone().add(dir.multiplyScalar(90));
+ if(firstHit){
+  hitCount++;
+  score+=10;
+  flashHitmarker();
+ }
  const geo=new THREE.BufferGeometry().setFromPoints([player.position.clone().add(new THREE.Vector3(0,1.45,0)),end]);
  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe48b}));
  scene.add(line); setTimeout(()=>scene.remove(line),55);
@@ -564,6 +591,13 @@ function loop(){
  mainAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
+ const moving=controller.horizontalSpeed>0.01;
+ const stateLabel=!controller.isGrounded?'Pulando':moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ if(scoreEl)scoreEl.textContent=String(score);
+ if(hitsEl)hitsEl.textContent=hitCount+' / '+shots;
+ if(playerStateEl)playerStateEl.textContent=stateLabel;
+ if(speedEl)speedEl.textContent=controller.horizontalSpeed.toFixed(1)+' m/s';
+ if(staminaBarEl)staminaBarEl.style.width=(controller.stamina/controller.maxStamina*100).toFixed(0)+'%';
  stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • AVATAR SIMPLES';
  renderer.render(scene,camera);
 }
