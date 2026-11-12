@@ -619,25 +619,67 @@ class ForestAudioSystem {
   osc.start(now);
   osc.stop(now+.38);
  }
- playShoot(){
-  if(!this.ctx||!this.enabled)return;
-  const now=this.ctx.currentTime;
-  const len=Math.floor(this.ctx.sampleRate*.09);
+ _noiseBuffer(duration=.1){
+  const len=Math.max(1,Math.floor(this.ctx.sampleRate*duration));
   const buffer=this.ctx.createBuffer(1,len,this.ctx.sampleRate);
   const data=buffer.getChannelData(0);
-  for(let i=0;i<len;i++)data[i]=(Math.random()*2-1)*(1-i/len);
-  const src=this.ctx.createBufferSource();
-  src.buffer=buffer;
-  const filter=this.ctx.createBiquadFilter();
-  filter.type='bandpass';
-  filter.frequency.value=1100;
-  const gain=this.ctx.createGain();
-  gain.gain.setValueAtTime(.28,now);
-  gain.gain.exponentialRampToValueAtTime(.001,now+.09);
-  src.connect(filter); filter.connect(gain); gain.connect(this.masterGain);
-  src.start(now);
+  for(let i=0;i<len;i++)data[i]=Math.random()*2-1;
+  return buffer;
  }
- playHit(){
+ _shotNoise(when,duration,volume,low,high){
+  const src=this.ctx.createBufferSource(),filter=this.ctx.createBiquadFilter(),gain=this.ctx.createGain();
+  src.buffer=this._noiseBuffer(duration);
+  filter.type='bandpass';filter.frequency.value=(low+high)/2;filter.Q.value=.65;
+  gain.gain.setValueAtTime(Math.max(.0001,volume),when);
+  gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
+  src.connect(filter);filter.connect(gain);gain.connect(this.masterGain);
+  src.start(when);src.stop(when+duration+.02);
+ }
+ _shotTone(when,freq,duration,volume,type='sine',endFreq=null){
+  const osc=this.ctx.createOscillator(),gain=this.ctx.createGain();
+  osc.type=type;osc.frequency.setValueAtTime(Math.max(20,freq),when);
+  if(endFreq)osc.frequency.exponentialRampToValueAtTime(Math.max(20,endFreq),when+duration);
+  gain.gain.setValueAtTime(Math.max(.0001,volume),when);
+  gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
+  osc.connect(gain);gain.connect(this.masterGain);osc.start(when);osc.stop(when+duration+.02);
+ }
+ _shotTail(when,duration,volume){
+  const src=this.ctx.createBufferSource(),filter=this.ctx.createBiquadFilter(),gain=this.ctx.createGain(),delay=this.ctx.createDelay(),feedback=this.ctx.createGain();
+  src.buffer=this._noiseBuffer(duration);
+  filter.type='lowpass';filter.frequency.value=2500;
+  gain.gain.setValueAtTime(Math.max(.0001,volume),when);
+  gain.gain.exponentialRampToValueAtTime(.0001,when+duration);
+  delay.delayTime.value=.10;feedback.gain.value=.16;
+  src.connect(filter);filter.connect(gain);gain.connect(this.masterGain);
+  gain.connect(delay);delay.connect(feedback);feedback.connect(delay);delay.connect(this.masterGain);
+  src.start(when);src.stop(when+duration+.05);
+ }
+ playShoot(kind='pistol'){
+  if(!this.ctx||!this.enabled)return;
+  const specs={
+   pistol:{body:150,sub:72,mech:1150,tail:.24,transient:.31,bodyVol:.25,lfe:.08,crack:.12},
+   smg:{body:175,sub:88,mech:1450,tail:.20,transient:.26,bodyVol:.21,lfe:.06,crack:.10},
+   rifle:{body:115,sub:58,mech:980,tail:.34,transient:.35,bodyVol:.29,lfe:.11,crack:.16},
+   shotgun:{body:76,sub:42,mech:720,tail:.48,transient:.40,bodyVol:.34,lfe:.14,crack:.09}
+  };
+  const spec=specs[kind]||specs.pistol,now=this.ctx.currentTime+.005;
+  const variation=1+(Math.random()-.5)*.08;
+
+  // Layer 1: sharp muzzle transient.
+  this._shotNoise(now,.028,spec.transient*variation,950,6500);
+  // Layer 2: mid/low body that gives the weapon its weight.
+  this._shotNoise(now+.005,.115,spec.bodyVol*variation,120,1750);
+  this._shotTone(now,spec.body*variation,.12,spec.bodyVol*.42,'sawtooth',spec.body*.56);
+  // Layer 3: short LFE thump.
+  this._shotTone(now,spec.sub,.16,spec.lfe,'sine',spec.sub*.62);
+  // Layer 4: slide/bolt/mechanism.
+  this._shotTone(now+.026,spec.mech*variation,.026,.030,'square',spec.mech*.72);
+  this._shotTone(now+.055,spec.mech*.62*variation,.038,.020,'triangle',spec.mech*.43);
+  // Layer 5: projectile crack + outdoor reflection tail.
+  this._shotNoise(now+.010,.018,spec.crack,2300,7600);
+  this._shotTail(now+.035,spec.tail,.055);
+ }
+  playHit(){
   if(!this.ctx||!this.enabled)return;
   const now=this.ctx.currentTime;
   const osc=this.ctx.createOscillator();
@@ -1276,7 +1318,7 @@ class PistolController {
   if(this.ammo<=0){this.reload();return;}
   const spec=this.weaponSpec;
   this.fireCooldown=spec.fireRate;this.ammo--;
-  forestAudio.init();forestAudio.playShoot();
+  forestAudio.init();forestAudio.playShoot(spec.id);
   this.scene.updateMatrixWorld(true);
   const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map();
   for(let pellet=0;pellet<spec.pellets;pellet++){
