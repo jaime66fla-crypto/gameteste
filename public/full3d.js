@@ -358,16 +358,6 @@ class ThirdPersonCamera {
 
 addEventListener('mousedown',e=>{if(e.button===0)shoot()});
 
-function makeGun(){
- const g=new THREE.Group();
- const mat=new THREE.MeshStandardMaterial({color:0x24292d,metalness:.65,roughness:.35});
- const body=new THREE.Mesh(new THREE.BoxGeometry(.72,.12,.18),mat); body.position.z=-.32; g.add(body);
- const barrel=new THREE.Mesh(new THREE.BoxGeometry(.08,.08,.52),mat); barrel.position.z=-.9; g.add(barrel);
- const stock=new THREE.Mesh(new THREE.BoxGeometry(.18,.18,.28),mat); stock.position.z=.1; g.add(stock);
- g.position.set(.28,1.43,-.26); g.rotation.x=-.08; player.add(g); player.userData.gun=g;
-}
-makeGun();
-
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
 player.add(mainAvatar.group);
 
