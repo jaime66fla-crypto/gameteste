@@ -1,5 +1,5 @@
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.187.0/build/three.module.js';
-import { createMultiplayer3D } from '/multiplayer3d.js?v=1';
+import { createMultiplayer3D } from '/multiplayer3d.js?v=2';
 import { FBXLoader } from 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/loaders/FBXLoader.js';
 
 const canvas=document.getElementById('view');
