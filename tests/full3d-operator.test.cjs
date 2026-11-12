@@ -19,3 +19,17 @@ a.controller._onKeyChange('ControlRight',true);a.controller.update(1/60);assert(
 console.log('Crouch controller: speed, stamina, collider, camera, ceiling clearance and input reset pass');
 
 a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',false);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(!a.controller.isCrouching);console.log('Crouch toggle: C persists after release and toggles off');
+// Reproduce the reported front-facing avatar and centered-camera overlap.
+const cam=a.thirdPersonCamera,view=cam.camera;
+cam._cameraCollision=(focus,desired)=>desired;cam.getGroundHeight=()=>-100;
+a.controller.crouchBlend=0;a.player.position.set(0,0,0);
+for(const yaw of [0,.7,Math.PI/2,Math.PI,-1.4]){
+ cam.yaw=yaw;cam.modeIndex=1;cam.pitch=.2;cam.isLookingBack=false;cam.update(1/60);a.player.updateMatrixWorld(true);view.updateMatrixWorld(true);
+ const facing=new THREE.Vector3(0,0,1).applyQuaternion(a.mainAvatar.group.getWorldQuaternion(new THREE.Quaternion()));
+ const viewing=view.getWorldDirection(new THREE.Vector3());facing.y=0;viewing.y=0;facing.normalize();viewing.normalize();
+ assert(facing.dot(viewing)>.999,'Avatar must face away from camera and toward the crosshair for every yaw');
+ const screen=a.player.position.clone().add(new THREE.Vector3(0,1.2,0)).project(view);
+ assert(screen.x<-.08,'Shoulder camera must put the avatar to the left of the central crosshair');
+ cam.modeIndex=3;cam.update(1/60);view.updateMatrixWorld(true);const firstView=view.getWorldDirection(new THREE.Vector3());firstView.y=0;firstView.normalize();assert(facing.dot(firstView)>.999,'First-person view must preserve the third-person facing direction');
+}
+console.log('TPS camera: correct back view, shoulder separation, all yaw angles and first-person direction pass');

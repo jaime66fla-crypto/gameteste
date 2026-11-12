@@ -1548,6 +1548,7 @@ class GTACameraController {
   this.zoomSpeed=10;
 
   this.offset=new THREE.Vector3(0,1.5,0);
+  this.shoulderOffset=.65;
   this.isLookingBack=false;
   this.isMouseDown=false;
   this.previousMouseX=0;
@@ -1659,15 +1660,16 @@ class GTACameraController {
 
   this.offset.y=1.5-controller.crouchBlend*.35;
   const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
-  const focusPoint=this.target.position.clone().add(this.offset);
+  const bodyFocus=this.target.position.clone().add(this.offset);
+  const focusPoint=bodyFocus.clone();
 
   if(this.modeIndex===3){
    this.camera.position.copy(focusPoint);
 
    const lookDir=new THREE.Vector3(
-    Math.sin(activeYaw)*Math.cos(this.pitch),
+    -Math.sin(activeYaw)*Math.cos(this.pitch),
     -Math.sin(this.pitch),
-    Math.cos(activeYaw)*Math.cos(this.pitch)
+    -Math.cos(activeYaw)*Math.cos(this.pitch)
    ).normalize();
 
    this.camera.lookAt(focusPoint.clone().add(lookDir));
@@ -1685,6 +1687,10 @@ class GTACameraController {
    return;
   }
 
+  // Shift both the camera and its aim pivot; keep the white dot at raycast center.
+  const screenRight=new THREE.Vector3(Math.cos(activeYaw),0,-Math.sin(activeYaw));
+  focusPoint.addScaledVector(screenRight,this.shoulderOffset);
+
   const offsetX=Math.sin(activeYaw)*Math.cos(this.pitch)*this.currentDistance;
   const offsetY=Math.sin(this.pitch)*this.currentDistance;
   const offsetZ=Math.cos(activeYaw)*Math.cos(this.pitch)*this.currentDistance;
@@ -1695,7 +1701,7 @@ class GTACameraController {
    focusPoint.z+offsetZ
   );
 
-  desiredPosition=this._cameraCollision(focusPoint,desiredPosition);
+  desiredPosition=this._cameraCollision(bodyFocus,desiredPosition);
 
   if(typeof this.getGroundHeight==='function'){
    const minY=this.getGroundHeight(desiredPosition.x,desiredPosition.z)+.35;
@@ -1734,8 +1740,8 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
 }
 
 const mainAvatar=new window.OperatorAvatar();
-// The game controller moves along local -Z; the approved operator faces +Z.
-mainAvatar.group.rotation.y=Math.PI;
+// Operator local +Z already follows the player root facing set by the camera.
+mainAvatar.group.rotation.y=0;
 player.add(mainAvatar.group);
 const combatAnimator=new RealisticCombatAnimator(player,mainAvatar);
 const humanCharacter=new HumanCharacter(scene,camera);
