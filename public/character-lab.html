@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gameteste • Character Lab</title>
+<style>
+html,body{margin:0;height:100%;overflow:hidden;background:#101515;color:#fff;font-family:Inter,system-ui,Arial}
+#view{width:100%;height:100%;display:block;touch-action:none}
+.hud{position:fixed;left:16px;top:16px;z-index:3;background:#0c1111cc;border:1px solid #ffffff25;border-radius:14px;padding:12px 14px;backdrop-filter:blur(10px);max-width:320px}
+.hud b{display:block;font-size:15px;margin-bottom:5px}.hud small{display:block;opacity:.76;line-height:1.45}
+.badge{display:inline-block;margin-top:8px;padding:5px 8px;border-radius:999px;background:#ffffff12;font-size:12px}
+.cross{position:fixed;left:50%;top:50%;width:8px;height:8px;margin:-4px;border:2px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #0008;pointer-events:none}
+#state{position:fixed;right:16px;top:16px;background:#0c1111cc;border:1px solid #ffffff25;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
+@media(max-width:700px){.hud{max-width:240px;font-size:12px}.hud small{font-size:11px}}
+</style>
+</head>
+<body>
+<canvas id="view"></canvas>
+<div class="hud"><b>Character Lab — Erika Archer</b><small>WASD mover • Shift correr • C agachar • Espaço pular • botão direito arrasta a câmera • mouse mira</small><span class="badge">Movimento procedural + suavização física</span></div>
+<div id="state">carregando…</div>
+<div class="cross"></div>
+<script type="module" src="/character-lab.js?v=1"></script>
+</body>
+</html>
