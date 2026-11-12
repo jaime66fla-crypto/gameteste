@@ -1825,30 +1825,69 @@ function frame(now){
  const len=Math.hypot(inputX,inputY);
  const startPosition=player.position.clone();
  const inputMagnitude=Math.min(1,len);
- const requestedRun=inputMagnitude>0&&keys.has('shift');
+ const aiming=isWeaponReady();
+ const crouching=keys.has('c')||keys.has('control');
+ const requestedRun=inputMagnitude>0&&keys.has('shift')&&!aiming&&!crouching;
  const targetVelocity=new THREE.Vector3();
+
+ // Battle-royale style locomotion: forward movement is fastest, strafing/backpedal
+ // are deliberately slower, and acceleration/deceleration are not instantaneous.
  if(inputMagnitude>.08){
   const forward=new THREE.Vector3(-Math.sin(cameraYaw),0,-Math.cos(cameraYaw));
   const right=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
-  targetVelocity.copy(forward.multiplyScalar(inputY/len).addScaledVector(right,inputX/len));
-  targetVelocity.multiplyScalar((requestedRun?5.2:2.6)*inputMagnitude);
+  const normalizedX=inputX/len,normalizedY=inputY/len;
+  targetVelocity.copy(forward.multiplyScalar(normalizedY).addScaledVector(right,normalizedX));
+
+  let maxSpeed=requestedRun?6.0:(crouching?1.6:(aiming?3.0:4.2));
+  if(aiming){
+   const backwardPenalty=normalizedY<0?THREE.MathUtils.lerp(1,.78,-normalizedY):1;
+   const strafePenalty=THREE.MathUtils.lerp(1,.9,Math.abs(normalizedX));
+   maxSpeed*=backwardPenalty*strafePenalty;
+  }
+  targetVelocity.multiplyScalar(maxSpeed*inputMagnitude);
  }
- locomotion.velocity.lerp(targetVelocity,1-Math.exp(-dt*(inputMagnitude>.08?9:13)));
+
+ const currentSpeed=locomotion.velocity.length();
+ const desiredSpeed=targetVelocity.length();
+ const reversing=currentSpeed>.2&&desiredSpeed>.2&&locomotion.velocity.dot(targetVelocity)<0;
+ const response=inputMagnitude>.08
+  ? (reversing?5.2:(desiredSpeed>currentSpeed?6.5:8.5))
+  : 10.5;
+ locomotion.velocity.lerp(targetVelocity,1-Math.exp(-dt*response));
  if(locomotion.velocity.length()<.025)locomotion.velocity.set(0,0,0);
+
  const nx=player.position.x+locomotion.velocity.x*dt,nz=player.position.z+locomotion.velocity.z*dt;
  if(!blocked(nx,player.position.z))player.position.x=nx;else locomotion.velocity.x=0;
  if(!blocked(player.position.x,nz))player.position.z=nz;else locomotion.velocity.z=0;
+
  const actual=player.position.clone().sub(startPosition);actual.y=0;
  locomotion.speed=dt>0?actual.length()/dt:0;
  const moved=locomotion.speed>.025;
  if(moved){
   locomotion.direction.copy(actual).normalize();
-  if(!isWeaponReady()){
+
+  // Without aiming, hips follow travel direction with weighted turning.
+  // While aiming, keep the torso/weapon facing the crosshair so legs can strafe independently.
+  if(!aiming){
    const targetYaw=Math.atan2(actual.x,actual.z);
    const difference=Math.atan2(Math.sin(targetYaw-player.rotation.y),Math.cos(targetYaw-player.rotation.y));
-   player.rotation.y+=difference*(1-Math.exp(-dt*14));
+   const turnRate=requestedRun?9.5:11.5;
+   player.rotation.y+=difference*(1-Math.exp(-dt*turnRate));
   }
  }
+
+ // Small body lean gives direction changes visual weight instead of a rigid glide.
+ const localVel=locomotion.velocity.clone();
+ const invYaw=-player.rotation.y;
+ const sideSpeed=localVel.x*Math.cos(invYaw)-localVel.z*Math.sin(invYaw);
+ const forwardSpeed=localVel.x*Math.sin(invYaw)+localVel.z*Math.cos(invYaw);
+ const leanTarget=THREE.MathUtils.clamp(-sideSpeed*.028,-.12,.12);
+ const pitchTarget=THREE.MathUtils.clamp(-forwardSpeed*.014,-.10,.06);
+ if(player.userData.avatar&&!player.userData.climbing){
+  player.userData.avatar.rotation.z=THREE.MathUtils.lerp(player.userData.avatar.rotation.z,leanTarget,1-Math.exp(-dt*8));
+  player.userData.avatar.rotation.x=THREE.MathUtils.lerp(player.userData.avatar.rotation.x,pitchTarget,1-Math.exp(-dt*8));
+ }
+
  const avatarRunning=moved&&requestedRun;
  updateFootstepAudio(moved,avatarRunning);
  setAvatarMotion(moved?(avatarRunning?'run':'walk'):'idle');
