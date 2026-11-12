@@ -16,3 +16,7 @@ scene.remove(wall);for(let i=0;i<300;i++)system.update(1/60);assert(system.healt
 system.damagePlayer(1000);assert.equal(system.health,100);assert(deaths>0);
 for(const b of system.bots)b.takeDamage(1000);scene.updateMatrixWorld(true);const ray=new THREE.Raycaster(new THREE.Vector3(0,1,-2),new THREE.Vector3(0,0,-1));assert.equal(context.window.CombatBotSystem.firstHit(scene,ray,player),null);
 console.log('Combat bots: red palette, movement, damage/death/respawn, cover, return fire and player recovery pass');
+// First-person rendering hides the avatar but must not make the player invulnerable.
+avatar.group.userData.combatHitWhenHidden=true;avatar.group.visible=false;
+const firstPersonBot=system.bots[0];firstPersonBot.alive=true;firstPersonBot.group.visible=true;firstPersonBot.group.position.set(0,0,-8);system.health=100;system.shoot(firstPersonBot);assert(system.health<100,'First-person camera must not disable player damage');
+console.log('First-person player hit detection passes');

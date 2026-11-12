@@ -1757,6 +1757,7 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
 const mainAvatar=new window.OperatorAvatar();
 // Operator local +Z already follows the player root facing set by the camera.
 mainAvatar.group.rotation.y=0;
+mainAvatar.group.userData.combatHitWhenHidden=true;
 player.add(mainAvatar.group);
 const combatAnimator=new RealisticCombatAnimator(player,mainAvatar);
 const humanCharacter=new HumanCharacter(scene,camera);

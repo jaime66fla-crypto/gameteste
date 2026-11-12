@@ -7,11 +7,11 @@ class CombatBotSystem {
   this.health=100;this.time=0;this.effects=[];
   this.bots=[[-6,-9],[2,-12],[7,-7]].map(([x,z],index)=>this.createBot(x,z,index));
  }
- static firstHit(scene,raycaster,ignoredRoot){
+ static firstHit(scene,raycaster,ignoredRoot,includeHiddenAvatar=false){
   const meshes=[];
   scene.traverse(object=>{
    if(!object.isMesh)return;
-   for(let p=object;p;p=p.parent)if(!p.visible||p===ignoredRoot||p.userData.ignoreCombat)return;
+   for(let p=object;p;p=p.parent)if((!p.visible&&!(includeHiddenAvatar&&p.userData.combatHitWhenHidden))||p===ignoredRoot||p.userData.ignoreCombat)return;
    meshes.push(object);
   });
   return raycaster.intersectObjects(meshes,false)[0]||null;
@@ -52,7 +52,7 @@ class CombatBotSystem {
   const direction=target.sub(start),distance=direction.length();
   if(distance<.01)return;
   const ray=new THREE.Raycaster(start,direction.normalize(),0,distance+.5);
-  const hit=CombatBotSystem.firstHit(this.scene,ray,bot.group);
+  const hit=CombatBotSystem.firstHit(this.scene,ray,bot.group,true);
   const end=hit?hit.point:start.clone().addScaledVector(direction,distance);
   this.tracer(start,end);bot.flashTime=.065;
   if(hit){for(let o=hit.object;o;o=o.parent){if(o===this.player){this.damagePlayer(6);break;}}}
