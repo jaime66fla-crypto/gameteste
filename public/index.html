@@ -10,7 +10,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 .hud{position:fixed;left:10px;top:10px;z-index:3;background:#0b1118cf;border:1px solid #ffffff20;border-radius:9px;padding:8px 10px;backdrop-filter:blur(8px);width:244px;max-width:calc(100vw - 40px)}
 .hud b{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}.hud small{display:block;opacity:.8;line-height:1.55;font-size:10px}.hud details{border-top:1px solid #ffffff18;margin-top:6px;padding-top:4px}.hud summary{cursor:pointer;font-size:10px;color:#b6c9cd;min-height:18px;line-height:18px}.hud summary:focus-visible{outline:2px solid #7ee8ff;outline-offset:2px}.hud details small{margin-top:5px}
 #state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
-#help{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:12px;opacity:.9}
+#coverPrompt{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:11px;opacity:.9;max-width:calc(100vw - 40px);text-align:center}
 
 .aim-dot{position:fixed;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);border-radius:50%;background:#fff;pointer-events:none;z-index:10}
 
@@ -43,6 +43,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #crouchBtn{display:none;position:fixed;right:22px;bottom:95px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323cc;color:#fff;font-weight:700;touch-action:manipulation}#crouchBtn[aria-pressed="true"]{background:#667a45}
 @media(pointer:coarse){#crouchBtn{display:block}}
 #damageFlash{position:fixed;inset:0;pointer-events:none;z-index:2;opacity:0;box-shadow:inset 0 0 100px 25px #cd342580}
+.cover-action{display:none;position:fixed;right:22px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323dd;color:#fff;font-weight:700;touch-action:none;user-select:none}#coverBtn{bottom:165px}#peekBtn{bottom:235px}#coverBtn[aria-pressed="true"]{background:#667a45}@media(pointer:coarse){.cover-action{display:block}}
 </style>
 </head>
 <body>
@@ -90,19 +91,22 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
     <span>VIDA <strong id="playerHealth">100</strong></span>
   </div>
   <div class="stamina-wrap"><span>STAMINA</span><div class="stamina-track"><div id="staminaBar"></div></div></div>
-  <details><summary>Controles</summary><small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1 equipar pistola • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás</small></details>
+  <details><summary>Controles</summary><small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1 equipar pistola • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás • Q entrar/sair de cobertura • A/D mover na parede • botão direito para se expor</small></details>
 </div>
+<button id="coverBtn" class="cover-action" aria-pressed="false" aria-label="Entrar ou sair da cobertura">COVER</button>
+<button id="peekBtn" class="cover-action" aria-label="Segurar para se expor e mirar">MIRAR</button>
 <button id="crouchBtn" aria-pressed="false" aria-label="Alternar agachamento">AGACHAR</button>
 <div id="state">carregando...</div>
 <div id="damageFlash" aria-hidden="true"></div>
 <div class="aim-dot" aria-hidden="true"></div>
 <div id="hitmarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-<div id="help">Nova versão 3D — versão anterior preservada em backup</div>
+<div id="coverPrompt" hidden></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="/operator-avatar.js?v=3"></script>
+<script src="/operator-avatar.js?v=4"></script>
 <script src="/combat-bots.js?v=2"></script>
-<script src="/full3d.js?v=11"></script>
+<script src="/cover-controller.js?v=1"></script>
+<script src="/full3d.js?v=12"></script>
 </body>
 </html>

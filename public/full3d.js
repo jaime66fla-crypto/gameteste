@@ -412,6 +412,11 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 
 const houseParkour=new HouseParkourBuilder(scene,forestEnvironment.getTerrainHeight);
 houseParkour.convertExistingBlocksToHouses(legacyBlocks);
+// Waist-high training cover in the existing combat area.
+for(const [x,z] of [[-4,-3],[4,-5]]){
+ const barrier=box(x,forestEnvironment.getTerrainHeight(x,z),z,4,1.3,.75,0x826e56);
+ houseParkour.registerSolidBox(barrier,4,1.3,.75);
+}
 
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
@@ -1186,7 +1191,7 @@ class PistolController {
   });
 
   addEventListener('mousedown',e=>{
-   if(!gameStarted||!this.isEquipped||this.isReloading)return;
+   if(e.target!==canvas||!gameStarted||!this.isEquipped||this.isReloading)return;
    if(e.button===0)this.fire();
   });
  }
@@ -1247,6 +1252,11 @@ class PistolController {
  }
 
  fire(){
+  if(controller.cover.active){
+   this.player.updateMatrixWorld(true);
+   const muzzle=this.muzzlePoint.getWorldPosition(new THREE.Vector3());
+   if(!controller.cover.canFireFrom(muzzle))return;
+  }
   if(this.fireCooldown>0)return;
   if(this.ammo<=0){
    this.reload();
@@ -1414,25 +1424,33 @@ class PlayerController {
   this.standingHeight=1.8;this.crouchingHeight=1.45;
   this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
   this.crouchInputs=new Set();
+  this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.jumpForce=8.5;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
   this.isGrounded=true;
   this.horizontalSpeed=0;
-  this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false};
+  this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false,aiming:false};
   this.stamina=100;
   this.maxStamina=100;
   this._initListeners();
  }
  _initListeners(){
   addEventListener('keydown',e=>{
-   if(e.code==='KeyC'&&e.repeat)return;
+   if((e.code==='KeyC'||e.code==='KeyQ')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
   });
   addEventListener('keyup',e=>this._onKeyChange(e.code,false));
   addEventListener('blur',()=>this.clearInput());
+  addEventListener('mousedown',e=>{if(e.button===2&&e.target===canvas&&gameStarted)this.keys.aiming=true;});
+  addEventListener('mouseup',e=>{if(e.button===2)this.keys.aiming=false;});
+  canvas.addEventListener('contextmenu',e=>e.preventDefault());
+  document.getElementById('coverBtn')?.addEventListener('click',()=>{if(gameStarted&&this.isGrounded)this.cover.toggle();});
+  const peekButton=document.getElementById('peekBtn');
+  peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted)this.keys.aiming=true;});
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])peekButton?.addEventListener(type,()=>{this.keys.aiming=false;});
   const button=document.getElementById('crouchBtn');
   button?.addEventListener('click',()=>{this.keys.crouch=!this.keys.crouch;});
  }
@@ -1446,6 +1464,7 @@ class PlayerController {
    if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
    return;
   }
+  if(code==='KeyQ'){if(isPressed&&this.isGrounded&&gameStarted)this.cover.toggle();return;}
   if(code==='KeyC'){if(isPressed)this.keys.crouch=!this.keys.crouch;return;}
   switch(code){
    case 'KeyW': case 'ArrowUp': this.keys.forward=isPressed; break;
@@ -1454,6 +1473,7 @@ class PlayerController {
    case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
    case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
    case 'Space':
+    if(isPressed)this.cover.exit();
     if(isPressed&&this.isGrounded&&!this.isCrouching){
      this.velocity.y=this.jumpForce;
      this.isGrounded=false;
@@ -1462,7 +1482,9 @@ class PlayerController {
   }
  }
  update(dt){
-  const requestedCrouch=this.keys.crouch||this.crouchInputs.size>0;
+  this.cover.update(dt,{left:this.keys.left,right:this.keys.right,backward:this.keys.backward,aiming:this.keys.aiming,grounded:this.isGrounded,canStand:this.canStand()});
+  const lowPeek=this.cover.active&&this.cover.low&&this.cover.isPeeking;
+  const requestedCrouch=!lowPeek&&(this.keys.crouch||this.crouchInputs.size>0||(this.cover.active&&this.cover.low));
   this.isCrouching=this.isGrounded&&(requestedCrouch||(this.isCrouching&&!this.canStand()));
   this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,this.isCrouching?1:0,1-Math.exp(-12*dt));
   this.collisionHeight=THREE.MathUtils.lerp(this.standingHeight,this.crouchingHeight,this.crouchBlend);
@@ -1476,7 +1498,10 @@ class PlayerController {
   if(this.keys.right)inputDir.x+=1;
 
   let moving=false;
-  if(inputDir.lengthSq()>0){
+  if(this.cover.active){
+   this.horizontalSpeed=this.cover.speed;moving=this.horizontalSpeed>.02;
+   this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
+  }else if(inputDir.lengthSq()>0){
    moving=true;
    inputDir.normalize();
 
@@ -1564,6 +1589,7 @@ class GTACameraController {
 
   this.offset=new THREE.Vector3(0,1.5,0);
   this.shoulderOffset=.65;
+  this.currentShoulderOffset=.65;
   this.isLookingBack=false;
   this.isMouseDown=false;
   this.previousMouseX=0;
@@ -1669,7 +1695,7 @@ class GTACameraController {
   const blend=1-Math.exp(-this.zoomSpeed*delta);
   this.currentDistance=THREE.MathUtils.lerp(
    this.currentDistance,
-   this.targetDistance,
+   this.modeIndex===3&&controller.cover.active?2.5:this.targetDistance,
    blend
   );
 
@@ -1678,7 +1704,7 @@ class GTACameraController {
   const bodyFocus=this.target.position.clone().add(this.offset);
   const focusPoint=bodyFocus.clone();
 
-  if(this.modeIndex===3){
+  if(this.modeIndex===3&&!controller.cover.active){
    this.camera.position.copy(focusPoint);
 
    const lookDir=new THREE.Vector3(
@@ -1690,7 +1716,7 @@ class GTACameraController {
    this.camera.lookAt(focusPoint.clone().add(lookDir));
 
    if(!this.isLookingBack){
-    this.target.rotation.y=this.yaw+Math.PI;
+    this.target.rotation.y=controller.cover.facingYaw(this.yaw+Math.PI);
    }
 
    if(typeof humanCharacter!=='undefined'&&humanCharacter.model){
@@ -1704,7 +1730,8 @@ class GTACameraController {
 
   // Shift both the camera and its aim pivot; keep the white dot at raycast center.
   const screenRight=new THREE.Vector3(Math.cos(activeYaw),0,-Math.sin(activeYaw));
-  focusPoint.addScaledVector(screenRight,this.shoulderOffset);
+  this.currentShoulderOffset=THREE.MathUtils.lerp(this.currentShoulderOffset,this.shoulderOffset*controller.cover.shoulderSign(activeYaw),blend);
+  focusPoint.addScaledVector(screenRight,this.currentShoulderOffset);
 
   const offsetX=Math.sin(activeYaw)*Math.cos(this.pitch)*this.currentDistance;
   const offsetY=Math.sin(this.pitch)*this.currentDistance;
@@ -1727,7 +1754,7 @@ class GTACameraController {
   this.camera.lookAt(focusPoint);
 
   if(!this.isLookingBack){
-   this.target.rotation.y=this.yaw+Math.PI;
+   this.target.rotation.y=controller.cover.facingYaw(this.yaw+Math.PI);
   }
 
   if(typeof humanCharacter!=='undefined'&&humanCharacter.model){
@@ -1842,6 +1869,7 @@ const combatBots=new window.CombatBotSystem({
  onKill:()=>{score+=100;},
  onPlayerHit:()=>{playerDamageFlash=.22;},
  onPlayerDeath:()=>{
+  controller.cover.exit();controller.clearInput();
   player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
   controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
   pistolWeapon.ammo=pistolWeapon.magSize;pistolWeapon.reserveAmmo=60;
@@ -1869,6 +1897,7 @@ function hideGameMenu(){
  forestAudio.init();
 }
 function showGameMenu(){
+ controller.clearInput();
  gameStarted=false;
  switchMenuView('view-main');
  menuOverlay?.classList.remove('hidden-menu');
@@ -1945,7 +1974,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching});
+  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped&&(!controller.cover.active||controller.cover.isPeeking),recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
@@ -1977,7 +2006,15 @@ function loop(){
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
- const stateLabel=!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const stateLabel=controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const coverPrompt=document.getElementById('coverPrompt');
+ if(coverPrompt){
+  const near=controller.cover.active?null:controller.cover.findNearby();
+  coverPrompt.hidden=!controller.cover.active&&!near;
+  coverPrompt.textContent=controller.cover.active?(controller.cover.isPeeking?'Exposto · solte a mira para se proteger':controller.cover.low?'Cobertura baixa · botão direito para mirar · Q sair':'Cobertura · A/D até a quina · botão direito para mirar · Q sair'):'Q · entrar em cobertura';
+ }
+ const coverButton=document.getElementById('coverBtn');
+ if(coverButton){coverButton.textContent=controller.cover.active?'SAIR':'COVER';coverButton.setAttribute('aria-pressed',String(controller.cover.active));}
  if(scoreEl)scoreEl.textContent=String(score);
  if(hitsEl)hitsEl.textContent=hitCount+' / '+shots;
  if(playerStateEl)playerStateEl.textContent=stateLabel;
