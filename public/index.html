@@ -9,23 +9,10 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #view{width:100%;height:100%;display:block;touch-action:none}
 .hud{position:fixed;left:16px;top:16px;z-index:3;background:#0b1118dd;border:1px solid #ffffff20;border-radius:14px;padding:12px 14px;backdrop-filter:blur(10px);max-width:360px}
 .hud b{display:block;margin-bottom:6px}.hud small{display:block;opacity:.78;line-height:1.45}
-.cross{position:fixed;left:50%;top:50%;width:32px;height:32px;transform:translate(-50%,-50%);pointer-events:none;z-index:10;filter:drop-shadow(0 1px 1px #000a)}
-.cross::before{content:"";position:absolute;left:7px;top:7px;width:14px;height:14px;border:2px solid #ffffffdd;border-radius:50%}
-.cross::after{content:"";position:absolute;inset:0;background:
-linear-gradient(#ffffffdd,#ffffffdd) center 0/2px 10px no-repeat,
-linear-gradient(#ffffffdd,#ffffffdd) center 22px/2px 10px no-repeat,
-linear-gradient(90deg,#ffffffdd,#ffffffdd) 0 center/10px 2px no-repeat,
-linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
 #state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
 #help{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:12px;opacity:.9}
 
-.cross{position:fixed;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;filter:drop-shadow(0 1px 1px #000b)}
-.cross-ring{position:absolute;left:8px;top:8px;width:14px;height:14px;border:2px solid #fff;border-radius:50%;box-sizing:border-box}
-.cross-line{position:absolute;background:#fff;border-radius:2px;box-shadow:0 0 1px #000}
-.cross-top{width:2px;height:10px;left:16px;top:0}
-.cross-bottom{width:2px;height:10px;left:16px;bottom:0}
-.cross-left{width:10px;height:2px;left:0;top:16px}
-.cross-right{width:10px;height:2px;right:0;top:16px}
+.aim-dot{position:fixed;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);border-radius:50%;background:#fff;pointer-events:none;z-index:10}
 
 .combat-hud{min-width:300px}.hud-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:8px 0}.hud-grid span{font-size:10px;opacity:.8}.hud-grid strong{display:block;font-size:13px;color:#7ee8ff;margin-top:2px}.stamina-wrap{font-size:10px;margin:8px 0}.stamina-track{height:7px;background:#12202a;border-radius:999px;overflow:hidden;margin-top:4px}.stamina-track>div{height:100%;width:100%;background:#22d3ee;transition:width .08s linear}
 #hitmarker{position:fixed;left:50%;top:50%;width:28px;height:28px;transform:translate(-50%,-50%);pointer-events:none;z-index:10000;opacity:0}
@@ -36,7 +23,7 @@ linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
 #hitmarker i:nth-child(3){left:2px;bottom:5px;transform:rotate(-45deg)}
 #hitmarker i:nth-child(4){right:2px;bottom:5px;transform:rotate(45deg)}
 @keyframes hitmark{0%{opacity:1;transform:translate(-50%,-50%) scale(1.2)}100%{opacity:0;transform:translate(-50%,-50%) scale(.8)}}
-.cross-ring,.cross-line{border-color:#00ffcc!important;background:#00ffcc!important;box-shadow:0 0 8px #00ffcc!important}
+
 
 #aventura-menu-overlay{position:fixed;inset:0;z-index:20000;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 65% 35%,rgba(45,55,85,.75) 0%,rgba(13,18,32,.96) 70%),linear-gradient(to bottom,#0b1021 0%,#1c2541 60%,#2a324b 100%);color:#f3e9d2;transition:opacity .5s,visibility .5s;overflow:hidden}
 #aventura-menu-overlay.hidden-menu{opacity:0;visibility:hidden;pointer-events:none}
@@ -102,11 +89,13 @@ linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
   <small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar</small>
 </div>
 <div id="state">carregando...</div>
+<div class="aim-dot" aria-hidden="true"></div>
 <div id="hitmarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 <div id="help">Nova versão 3D — versão anterior preservada em backup</div>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
-<script src="/full3d.js?v=4"></script>
+<script src="/operator-avatar.js?v=1"></script>
+<script src="/full3d.js?v=5"></script>
 </body>
 </html>

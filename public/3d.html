@@ -16,7 +16,7 @@
 *{box-sizing:border-box}body{margin:0;background:#090d12;color:#eef5f8;overflow:hidden}
 #app{position:fixed;inset:0;background:#111820}
 #view{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
-.crosshair{position:absolute;left:50%;top:50%;width:8px;height:8px;transform:translate(-50%,-50%);z-index:7;pointer-events:none;border-radius:50%;background:#fff;box-shadow:0 0 0 2px #000a,0 0 8px #0008}
+.crosshair{position:absolute;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);z-index:7;pointer-events:none;border-radius:50%;background:#fff}
 .hud{position:absolute;z-index:4;pointer-events:none}
 .top{left:14px;top:14px;background:#071019a8;border:1px solid #38505e66;border-radius:8px;padding:7px 9px;min-width:0}
 .top small,.top h1,.badge{display:none}.top p{margin:1px 0;color:#b7c4cc;font-size:10px}.minimalTop #status{display:none}
@@ -58,6 +58,7 @@ button:hover,a:hover{border-color:#65ff9b}
 <body>
 <div id="app">
 <canvas id="view"></canvas>
+<div class="crosshair" aria-hidden="true"></div>
 <div id="hitmarker" class="hitmarker" aria-hidden="true"></div>
 <div class="hud top minimalTop"><p id="status">Carregando…</p><p id="onlineStatus">Solo</p><p id="onlineRoster"></p></div>
 <div class="hud right"><a href="/" id="menuBtn">Menu</a><button id="multiplayerBtn">Multiplayer</button><button id="aimLockBtn">Travar mouse</button></div>

@@ -1,0 +1,15 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const THREE=require('../public/vendor/three-r128.min.js');
+const context={THREE,window:{}};
+assert(fs.existsSync('public/operator-avatar.js'),'The approved operator must be available to the game');
+vm.runInNewContext(fs.readFileSync('public/operator-avatar.js','utf8'),context);
+const a=new context.window.OperatorAvatar();
+assert(a.group instanceof THREE.Group);assert(a.rightHand.children.includes(a.gun));
+for(let i=0;i<60;i++)a.update(1/60,{speed:3.8,grounded:true,armed:true});
+assert(a.speed>3.7);assert(a.aimBlend>.99);const knee=a.legs[0].knee.rotation.x;
+a.update(1/60,{speed:3.8,grounded:false,armed:true});assert(a.legs[0].knee.rotation.x>.8);
+assert.notEqual(a.legs[0].knee.rotation.x,knee);
+for(let i=0;i<120;i++)a.update(1/60,{speed:0,grounded:true,armed:false});assert(a.speed<.001);assert(a.aimBlend<.001);
+a.group.updateMatrixWorld(true);a.group.traverse(o=>assert(o.matrixWorld.elements.every(Number.isFinite)));
+const bounds=new THREE.Box3().setFromObject(a.group);assert(bounds.max.y-bounds.min.y>1.65&&bounds.max.y-bounds.min.y<1.95);assert(bounds.min.y>-.04);
+console.log('Operator: mount, run, armed blending, jump, idle, finite transforms and height pass');

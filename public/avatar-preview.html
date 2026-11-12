@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Gameteste — Novo operador</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#111b20;color:#edf4f0;font:14px system-ui,sans-serif;overflow:hidden}canvas{display:block;width:100vw;height:100dvh;touch-action:none}
+header{position:fixed;top:24px;left:28px;pointer-events:none}header small{font-size:10px;color:#b4cfbd;letter-spacing:.22em}h1{font-size:25px;font-weight:500;margin:7px 0}header p{color:#b5c3be;margin:0;font-size:12px;max-width:290px;line-height:1.6}
+#panel{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#0d171ee8;border:1px solid #55706555;padding:14px;border-radius:14px;width:min(700px,94vw);backdrop-filter:blur(12px)}
+.row{display:flex;gap:7px;flex-wrap:wrap}button,select,a{font:inherit;color:inherit;background:#26332f;border:1px solid #4c6154;padding:10px 13px;border-radius:7px;cursor:pointer;text-decoration:none}button[aria-pressed=true]{background:#cae4a6;color:#18251b;border-color:#cae4a6}button:hover{border-color:#d5edb8}.note{display:flex;justify-content:space-between;gap:15px;margin-top:12px;color:#a5b7af;font-size:11px;line-height:1.5}
+#dot{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:3px;height:3px;border-radius:50%;background:#fff;pointer-events:none;z-index:5}
+#status{position:fixed;top:26px;right:28px;font-size:11px;color:#bfd5c5;letter-spacing:.08em}#error{display:none;position:fixed;inset:30%;padding:24px;background:#172328;border:1px solid #809c89;z-index:10}#touch{position:fixed;bottom:175px;left:20px;display:none;gap:6px}#touch button{width:48px;height:48px;touch-action:none;user-select:none}
+@media(pointer:coarse){#touch{display:flex}}@media(max-width:650px){header{left:17px;top:17px}h1{font-size:21px}header p{max-width:220px;font-size:11px}#status{top:18px;right:15px;font-size:9px}#panel{bottom:12px;padding:10px}button,select,a{font-size:11px;padding:9px 10px}.note{font-size:9px}.desktop{display:none}}
+</style></head><body>
+<canvas id="view" aria-label="Demonstração 3D do novo operador"></canvas>
+<header><small>GAMETESTE / ESTUDO DE PERSONAGEM</small><h1>Operador • V01</h1><p>Modelo articulado original para avaliar proporções, equipamento e movimento.</p></header>
+<div id="status">INICIANDO</div><div id="dot" aria-hidden="true"></div>
+<div id="error" role="alert"></div>
+<div id="touch"><button data-key="a" aria-label="Esquerda">←</button><button data-key="w" aria-label="Frente">↑</button><button data-key="s" aria-label="Trás">↓</button><button data-key="d" aria-label="Direita">→</button></div>
+<section id="panel" aria-label="Controles do personagem">
+<div class="row" id="motions"><button data-motion="idle" aria-pressed="true">Parado</button><button data-motion="walk" aria-pressed="false">Andar</button><button data-motion="run" aria-pressed="false">Correr</button><button id="aim" aria-pressed="false">Mirar</button><button id="fire">Atirar</button><button id="jump">Pular</button><button id="camera">Ver pelas costas</button><select id="uniform" aria-label="Cor da roupa"><option value="olive">Oliva</option><option value="slate">Cinza</option><option value="sand">Areia</option></select></div>
+<div class="note"><span class="desktop">WASD mover · Shift correr · Espaço pular · arraste para girar · rolagem aproxima</span><span>Mira branca de 3 px · protótipo separado</span></div></section>
+<script src="/vendor/three-r128.min.js"></script>
+<script src="/avatar-preview.js"></script>
+</body></html>

@@ -1712,7 +1712,7 @@ class PistolController {
   this.pistol.visible=true;
 
   // Right-hand / two-handed TPS posture.
-  if(!this.soldierAttached){
+  if(!this.soldierAttached&&!this.operatorAttached){
    this.pistol.position.set(.38,1.28,-.52);
    this.pistol.rotation.set(-.08,0,0);
   }
@@ -1728,7 +1728,7 @@ class PistolController {
   this.pistol.visible=true;
 
   // Holster on right hip/back side, not inside torso.
-  if(this.soldierAttached){
+  if(this.soldierAttached||this.operatorAttached){
    // Holstered pistol stays attached to hand but hidden for now.
    this.pistol.visible=false;
   }else{
@@ -1840,6 +1840,11 @@ class PistolController {
   this.recoil-=this.recoil*Math.min(1,14*dt);
 
   if(!this.isEquipped)return;
+
+  if(this.operatorAttached){
+   this.pistol.rotation.x=Math.PI/2-this.recoil*.55;
+   return;
+  }
 
   if(useHumanCharacter&&this.soldierAttached){
    this.updateSoldierGrip(dt);
@@ -2229,7 +2234,9 @@ addEventListener('mousedown',e=>{
  if(bowWeapon?.state==='holstered')return;
 });
 
-const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
+const mainAvatar=new window.OperatorAvatar();
+// The game controller moves along local -Z; the approved operator faces +Z.
+mainAvatar.group.rotation.y=Math.PI;
 player.add(mainAvatar.group);
 const combatAnimator=new RealisticCombatAnimator(player,mainAvatar);
 const humanCharacter=new HumanCharacter(scene,camera);
@@ -2279,15 +2286,14 @@ bowWeapon.onArrowShot=(power,hit)=>{
  }
 };
 
-const soldierModelUrl='https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/models/gltf/Soldier.glb';
-activateHumanCharacter(soldierModelUrl).then(active=>{
- if(active){
-  stateEl.textContent='SOLDIER GLB • Idle/Walk/Run';
- }else{
-  stateEl.textContent='AVATAR PROCEDURAL • fallback';
- }
-});
-
+// Use the locally bundled, approved operator instead of loading Soldier from a CDN.
+pistolWeapon.pistol.removeFromParent ? pistolWeapon.pistol.removeFromParent() : pistolWeapon.pistol.parent.remove(pistolWeapon.pistol);
+pistolWeapon.pistol=mainAvatar.gun;
+pistolWeapon.operatorAttached=true;
+pistolWeapon.muzzlePoint.position.set(0,.035,.2);
+mainAvatar.gun.add(pistolWeapon.muzzlePoint);
+pistolWeapon.holster();
+stateEl.textContent='OPERADOR V01 ATIVO';
 
 // Erika preservada no projeto, mas desativada nesta build.
 const useErika=false;
@@ -2449,7 +2455,9 @@ function loop(){
  if(!gameStarted){ renderer.render(scene,camera); return; }
  controller.update(dt);
  const movingNow=controller.horizontalSpeed>0.01;
- if(useHumanCharacter&&humanCharacter.model){
+ if(mainAvatar instanceof window.OperatorAvatar){
+  mainAvatar.update(dt,{speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,recoil:pistolWeapon.recoil*.55});
+ }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
   // Player root follows camera aim; preserve the Soldier's local forward correction.
