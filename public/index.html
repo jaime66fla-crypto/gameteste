@@ -22,7 +22,7 @@
         <span class="launcher-kicker">STREET PROTOTYPE</span>
         <h1>MENU<br><em>PRINCIPAL</em></h1>
         <div class="launcher-buttons main-menu-actions">
-          <a class="btn main-play-btn" href="/3d.html">Jogar Solo</a>
+          <a class="btn main-play-btn" href="/3d.html?mode=solo">Jogar Solo</a>
           <button class="btn" id="mainMultiplayerBtn" type="button">Jogar Multiplayer</button>
           <button class="launcher-secondary" id="mainSettingsBtn" type="button">Configurações</button>
         </div>
@@ -276,7 +276,7 @@ function updateRotateOverlay(){
   overlay.setAttribute('aria-hidden',show?'false':'true');
 }
 document.querySelectorAll('.open-game').forEach(btn=>btn.addEventListener('click',()=>{
-  window.location.href='/3d.html';
+  window.location.href='/3d.html?mode=solo';
 }));
 document.getElementById('closeGameBtn').addEventListener('click',()=>{
   gameModal.classList.remove('show');
