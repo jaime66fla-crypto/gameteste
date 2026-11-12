@@ -1379,7 +1379,8 @@ class PistolController {
   this.spread=.0025;
 
   this.pistol=this.createPistolMesh();
-  this.avatar.group.add(this.pistol);
+  // Attach to player root so it remains visible when the procedural avatar is hidden by the Soldier GLB.
+  this.player.add(this.pistol);
   this.holster();
 
   this.bindInputs();
@@ -1468,8 +1469,8 @@ class PistolController {
   this.pistol.visible=true;
 
   // Right-hand / two-handed TPS posture.
-  this.pistol.position.set(.36,1.18,-.48);
-  this.pistol.rotation.set(-.05,0,0);
+  this.pistol.position.set(.38,1.28,-.52);
+  this.pistol.rotation.set(-.08,0,0);
 
   if(typeof combatAnimator!=='undefined'){
    combatAnimator.setWeapon('pistol');
@@ -1482,8 +1483,8 @@ class PistolController {
   this.pistol.visible=true;
 
   // Holster on right hip/back side, not inside torso.
-  this.pistol.position.set(.34,.88,-.20);
-  this.pistol.rotation.set(0,.05,-.16);
+  this.pistol.position.set(.34,.92,.12);
+  this.pistol.rotation.set(.08,.12,-.28);
 
   if(typeof combatAnimator!=='undefined'&&combatAnimator.weapon==='pistol'){
    combatAnimator.setWeapon('none');
