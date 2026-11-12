@@ -315,15 +315,6 @@ const stripeMat=mat(0xc9b34f,.8,0);
 for(const z of streetZ)for(let x=-MAP_W/2+3;x<MAP_W/2-2;x+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(2.7,.09,.16),stripeMat);s.position.set(x,.11,z);world.add(s)}
 for(const x of streetX)for(let z=-MAP_H/2+3;z<MAP_H/2-2;z+=7){const s=new THREE.Mesh(new THREE.BoxGeometry(.16,.09,2.7),stripeMat);s.position.set(x,.11,z);world.add(s)}
 
-function zoneLabel(text,x,z){
- const cv=document.createElement('canvas');cv.width=512;cv.height=96;
- const g=cv.getContext('2d');g.fillStyle='rgba(4,10,15,.76)';g.fillRect(0,8,512,80);
- g.strokeStyle='rgba(101,255,139,.65)';g.lineWidth=3;g.strokeRect(3,11,506,74);
- g.fillStyle='#ecf8f2';g.font='800 38px system-ui';g.textAlign='center';g.textBaseline='middle';g.fillText(text,256,48);
- const tex=new THREE.CanvasTexture(cv);tex.colorSpace=THREE.SRGBColorSpace;
- const sp=new THREE.Sprite(new THREE.SpriteMaterial({map:tex,transparent:true,depthTest:false}));
- sp.position.set(x,8,z);sp.scale.set(12,2.25,1);scene.add(sp);
-}
 function addZonePad(x,z,w,d,color){
  const p=plane(w,d,color,x,z,.08);p.material.roughness=.95;return p;
 }
@@ -332,25 +323,21 @@ function addZonePad(x,z,w,d,color){
 addZonePad(0,2.5,17,13,0x59675b);
 for(const [dx,dz] of [[-5,-3],[5,-3],[-5,3],[5,3]])makeTree?.(dx,2.5+dz);
 const fountain=new THREE.Mesh(new THREE.CylinderGeometry(2.2,2.5,.45,20),mat(0x657a80,.4,.15));fountain.position.set(0,.28,2.5);fountain.receiveShadow=true;world.add(fountain);
-zoneLabel('PRAÇA',0,2.5);
 
 // Aeroporto / pista
 addZonePad(49,-41,38,15,0x3b4143);
 for(let x=34;x<65;x+=6){const s=new THREE.Mesh(new THREE.BoxGeometry(3,.10,.28),mat(0xe8e6ce,.75,0));s.position.set(x,.15,-41);world.add(s)}
 box(11,4.2,6.5,0x59656a,61,-31);box(7,2.5,5,0x4c565b,45,-31);
-zoneLabel('AEROPORTO',49,-41);
 
 // Porto com água e docas
 addZonePad(-57,39,29,20,0x274e5c);
 for(const x of [-67,-60,-53,-46]){const dock=box(2,.45,12,0x715844,x,34,.08);dock.receiveShadow=true}
 for(let i=0;i<5;i++)box(3.2,1.6,2.2,i%2?0x7a4d3a:0x3f6674,-66+i*4.1,44,.05);
-zoneLabel('PORTO',-57,39);
 
 // Distrito industrial
 addZonePad(45,24,31,22,0x4b504d);
 box(13,5.8,8,0x555c5b,38,19);box(11,4.8,7,0x5e625d,52,27);
 for(const x of [35,42,50,57]){const tank=new THREE.Mesh(new THREE.CylinderGeometry(1.6,1.6,4.2,16),mat(0x6a7070,.65,.25));tank.position.set(x,2.15,31);tank.castShadow=true;world.add(tank)}
-zoneLabel('INDUSTRIAL',45,24);
 function makeTree(x,y){
  const g=new THREE.Group();
  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.35,.5,3.4,8),mat(0x60442e));trunk.position.y=1.7;trunk.castShadow=true;g.add(trunk);
