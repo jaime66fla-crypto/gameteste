@@ -12,18 +12,83 @@ renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=1.1;
 
 const scene=new THREE.Scene();
-scene.background=new THREE.Color(0x9fb4c6);
-scene.fog=new THREE.Fog(0x9fb4c6,45,120);
+scene.background=new THREE.Color(0x9fc7df);
+scene.fog=new THREE.Fog(0x9fc7df,38,115);
 const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,250);
 
-scene.add(new THREE.HemisphereLight(0xdce8f0,0x374238,1.9));
+scene.add(new THREE.HemisphereLight(0xdce8f0,0x35513a,2.0));
 const sun=new THREE.DirectionalLight(0xffe5bd,3.5);
 sun.position.set(-18,28,-14); sun.castShadow=true; sun.shadow.mapSize.set(2048,2048);
 sun.shadow.camera.left=-40; sun.shadow.camera.right=40; sun.shadow.camera.top=40; sun.shadow.camera.bottom=-40;
 scene.add(sun);
 
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120),new THREE.MeshStandardMaterial({color:0x67736c,roughness:1}));
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(120,120,1,1),new THREE.MeshStandardMaterial({color:0x5f7f4d,roughness:1}));
+
 floor.rotation.x=-Math.PI/2; floor.receiveShadow=true; scene.add(floor);
+
+// Nature ambience
+const natureGroup=new THREE.Group(); scene.add(natureGroup);
+
+function makeTree(x,z,s=1){
+ const g=new THREE.Group();
+ const trunk=new THREE.Mesh(
+   new THREE.CylinderGeometry(.18*s,.24*s,2.1*s,8),
+   new THREE.MeshStandardMaterial({color:0x6c4b2f,roughness:1})
+ );
+ trunk.position.y=1.05*s; trunk.castShadow=true; trunk.receiveShadow=true; g.add(trunk);
+ const leafMat=new THREE.MeshStandardMaterial({color:0x3e6f38,roughness:.95});
+ const crown1=new THREE.Mesh(new THREE.SphereGeometry(.95*s,8,7),leafMat);
+ crown1.position.set(0,2.45*s,0); crown1.castShadow=true; crown1.receiveShadow=true; g.add(crown1);
+ const crown2=new THREE.Mesh(new THREE.SphereGeometry(.72*s,8,7),new THREE.MeshStandardMaterial({color:0x4f8243,roughness:.95}));
+ crown2.position.set(.25*s,3.05*s,.08*s); crown2.castShadow=true; g.add(crown2);
+ g.position.set(x,0,z); natureGroup.add(g);
+}
+function makeBush(x,z,s=1){
+ const g=new THREE.Group();
+ const mat=new THREE.MeshStandardMaterial({color:0x4f7c43,roughness:1});
+ for(const [ox,oz,sc] of [[0,0,1],[.45,.12,.78],[-.4,.1,.72],[.1,-.36,.66]]){
+   const m=new THREE.Mesh(new THREE.SphereGeometry(.52*s*sc,7,6),mat);
+   m.position.set(ox*s,.42*s,oz*s); m.castShadow=true; m.receiveShadow=true; g.add(m);
+ }
+ g.position.set(x,0,z); natureGroup.add(g);
+}
+function makeRock(x,z,s=1){
+ const m=new THREE.Mesh(
+   new THREE.DodecahedronGeometry(.55*s,0),
+   new THREE.MeshStandardMaterial({color:0x737b70,roughness:1})
+ );
+ m.scale.set(1.25,.75,1); m.position.set(x,.32*s,z); m.rotation.set(.2,.5,.1);
+ m.castShadow=true; m.receiveShadow=true; natureGroup.add(m);
+}
+function makeGrassPatch(x,z,w,d,color){
+ const m=new THREE.Mesh(
+   new THREE.PlaneGeometry(w,d),
+   new THREE.MeshStandardMaterial({color,roughness:1,side:THREE.DoubleSide})
+ );
+ m.rotation.x=-Math.PI/2; m.position.set(x,.012,z); m.receiveShadow=true; natureGroup.add(m);
+}
+
+makeGrassPatch(-22,-18,22,15,0x557447);
+makeGrassPatch(24,18,26,18,0x6b8d55);
+makeGrassPatch(-22,22,18,16,0x64824f);
+makeGrassPatch(24,-22,20,15,0x58784a);
+
+[
+ [-26,-20,1.25],[-20,-26,1],[-30,6,1.15],[-24,20,1.05],[-12,28,.9],
+ [14,27,1.15],[26,24,1.25],[31,8,1],[28,-18,1.2],[16,-28,1],
+ [-4,-30,.9],[7,31,.95]
+].forEach(v=>makeTree(...v));
+
+[
+ [-18,-12,1],[-13,20,.85],[-29,14,.9],[22,13,1],[30,-7,.95],
+ [18,-21,.85],[-6,27,.8],[10,-26,.8]
+].forEach(v=>makeBush(...v));
+
+[
+ [-10,-18,.9],[-28,-4,.75],[-18,28,.8],[24,28,.95],[31,17,.7],
+ [20,-29,.85],[6,-31,.65]
+].forEach(v=>makeRock(...v));
+
 
 function box(x,y,z,sx,sy,sz,color=0x7f8a86){
  const m=new THREE.Mesh(new THREE.BoxGeometry(sx,sy,sz),new THREE.MeshStandardMaterial({color,roughness:.9}));
