@@ -332,24 +332,26 @@ function makeGun(){
 }
 makeGun();
 
-const fallbackAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
-player.add(fallbackAvatar.group);
+const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
+player.add(mainAvatar.group);
 
-new THREE.FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
+// Erika preservada no projeto, mas desativada nesta build.
+const useErika=false;
+if(useErika)new THREE.FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
  model=fbx;
  model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
  const box3=new THREE.Box3().setFromObject(model),h=box3.max.y-box3.min.y;
  model.scale.setScalar(h>0?1.85/h:1);
  const b2=new THREE.Box3().setFromObject(model); model.position.y=-b2.min.y;
  player.add(model);
- fallbackAvatar.group.visible=false;
+ mainAvatar.group.visible=false;
  if(model.animations?.length){
    mixer=new THREE.AnimationMixer(model);
    for(const clip of model.animations) actions[clip.name.toLowerCase()]=mixer.clipAction(clip);
  }
  stateEl.textContent='ERIKA READY';
 },undefined,()=>{
- fallbackAvatar.group.visible=true;
+ mainAvatar.group.visible=true;
  stateEl.textContent='AVATAR PROCEDURAL';
 });
 
@@ -391,10 +393,10 @@ const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
  controller.update(dt);
- fallbackAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
+ mainAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
- stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s';
+ stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • AVATAR SIMPLES';
  renderer.render(scene,camera);
 }
 loop();
