@@ -56,6 +56,86 @@ scene.add(sun);
 const world=new THREE.Group();scene.add(world);
 const mat=(color,rough=.85,metal=.05)=>new THREE.MeshStandardMaterial({color,roughness:rough,metalness:metal});
 
+// Procedural WebAudio SFX: lightweight and asset-free.
+let audioCtx=null,masterGain=null,engineOsc=null,engineGain=null,engineFilter=null;
+let nextStepAt=0,lastImpactSound=0,nextClimbSound=0;
+function ensureAudio(){
+ if(!audioCtx){
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return null;
+  audioCtx=new AC();
+  masterGain=audioCtx.createGain();masterGain.gain.value=.42;masterGain.connect(audioCtx.destination);
+ }
+ if(audioCtx.state==='suspended')audioCtx.resume();
+ return audioCtx;
+}
+function noiseBuffer(duration=.18){
+ const ctx=ensureAudio();if(!ctx)return null;
+ const length=Math.max(1,Math.floor(ctx.sampleRate*duration));
+ const buffer=ctx.createBuffer(1,length,ctx.sampleRate),data=buffer.getChannelData(0);
+ for(let i=0;i<length;i++)data[i]=Math.random()*2-1;
+ return buffer;
+}
+function tone(freq=220,duration=.08,volume=.08,type='sine',endFreq=null){
+ const ctx=ensureAudio();if(!ctx)return;
+ const osc=ctx.createOscillator(),gain=ctx.createGain();
+ osc.type=type;osc.frequency.setValueAtTime(freq,ctx.currentTime);
+ if(endFreq)osc.frequency.exponentialRampToValueAtTime(Math.max(20,endFreq),ctx.currentTime+duration);
+ gain.gain.setValueAtTime(volume,ctx.currentTime);
+ gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+duration);
+ osc.connect(gain);gain.connect(masterGain);osc.start();osc.stop(ctx.currentTime+duration+.02);
+}
+function burst(duration=.08,volume=.08,low=180,high=5000){
+ const ctx=ensureAudio();if(!ctx)return;
+ const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),gain=ctx.createGain();
+ src.buffer=noiseBuffer(duration);filter.type='bandpass';filter.frequency.value=(low+high)/2;filter.Q.value=.65;
+ gain.gain.setValueAtTime(volume,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+duration);
+ src.connect(filter);filter.connect(gain);gain.connect(masterGain);src.start();
+}
+function playShot(kind){
+ ensureAudio();
+ if(kind==='pistol'){burst(.075,.24,500,5000);tone(150,.10,.11,'square',70)}
+ else if(kind==='smg'){burst(.055,.18,650,6000);tone(190,.065,.07,'sawtooth',90)}
+ else if(kind==='rifle'){burst(.105,.29,350,4800);tone(115,.15,.15,'square',48)}
+ else {burst(.16,.34,180,3600);tone(82,.20,.18,'sawtooth',38)}
+}
+function playReload(){burst(.035,.045,1400,6000);tone(620,.045,.035,'square',390);setTimeout(()=>tone(760,.055,.04,'square',480),85)}
+function playWeaponSwitch(){tone(520,.035,.025,'square',350)}
+function playImpact(){
+ const now=performance.now();if(now-lastImpactSound<45)return;lastImpactSound=now;
+ burst(.045,.045,900,6500);tone(210,.045,.018,'triangle',120);
+}
+function playFootstep(run=false,metal=false){
+ burst(run?.055:.045,run?.065:.045,metal?850:120,metal?4200:950);
+ tone(metal?430:95,run?.055:.045,run?.035:.022,'triangle',metal?260:62);
+}
+function updateFootstepAudio(moving,run){
+ if(!moving)return;
+ const now=performance.now()/1000;
+ const interval=run?.29:.46;
+ if(now>=nextStepAt){playFootstep(run,false);nextStepAt=now+interval}
+}
+function ensureEngine(){
+ const ctx=ensureAudio();if(!ctx||engineOsc)return;
+ engineOsc=ctx.createOscillator();engineGain=ctx.createGain();engineFilter=ctx.createBiquadFilter();
+ engineOsc.type='sawtooth';engineOsc.frequency.value=58;
+ engineFilter.type='lowpass';engineFilter.frequency.value=260;engineFilter.Q.value=1.2;
+ engineGain.gain.value=.0001;engineOsc.connect(engineFilter);engineFilter.connect(engineGain);engineGain.connect(masterGain);engineOsc.start();
+}
+function updateEngineSound(speed=0,throttle=0,broken=false){
+ ensureEngine();if(!audioCtx||!engineGain)return;
+ const now=audioCtx.currentTime;
+ if(broken){engineGain.gain.setTargetAtTime(.0001,now,.05);return}
+ const rpm=Math.min(1,Math.abs(speed)/18);
+ engineOsc.frequency.setTargetAtTime(52+rpm*92+Math.abs(throttle)*18,now,.045);
+ engineFilter.frequency.setTargetAtTime(190+rpm*520,now,.06);
+ engineGain.gain.setTargetAtTime(.035+rpm*.095+Math.abs(throttle)*.035,now,.07);
+}
+function stopEngineSound(){
+ if(audioCtx&&engineGain)engineGain.gain.setTargetAtTime(.0001,audioCtx.currentTime,.08);
+}
+['pointerdown','keydown','touchstart'].forEach(type=>addEventListener(type,ensureAudio,{once:true,passive:true}));
+
 function box(w,h,d,color,x,y,z=0){
  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat(color));
  m.position.set(x,z+h/2,y);m.castShadow=true;m.receiveShadow=true;world.add(m);return m;
@@ -666,11 +746,11 @@ function toggleVehicle(){
  if(player.position.y>1||climbState)return false;
  if(activeCar){
   const side=new THREE.Vector3(Math.cos(activeCar.rotation.y),0,-Math.sin(activeCar.rotation.y)).multiplyScalar(2.2);
-  player.position.copy(activeCar.position).add(side);player.position.y=0;player.visible=true;activeCar=null;
+  player.position.copy(activeCar.position).add(side);player.position.y=0;player.visible=true;activeCar=null;stopEngineSound();tone(105,.08,.045,'triangle',68);
   statusEl.textContent='Protótipo 3D ativo • A PÉ • E veículo/escada';return true;
  }
  const car=nearestCar();
- if(car&&!car.userData.broken){activeCar=car;player.visible=false;statusEl.textContent='Protótipo 3D ativo • NO CARRO • WASD dirigir • SHIFT turbo • E sair';return true}
+ if(car&&!car.userData.broken){activeCar=car;player.visible=false;ensureEngine();tone(74,.18,.07,'sawtooth',105);statusEl.textContent='Protótipo 3D ativo • NO CARRO • WASD dirigir • SHIFT turbo • E sair';return true}
  return false;
 }
 function carBlocked(nx,nz){
@@ -694,6 +774,7 @@ function updateVehicle(dt){
  const throttle=THREE.MathUtils.clamp(((keys.has('w')?1:0)-(keys.has('s')?1:0))+(mobileMove.active?-mobileMove.y:0),-1,1);
  const steer=THREE.MathUtils.clamp(((keys.has('d')?1:0)-(keys.has('a')?1:0))+(mobileMove.active?mobileMove.x:0),-1,1);
  const max=keys.has('shift')?20:14;
+ updateEngineSound(u.speed,throttle,u.broken);
  u.speed+=throttle*22*dt;
  if(!throttle)u.speed*=Math.pow(.22,dt);
  u.speed=THREE.MathUtils.clamp(u.speed,-6,max);
@@ -702,6 +783,7 @@ function updateVehicle(dt){
  const fx=Math.sin(car.rotation.y),fz=Math.cos(car.rotation.y);
  const nx=car.position.x+fx*u.speed*dt,nz=car.position.z+fz*u.speed*dt;
  if(carBlocked(nx,nz)){
+  if(Math.abs(u.speed)>2.5){burst(.11,Math.min(.18,.045+Math.abs(u.speed)*.008),90,1800);tone(72,.12,.05,'triangle',38)}
   if(Math.abs(u.speed)>7)damageCar(car,Math.min(38,Math.abs(u.speed)*2.2));
   u.speed*=-.22;
  }else{car.position.x=nx;car.position.z=nz}
@@ -756,6 +838,7 @@ function startClimb(dir){
 function updateClimb(dt){
  if(!climbState)return false;
  const s=climbState;
+ if(t>=nextClimbSound){playFootstep(false,true);nextClimbSound=t+.34;}
  s.t=Math.min(s.total,s.t+dt);
  const p=s.t/s.total;
  const travel=THREE.MathUtils.smoothstep(p,0,1);
@@ -932,7 +1015,7 @@ function updateHud(){
 }
 function setWeapon(name){
  if(!weapons3D[name])return;
- currentWeapon=name;applyWeaponVisual();updateHud();
+ currentWeapon=name;playWeaponSwitch();applyWeaponVisual();updateHud();
  statusEl.textContent='Arma: '+weapons3D[name].label+' • 1-4 troca • clique atira';
 }
 function spawnMuzzle(origin){
@@ -941,6 +1024,7 @@ function spawnMuzzle(origin){
  flash.position.copy(origin);world.add(flash);muzzleFx.push({light,flash,t:.07});
 }
 function spawnImpact(pos,color=0xffd58a,count=5){
+ playImpact();
  for(let i=0;i<count;i++){
   const m=new THREE.Mesh(new THREE.SphereGeometry(.055,6,4),new THREE.MeshBasicMaterial({color,transparent:true,opacity:.9}));
   m.position.copy(pos);world.add(m);
@@ -1043,11 +1127,12 @@ function fire(){
  if(ammo.mag<=0){
   if(ammo.reserve<=0){statusEl.textContent='Sem munição • troque de arma';return}
   const size=currentWeapon==='pistol'?12:currentWeapon==='smg'?30:currentWeapon==='rifle'?20:8;
-  const load=Math.min(size,ammo.reserve);ammo.mag=load;ammo.reserve-=load;updateHud();
+  const load=Math.min(size,ammo.reserve);ammo.mag=load;ammo.reserve-=load;updateHud();playReload();
   statusEl.textContent='Recarregado • '+weapon.label;
   return;
  }
  ammo.mag--;
+ playShot(currentWeapon);
  shotCooldown=weapon.cooldown;
  weaponReadyUntil=t+2.5;
  updateAimFromPointer();
@@ -1568,6 +1653,7 @@ function frame(now){
   }
  }
  const avatarRunning=moved&&requestedRun;
+ updateFootstepAudio(moved,avatarRunning);
  setAvatarMotion(moved?(avatarRunning?'run':'walk'):'idle');
  const fallbackStep=Math.sin(locomotion.phase);
  player.userData.legs[0].rotation.x=moved?fallbackStep*.5:player.userData.legs[0].rotation.x*Math.exp(-dt*12);
