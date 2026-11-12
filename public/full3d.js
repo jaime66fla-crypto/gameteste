@@ -712,6 +712,18 @@ class HumanCharacter {
       if(name.includes('leftforearm')||name.includes('left_forearm'))this.leftForeArmBone=object;
      }
     });
+    this.jumpRestPose={};
+    [
+     ['hips',this.hipsBone],
+     ['spine',this.spineBone],
+     ['leftUpLeg',this.leftUpLegBone],
+     ['rightUpLeg',this.rightUpLegBone],
+     ['leftLeg',this.leftLegBone],
+     ['rightLeg',this.rightLegBone]
+    ].forEach(([key,bone])=>{
+     if(bone)this.jumpRestPose[key]=bone.rotation.clone();
+    });
+
     this.mixer=new THREE.AnimationMixer(this.model);
     console.table((gltf.animations||[]).map((clip,index)=>({
      indice:index,
@@ -806,8 +818,17 @@ class HumanCharacter {
    current,target,
    1-Math.exp(-speed*delta)
   );
+  const rest=(key,axis)=>{
+   const r=this.jumpRestPose?.[key];
+   return r?r[axis]:0;
+  };
+  const setBone=(bone,key,rx=0,ry=0,rz=0,speed=10)=>{
+   if(!bone)return;
+   bone.rotation.x=smooth(bone.rotation.x,rest(key,'x')+rx,speed);
+   bone.rotation.y=smooth(bone.rotation.y,rest(key,'y')+ry,speed);
+   bone.rotation.z=smooth(bone.rotation.z,rest(key,'z')+rz,speed);
+  };
 
-  // Detect takeoff / landing.
   if(this.wasGrounded&&!isGrounded){
    this.jumpPhase='takeoff';
    this.jumpBlend=0;
@@ -820,60 +841,61 @@ class HumanCharacter {
   this.wasGrounded=isGrounded;
 
   if(!isGrounded){
-   this.jumpBlend=Math.min(1,this.jumpBlend+delta*7);
+   this.jumpBlend=Math.min(1,this.jumpBlend+delta*6);
 
    if(verticalVelocity>2.2)this.jumpPhase='takeoff';
-   else if(verticalVelocity>-2.0)this.jumpPhase='air';
+   else if(verticalVelocity>-1.5)this.jumpPhase='air';
    else this.jumpPhase='fall';
 
-   const t=this.jumpBlend;
-
-   // Hips: small compression/extension and forward lean.
-   if(this.hipsBone){
-    const hipsX=this.jumpPhase==='takeoff'?-0.12:
-                this.jumpPhase==='air'?-0.04:.08;
-    this.hipsBone.rotation.x=smooth(this.hipsBone.rotation.x,hipsX,10);
+   if(this.jumpPhase==='takeoff'){
+    setBone(this.hipsBone,'hips',-.05,0,0,10);
+    setBone(this.spineBone,'spine',.08,0,0,10);
+    setBone(this.leftUpLegBone,'leftUpLeg',.18,0,0,10);
+    setBone(this.rightUpLegBone,'rightUpLeg',.14,0,0,10);
+    setBone(this.leftLegBone,'leftLeg',-.22,0,0,10);
+    setBone(this.rightLegBone,'rightLeg',-.18,0,0,10);
+   }else if(this.jumpPhase==='air'){
+    setBone(this.hipsBone,'hips',-.02,0,0,8);
+    setBone(this.spineBone,'spine',.04,0,0,8);
+    setBone(this.leftUpLegBone,'leftUpLeg',.28,0,.05,9);
+    setBone(this.rightUpLegBone,'rightUpLeg',.22,0,-.05,9);
+    setBone(this.leftLegBone,'leftLeg',-.38,0,0,9);
+    setBone(this.rightLegBone,'rightLeg',-.32,0,0,9);
+   }else{
+    // Falling: extend legs instead of curling body into a ball.
+    setBone(this.hipsBone,'hips',.03,0,0,9);
+    setBone(this.spineBone,'spine',-.03,0,0,9);
+    setBone(this.leftUpLegBone,'leftUpLeg',.10,0,.03,10);
+    setBone(this.rightUpLegBone,'rightUpLeg',.08,0,-.03,10);
+    setBone(this.leftLegBone,'leftLeg',-.10,0,0,10);
+    setBone(this.rightLegBone,'rightLeg',-.08,0,0,10);
    }
 
-   if(this.spineBone){
-    const spineX=this.jumpPhase==='takeoff'?.14:
-                 this.jumpPhase==='air'?.05:-.06;
-    this.spineBone.rotation.x=smooth(this.spineBone.rotation.x,spineX,9);
-   }
-
-   // Legs tuck slightly in air, then extend for landing.
-   const tuck=this.jumpPhase==='air'?.62:
-              this.jumpPhase==='takeoff'?.38:.18;
-   const calf=this.jumpPhase==='air'?-1.0:
-              this.jumpPhase==='takeoff'?-0.62:-0.28;
-
-   if(this.leftUpLegBone)this.leftUpLegBone.rotation.x=smooth(this.leftUpLegBone.rotation.x,tuck,12);
-   if(this.rightUpLegBone)this.rightUpLegBone.rotation.x=smooth(this.rightUpLegBone.rotation.x,tuck*.92,12);
-   if(this.leftLegBone)this.leftLegBone.rotation.x=smooth(this.leftLegBone.rotation.x,calf,12);
-   if(this.rightLegBone)this.rightLegBone.rotation.x=smooth(this.rightLegBone.rotation.x,calf*.94,12);
-
-   // Slight whole-model pitch makes the jump read better.
-   const modelPitch=this.jumpPhase==='takeoff'?-0.05:
-                    this.jumpPhase==='air'?0.02:.07;
-   this.model.rotation.x=smooth(this.model.rotation.x,modelPitch,8);
+   this.model.rotation.x=smooth(
+    this.model.rotation.x,
+    this.jumpPhase==='fall'?.035:this.jumpPhase==='takeoff'?-.025:0,
+    8
+   );
   }else{
-   // Landing compression then recover.
    if(this.jumpPhase==='landing'){
-    this.landBlend=Math.max(0,this.landBlend-delta*5.5);
-    const compression=this.landBlend;
-
-    if(this.hipsBone)this.hipsBone.rotation.x=smooth(this.hipsBone.rotation.x,.14*compression,14);
-    if(this.spineBone)this.spineBone.rotation.x=smooth(this.spineBone.rotation.x,-.08*compression,14);
-    if(this.leftUpLegBone)this.leftUpLegBone.rotation.x=smooth(this.leftUpLegBone.rotation.x,.35*compression,14);
-    if(this.rightUpLegBone)this.rightUpLegBone.rotation.x=smooth(this.rightUpLegBone.rotation.x,.35*compression,14);
-    if(this.leftLegBone)this.leftLegBone.rotation.x=smooth(this.leftLegBone.rotation.x,-.45*compression,14);
-    if(this.rightLegBone)this.rightLegBone.rotation.x=smooth(this.rightLegBone.rotation.x,-.45*compression,14);
-
+    this.landBlend=Math.max(0,this.landBlend-delta*6);
+    const c=this.landBlend;
+    setBone(this.hipsBone,'hips',.05*c,0,0,14);
+    setBone(this.spineBone,'spine',-.04*c,0,0,14);
+    setBone(this.leftUpLegBone,'leftUpLeg',.12*c,0,0,14);
+    setBone(this.rightUpLegBone,'rightUpLeg',.12*c,0,0,14);
+    setBone(this.leftLegBone,'leftLeg',-.16*c,0,0,14);
+    setBone(this.rightLegBone,'rightLeg',-.16*c,0,0,14);
     if(this.landBlend<=.02)this.jumpPhase='grounded';
    }
 
-   // Return procedural offsets toward mixer pose when fully grounded.
    if(this.jumpPhase==='grounded'){
+    setBone(this.hipsBone,'hips',0,0,0,10);
+    setBone(this.spineBone,'spine',0,0,0,10);
+    setBone(this.leftUpLegBone,'leftUpLeg',0,0,0,10);
+    setBone(this.rightUpLegBone,'rightUpLeg',0,0,0,10);
+    setBone(this.leftLegBone,'leftLeg',0,0,0,10);
+    setBone(this.rightLegBone,'rightLeg',0,0,0,10);
     this.model.rotation.x=smooth(this.model.rotation.x,0,10);
    }
   }
