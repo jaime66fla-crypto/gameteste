@@ -1742,7 +1742,7 @@ class GTACameraController {
   return focusPoint.clone().add(rayDirection.multiplyScalar(safeDistance));
  }
 
- update(delta){
+ update(delta,aiming=false){
   if(!this.target)return;
 
   const blend=1-Math.exp(-this.zoomSpeed*delta);
@@ -1755,7 +1755,7 @@ class GTACameraController {
    blend
   );
   const targetFov=THREE.MathUtils.lerp(this.baseFov,50,this.adsBlend);
-  if(Math.abs(this.camera.fov-targetFov)>.01){
+  if(!aiming&&Math.abs(this.camera.fov-targetFov)>.01){
    this.camera.fov=THREE.MathUtils.lerp(this.camera.fov,targetFov,1-Math.exp(-delta*14));
    this.camera.updateProjectionMatrix();
   }
@@ -1765,12 +1765,12 @@ class GTACameraController {
   this.recoilTime=Math.max(0,this.recoilTime-delta);
   const effectivePitch=THREE.MathUtils.clamp(this.pitch-this.recoilPitch,this.minPitch,this.maxPitch);
 
-  this.offset.y=1.5-controller.crouchBlend*.35;
+  this.offset.y=(aiming?1.55:1.5)-controller.crouchBlend*.35;
   const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
   const bodyFocus=this.target.position.clone().add(this.offset);
   const focusPoint=bodyFocus.clone();
 
-  if(this.modeIndex===3&&!controller.cover.active){
+  if(aiming||(this.modeIndex===3&&!controller.cover.active)){
    this.camera.position.copy(focusPoint);
 
    const lookDir=new THREE.Vector3(
@@ -2108,7 +2108,7 @@ const combatBots=new window.CombatBotSystem({
 });
 
 function updateCamera(dt){
- const ads=controller.keys.aiming&&pistolWeapon.isEquipped&&pistolWeapon.rearSight&&pistolWeapon.frontSight;
+ const ads=controller.keys.aiming&&pistolWeapon.isEquipped;
  const aimDot=document.getElementById('aimDot');
  const optic=document.getElementById('opticReticle');
  const scope=document.getElementById('sniperScope');
@@ -2123,12 +2123,6 @@ function updateCamera(dt){
   return;
  }
 
- scene.updateMatrixWorld(true);
- const rear=pistolWeapon.rearSight.getWorldPosition(new THREE.Vector3());
- const front=pistolWeapon.frontSight.getWorldPosition(new THREE.Vector3());
- const sightDir=front.clone().sub(rear).normalize();
- const blend=1-Math.exp(-dt*18);
-
  let targetFov=46;
  let mode='iron';
 
@@ -2142,15 +2136,9 @@ function updateCamera(dt){
   targetFov=43;
  }
 
- // Camera stays driven by the player/head direction; the dedicated ADS viewmodel
- // supplies the visible weapon. This keeps WASD locomotion independent from the sight mesh.
- const eye=player.position.clone().add(new THREE.Vector3(0,controller.isCrouching?1.18:1.55,0));
- const desired=eye;
- camera.position.lerp(desired,blend);
-
- const lookTarget=front.clone().addScaledVector(sightDir,weaponId==='sniper'?120:28);
- const lookQuat=new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(camera.position,lookTarget,camera.up));
- camera.quaternion.slerp(lookQuat,blend);
+ // Use the same mouse yaw/pitch and player position in both camera modes.
+ // The old sight meshes belong to a detached gun and cannot define aim direction.
+ thirdPersonCamera.update(dt,true);
 
  camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*(weaponId==='sniper'?10:14)));
  camera.updateProjectionMatrix();
