@@ -9,7 +9,7 @@ renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=1.1;
+renderer.toneMappingExposure=.95;
 
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,250);
@@ -31,17 +31,17 @@ function buildForestEnvironment(scene,options={}){
   return x-Math.floor(x);
  }
 
- const skyColor=new THREE.Color(0xa8d5e5);
- const fogColor=new THREE.Color(0xc2e0d8);
+ const skyColor=new THREE.Color(0x91b5c9);
+ const fogColor=new THREE.Color(0x9eaf9e);
  scene.background=skyColor;
- scene.fog=new THREE.FogExp2(fogColor,.0085);
+ scene.fog=new THREE.FogExp2(fogColor,.0038);
 
- const hemiLight=new THREE.HemisphereLight(0xdff5ff,0x3b5233,.85);
+ const hemiLight=new THREE.HemisphereLight(0xc3d5e1,0x394431,.55);
  hemiLight.position.set(0,50,0);
  scene.add(hemiLight);
 
- const sunLight=new THREE.DirectionalLight(0xfff4d6,1.4);
- sunLight.position.set(60,100,40);
+ const sunLight=new THREE.DirectionalLight(0xffd3a1,1.1);
+ sunLight.position.set(60,75,40);
  sunLight.castShadow=true;
  sunLight.shadow.mapSize.width=2048;
  sunLight.shadow.mapSize.height=2048;
@@ -69,11 +69,25 @@ function buildForestEnvironment(scene,options={}){
   }
  }
  groundGeo.computeVertexNormals();
+ // Broad, continuous color patches give the terrain variation without adding
+ // textures, extra draw calls, or consuming the seeded object-placement RNG.
+ const terrainColors=new Float32Array(posAttr.count*3);
+ const grassDark=new THREE.Color(0x606f43),grassLight=new THREE.Color(0x81905c);
+ const earth=new THREE.Color(0x8b7658),terrainColor=new THREE.Color();
+ for(let i=0;i<posAttr.count;i++){
+  const x=posAttr.getX(i),z=posAttr.getZ(i);
+  const patch=.5+.25*Math.sin(x*.08+Math.cos(z*.06))+.25*Math.cos(z*.095-x*.03);
+  terrainColor.copy(grassDark).lerp(grassLight,patch);
+  const dry=THREE.MathUtils.clamp((Math.sin(x*.027)+Math.cos(z*.041))*.5-.42,0,.15);
+  terrainColor.lerp(earth,dry).toArray(terrainColors,i*3);
+ }
+ groundGeo.setAttribute('color',new THREE.BufferAttribute(terrainColors,3));
 
  const groundMat=new THREE.MeshStandardMaterial({
-  color:0x5c8a47,
+  color:0xffffff,
+  vertexColors:true,
   roughness:.9,
-  metalness:.05,
+  metalness:0,
   flatShading:true
  });
  const ground=new THREE.Mesh(groundGeo,groundMat);
@@ -87,13 +101,13 @@ function buildForestEnvironment(scene,options={}){
   return (Math.sin(x*.05)*Math.cos(z*.05)*2.5+Math.sin(x*.12+z*.1)*.8)*factor;
  }
 
- const trunkMat=new THREE.MeshStandardMaterial({color:0x6e4f3a,roughness:.9,flatShading:true});
+ const trunkMat=new THREE.MeshStandardMaterial({color:0x614a36,roughness:.9,flatShading:true});
  const leafMaterials=[
-  new THREE.MeshStandardMaterial({color:0x3d6e35,roughness:.8,flatShading:true}),
-  new THREE.MeshStandardMaterial({color:0x4f8542,roughness:.8,flatShading:true}),
-  new THREE.MeshStandardMaterial({color:0x2d5429,roughness:.8,flatShading:true})
+  new THREE.MeshStandardMaterial({color:0x35543a,roughness:.8,flatShading:true}),
+  new THREE.MeshStandardMaterial({color:0x617a43,roughness:.8,flatShading:true}),
+  new THREE.MeshStandardMaterial({color:0x456442,roughness:.8,flatShading:true})
  ];
- const rockMat=new THREE.MeshStandardMaterial({color:0x858a8c,roughness:.85,flatShading:true});
+ const rockMat=new THREE.MeshStandardMaterial({color:0x777b73,roughness:.85,flatShading:true});
 
  const forestGroup=new THREE.Group();
  const colliders=[];
@@ -246,12 +260,12 @@ class HouseParkourBuilder {
  }
  initMaterials(){
   this.materials={
-   stoneWall:new THREE.MeshStandardMaterial({color:0x7c858e,roughness:.85,flatShading:true}),
-   woodWall:new THREE.MeshStandardMaterial({color:0x8b5a2b,roughness:.8,flatShading:true}),
-   darkWood:new THREE.MeshStandardMaterial({color:0x4a3219,roughness:.9,flatShading:true}),
-   roof:new THREE.MeshStandardMaterial({color:0x8f3a2b,roughness:.75,flatShading:true}),
-   crate:new THREE.MeshStandardMaterial({color:0xb07d48,roughness:.8,flatShading:true}),
-   windowGlow:new THREE.MeshStandardMaterial({color:0xffe49e,emissive:0xffb732,emissiveIntensity:.45})
+   stoneWall:new THREE.MeshStandardMaterial({color:0x85877d,roughness:.85,flatShading:true}),
+   woodWall:new THREE.MeshStandardMaterial({color:0x806346,roughness:.8,flatShading:true}),
+   darkWood:new THREE.MeshStandardMaterial({color:0x453b2b,roughness:.9,flatShading:true}),
+   roof:new THREE.MeshStandardMaterial({color:0x955e49,roughness:.75,flatShading:true}),
+   crate:new THREE.MeshStandardMaterial({color:0x9c7c53,roughness:.8,flatShading:true}),
+   windowGlow:new THREE.MeshStandardMaterial({color:0xffe49e,emissive:0xffb732,emissiveIntensity:.18})
   };
  }
  registerSolidBox(mesh,width,height,depth){
