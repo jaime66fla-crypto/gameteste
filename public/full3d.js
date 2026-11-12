@@ -105,6 +105,77 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
+
+class SimpleAvatar {
+ constructor(options={}){
+  this.group=new THREE.Group();
+  const bodyColor=options.bodyColor||0x3b82f6;
+  const skinColor=options.skinColor||0xf1f5f9;
+  const visorColor=options.visorColor||0x0f172a;
+
+  const bodyMat=new THREE.MeshStandardMaterial({color:bodyColor,roughness:.4});
+  const skinMat=new THREE.MeshStandardMaterial({color:skinColor,roughness:.3});
+  const visorMat=new THREE.MeshStandardMaterial({color:visorColor,roughness:.1,metalness:.8});
+
+  const legGeo=new THREE.CapsuleGeometry(.11,.45,4,8);
+  this.leftLeg=new THREE.Group();
+  this.leftLeg.position.set(-.18,.65,0);
+  const leftLegMesh=new THREE.Mesh(legGeo,skinMat);
+  leftLegMesh.position.y=-.32; leftLegMesh.castShadow=true; this.leftLeg.add(leftLegMesh);
+
+  this.rightLeg=new THREE.Group();
+  this.rightLeg.position.set(.18,.65,0);
+  const rightLegMesh=new THREE.Mesh(legGeo,skinMat);
+  rightLegMesh.position.y=-.32; rightLegMesh.castShadow=true; this.rightLeg.add(rightLegMesh);
+
+  const torsoGeo=new THREE.CapsuleGeometry(.32,.5,4,12);
+  this.torso=new THREE.Mesh(torsoGeo,bodyMat);
+  this.torso.position.y=1.05; this.torso.castShadow=true;
+
+  this.head=new THREE.Group();
+  this.head.position.y=1.75;
+  const headMesh=new THREE.Mesh(new THREE.SphereGeometry(.28,16,16),skinMat);
+  headMesh.castShadow=true; this.head.add(headMesh);
+
+  const visorMesh=new THREE.Mesh(new THREE.BoxGeometry(.36,.14,.15),visorMat);
+  visorMesh.position.set(0,.02,.22); this.head.add(visorMesh);
+
+  const armGeo=new THREE.CapsuleGeometry(.09,.45,4,8);
+  this.leftArm=new THREE.Group();
+  this.leftArm.position.set(-.44,1.32,0);
+  const leftArmMesh=new THREE.Mesh(armGeo,skinMat);
+  leftArmMesh.position.y=-.25; leftArmMesh.castShadow=true; this.leftArm.add(leftArmMesh);
+
+  this.rightArm=new THREE.Group();
+  this.rightArm.position.set(.44,1.32,0);
+  const rightArmMesh=new THREE.Mesh(armGeo,skinMat);
+  rightArmMesh.position.y=-.25; rightArmMesh.castShadow=true; this.rightArm.add(rightArmMesh);
+
+  this.group.add(this.leftLeg,this.rightLeg,this.torso,this.head,this.leftArm,this.rightArm);
+  this.walkTime=0;
+ }
+ animate(dt,isMoving,isSprinting=false){
+  const safeLerp=Math.min(1,10*dt);
+  if(isMoving){
+   const speed=isSprinting?14:9;
+   const swingAngle=isSprinting?.85:.55;
+   this.walkTime+=dt*speed;
+   const s=Math.sin(this.walkTime)*swingAngle;
+   this.leftLeg.rotation.x=s;
+   this.rightLeg.rotation.x=-s;
+   this.leftArm.rotation.x=-s;
+   this.rightArm.rotation.x=s;
+   this.torso.position.y=1.05+Math.abs(Math.cos(this.walkTime))*.04;
+  }else{
+   this.leftLeg.rotation.x=THREE.MathUtils.lerp(this.leftLeg.rotation.x,0,safeLerp);
+   this.rightLeg.rotation.x=THREE.MathUtils.lerp(this.rightLeg.rotation.x,0,safeLerp);
+   this.leftArm.rotation.x=THREE.MathUtils.lerp(this.leftArm.rotation.x,0,safeLerp);
+   this.rightArm.rotation.x=THREE.MathUtils.lerp(this.rightArm.rotation.x,0,safeLerp);
+   this.torso.position.y=THREE.MathUtils.lerp(this.torso.position.y,1.05,safeLerp);
+  }
+ }
+}
+
 class PlayerController {
  constructor(mesh,camera){
   this.mesh=mesh;
@@ -261,6 +332,9 @@ function makeGun(){
 }
 makeGun();
 
+const fallbackAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
+player.add(fallbackAvatar.group);
+
 new THREE.FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
  model=fbx;
  model.traverse(o=>{if(o.isMesh){o.castShadow=true;o.receiveShadow=true}});
@@ -268,12 +342,16 @@ new THREE.FBXLoader().load('/assets/models/erika-archer.fbx',fbx=>{
  model.scale.setScalar(h>0?1.85/h:1);
  const b2=new THREE.Box3().setFromObject(model); model.position.y=-b2.min.y;
  player.add(model);
+ fallbackAvatar.group.visible=false;
  if(model.animations?.length){
    mixer=new THREE.AnimationMixer(model);
    for(const clip of model.animations) actions[clip.name.toLowerCase()]=mixer.clipAction(clip);
  }
  stateEl.textContent='ERIKA READY';
-},undefined,()=>stateEl.textContent='avatar não carregou');
+},undefined,()=>{
+ fallbackAvatar.group.visible=true;
+ stateEl.textContent='AVATAR PROCEDURAL';
+});
 
 function pickAction(kind){
  const names=kind==='run'?['run','sprint']:kind==='walk'?['walk','locomotion']:kind==='jump'?['jump']:['idle','stand'];
@@ -312,7 +390,9 @@ addEventListener('resize',resize);resize();
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
- controller.update(dt); updateCamera(dt);
+ controller.update(dt);
+ fallbackAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
+ updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
  stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s';
  renderer.render(scene,camera);
