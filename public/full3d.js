@@ -1464,7 +1464,7 @@ class PlayerController {
   this.velocity=new THREE.Vector3();
   this.isGrounded=true;
   this.horizontalSpeed=0;
-  this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false,aiming:false};
+  this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false,aiming:false,jetpack:false};
   this.stamina=100;
   this.maxStamina=100;
   this._initListeners();
@@ -1506,6 +1506,7 @@ class PlayerController {
    case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
    case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
    case 'Space':
+    this.keys.jetpack=isPressed;
     if(isPressed)this.cover.exit();
     if(isPressed&&this.isGrounded&&!this.isCrouching){
      this.velocity.y=this.jumpForce;
@@ -1562,6 +1563,7 @@ class PlayerController {
 
   const terrainY=forestEnvironment.getTerrainHeight(this.mesh.position.x,this.mesh.position.z);
 
+  if(typeof jetpackSystem!=='undefined')jetpackSystem.update(dt,this);
   this.velocity.y+=this.gravity*dt;
   this.mesh.position.y+=this.velocity.y*dt;
 
@@ -1928,6 +1930,114 @@ function setAction(kind){
  active=next;
  if(active)active.reset().fadeIn(.14).play();
 }
+
+
+class SpecialJetpack {
+ constructor(scene,player,getGroundHeight){
+  this.scene=scene;
+  this.player=player;
+  this.getGroundHeight=getGroundHeight;
+  this.equipped=false;
+  this.fuel=100;
+  this.maxFuel=100;
+  this.thrust=31;
+  this.maxRiseSpeed=11;
+  this.burnRate=24;
+  this.rechargeRate=15;
+  this.pickupRadius=2.2;
+  this.pickupPosition=new THREE.Vector3(0,getGroundHeight(0,14)+6.15,14);
+  this.pickup=this._buildJetpack(false);
+  this.pickup.position.copy(this.pickupPosition);
+  scene.add(this.pickup);
+
+  const ringMat=new THREE.MeshBasicMaterial({color:0xffb52e,transparent:true,opacity:.75});
+  this.ring=new THREE.Mesh(new THREE.TorusGeometry(.85,.045,8,32),ringMat);
+  this.ring.rotation.x=Math.PI/2;
+  this.ring.position.copy(this.pickupPosition);
+  this.ring.position.y-=.42;
+  scene.add(this.ring);
+
+  this.glow=new THREE.PointLight(0xffa91f,2.1,5);
+  this.glow.position.copy(this.pickupPosition);
+  scene.add(this.glow);
+
+  this.backpack=null;
+  this.flames=[];
+  this._bind();
+ }
+ _buildJetpack(onBack){
+  const g=new THREE.Group();
+  g.name='SPECIAL_JETPACK';
+  const dark=new THREE.MeshStandardMaterial({color:0x22282a,metalness:.55,roughness:.42});
+  const panel=new THREE.MeshStandardMaterial({color:0x3c4243,metalness:.35,roughness:.5});
+  const gold=new THREE.MeshStandardMaterial({color:0xe59b21,emissive:0x5b2a00,emissiveIntensity:.45,metalness:.5,roughness:.35});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.52,.58,.22),panel);
+  body.castShadow=true;g.add(body);
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(.16,.035,6,16,Math.PI),dark);
+  handle.rotation.z=Math.PI;handle.position.set(0,.37,0);g.add(handle);
+  for(const sx of [-.38,.38]){
+   const tank=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.58,12),dark);
+   tank.position.set(sx,0,0);tank.castShadow=true;g.add(tank);
+   const band=new THREE.Mesh(new THREE.CylinderGeometry(.145,.145,.08,12),gold);
+   band.position.set(sx,.10,0);g.add(band);
+   const nozzle=new THREE.Mesh(new THREE.CylinderGeometry(.11,.075,.18,12),dark);
+   nozzle.position.set(sx,-.36,0);g.add(nozzle);
+   const flame=new THREE.Mesh(new THREE.ConeGeometry(.09,.46,10),new THREE.MeshBasicMaterial({color:0xffb12b,transparent:true,opacity:0}));
+   flame.position.set(sx,-.66,0);flame.rotation.z=Math.PI;g.add(flame);
+   g.userData.flames=(g.userData.flames||[]);g.userData.flames.push(flame);
+  }
+  const emblem=new THREE.Mesh(new THREE.BoxGeometry(.26,.07,.235),gold);
+  emblem.position.set(0,.02,.02);g.add(emblem);
+  g.scale.setScalar(onBack?.72:.9);
+  return g;
+ }
+ _bind(){
+  addEventListener('keydown',e=>{
+   if(e.code!=='KeyE'||e.repeat||!gameStarted||this.equipped)return;
+   if(this.player.position.distanceTo(this.pickupPosition)<=this.pickupRadius)this.pickupNow();
+  });
+ }
+ pickupNow(){
+  this.equipped=true;
+  this.pickup.visible=false;this.ring.visible=false;this.glow.visible=false;
+  this.backpack=this._buildJetpack(true);
+  this.backpack.position.set(0,1.28,.34);
+  this.backpack.rotation.y=Math.PI;
+  this.player.add(this.backpack);
+  this.flames=this.backpack.userData.flames||[];
+  const hud=document.getElementById('jetpackHud');if(hud)hud.hidden=false;
+  const prompt=document.getElementById('jetpackPrompt');if(prompt)prompt.hidden=true;
+ }
+ update(dt,controller){
+  if(!this.equipped){
+   const near=this.player.position.distanceTo(this.pickupPosition)<=this.pickupRadius;
+   const p=document.getElementById('jetpackPrompt');
+   if(p){p.hidden=!near;p.textContent='E · PEGAR JETPACK ESPECIAL';}
+   this.ring.rotation.z+=dt*.9;
+   this.pickup.rotation.y+=dt*.65;
+   this.pickup.position.y=this.pickupPosition.y+Math.sin(performance.now()*.002)*.08;
+   return;
+  }
+
+  const active=controller.keys.jetpack&&this.fuel>0&&!controller.cover.active;
+  if(active){
+   controller.isGrounded=false;
+   controller.velocity.y=Math.min(this.maxRiseSpeed,controller.velocity.y+this.thrust*dt);
+   this.fuel=Math.max(0,this.fuel-this.burnRate*dt);
+  }else{
+   this.fuel=Math.min(this.maxFuel,this.fuel+this.rechargeRate*dt);
+  }
+  for(const flame of this.flames){
+   flame.material.opacity=THREE.MathUtils.lerp(flame.material.opacity,active?.95:0,1-Math.exp(-dt*16));
+   flame.scale.y=active?.75+Math.random()*.45:.2;
+  }
+  const fill=document.getElementById('jetpackFuelFill');
+  const text=document.getElementById('jetpackFuelText');
+  if(fill)fill.style.width=this.fuel.toFixed(0)+'%';
+  if(text)text.textContent=this.fuel.toFixed(0)+'%';
+ }
+}
+const jetpackSystem=new SpecialJetpack(scene,player,forestEnvironment.getTerrainHeight);
 
 const controller=new PlayerController(player,camera);
 const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
