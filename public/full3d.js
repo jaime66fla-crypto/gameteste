@@ -781,15 +781,32 @@ class HumanCharacter {
    if(jumpKey){
     this.fadeToAction('jump',.12);
    }else{
-    // Soldier has no jump clip: remove locomotion pose entirely while airborne.
-    // Pausing the run clip freezes an arbitrary running frame and twists the body.
-    if(this.mixer)this.mixer.stopAllAction();
+    // Soldier has no jump clip. Use a stable neutral pose in the air.
+    const idleKey=this.findActionKey(['idle','stand']);
+    const idleAction=idleKey?this.actions[idleKey]:null;
+
+    if(idleAction){
+     if(this.activeAction!==idleAction){
+      if(this.activeAction)this.activeAction.fadeOut(.08);
+      this.activeAction=idleAction;
+      idleAction.reset().setEffectiveWeight(1).fadeIn(.08).play();
+     }
+     // Freeze a neutral idle frame instead of a run frame.
+     idleAction.time=Math.min(.12,idleAction.getClip().duration*.1);
+     idleAction.paused=true;
+    }
+
     this.previousAction=null;
-    this.activeAction=null;
-    this.airborneBaseAction=null;
+    this.airborneBaseAction=idleAction;
     this.state='jump';
    }
    return;
+  }
+
+  // Resume the frozen neutral pose when the character lands.
+  if(this.airborneBaseAction&&this.airborneBaseAction.paused){
+   this.airborneBaseAction.paused=false;
+   this.airborneBaseAction=null;
   }
   if(this.state==='jump'&&isGrounded)this.state='idle';
   if(speed>4.5){
@@ -812,88 +829,29 @@ class HumanCharacter {
  updateJumpPose(delta,verticalVelocity,isGrounded){
   if(!this.model)return;
 
-  const smooth=(current,target,speed)=>THREE.MathUtils.lerp(
-   current,target,
-   1-Math.exp(-speed*delta)
-  );
-  const rest=(key,axis)=>{
-   const r=this.jumpRestPose?.[key];
-   return r?r[axis]:0;
-  };
-  const setBone=(bone,key,rx=0,ry=0,rz=0,speed=12)=>{
-   if(!bone)return;
-   bone.rotation.x=smooth(bone.rotation.x,rest(key,'x')+rx,speed);
-   bone.rotation.y=smooth(bone.rotation.y,rest(key,'y')+ry,speed);
-   bone.rotation.z=smooth(bone.rotation.z,rest(key,'z')+rz,speed);
-  };
+  // Do not rotate Soldier bones here. The official Soldier rig uses its own
+  // bone axes, and forcing generic leg/hip rotations can fold the mesh.
+  const t=1-Math.exp(-12*delta);
+
+  this.model.rotation.x=THREE.MathUtils.lerp(this.model.rotation.x,0,t);
+  this.model.rotation.z=THREE.MathUtils.lerp(this.model.rotation.z,0,t);
 
   if(this.wasGrounded&&!isGrounded){
-   this.jumpPhase='takeoff';
-   this.jumpBlend=0;
+   this.jumpPhase='air';
   }
+
   if(!this.wasGrounded&&isGrounded){
    this.jumpPhase='landing';
    this.landBlend=1;
   }
+
   this.wasGrounded=isGrounded;
 
-  // Keep Soldier root upright at all times.
-  this.model.rotation.x=smooth(this.model.rotation.x,0,14);
-  this.model.rotation.z=smooth(this.model.rotation.z,0,14);
-
-  if(!isGrounded){
-   this.jumpBlend=Math.min(1,this.jumpBlend+delta*7);
-
-   if(verticalVelocity>2.0)this.jumpPhase='takeoff';
-   else if(verticalVelocity>-1.5)this.jumpPhase='air';
-   else this.jumpPhase='fall';
-
-   if(this.jumpPhase==='takeoff'){
-    setBone(this.hipsBone,'hips',-.02,0,0);
-    setBone(this.spineBone,'spine',.03,0,0);
-    setBone(this.leftUpLegBone,'leftUpLeg',.08,0,0);
-    setBone(this.rightUpLegBone,'rightUpLeg',.08,0,0);
-    setBone(this.leftLegBone,'leftLeg',-.10,0,0);
-    setBone(this.rightLegBone,'rightLeg',-.10,0,0);
-   }else if(this.jumpPhase==='air'){
-    // Stable airborne pose: legs slightly bent, body upright.
-    setBone(this.hipsBone,'hips',0,0,0);
-    setBone(this.spineBone,'spine',.02,0,0);
-    setBone(this.leftUpLegBone,'leftUpLeg',.12,0,0);
-    setBone(this.rightUpLegBone,'rightUpLeg',.12,0,0);
-    setBone(this.leftLegBone,'leftLeg',-.18,0,0);
-    setBone(this.rightLegBone,'rightLeg',-.18,0,0);
-   }else{
-    // Falling: extend toward landing.
-    setBone(this.hipsBone,'hips',.01,0,0);
-    setBone(this.spineBone,'spine',-.01,0,0);
-    setBone(this.leftUpLegBone,'leftUpLeg',.04,0,0);
-    setBone(this.rightUpLegBone,'rightUpLeg',.04,0,0);
-    setBone(this.leftLegBone,'leftLeg',-.04,0,0);
-    setBone(this.rightLegBone,'rightLeg',-.04,0,0);
-   }
-  }else{
-   if(this.jumpPhase==='landing'){
-    this.landBlend=Math.max(0,this.landBlend-delta*7);
-    const c=this.landBlend;
-
-    setBone(this.hipsBone,'hips',.03*c,0,0,14);
-    setBone(this.spineBone,'spine',-.02*c,0,0,14);
-    setBone(this.leftUpLegBone,'leftUpLeg',.08*c,0,0,14);
-    setBone(this.rightUpLegBone,'rightUpLeg',.08*c,0,0,14);
-    setBone(this.leftLegBone,'leftLeg',-.10*c,0,0,14);
-    setBone(this.rightLegBone,'rightLeg',-.10*c,0,0,14);
-
-    if(this.landBlend<=.02)this.jumpPhase='grounded';
-   }
-
-   if(this.jumpPhase==='grounded'){
-    setBone(this.hipsBone,'hips',0,0,0,12);
-    setBone(this.spineBone,'spine',0,0,0,12);
-    setBone(this.leftUpLegBone,'leftUpLeg',0,0,0,12);
-    setBone(this.rightUpLegBone,'rightUpLeg',0,0,0,12);
-    setBone(this.leftLegBone,'leftLeg',0,0,0,12);
-    setBone(this.rightLegBone,'rightLeg',0,0,0,12);
+  if(isGrounded&&this.jumpPhase==='landing'){
+   this.landBlend=Math.max(0,this.landBlend-delta*8);
+   if(this.landBlend<=.01){
+    this.jumpPhase='grounded';
+    this.landBlend=0;
    }
   }
  }
