@@ -877,21 +877,13 @@ class RealisticCombatAnimator {
   this.breathTime=0;
  }
  setWeapon(type){this.weapon=type;}
- startKatanaAttack(type='light',comboStep=1){
-  if(this.state==='attack')return false;
-  this.state='attack'; this.stateTime=0; this.attackType=type; this.comboStep=comboStep; return true;
- }
- startBowDraw(){if(this.weapon==='bow'){this.state='bowDraw';this.stateTime=0;}}
- releaseBow(){if(this.state==='bowDraw'){this.state='bowRelease';this.stateTime=0;}}
  smooth(current,target,speed,dt){return THREE.MathUtils.lerp(current,target,1-Math.exp(-speed*dt));}
  bell(t){return Math.sin(THREE.MathUtils.clamp(t,0,1)*Math.PI);}
  update(dt,movement){
   this.stateTime+=dt;
   this.breathTime+=dt;
   this.updateLowerBody(dt,movement);
-  if(this.weapon==='bow')this.updateBowPose(dt,movement);
-  else if(this.weapon==='katana')this.updateKatanaPose(dt,movement);
-  else if(this.weapon==='pistol')this.updatePistolPose(dt,movement);
+  if(this.weapon==='pistol')this.updatePistolPose(dt,movement);
   else this.updateUnarmedPose(dt,movement);
   this.updateBodyInertia(dt,movement);
  }
@@ -928,524 +920,11 @@ class RealisticCombatAnimator {
    rightArm.rotation.x=this.smooth(rightArm.rotation.x,-.05,8,dt);
   }
  }
- updateBowPose(dt,movement){
-  const {leftArm,rightArm,torso}=this.avatar;
-  if(movement.sprinting){
-   leftArm.rotation.x=this.smooth(leftArm.rotation.x,-.45,9,dt);
-   rightArm.rotation.x=this.smooth(rightArm.rotation.x,-.35,9,dt);
-   torso.rotation.x=this.smooth(torso.rotation.x,.08,8,dt);
-   return;
-  }
-  const breathing=Math.sin(this.breathTime*2.2)*.025;
-  if(this.state==='bowDraw'){
-   const draw=THREE.MathUtils.clamp(this.stateTime/.65,0,1);
-   const eased=1-Math.pow(1-draw,3);
-   leftArm.rotation.x=this.smooth(leftArm.rotation.x,-1.40+breathing,15,dt);
-   leftArm.rotation.z=this.smooth(leftArm.rotation.z,-.12,12,dt);
-   rightArm.rotation.x=this.smooth(rightArm.rotation.x,-1.05-eased*.42,16,dt);
-   rightArm.rotation.z=this.smooth(rightArm.rotation.z,.30-eased*.15,15,dt);
-   rightArm.position.z=this.smooth(rightArm.position.z,eased*.22,14,dt);
-   torso.rotation.y=this.smooth(torso.rotation.y,-.12*eased,10,dt);
-   return;
-  }
-  if(this.state==='bowRelease'){
-   const t=Math.min(1,this.stateTime/.22),kick=this.bell(t);
-   leftArm.rotation.x=-1.40-kick*.10;
-   rightArm.rotation.x=-1.05+kick*.40;
-   rightArm.position.z=this.smooth(rightArm.position.z,0,18,dt);
-   if(t>=1){this.state='idle';this.stateTime=0;}
-   return;
-  }
-  leftArm.rotation.x=this.smooth(leftArm.rotation.x,-1.20+breathing,10,dt);
-  rightArm.rotation.x=this.smooth(rightArm.rotation.x,-.9+breathing,10,dt);
-  torso.rotation.y=this.smooth(torso.rotation.y,-.05,8,dt);
- }
- updateKatanaPose(dt,movement){
-  const {leftArm,rightArm,torso}=this.avatar;
-  if(this.state==='attack'){this.animateKatanaAttack(dt);return;}
-  if(movement.sprinting){
-   rightArm.rotation.x=this.smooth(rightArm.rotation.x,-.55,12,dt);
-   rightArm.rotation.z=this.smooth(rightArm.rotation.z,-.25,10,dt);
-   leftArm.rotation.x=this.smooth(leftArm.rotation.x,.25,10,dt);
-   torso.rotation.x=this.smooth(torso.rotation.x,.10,8,dt);
-   return;
-  }
-  rightArm.rotation.x=this.smooth(rightArm.rotation.x,-.95,12,dt);
-  rightArm.rotation.z=this.smooth(rightArm.rotation.z,-.28,12,dt);
-  leftArm.rotation.x=this.smooth(leftArm.rotation.x,-.35,10,dt);
-  leftArm.rotation.z=this.smooth(leftArm.rotation.z,.18,10,dt);
-  torso.rotation.y=this.smooth(torso.rotation.y,0,8,dt);
- }
- animateKatanaAttack(dt){
-  const {rightArm,leftArm,torso}=this.avatar;
-  const heavy=this.attackType==='heavy';
-  const duration=heavy?.72:.42;
-  const t=THREE.MathUtils.clamp(this.stateTime/duration,0,1);
-  let windup=0,strike=0,recovery=0;
-  if(t<.25)windup=t/.25;
-  else if(t<.65){windup=1;strike=(t-.25)/.40;}
-  else{windup=1;strike=1;recovery=(t-.65)/.35;}
-  const side=this.comboStep===2?-1:1;
-  if(heavy){
-   const prep=THREE.MathUtils.lerp(-.9,-2.0,windup);
-   const strikeAngle=THREE.MathUtils.lerp(prep,.8,strike);
-   rightArm.rotation.x=this.smooth(rightArm.rotation.x,strikeAngle,20,dt);
-   rightArm.rotation.z=-.25+strike*.8;
-   torso.rotation.y=THREE.MathUtils.lerp(-.32,.35,strike);
-   torso.rotation.x=THREE.MathUtils.lerp(-.05,.18,strike);
-  }else{
-   rightArm.rotation.z=side*THREE.MathUtils.lerp(-.95,.9,strike);
-   rightArm.rotation.x=-1.05+Math.sin(strike*Math.PI)*.75;
-   torso.rotation.y=side*THREE.MathUtils.lerp(-.32,.32,strike);
-   leftArm.rotation.x=-.35-Math.sin(strike*Math.PI)*.15;
-  }
-  if(recovery>0){
-   const r=1-Math.pow(1-recovery,2);
-   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-.95,r);
-   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,-.28,r);
-   torso.rotation.y=THREE.MathUtils.lerp(torso.rotation.y,0,r);
-   torso.rotation.x=THREE.MathUtils.lerp(torso.rotation.x,0,r);
-  }
-  if(t>=1){this.state='idle';this.stateTime=0;this.attackType=null;}
- }
  updateBodyInertia(dt,movement){
   const torso=this.avatar.torso;
   if(this.state==='attack')return;
   const targetLean=movement.moving?(movement.sprinting?.09:.035):0;
   torso.rotation.x=this.smooth(torso.rotation.x,targetLean,7,dt);
- }
-}
-
-class BowAnimationSystem {
- constructor(scene,avatar){
-  this.scene=scene;
-  this.avatar=avatar;
-  this.state='holstered';
-  this.stateTimer=0;
-  this.drawProgress=0;
-  this.maxDrawTime=.65;
-  this.fireDuration=.18;
-  this.reloadDuration=.55;
-  this.activeArrows=[];
-  this.onArrowShot=null;
-  this.buildBowAndArrow();
-  this.bindControls();
-  this.holster();
- }
- buildBowAndArrow(){
-  this.bowGroup=new THREE.Group();
-  const woodMat=new THREE.MeshStandardMaterial({color:0x5c3a21,roughness:.7,flatShading:true});
-  const gripMat=new THREE.MeshStandardMaterial({color:0x1f2937,roughness:.9});
-  const goldMat=new THREE.MeshStandardMaterial({color:0xd97706,metalness:.8,roughness:.3});
-  const stringMat=new THREE.LineBasicMaterial({color:0x00ffcc});
-
-  const grip=new THREE.Mesh(new THREE.CylinderGeometry(.032,.032,.32,8),gripMat);
-  this.bowGroup.add(grip);
-
-  this.upperLimbPivot=new THREE.Group();
-  this.upperLimbPivot.position.set(0,.16,0);
-  const upperLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.58,.045),woodMat);
-  upperLimb.position.set(0,.28,.06);
-  upperLimb.rotation.x=-.25;
-  upperLimb.castShadow=true;
-  this.upperLimbPivot.add(upperLimb);
-  this.upperTip=new THREE.Object3D();
-  this.upperTip.position.set(0,.56,.16);
-  this.upperLimbPivot.add(this.upperTip);
-  this.bowGroup.add(this.upperLimbPivot);
-
-  this.lowerLimbPivot=new THREE.Group();
-  this.lowerLimbPivot.position.set(0,-.16,0);
-  const lowerLimb=new THREE.Mesh(new THREE.BoxGeometry(.025,.58,.045),woodMat);
-  lowerLimb.position.set(0,-.28,.06);
-  lowerLimb.rotation.x=.25;
-  lowerLimb.castShadow=true;
-  this.lowerLimbPivot.add(lowerLimb);
-  this.lowerTip=new THREE.Object3D();
-  this.lowerTip.position.set(0,-.56,.16);
-  this.lowerLimbPivot.add(this.lowerTip);
-  this.bowGroup.add(this.lowerLimbPivot);
-
-  this.stringPoints=[
-   new THREE.Vector3(0,.72,.16),
-   new THREE.Vector3(0,0,.16),
-   new THREE.Vector3(0,-.72,.16)
-  ];
-  const stringGeo=new THREE.BufferGeometry().setFromPoints(this.stringPoints);
-  this.bowString=new THREE.Line(stringGeo,stringMat);
-  this.bowGroup.add(this.bowString);
-
-  this.handArrow=this.createArrowMesh();
-  this.bowGroup.add(this.handArrow);
-
-  this.muzzlePoint=new THREE.Object3D();
-  this.muzzlePoint.position.set(0,0,-.4);
-  this.bowGroup.add(this.muzzlePoint);
- }
- createArrowMesh(){
-  const arrow=new THREE.Group();
-  const shaft=new THREE.Mesh(
-   new THREE.CylinderGeometry(.008,.008,.85,6),
-   new THREE.MeshStandardMaterial({color:0x78350f})
-  );
-  shaft.rotation.x=Math.PI/2;
-  arrow.add(shaft);
-
-  const head=new THREE.Mesh(
-   new THREE.ConeGeometry(.022,.08,4),
-   new THREE.MeshStandardMaterial({color:0x00ffcc,emissive:0x005544})
-  );
-  head.rotation.x=-Math.PI/2;
-  head.position.z=-.45;
-  arrow.add(head);
-  return arrow;
- }
- bindControls(){
-  addEventListener('keydown',e=>{
-   if(e.code==='Digit1'||e.code==='Numpad1'){
-    if(this.state==='holstered')this.equip();
-   }
-   if(e.code==='KeyH'){
-    if(this.state!=='holstered')this.holster();
-   }
-  });
-  addEventListener('mousedown',e=>{
-   if(e.button!==0)return;
-   if(!gameStarted)return;
-   if(this.state==='ready'){
-    this.state='drawing';
-    this.drawProgress=0;
-    if(typeof combatAnimator!=='undefined')combatAnimator.startBowDraw();
-   }
-  });
-  addEventListener('mouseup',e=>{
-   if(e.button!==0)return;
-   if(this.state==='drawing'){
-    if(this.drawProgress>=.2)this.releaseArrow();
-    else{
-     this.state='ready';
-     this.drawProgress=0;
-    }
-   }
-  });
- }
- equip(){
-  if(typeof katanaWeapon!=='undefined'&&katanaWeapon?.isEquipped)katanaWeapon.holster();
-  if(typeof pistolWeapon!=='undefined'&&pistolWeapon?.isEquipped)pistolWeapon.holster();
-  this.state='ready';
-  this.drawProgress=0;
-  if(typeof combatAnimator!=='undefined')combatAnimator.setWeapon('bow');
-  this.avatar.group.add(this.bowGroup);
-  this.bowGroup.position.set(-.38,1.15,-.42);
-  this.bowGroup.rotation.set(0,0,.22);
-  this.handArrow.visible=true;
-  this.resetArrowNockedPose();
- }
- holster(){
-  this.state='holstered';
-  this.drawProgress=0;
-  if(typeof combatAnimator!=='undefined'&&combatAnimator.weapon==='bow')combatAnimator.setWeapon('none');
-  this.avatar.group.add(this.bowGroup);
-  this.bowGroup.position.set(.24,1.22,-.58);
-  this.bowGroup.rotation.set(.12,.08,.92);
-  this.handArrow.visible=false;
-  this.updateBowDeformation(0);
- }
- releaseArrow(){
-  const power=Math.max(.35,this.drawProgress);
-  this.state='firing';
-  if(typeof combatAnimator!=='undefined')combatAnimator.releaseBow();
-  this.stateTimer=0;
-  this.handArrow.visible=false;
-
-  const startPos=new THREE.Vector3();
-  this.muzzlePoint.getWorldPosition(startPos);
-
-  const ray=new THREE.Raycaster();
-  const hit=getAimRaycastHit(ray,camera,scene,player);
-  const targetPoint=hit?.point || camera.position.clone().add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(100));
-  const direction=new THREE.Vector3().subVectors(targetPoint,startPos).normalize();
-
-  const arrowProj=this.createArrowMesh();
-  arrowProj.position.copy(startPos);
-  arrowProj.lookAt(startPos.clone().add(direction));
-
-  const speed=35+power*45;
-  arrowProj.userData={velocity:direction.multiplyScalar(speed),life:2};
-  this.scene.add(arrowProj);
-  this.activeArrows.push(arrowProj);
-
-  if(typeof this.onArrowShot==='function')this.onArrowShot(power,hit);
-  this.drawProgress=0;
-  this.updateBowDeformation(0);
- }
- resetArrowNockedPose(){
-  this.handArrow.position.set(.03,0,-.18);
-  this.handArrow.rotation.set(0,0,0);
- }
- updateBowDeformation(t){
-  this.upperLimbPivot.rotation.x=t*.22;
-  this.lowerLimbPivot.rotation.x=-t*.22;
-  const tipY=.72-t*.04;
-  const tipZ=.16+t*.11;
-  const pullZ=.16+t*.42;
-  this.stringPoints[0].set(0,tipY,tipZ);
-  this.stringPoints[1].set(0,0,pullZ);
-  this.stringPoints[2].set(0,-tipY,tipZ);
-  this.bowString.geometry.setFromPoints(this.stringPoints);
- }
- update(delta,isMoving){
-  this.updateFlyingArrows(delta);
-
-  if(this.state==='holstered'){
-   if(!isMoving){
-    this.avatar.leftArm.rotation.z=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.z,.15,.15);
-    this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.15);
-   }
-   return;
-  }
-
-  if(typeof combatAnimator!=='undefined')return;
-  const leftArm=this.avatar.leftArm;
-  const rightArm=this.avatar.rightArm;
-
-  if(this.state==='ready'){
-   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.35,.2);
-   leftArm.rotation.z=THREE.MathUtils.lerp(leftArm.rotation.z,-.1,.2);
-   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-1.15,.2);
-   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,.35,.2);
-   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,0,.2);
-   this.resetArrowNockedPose();
-   this.updateBowDeformation(0);
-  }else if(this.state==='drawing'){
-   this.drawProgress=Math.min(1,this.drawProgress+delta/this.maxDrawTime);
-   const easedPull=1-Math.pow(1-this.drawProgress,2);
-   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.42,.25);
-   leftArm.rotation.z=THREE.MathUtils.lerp(leftArm.rotation.z,-.12,.25);
-   rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-1.35+easedPull*.45,.25);
-   rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,.35-easedPull*.15,.25);
-   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,easedPull*.18,.25);
-   this.handArrow.position.set(.03,0,-.18+easedPull*.42);
-   this.updateBowDeformation(easedPull);
-  }else if(this.state==='firing'){
-   this.stateTimer+=delta;
-   const t=Math.min(1,this.stateTimer/this.fireDuration);
-   const kick=Math.sin(t*Math.PI)*.22;
-   leftArm.rotation.x=-1.42-kick;
-   rightArm.rotation.x=-.85-kick;
-   rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,.1,.3);
-   if(this.stateTimer>=this.fireDuration){
-    this.state='reloading';
-    this.stateTimer=0;
-   }
-  }else if(this.state==='reloading'){
-   this.stateTimer+=delta;
-   const t=Math.min(1,this.stateTimer/this.reloadDuration);
-   if(t<.5){
-    const reachPhase=t*2;
-    rightArm.rotation.x=THREE.MathUtils.lerp(rightArm.rotation.x,-2.55,reachPhase);
-    rightArm.rotation.z=THREE.MathUtils.lerp(rightArm.rotation.z,-.25,reachPhase);
-    rightArm.position.z=THREE.MathUtils.lerp(rightArm.position.z,.12,reachPhase);
-   }else{
-    const nockPhase=(t-.5)*2;
-    this.handArrow.visible=true;
-    rightArm.rotation.x=THREE.MathUtils.lerp(-2.55,-1.15,nockPhase);
-    rightArm.rotation.z=THREE.MathUtils.lerp(-.25,.35,nockPhase);
-    rightArm.position.z=THREE.MathUtils.lerp(.12,0,nockPhase);
-    this.handArrow.position.set(
-     .03+(1-nockPhase)*.25,
-     (1-nockPhase)*.45,
-     -.18+(1-nockPhase)*.35
-    );
-    this.handArrow.rotation.x=(1-nockPhase)*.6;
-   }
-   leftArm.rotation.x=THREE.MathUtils.lerp(leftArm.rotation.x,-1.1,.15);
-   if(this.stateTimer>=this.reloadDuration){
-    this.state='ready';
-    this.resetArrowNockedPose();
-   }
-  }
- }
- updateFlyingArrows(delta){
-  for(let i=this.activeArrows.length-1;i>=0;i--){
-   const arrow=this.activeArrows[i];
-   arrow.position.addScaledVector(arrow.userData.velocity,delta);
-   arrow.userData.velocity.y-=9.8*delta*.35;
-   arrow.lookAt(arrow.position.clone().add(arrow.userData.velocity));
-   arrow.userData.life-=delta;
-   if(arrow.userData.life<=0){
-    this.scene.remove(arrow);
-    this.activeArrows.splice(i,1);
-   }
-  }
- }
-}
-
-class KatanaController {
- constructor(player,avatar,enemies=[]){
-  this.player=player;
-  this.avatar=avatar;
-  this.enemies=enemies;
-  this.isEquipped=false;
-  this.isAttacking=false;
-  if(typeof combatAnimator!=='undefined'&&combatAnimator.weapon==='katana')combatAnimator.setWeapon('none');
-  this.comboStep=0;
-  this.maxCombo=3;
-  this.lastClickTime=0;
-  this.comboWindow=.9;
-  this.inputCooldown=.25;
-  this.attackRange=2.2;
-  this.lightDamage=25;
-  this.heavyDamage=70;
-  this.attackTimer=0;
-  this.attackDuration=.38;
-  this.heavy=false;
-  this.katana=this.createKatanaMesh();
-  this.avatar.group.add(this.katana);
-  this.holster();
-  this.bindInputs();
- }
- createKatanaMesh(){
-  const g=new THREE.Group();
-  const bladeMat=new THREE.MeshStandardMaterial({color:0xd7dde4,metalness:.9,roughness:.18});
-  const gripMat=new THREE.MeshStandardMaterial({color:0x171717,roughness:.8});
-  const goldMat=new THREE.MeshStandardMaterial({color:0xd4a24c,metalness:.75,roughness:.28});
-  const blade=new THREE.Mesh(new THREE.BoxGeometry(.045,.045,1.05),bladeMat);
-  blade.position.z=-.52; blade.castShadow=true; g.add(blade);
-  const tip=new THREE.Mesh(new THREE.ConeGeometry(.035,.16,4),bladeMat);
-  tip.rotation.x=-Math.PI/2; tip.position.z=-1.12; g.add(tip);
-  const guard=new THREE.Mesh(new THREE.BoxGeometry(.28,.035,.08),goldMat);
-  guard.position.z=.02; g.add(guard);
-  const handle=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.34,8),gripMat);
-  handle.rotation.x=Math.PI/2; handle.position.z=.22; g.add(handle);
-  return g;
- }
- bindInputs(){
-  addEventListener('keydown',e=>{
-   if((e.code==='Digit2'||e.code==='Numpad2'||e.code==='KeyQ')&&!this.isAttacking){
-    this.toggleKatana();
-   }
-  });
-  addEventListener('mousedown',e=>{
-   if(!gameStarted||!this.isEquipped)return;
-   if(e.button===0)this.triggerLightCombo();
-   else if(e.button===2&&!this.isAttacking)this.triggerHeavyAttack();
-  });
- }
- toggleKatana(){
-  if(this.isEquipped)this.holster();
-  else this.equip();
- }
- equip(){
-  this.isEquipped=true;
-  if(bowWeapon&&bowWeapon.state!=='holstered')bowWeapon.holster();
-  if(typeof pistolWeapon!=='undefined'&&pistolWeapon?.isEquipped)pistolWeapon.holster();
-  if(typeof combatAnimator!=='undefined')combatAnimator.setWeapon('katana');
-  this.katana.visible=true;
-  this.katana.position.set(.42,1.12,-.42);
-  this.katana.rotation.set(-.15,0,0);
-  this.resetCombo();
- }
- holster(){
-  this.isEquipped=false;
-  this.isAttacking=false;
-  this.katana.visible=true;
-  this.katana.position.set(.28,1.05,-.42);
-  this.katana.rotation.set(.18,.15,-.9);
-  this.resetCombo();
- }
- triggerLightCombo(){
-  const now=performance.now()/1000;
-  if(now-this.lastClickTime<this.inputCooldown||this.isAttacking)return;
-  this.lastClickTime=now;
-  this.comboStep++;
-  if(this.comboStep>this.maxCombo)this.comboStep=1;
-  this.isAttacking=true;
-  this.heavy=false;
-  this.attackTimer=0;
-  this.attackDuration=.32+.05*this.comboStep;
-  if(typeof combatAnimator!=='undefined')combatAnimator.startKatanaAttack('light',this.comboStep);
-  this.applyForwardLunge(.18);
-  setTimeout(()=>this.checkHitbox(this.lightDamage),120);
- }
- triggerHeavyAttack(){
-  this.isAttacking=true;
-  this.heavy=true;
-  this.attackTimer=0;
-  this.attackDuration=.62;
-  if(typeof combatAnimator!=='undefined')combatAnimator.startKatanaAttack('heavy',0);
-  this.resetCombo();
-  this.applyForwardLunge(.45);
-  setTimeout(()=>this.checkHitbox(this.heavyDamage),300);
- }
- checkHitbox(damage){
-  if(!this.isAttacking)return;
-  const playerPos=new THREE.Vector3();
-  this.player.getWorldPosition(playerPos);
-  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.quaternion).normalize();
-  for(const enemy of this.enemies){
-   const mesh=enemy.mesh||enemy;
-   if(!mesh?.getWorldPosition)continue;
-   const enemyPos=new THREE.Vector3(); mesh.getWorldPosition(enemyPos);
-   const distance=playerPos.distanceTo(enemyPos);
-   if(distance>this.attackRange)continue;
-   const dir=enemyPos.clone().sub(playerPos).normalize();
-   if(forward.dot(dir)>.3){
-    if(typeof enemy.takeDamage==='function')enemy.takeDamage(damage);
-    flashHitmarker();
-    score+=damage;
-   }
-  }
- }
- applyForwardLunge(distance){
-  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.quaternion).normalize();
-  this.player.position.addScaledVector(forward,distance);
- }
- resetCombo(){this.comboStep=0;}
- update(dt,isMoving){
-  const now=performance.now()/1000;
-  if(this.comboStep>0&&(now-this.lastClickTime>this.comboWindow)&&!this.isAttacking)this.resetCombo();
-
-  if(typeof combatAnimator!=='undefined')return;
-  if(!this.isEquipped){
-   if(!isMoving){
-    this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.15);
-   }
-   return;
-  }
-
-  if(!this.isAttacking){
-   this.avatar.rightArm.rotation.x=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.x,-.95,.18);
-   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.2,.18);
-   this.avatar.leftArm.rotation.x=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.x,-.45,.16);
-   this.katana.position.set(.42,1.12,-.42);
-   this.katana.rotation.z=THREE.MathUtils.lerp(this.katana.rotation.z,0,.2);
-   return;
-  }
-
-  this.attackTimer+=dt;
-  const t=Math.min(1,this.attackTimer/this.attackDuration);
-  const swing=Math.sin(t*Math.PI);
-
-  if(this.heavy){
-   this.avatar.rightArm.rotation.x=-1.4+swing*1.85;
-   this.avatar.rightArm.rotation.z=-.35+swing*.9;
-   this.katana.rotation.z=-.65+swing*1.7;
-   this.avatar.torso.rotation.y=-.18+swing*.36;
-  }else{
-   const side=this.comboStep===2?-1:1;
-   this.avatar.rightArm.rotation.x=-1.05+swing*1.35;
-   this.avatar.rightArm.rotation.z=side*(-.55+swing*1.15);
-   this.katana.rotation.z=side*(-.8+swing*1.6);
-   this.avatar.torso.rotation.y=side*(-.12+swing*.24);
-  }
-
-  if(t>=1){
-   this.isAttacking=false;
-   this.heavy=false;
-   this.attackTimer=0;
-   this.avatar.torso.rotation.y=0;
-  }
  }
 }
 
@@ -1684,7 +1163,7 @@ class PistolController {
  }
  bindInputs(){
   addEventListener('keydown',e=>{
-   if((e.code==='Digit3'||e.code==='Numpad3')&&!this.isReloading){
+   if((['Digit1','Numpad1','Digit3','Numpad3'].includes(e.code))&&!this.isReloading){
     this.toggle();
    }
    if(e.code==='KeyR'&&this.isEquipped){
@@ -1704,8 +1183,6 @@ class PistolController {
  }
 
  equip(){
-  if(bowWeapon&&bowWeapon.state!=='holstered')bowWeapon.holster();
-  if(katanaWeapon&&katanaWeapon.isEquipped)katanaWeapon.holster();
 
   this.isEquipped=true;
   this.isReloading=false;
@@ -2006,7 +1483,6 @@ class PlayerController {
 }
 
 let model=null,mixer=null,actions={},active=null;
-let firingCooldown=0;
 let score=0,shots=0,hitCount=0;
 const scoreEl=document.getElementById('score');
 const hitsEl=document.getElementById('hits');
@@ -2228,12 +1704,6 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
  return intersects.find(hit=>!allIgnored.has(hit.object))||null;
 }
 
-addEventListener('mousedown',e=>{
- if(e.button!==0)return;
- // Sem arma equipada, não dispara.
- if(bowWeapon?.state==='holstered')return;
-});
-
 const mainAvatar=new window.OperatorAvatar();
 // The game controller moves along local -Z; the approved operator faces +Z.
 mainAvatar.group.rotation.y=Math.PI;
@@ -2271,20 +1741,7 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
   return false;
  }
 }
-const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
-const katanaWeapon=new KatanaController(player,mainAvatar,[]);
 const pistolWeapon=new PistolController(scene,player,mainAvatar,camera);
-bowWeapon.onArrowShot=(power,hit)=>{
- shots++;
- forestAudio.init();
- forestAudio.playShoot();
- if(hit){
-  hitCount++;
-  score+=Math.round(10+power*10);
-  flashHitmarker();
-  forestAudio.playHit();
- }
-};
 
 // Use the locally bundled, approved operator instead of loading Soldier from a CDN.
 pistolWeapon.pistol.removeFromParent ? pistolWeapon.pistol.removeFromParent() : pistolWeapon.pistol.parent.remove(pistolWeapon.pistol);
@@ -2327,41 +1784,6 @@ function setAction(kind){
  if(active)active.reset().fadeIn(.14).play();
 }
 
-function shoot(){
- if(!bowWeapon||bowWeapon.state==='holstered')return;
- if(firingCooldown>0)return;
- firingCooldown=.13;
- shots++;
- forestAudio.init();
-
- const ray=new THREE.Raycaster();
- const firstHit=getAimRaycastHit(ray,camera,scene,player);
- const dir=new THREE.Vector3();
- camera.getWorldDirection(dir);
- const origin=camera.position.clone();
- const targetPoint=firstHit?.point || origin.clone().add(dir.multiplyScalar(90));
-
- if(bowWeapon.isEquipped){
-  bowWeapon.triggerShot(targetPoint);
- }else{
-  forestAudio.playShoot();
-  const geo=new THREE.BufferGeometry().setFromPoints([
-   player.position.clone().add(new THREE.Vector3(0,1.45,0)),
-   targetPoint
-  ]);
-  const line=new THREE.Line(geo,new THREE.LineBasicMaterial({color:0xffe48b}));
-  scene.add(line);
-  setTimeout(()=>scene.remove(line),55);
- }
-
- if(firstHit){
-  hitCount++;
-  score+=10;
-  flashHitmarker();
-  forestAudio.playHit();
- }
-}
-
 const controller=new PlayerController(player,camera);
 const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
 
@@ -2390,7 +1812,7 @@ function showGameMenu(){
  menuOverlay?.classList.remove('hidden-menu');
 }
 
-const nickname='Arqueiro_'+Math.floor(100+Math.random()*900);
+const nickname='Operador_'+Math.floor(100+Math.random()*900);
 const nameInput=document.getElementById('input-player-name');
 if(nameInput)nameInput.value=nickname;
 document.getElementById('btn-menu-play')?.addEventListener('click',()=>switchMenuView('view-modes'));
@@ -2484,11 +1906,8 @@ function loop(){
   moveZ:0
   });
  }
- bowWeapon.update(dt,movingNow);
- katanaWeapon.update(dt,movingNow);
  pistolWeapon.update(dt,movingNow);
  updateCamera(dt);
- firingCooldown=Math.max(0,firingCooldown-dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
  const stateLabel=!controller.isGrounded?'Pulando':moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
