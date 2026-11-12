@@ -765,6 +765,7 @@ class BowAnimationSystem {
   });
  }
  equip(){
+  if(typeof katanaWeapon!=='undefined'&&katanaWeapon?.isEquipped)katanaWeapon.holster();
   this.state='ready';
   this.drawProgress=0;
   this.avatar.group.add(this.bowGroup);
@@ -906,6 +907,168 @@ class BowAnimationSystem {
     this.scene.remove(arrow);
     this.activeArrows.splice(i,1);
    }
+  }
+ }
+}
+
+class KatanaController {
+ constructor(player,avatar,enemies=[]){
+  this.player=player;
+  this.avatar=avatar;
+  this.enemies=enemies;
+  this.isEquipped=false;
+  this.isAttacking=false;
+  this.comboStep=0;
+  this.maxCombo=3;
+  this.lastClickTime=0;
+  this.comboWindow=.9;
+  this.inputCooldown=.25;
+  this.attackRange=2.2;
+  this.lightDamage=25;
+  this.heavyDamage=70;
+  this.attackTimer=0;
+  this.attackDuration=.38;
+  this.heavy=false;
+  this.katana=this.createKatanaMesh();
+  this.avatar.group.add(this.katana);
+  this.holster();
+  this.bindInputs();
+ }
+ createKatanaMesh(){
+  const g=new THREE.Group();
+  const bladeMat=new THREE.MeshStandardMaterial({color:0xd7dde4,metalness:.9,roughness:.18});
+  const gripMat=new THREE.MeshStandardMaterial({color:0x171717,roughness:.8});
+  const goldMat=new THREE.MeshStandardMaterial({color:0xd4a24c,metalness:.75,roughness:.28});
+  const blade=new THREE.Mesh(new THREE.BoxGeometry(.045,.045,1.05),bladeMat);
+  blade.position.z=-.52; blade.castShadow=true; g.add(blade);
+  const tip=new THREE.Mesh(new THREE.ConeGeometry(.035,.16,4),bladeMat);
+  tip.rotation.x=-Math.PI/2; tip.position.z=-1.12; g.add(tip);
+  const guard=new THREE.Mesh(new THREE.BoxGeometry(.28,.035,.08),goldMat);
+  guard.position.z=.02; g.add(guard);
+  const handle=new THREE.Mesh(new THREE.CylinderGeometry(.04,.04,.34,8),gripMat);
+  handle.rotation.x=Math.PI/2; handle.position.z=.22; g.add(handle);
+  return g;
+ }
+ bindInputs(){
+  addEventListener('keydown',e=>{
+   if((e.code==='Digit2'||e.code==='Numpad2'||e.code==='KeyQ')&&!this.isAttacking){
+    this.toggleKatana();
+   }
+  });
+  addEventListener('mousedown',e=>{
+   if(!gameStarted||!this.isEquipped)return;
+   if(e.button===0)this.triggerLightCombo();
+   else if(e.button===2&&!this.isAttacking)this.triggerHeavyAttack();
+  });
+ }
+ toggleKatana(){
+  if(this.isEquipped)this.holster();
+  else this.equip();
+ }
+ equip(){
+  this.isEquipped=true;
+  if(bowWeapon&&bowWeapon.state!=='holstered')bowWeapon.holster();
+  this.katana.visible=true;
+  this.katana.position.set(.42,1.12,-.42);
+  this.katana.rotation.set(-.15,0,0);
+  this.resetCombo();
+ }
+ holster(){
+  this.isEquipped=false;
+  this.isAttacking=false;
+  this.katana.visible=true;
+  this.katana.position.set(.28,1.05,-.42);
+  this.katana.rotation.set(.18,.15,-.9);
+  this.resetCombo();
+ }
+ triggerLightCombo(){
+  const now=performance.now()/1000;
+  if(now-this.lastClickTime<this.inputCooldown||this.isAttacking)return;
+  this.lastClickTime=now;
+  this.comboStep++;
+  if(this.comboStep>this.maxCombo)this.comboStep=1;
+  this.isAttacking=true;
+  this.heavy=false;
+  this.attackTimer=0;
+  this.attackDuration=.32+.05*this.comboStep;
+  this.applyForwardLunge(.18);
+  setTimeout(()=>this.checkHitbox(this.lightDamage),120);
+ }
+ triggerHeavyAttack(){
+  this.isAttacking=true;
+  this.heavy=true;
+  this.attackTimer=0;
+  this.attackDuration=.62;
+  this.resetCombo();
+  this.applyForwardLunge(.45);
+  setTimeout(()=>this.checkHitbox(this.heavyDamage),300);
+ }
+ checkHitbox(damage){
+  if(!this.isAttacking)return;
+  const playerPos=new THREE.Vector3();
+  this.player.getWorldPosition(playerPos);
+  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.quaternion).normalize();
+  for(const enemy of this.enemies){
+   const mesh=enemy.mesh||enemy;
+   if(!mesh?.getWorldPosition)continue;
+   const enemyPos=new THREE.Vector3(); mesh.getWorldPosition(enemyPos);
+   const distance=playerPos.distanceTo(enemyPos);
+   if(distance>this.attackRange)continue;
+   const dir=enemyPos.clone().sub(playerPos).normalize();
+   if(forward.dot(dir)>.3){
+    if(typeof enemy.takeDamage==='function')enemy.takeDamage(damage);
+    flashHitmarker();
+    score+=damage;
+   }
+  }
+ }
+ applyForwardLunge(distance){
+  const forward=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.quaternion).normalize();
+  this.player.position.addScaledVector(forward,distance);
+ }
+ resetCombo(){this.comboStep=0;}
+ update(dt,isMoving){
+  const now=performance.now()/1000;
+  if(this.comboStep>0&&(now-this.lastClickTime>this.comboWindow)&&!this.isAttacking)this.resetCombo();
+
+  if(!this.isEquipped){
+   if(!isMoving){
+    this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.15,.15);
+   }
+   return;
+  }
+
+  if(!this.isAttacking){
+   this.avatar.rightArm.rotation.x=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.x,-.95,.18);
+   this.avatar.rightArm.rotation.z=THREE.MathUtils.lerp(this.avatar.rightArm.rotation.z,-.2,.18);
+   this.avatar.leftArm.rotation.x=THREE.MathUtils.lerp(this.avatar.leftArm.rotation.x,-.45,.16);
+   this.katana.position.set(.42,1.12,-.42);
+   this.katana.rotation.z=THREE.MathUtils.lerp(this.katana.rotation.z,0,.2);
+   return;
+  }
+
+  this.attackTimer+=dt;
+  const t=Math.min(1,this.attackTimer/this.attackDuration);
+  const swing=Math.sin(t*Math.PI);
+
+  if(this.heavy){
+   this.avatar.rightArm.rotation.x=-1.4+swing*1.85;
+   this.avatar.rightArm.rotation.z=-.35+swing*.9;
+   this.katana.rotation.z=-.65+swing*1.7;
+   this.avatar.torso.rotation.y=-.18+swing*.36;
+  }else{
+   const side=this.comboStep===2?-1:1;
+   this.avatar.rightArm.rotation.x=-1.05+swing*1.35;
+   this.avatar.rightArm.rotation.z=side*(-.55+swing*1.15);
+   this.katana.rotation.z=side*(-.8+swing*1.6);
+   this.avatar.torso.rotation.y=side*(-.12+swing*.24);
+  }
+
+  if(t>=1){
+   this.isAttacking=false;
+   this.heavy=false;
+   this.attackTimer=0;
+   this.avatar.torso.rotation.y=0;
   }
  }
 }
@@ -1111,6 +1274,7 @@ addEventListener('mousedown',e=>{
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
 player.add(mainAvatar.group);
 const bowWeapon=new BowAnimationSystem(scene,mainAvatar);
+const katanaWeapon=new KatanaController(player,mainAvatar,[]);
 bowWeapon.onArrowShot=(power,hit)=>{
  shots++;
  forestAudio.init();
@@ -1284,6 +1448,7 @@ function loop(){
  controller.update(dt);
  mainAvatar.animate(dt,controller.horizontalSpeed>0.01,controller.keys.sprint);
  bowWeapon.update(dt,controller.horizontalSpeed>0.01);
+ katanaWeapon.update(dt,controller.horizontalSpeed>0.01);
  updateCamera(dt);
  firingCooldown=Math.max(0,firingCooldown-dt);
  const moving=controller.horizontalSpeed>0.01;
