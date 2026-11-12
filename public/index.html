@@ -18,6 +18,14 @@ linear-gradient(90deg,#ffffffdd,#ffffffdd) 0 center/10px 2px no-repeat,
 linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
 #state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
 #help{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:12px;opacity:.9}
+
+.cross{position:fixed;left:50%;top:50%;width:34px;height:34px;transform:translate(-50%,-50%);pointer-events:none;z-index:9999;filter:drop-shadow(0 1px 1px #000b)}
+.cross-ring{position:absolute;left:8px;top:8px;width:14px;height:14px;border:2px solid #fff;border-radius:50%;box-sizing:border-box}
+.cross-line{position:absolute;background:#fff;border-radius:2px;box-shadow:0 0 1px #000}
+.cross-top{width:2px;height:10px;left:16px;top:0}
+.cross-bottom{width:2px;height:10px;left:16px;bottom:0}
+.cross-left{width:10px;height:2px;left:0;top:16px}
+.cross-right{width:10px;height:2px;right:0;top:16px}
 </style>
 </head>
 <body>
@@ -25,7 +33,13 @@ linear-gradient(90deg,#ffffffdd,#ffffffdd) 22px center/10px 2px no-repeat}
 <div class="hud"><b>Gameteste — Full 3D Rebuild</b><small>WASD mover • Shift correr • Espaço pular • mouse mover câmera • clique esquerdo atirar</small></div>
 <div id="state">carregando...</div>
 <div id="help">Nova versão 3D — versão anterior preservada em backup</div>
-<div class="cross"></div>
+<div class="cross" aria-hidden="true">
+  <span class="cross-ring"></span>
+  <span class="cross-line cross-top"></span>
+  <span class="cross-line cross-bottom"></span>
+  <span class="cross-line cross-left"></span>
+  <span class="cross-line cross-right"></span>
+</div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="/full3d.js?v=4"></script>
