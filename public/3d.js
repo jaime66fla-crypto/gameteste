@@ -858,10 +858,11 @@ function updateLadderAvatar(dt,state){
  const handLift=.43*(1-exitBlend);
  const handReach=THREE.MathUtils.lerp(.50,.35,exitBlend);
  const handBaseY=THREE.MathUtils.lerp(2.00,2.20,topExit);
- const handL=player.localToWorld(new THREE.Vector3(-.40,handBaseY+s*handLift,handReach));
- const handR=player.localToWorld(new THREE.Vector3(.40,handBaseY-s*handLift,handReach));
- const poleL=player.localToWorld(new THREE.Vector3(-.90,1.68,.08));
- const poleR=player.localToWorld(new THREE.Vector3(.90,1.68,.08));
+ // Erika's local left/right is mirrored relative to the ladder-facing pose.
+ const handL=player.localToWorld(new THREE.Vector3(.40,handBaseY+s*handLift,handReach));
+ const handR=player.localToWorld(new THREE.Vector3(-.40,handBaseY-s*handLift,handReach));
+ const poleL=player.localToWorld(new THREE.Vector3(.90,1.68,.08));
+ const poleR=player.localToWorld(new THREE.Vector3(-.90,1.68,.08));
  solveArm('L',handL,poleL,player);
  solveArm('R',handR,poleR,player);
 
@@ -870,16 +871,16 @@ function updateLadderAvatar(dt,state){
  const footPress=.30;
  const liftL=Math.max(0,c)*.10*(1-exitBlend);
  const liftR=Math.max(0,-c)*.10*(1-exitBlend);
- const footL=player.localToWorld(new THREE.Vector3(-.25,.36-s*footLift,footPress+liftL));
- const footR=player.localToWorld(new THREE.Vector3(.25,.36+s*footLift,footPress+liftR));
+ const footL=player.localToWorld(new THREE.Vector3(.25,.36-s*footLift,footPress+liftL));
+ const footR=player.localToWorld(new THREE.Vector3(-.25,.36+s*footLift,footPress+liftR));
  const hipL=bones.thighL?.bone?.getWorldPosition(new THREE.Vector3());
  const hipR=bones.thighR?.bone?.getWorldPosition(new THREE.Vector3());
  if(hipL){
-  const kneePoleL=hipL.clone().add(new THREE.Vector3(-.24,-.10,.72).applyQuaternion(player.quaternion));
+  const kneePoleL=hipL.clone().add(new THREE.Vector3(.24,-.10,.72).applyQuaternion(player.quaternion));
   solveLimb('thighL','calfL','footL',footL,kneePoleL,player);
  }
  if(hipR){
-  const kneePoleR=hipR.clone().add(new THREE.Vector3(.24,-.10,.72).applyQuaternion(player.quaternion));
+  const kneePoleR=hipR.clone().add(new THREE.Vector3(-.24,-.10,.72).applyQuaternion(player.quaternion));
   solveLimb('thighR','calfR','footR',footR,kneePoleR,player);
  }
 
