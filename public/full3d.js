@@ -1562,8 +1562,8 @@ async function activateHumanCharacter(url='/assets/models/human_rigged.glb'){
   if(model.parent)model.parent.remove(model);
   player.add(model);
   model.position.set(0,0,0);
-  // Three.js Soldier faces the opposite local forward used by this TPS.
-  model.rotation.y=Math.PI;
+  // Keep Soldier local forward aligned with the player root.
+  model.rotation.y=0;
 
   const bounds=new THREE.Box3().setFromObject(model);
   const height=bounds.max.y-bounds.min.y;
