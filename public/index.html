@@ -12,7 +12,13 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
 #coverPrompt{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:11px;opacity:.9;max-width:calc(100vw - 40px);text-align:center}
 
-.aim-dot{position:fixed;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);border-radius:50%;background:#fff;pointer-events:none;z-index:10}
+.aim-dot{position:fixed;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);border-radius:50%;background:#fff;pointer-events:none;z-index:10;transition:opacity .12s ease,transform .12s ease}.aim-dot.ads-hidden{opacity:0;transform:translate(-50%,-50%) scale(.5)}
+#adsReticle{position:fixed;left:50%;top:50%;width:58px;height:58px;transform:translate(-50%,-50%) scale(1.35);z-index:11;pointer-events:none;opacity:0;transition:opacity .12s ease,transform .16s cubic-bezier(.2,.9,.2,1)}
+#adsReticle.active{opacity:1;transform:translate(-50%,-50%) scale(1)}
+#adsReticle:before,#adsReticle:after{content:"";position:absolute;inset:0;border-radius:50%}
+#adsReticle:before{border:1px solid rgba(255,255,255,.8);box-shadow:0 0 0 1px rgba(0,0,0,.5),0 0 14px rgba(255,255,255,.12) inset}
+#adsReticle:after{background:linear-gradient(#fff,#fff) 50% 0/1px 11px no-repeat,linear-gradient(#fff,#fff) 50% 100%/1px 11px no-repeat,linear-gradient(#fff,#fff) 0 50%/11px 1px no-repeat,linear-gradient(#fff,#fff) 100% 50%/11px 1px no-repeat}
+#adsReticle .dot{position:absolute;left:50%;top:50%;width:4px;height:4px;border-radius:50%;background:#fff;transform:translate(-50%,-50%);box-shadow:0 0 0 1px #0008,0 0 6px #fff8}
 
 .combat-hud{min-width:0}.hud-grid{display:grid;grid-template-columns:1fr 1fr 1.1fr;gap:5px 9px;margin:0}.hud-grid span{font-size:8px;color:#b9c4c8;min-width:0}.hud-grid strong{display:block;font-size:11px;font-weight:600;color:#7ee8ff;margin-top:1px;line-height:1.25;overflow-wrap:anywhere}.stamina-wrap{display:flex;align-items:center;gap:7px;font-size:8px;color:#b9c4c8;margin:6px 0 0}.stamina-track{flex:1;height:4px;background:#12202a;border-radius:99px;overflow:hidden}.stamina-track>div{height:100%;width:100%;background:#22d3ee;transition:width .08s linear}
 #hitmarker{position:fixed;left:50%;top:50%;width:28px;height:28px;transform:translate(-50%,-50%);pointer-events:none;z-index:10000;opacity:0}
@@ -99,7 +105,8 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 <button id="crouchBtn" aria-pressed="false" aria-label="Alternar agachamento">AGACHAR</button>
 <div id="state">carregando...</div>
 <div id="damageFlash" aria-hidden="true"></div>
-<div class="aim-dot" aria-hidden="true"></div>
+<div id="aimDot" class="aim-dot" aria-hidden="true"></div>
+<div id="adsReticle" aria-hidden="true"><span class="dot"></span></div>
 <div id="hitmarker" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
 <div id="coverPrompt" hidden></div>
 <div id="lootPrompt" hidden><span id="lootPromptText"></span><button id="pickupBtn" hidden>PEGAR</button></div>
@@ -111,6 +118,6 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 <script src="/combat-bots.js?v=2"></script>
 <script src="/cover-controller.js?v=1"></script>
 <script src="/weapon-loot.js?v=1"></script>
-<script src="/full3d.js?v=13"></script>
+<script src="/full3d.js?v=14"></script>
 </body>
 </html>
