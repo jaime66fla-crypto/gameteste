@@ -970,6 +970,8 @@ class PistolController {
   this.recoil=0;
   this.recoilVelocity=0;
   this.spread=.0025;
+  this.weaponSpec=window.WeaponLootSystem.DEFINITIONS.pistol;
+  this.triggerHeld=false;
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1182,18 +1184,18 @@ class PistolController {
  }
  bindInputs(){
   addEventListener('keydown',e=>{
-   if((['Digit1','Numpad1','Digit3','Numpad3'].includes(e.code))&&!this.isReloading){
-    this.toggle();
-   }
-   if(e.code==='KeyR'&&this.isEquipped){
-    this.reload();
-   }
+   if(!gameStarted||e.repeat)return;
+   if(e.code==='Digit1'||e.code==='Numpad1')this.loot?.select(0);
+   if(e.code==='Digit2'||e.code==='Numpad2')this.loot?.select(1);
+   if(e.code==='Digit3'||e.code==='Numpad3'){this.triggerHeld=false;this.toggle();}
+   if(e.code==='KeyR'&&this.isEquipped)this.reload();
   });
-
   addEventListener('mousedown',e=>{
    if(e.target!==canvas||!gameStarted||!this.isEquipped||this.isReloading)return;
-   if(e.button===0)this.fire();
+   if(e.button===0){this.triggerHeld=true;this.fire();}
   });
+  addEventListener('mouseup',e=>{if(e.button===0)this.triggerHeld=false;});
+  addEventListener('blur',()=>{this.triggerHeld=false;});
  }
 
  toggle(){
@@ -1221,6 +1223,7 @@ class PistolController {
  holster(){
   this.isEquipped=false;
   this.isReloading=false;
+  this.triggerHeld=false;
   this.pistol.visible=true;
 
   // Holster on right hip/back side, not inside torso.
@@ -1249,78 +1252,46 @@ class PistolController {
   this.ammo+=loaded;
   this.reserveAmmo-=loaded;
   this.isReloading=false;
+  this.loot?.saveActive();
  }
 
  fire(){
+  if(!gameStarted||!this.isEquipped||this.isReloading)return;
   if(controller.cover.active){
    this.player.updateMatrixWorld(true);
-   const muzzle=this.muzzlePoint.getWorldPosition(new THREE.Vector3());
-   if(!controller.cover.canFireFrom(muzzle))return;
+   if(!controller.cover.canFireFrom(this.muzzlePoint.getWorldPosition(new THREE.Vector3())))return;
   }
   if(this.fireCooldown>0)return;
-  if(this.ammo<=0){
-   this.reload();
-   return;
-  }
-
-  this.fireCooldown=this.fireRate;
-  this.ammo--;
-
-  forestAudio.init();
-  forestAudio.playShoot();
-
-  const raycaster=new THREE.Raycaster();
-
-  // Center-screen aim with tiny spread.
-  const sx=(Math.random()-.5)*this.spread;
-  const sy=(Math.random()-.5)*this.spread;
-  raycaster.setFromCamera(new THREE.Vector2(sx,sy),this.camera);
-
+  if(this.ammo<=0){this.reload();return;}
+  const spec=this.weaponSpec;
+  this.fireCooldown=spec.fireRate;this.ammo--;
+  forestAudio.init();forestAudio.playShoot();
   this.scene.updateMatrixWorld(true);
-  let hit=window.CombatBotSystem.firstHit(this.scene,raycaster,this.player);
-
-  const start=new THREE.Vector3();
-  this.muzzlePoint.getWorldPosition(start);
-
-  const dir=new THREE.Vector3();
-  this.camera.getWorldDirection(dir);
-
-  let end=hit?.point || start.clone().add(dir.multiplyScalar(80));
-  // The camera can see around cover while the muzzle is still obstructed.
-  const muzzleDirection=end.clone().sub(start),muzzleDistance=muzzleDirection.length();
-  if(muzzleDistance>.001){
-   const muzzleRay=new THREE.Raycaster(start,muzzleDirection.normalize(),0,muzzleDistance+.01);
-   const obstruction=window.CombatBotSystem.firstHit(this.scene,muzzleRay,this.player);
-   if(obstruction){hit=obstruction;end=obstruction.point;}
+  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map();
+  for(let pellet=0;pellet<spec.pellets;pellet++){
+   const centered=spec.pellets>1&&pellet===0;
+   const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
+   raycaster.setFromCamera(new THREE.Vector2(centered?0:(Math.random()-.5)*this.spread,centered?0:(Math.random()-.5)*this.spread),this.camera);
+   let hit=window.CombatBotSystem.firstHit(this.scene,raycaster,this.player);
+   let end=hit?.point||raycaster.ray.at(spec.range,new THREE.Vector3());
+   const muzzleDirection=end.clone().sub(start),distance=muzzleDirection.length();
+   if(distance>.001){
+    const muzzleRay=new THREE.Raycaster(start,muzzleDirection.normalize(),0,distance+.01);
+    const obstruction=window.CombatBotSystem.firstHit(this.scene,muzzleRay,this.player);
+    if(obstruction){hit=obstruction;end=obstruction.point;}
+   }
+   const tracer=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffe8a3}));this.scene.add(tracer);
+   setTimeout(()=>{this.scene.remove(tracer);tracer.geometry.dispose();tracer.material.dispose();},45);
+   const target=hit?.object?.userData?.enemyRef;
+   if(target?.alive){
+    const falloff=spec.id==='shotgun'?THREE.MathUtils.clamp(1-Math.max(0,start.distanceTo(end)-8)/25,.25,1):1;
+    damageByTarget.set(target,(damageByTarget.get(target)||0)+spec.damage*falloff);
+   }
   }
-
-  const tracerGeo=new THREE.BufferGeometry().setFromPoints([start,end]);
-  const tracer=new THREE.Line(
-   tracerGeo,
-   new THREE.LineBasicMaterial({color:0xffe8a3})
-  );
-  this.scene.add(tracer);
-  setTimeout(()=>this.scene.remove(tracer),45);
-
-  // Muzzle flash
-  const flash=new THREE.PointLight(0xffd27a,1.5,3);
-  flash.position.copy(start);
-  this.scene.add(flash);
-  setTimeout(()=>this.scene.remove(flash),40);
-
-  // Recoil impulse
-  this.recoilVelocity+=1.0;
-
-  shots++;
-  const target=hit?.object?.userData?.enemyRef;
-  if(target?.alive){
-   hitCount++;
-   score+=12;
-   flashHitmarker();
-   forestAudio.playHit();
-
-   target.takeDamage(30);
-  }
+  const flash=new THREE.PointLight(0xffd27a,1.5,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
+  this.recoilVelocity+=spec.id==='shotgun'?1.8:spec.id==='smg'?.65:1;shots++;
+  if(damageByTarget.size){hitCount++;score+=12;flashHitmarker();forestAudio.playHit();for(const [target,damage]of damageByTarget)target.takeDamage(damage);}
+  this.loot?.saveActive();
  }
 
  update(dt,isMoving){
@@ -1332,6 +1303,8 @@ class PistolController {
     this.finishReload();
    }
   }
+
+  if(this.triggerHeld&&this.weaponSpec.auto&&!this.isReloading&&this.isEquipped)this.fire();
 
   // Critically damped-ish recoil.
   this.recoilVelocity-=this.recoilVelocity*Math.min(1,10*dt);
@@ -1675,6 +1648,7 @@ class GTACameraController {
    if(!o.isMesh||!o.visible||ignored.has(o))return;
    // Ignore tiny transient weapon/effect meshes attached to player.
    if(o.parent&&ignored.has(o.parent))return;
+   for(let p=o;p;p=p.parent)if(p.userData.ignoreCamera||p.userData.ignoreCombat)return;
    candidates.push(o);
   });
 
@@ -1864,15 +1838,20 @@ function setAction(kind){
 
 const controller=new PlayerController(player,camera);
 const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvironment.getTerrainHeight);
+const weaponLoot=new window.WeaponLootSystem({scene,player,avatar:mainAvatar,controller:pistolWeapon,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:()=>houseParkour.solidBoxes});
+addEventListener('keydown',e=>{if(gameStarted&&e.code==='KeyE'&&!e.repeat)weaponLoot.pickup();});
+document.getElementById('pickupBtn')?.addEventListener('click',()=>{if(gameStarted)weaponLoot.pickup();});
+for(let slot=0;slot<2;slot++)document.getElementById('weaponSlot'+slot)?.addEventListener('click',()=>{if(gameStarted)weaponLoot.select(slot);});
+
 const combatBots=new window.CombatBotSystem({
  scene,player,camera,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:houseParkour.solidBoxes,
- onKill:()=>{score+=100;},
+ onKill:bot=>{score+=100;weaponLoot.dropFromBot(bot.group.position);},
  onPlayerHit:()=>{playerDamageFlash=.22;},
  onPlayerDeath:()=>{
   controller.cover.exit();controller.clearInput();
   player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
   controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
-  pistolWeapon.ammo=pistolWeapon.magSize;pistolWeapon.reserveAmmo=60;
+  weaponLoot.refillForTraining();
   pistolWeapon.isReloading=false;pistolWeapon.reloadTimer=0;
  }
 });
@@ -1897,7 +1876,7 @@ function hideGameMenu(){
  forestAudio.init();
 }
 function showGameMenu(){
- controller.clearInput();
+ controller.clearInput();pistolWeapon.triggerHeld=false;
  gameStarted=false;
  switchMenuView('view-main');
  menuOverlay?.classList.remove('hidden-menu');
@@ -1967,6 +1946,7 @@ function loop(){
  requestAnimationFrame(loop); const dt=Math.min(clock.getDelta(),.033);
  if(!gameStarted){ renderer.render(scene,camera); return; }
  controller.update(dt);
+ weaponLoot.update(dt);
  player.userData.crouching=controller.isCrouching;
  combatBots.update(dt);
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
@@ -2002,6 +1982,7 @@ function loop(){
   moveZ:0
   });
  }
+ weaponLoot.updateHeldPose();
  pistolWeapon.update(dt,movingNow);
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
@@ -2012,6 +1993,17 @@ function loop(){
   const near=controller.cover.active?null:controller.cover.findNearby();
   coverPrompt.hidden=!controller.cover.active&&!near;
   coverPrompt.textContent=controller.cover.active?(controller.cover.isPeeking?'Exposto · solte a mira para se proteger':controller.cover.low?'Cobertura baixa · botão direito para mirar · Q sair':'Cobertura · A/D até a quina · botão direito para mirar · Q sair'):'Q · entrar em cobertura';
+ }
+ const lootPrompt=document.getElementById('lootPrompt');
+ const lootText=document.getElementById('lootPromptText');
+ if(lootPrompt){lootPrompt.hidden=!weaponLoot.prompt;if(lootText&&lootText.textContent!==weaponLoot.prompt)lootText.textContent=weaponLoot.prompt;}
+ const pickupButton=document.getElementById('pickupBtn');if(pickupButton)pickupButton.hidden=!weaponLoot.nearest;
+ const shortNames={pistol:'Pistola',smg:'SMG',rifle:'Rifle',shotgun:'Escopeta'};
+ for(let slot=0;slot<2;slot++){
+  const item=weaponLoot.slots[slot],button=document.getElementById('weaponSlot'+slot),label=document.getElementById('weaponName'+slot),ammo=document.getElementById('weaponAmmo'+slot);
+  if(label)label.textContent=item?shortNames[item.id]:'Vazio';
+  if(ammo)ammo.textContent=item?(slot===weaponLoot.activeSlot&&pistolWeapon.isReloading?'Recarregando…':item.ammo+' / '+weaponLoot.reserves[window.WeaponLootSystem.DEFINITIONS[item.id].ammoType]):'—';
+  button?.setAttribute('aria-pressed',String(slot===weaponLoot.activeSlot&&pistolWeapon.isEquipped));
  }
  const coverButton=document.getElementById('coverBtn');
  if(coverButton){coverButton.textContent=controller.cover.active?'SAIR':'COVER';coverButton.setAttribute('aria-pressed',String(controller.cover.active));}
