@@ -1103,7 +1103,9 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
 }
 
 addEventListener('mousedown',e=>{
- if(e.button===0&&bowWeapon?.state==='holstered')shoot();
+ if(e.button!==0)return;
+ // Sem arma equipada, não dispara.
+ if(bowWeapon?.state==='holstered')return;
 });
 
 const mainAvatar=new SimpleAvatar({bodyColor:0x304b78,skinColor:0xd9c2aa,visorColor:0x111827});
@@ -1154,6 +1156,7 @@ function setAction(kind){
 }
 
 function shoot(){
+ if(!bowWeapon||bowWeapon.state==='holstered')return;
  if(firingCooldown>0)return;
  firingCooldown=.13;
  shots++;
