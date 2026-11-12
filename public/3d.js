@@ -26,6 +26,7 @@ const mobileAim={x:0,y:0,active:false,firing:false};
 let cameraYaw=0;
 let cameraPitch=.08;
 let cameraRightDrag=false;
+let adsBlend=0;
 let desktopFiring=false;
 let weaponReadyUntil=0;
 let cameraLastX=0;
@@ -470,8 +471,11 @@ function registerAvatarBones(actor,model){
  });
 }
 
+function isADS(){
+ return !climbState&&!activeCar&&cameraRightDrag;
+}
 function isWeaponReady(){
- return !climbState&&!activeCar&&(desktopFiring||cameraRightDrag||document.pointerLockElement===canvas||
+ return !climbState&&!activeCar&&(desktopFiring||isADS()||document.pointerLockElement===canvas||
   (mobileAim.active&&Math.hypot(mobileAim.x,mobileAim.y)>.12)||t<weaponReadyUntil);
 }
 function rotateJointToward(joint,tip,target,actor=player){
@@ -1345,8 +1349,9 @@ addEventListener('pointermove',e=>{
  if(!locked&&!cameraRightDrag)return;
  const dx=locked?e.movementX:e.clientX-cameraLastX,dy=locked?e.movementY:e.clientY-cameraLastY;
  cameraLastX=e.clientX;cameraLastY=e.clientY;
- cameraYaw-=dx*.004;
- cameraPitch=THREE.MathUtils.clamp(cameraPitch+dy*.003,-.65,.95);
+ const aimSensitivity=isADS()?.68:1;
+ cameraYaw-=dx*.004*aimSensitivity;
+ cameraPitch=THREE.MathUtils.clamp(cameraPitch+dy*.003*aimSensitivity,-.65,.95);
 });
 
 function addHealthBar(enemy){
@@ -1661,15 +1666,26 @@ function updateBullets3D(dt){
 function updateThirdPersonCamera(dt,targetObj){
  const focus=targetObj||player;
  const isCar=targetObj&&targetObj!==player;
- const dist=isCar?12.5:5.8;
- const lookHeight=isCar?2.4:1.8;
+
+ // RMB ADS: smooth over-the-shoulder zoom instead of an instant camera snap.
+ const adsTarget=!isCar&&isADS()?1:0;
+ adsBlend=THREE.MathUtils.lerp(adsBlend,adsTarget,1-Math.exp(-dt*(adsTarget?14:10)));
+ const dist=isCar?12.5:THREE.MathUtils.lerp(5.8,3.15,adsBlend);
+ const lookHeight=isCar?2.4:THREE.MathUtils.lerp(1.8,1.72,adsBlend);
+ const shoulder=isCar?0:THREE.MathUtils.lerp(.85,1.05,adsBlend);
+ const targetFov=isCar?58:THREE.MathUtils.lerp(58,49,adsBlend);
+ if(Math.abs(camera.fov-targetFov)>.01){
+  camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*14));
+  camera.updateProjectionMatrix();
+ }
+
  const horizontal=Math.cos(cameraPitch)*dist;
  const right=new THREE.Vector3(Math.cos(cameraYaw),0,-Math.sin(cameraYaw));
  const desired=focus.position.clone().add(new THREE.Vector3(
   Math.sin(cameraYaw)*horizontal,
   lookHeight+Math.sin(cameraPitch)*dist,
   Math.cos(cameraYaw)*horizontal
- )).addScaledVector(right,isCar?0:.85);
+ )).addScaledVector(right,shoulder);
  // Keep the camera outside solid buildings while orbiting near a facade.
  const anchor=focus.position.clone().add(new THREE.Vector3(0,lookHeight,0));
  const offset=desired.clone().sub(anchor),length=offset.length();
@@ -1825,7 +1841,7 @@ function frame(now){
  const len=Math.hypot(inputX,inputY);
  const startPosition=player.position.clone();
  const inputMagnitude=Math.min(1,len);
- const aiming=isWeaponReady();
+ const aiming=isADS()||(mobileAim.active&&Math.hypot(mobileAim.x,mobileAim.y)>.12);
  const crouching=keys.has('c')||keys.has('control');
  const requestedRun=inputMagnitude>0&&keys.has('shift')&&!aiming&&!crouching;
  const targetVelocity=new THREE.Vector3();
