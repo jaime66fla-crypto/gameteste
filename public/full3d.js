@@ -2693,10 +2693,18 @@ function corpseFloorAt(x,z,fromY){
 }
 // Sample supporting terrain separately under each foot (visual-only, no collision changes).
 // The character faces local +Z; rotate local foot offsets by the player's yaw.
-function sampleSoldierFootHeights(){
- if(!controller.isGrounded||playerLife.dead)return {left:0,right:0};
+const soldierFootHeights={left:0,right:0};
+let soldierFootProbeAccumulator=1;
+function sampleSoldierFootHeights(dt){
+ if(!controller.isGrounded||playerLife.dead){
+  soldierFootHeights.left=0;soldierFootHeights.right=0;return soldierFootHeights;
+ }
+ // Foot probes at ~30 Hz; smoothing is performed every animation frame.
+ soldierFootProbeAccumulator+=dt;
+ if(soldierFootProbeAccumulator<1/30)return soldierFootHeights;
+ soldierFootProbeAccumulator=0;
  const yaw=player.rotation.y,sin=Math.sin(yaw),cos=Math.cos(yaw);
- const feet=[-.18,.18],result={left:0,right:0};
+ const feet=[-.18,.18],result=soldierFootHeights;
  for(let i=0;i<2;i++){
   const localX=feet[i],localZ=.045;
   const x=player.position.x+localX*cos+localZ*sin;
@@ -3191,7 +3199,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  const footHeights=sampleSoldierFootHeights();
+  const footHeights=sampleSoldierFootHeights(dt);
   mainAvatar.update(dt,{footLeft:footHeights.left,footRight:footHeights.right,dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
