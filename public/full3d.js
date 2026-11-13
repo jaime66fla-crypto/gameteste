@@ -3250,8 +3250,9 @@ function initBattlePreview(){
   const head=new THREE.Mesh(new THREE.SphereGeometry(.32,12,8),new THREE.MeshStandardMaterial({color:0xc7ac8f}));
   head.position.y=1.8;model.add(head);
  }
- model.position.set(0,-.84,0);scene2.add(model);
- cam2.position.set(0,1.18,3.45);cam2.lookAt(0,.82,0);
+ model.position.set(0,-.98,0);scene2.add(model);
+ // Fit the full body inside the lobby card while staying closer than the old preview.
+ cam2.position.set(0,1.02,4.35);cam2.lookAt(0,.68,0);
  canvas.style.cursor='grab';canvas.style.touchAction='none';
  let last=0,dragging=false,lastX=0,manualUntil=0;
  const begin=e=>{dragging=true;lastX=e.clientX;manualUntil=performance.now()+2600;canvas.style.cursor='grabbing';canvas.setPointerCapture?.(e.pointerId);e.preventDefault();};
