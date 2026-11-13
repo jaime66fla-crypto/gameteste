@@ -399,6 +399,7 @@ class HouseParkourBuilder {
    }
   }
   if(highestPlatformY>-Infinity&&p.y<=highestPlatformY+.05){
+   if(!controller.isGrounded||controller.velocity.y<-.5)controller.recordLanding?.(controller.velocity.y);
    p.y=highestPlatformY;
    controller.velocity.y=0;
    controller.isGrounded=true;
@@ -1501,6 +1502,8 @@ class PlayerController {
   this.jumpPreparation=0;
   this.stepHeight=.42;
   this.stepBlend=0;
+  this.landingImpact=0;
+  this.hardLanding=0;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
@@ -1539,6 +1542,12 @@ class PlayerController {
   button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.keys.crouch=!this.keys.crouch;});
  }
  clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;}
+ recordLanding(velocityY){
+  const speed=Math.max(0,-Number(velocityY||0));
+  const impact=THREE.MathUtils.clamp((speed-4.5)/10.5,0,1);
+  this.landingImpact=Math.max(this.landingImpact,impact);
+  this.hardLanding=Math.max(this.hardLanding,THREE.MathUtils.clamp((speed-9)/8,0,1));
+ }
  canStand(){
   const p=this.mesh.position,r=.45;
   return !houseParkour.solidBoxes.some(b=>p.x+r>b.minX&&p.x-r<b.maxX&&p.z+r>b.minZ&&p.z-r<b.maxZ&&b.maxY>p.y+this.crouchingHeight&&b.minY<p.y+this.standingHeight);
@@ -1569,6 +1578,8 @@ class PlayerController {
  update(dt){
   this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
   this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
+  this.landingImpact=THREE.MathUtils.lerp(this.landingImpact,0,1-Math.exp(-3.2*dt));
+  this.hardLanding=THREE.MathUtils.lerp(this.hardLanding,0,1-Math.exp(-2.6*dt));
   if(this.jumpPreparation>0){
    if(!this.isGrounded||this.isCrouching)this.jumpPreparation=0;
    else{this.jumpPreparation=Math.max(0,this.jumpPreparation-dt);if(this.jumpPreparation===0){this.velocity.y=this.jumpForce;this.isGrounded=false;}}
@@ -1654,6 +1665,7 @@ class PlayerController {
   this.mesh.position.y+=this.velocity.y*dt;
 
   if(this.mesh.position.y<=terrainY){
+   if(!this.isGrounded||this.velocity.y<-.5)this.recordLanding(this.velocity.y);
    this.mesh.position.y=terrainY;
    this.velocity.y=0;
    this.isGrounded=true;
@@ -2469,7 +2481,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
