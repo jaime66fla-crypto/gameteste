@@ -390,22 +390,45 @@ class OperatorAvatar{
   if(armed&&reload>.001){
    const t=clamp(reload,0,1);
    const down=1-Math.abs(t*2-1);
-   const magPhase=clamp((t-.18)/.48,0,1);
-   const settle=clamp((t-.68)/.32,0,1);
+   const settle=clamp((t-.72)/.28,0,1);
+   const id=this.weaponId||'pistol';
 
-   r[2][0]+=.12*down;
-   r[3][0]+=.08*down;
-   r[3][1]+=.16*down;
-   r[6][0]+=.18*down;
-   r[6][1]-=.10*down;
-   r[7][0]+=.20*down;
-
-   // Support hand drops toward the magazine well, then returns to the fore-end.
-   r[9][0]=THREE.MathUtils.lerp(r[9][0],-.55+.18*settle,magPhase);
-   r[9][1]=THREE.MathUtils.lerp(r[9][1],.34-.18*settle,magPhase);
-   r[9][2]=THREE.MathUtils.lerp(r[9][2],-.22+.14*settle,magPhase);
-   r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.18+.26*settle,magPhase);
-   r[11][0]=THREE.MathUtils.lerp(r[11][0],.20-.12*settle,magPhase);
+   if(id==='pistol'){
+    const mag=clamp((t-.12)/.56,0,1);
+    r[2][0]+=.10*down;r[3][0]+=.07*down;r[3][1]+=.18*down;
+    r[6][0]+=.14*down;r[7][0]+=.16*down;
+    r[9][0]=THREE.MathUtils.lerp(r[9][0],-.62+.22*settle,mag);
+    r[9][1]=THREE.MathUtils.lerp(r[9][1],.42-.20*settle,mag);
+    r[9][2]=THREE.MathUtils.lerp(r[9][2],-.30+.18*settle,mag);
+    r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.28+.32*settle,mag);
+    r[11][0]=THREE.MathUtils.lerp(r[11][0],.28-.16*settle,mag);
+   }else if(id==='smg'||id==='rifle'){
+    const mag=clamp((t-.14)/.50,0,1);
+    r[2][0]+=.14*down;r[3][0]+=.09*down;r[3][1]+=.12*down;
+    r[6][0]+=.10*down;r[7][0]+=.10*down;
+    r[9][0]=THREE.MathUtils.lerp(r[9][0],-.78+.30*settle,mag);
+    r[9][1]=THREE.MathUtils.lerp(r[9][1],.28-.12*settle,mag);
+    r[9][2]=THREE.MathUtils.lerp(r[9][2],-.12+.10*settle,mag);
+    r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.42+.34*settle,mag);
+    r[11][2]=THREE.MathUtils.lerp(r[11][2],-.20+.12*settle,mag);
+   }else if(id==='shotgun'){
+    // Repeated shell-loading gesture while the shotgun stays tucked to the shoulder.
+    const pulse=Math.pow(Math.sin(Math.PI*clamp((t-.12)/.72,0,1)*3),2);
+    r[2][0]+=.16*down;r[3][0]+=.10*down;r[3][1]+=.08*down;
+    r[9][0]=THREE.MathUtils.lerp(r[9][0],-.90+.22*settle,pulse);
+    r[9][1]=THREE.MathUtils.lerp(r[9][1],.20,pulse);
+    r[9][2]=THREE.MathUtils.lerp(r[9][2],-.34+.18*settle,pulse);
+    r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.55+.36*settle,pulse);
+    r[11][0]=THREE.MathUtils.lerp(r[11][0],.34-.18*settle,pulse);
+   }else if(id==='sniper'){
+    // Magazine change followed by a distinct bolt/receiver manipulation.
+    const mag=clamp((t-.10)/.44,0,1),bolt=clamp((t-.58)/.22,0,1)*(1-clamp((t-.82)/.18,0,1));
+    r[2][0]+=.12*down;r[3][0]+=.07*down;r[3][1]+=.10*down;
+    r[9][0]=THREE.MathUtils.lerp(r[9][0],-.72+.26*settle,mag);
+    r[9][1]=THREE.MathUtils.lerp(r[9][1],.26-.10*settle,mag);
+    r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.36+.30*settle,mag);
+    r[6][0]+=.26*bolt;r[6][1]-=.18*bolt;r[7][0]+=.34*bolt;r[8][1]+=.22*bolt;
+   }
    pose.root[1]-=.018*down;
   }
 
@@ -439,10 +462,13 @@ class OperatorAvatar{
   if(armed){
    const a=pose.weaponAngles.slice();
    if(reload>.001){
-    const t=clamp(reload,0,1),down=1-Math.abs(t*2-1);
-    a[0]+=.48*down;
-    a[1]+=.18*down;
-    a[2]+=.10*down;
+    const t=clamp(reload,0,1),down=1-Math.abs(t*2-1),id=this.weaponId||'pistol';
+    const pitch=id==='shotgun'?.32:id==='sniper'?.38:id==='pistol'?.50:.44;
+    const yaw=id==='pistol'?.20:id==='sniper'?.10:.14;
+    const roll=id==='shotgun'?.04:.10;
+    a[0]+=pitch*down;
+    a[1]+=yaw*down;
+    a[2]+=roll*down;
    }
    if(equip>.001){
     const e=clamp(equip,0,1);
