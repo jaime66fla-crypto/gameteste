@@ -10,6 +10,51 @@ const DEFINITIONS=Object.freeze({
 });
 const AMMO_NAMES={light:'Munição leve',rifle:'Munição de rifle',shells:'Cartuchos'};
 const CAPS={light:240,rifle:180,shells:48};
+const ACCESSORIES=Object.freeze({
+ optic:{name:'Mira tática',color:0x74bade},
+ suppressor:{name:'Silenciador',color:0x566672},
+ extended:{name:'Carregador estendido',color:0xc7a85b},
+ grip:{name:'Empunhadura',color:0x8cc49b}
+});
+function accessoryAllowed(weaponId,id){
+ return ACCESSORIES[id]&&!(weaponId==='pistol'&&id==='grip')&&!(weaponId==='shotgun'&&id==='extended');
+}
+function accessoryStats(spec,attachments={}){
+ const extended=!!attachments.extended&&accessoryAllowed(spec.id,'extended');
+ const grip=!!attachments.grip&&accessoryAllowed(spec.id,'grip');
+ const optic=!!attachments.optic;
+ const suppressor=!!attachments.suppressor;
+ return {
+  magSize:spec.magSize+(extended?Math.max(4,Math.floor(spec.magSize*.40)):0),
+  spreadMultiplier:(grip?.82:1)*(optic?.88:1),
+  recoilMultiplier:grip?.80:1,
+  soundMultiplier:suppressor?.40:1,
+  muzzleFlashMultiplier:suppressor?.18:1,
+  adsMultiplier:optic?.88:1,
+  suppressor,grip,optic,extended
+ };
+}
+function applyAccessoryVisuals(model,id,attachments={}){
+ if(!model)return;
+ let rig=model.userData.accessoryRig;
+ if(!rig){
+  rig=new THREE.Group();rig.name='WeaponAccessories';rig.userData.ignoreCombat=true;rig.userData.ignoreCamera=true;
+  model.add(rig);model.userData.accessoryRig=rig;
+  const dark=new THREE.MeshStandardMaterial({color:0x20282b,metalness:.55,roughness:.4});
+  const glass=new THREE.MeshStandardMaterial({color:0x80c9cb,emissive:0x113e49,metalness:.1,roughness:.2});
+  const add=(key,w,h,d,x,y,z,mat=dark)=>{
+   const mesh=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),mat);
+   mesh.position.set(x,y,z);mesh.castShadow=true;rig.add(mesh);mesh.userData.accessoryKey=key;return mesh;
+  };
+  const muzzle=DEFINITIONS[id].muzzleZ;
+  add('suppressor',.047,.047,id==='pistol'?.14:.24,0,.035,muzzle+.10);
+  add('extended',.055,.065,.07,0,id==='pistol'?-.15:-.16,id==='pistol'?-.020:.045);
+  add('grip',.035,.11,.043,0,-.089,Math.max(.14,muzzle*.55));
+  add('optic',.072,.077,.055,0,id==='pistol'?.098:.175,id==='pistol'?.020:.06);
+  add('optic',.048,.033,.007,0,id==='pistol'?.11:.18,id==='pistol'?.05:.09,glass);
+ }
+ for(const mesh of rig.children)mesh.visible=!!attachments[mesh.userData.accessoryKey]&&accessoryAllowed(id,mesh.userData.accessoryKey);
+}
 function createModel(id){
  const group=new THREE.Group(),dark=new THREE.MeshStandardMaterial({color:0x232c30,roughness:.6,metalness:.35}),steel=new THREE.MeshStandardMaterial({color:0x59636a,roughness:.35,metalness:.75}),grip=new THREE.MeshStandardMaterial({color:id==='shotgun'?0x77583d:0x3c4845,roughness:.9});
  function box(w,h,d,material,x,y,z,angle=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(x,y,z);m.rotation.x=angle;m.castShadow=true;group.add(m);return m;}
@@ -143,7 +188,7 @@ function solveArm(root,arm,target,pole){
 class WeaponLootSystem {
  constructor({scene,player,avatar,controller,terrainHeight=()=>0,solidBoxes=()=>[],random=Math.random,populate=true}){
   Object.assign(this,{scene,player,avatar,controller,terrainHeight,solidBoxes,random});
-  this.slots=[{id:'pistol',ammo:12},null];this.reserves={light:60,rifle:0,shells:0};this.activeSlot=0;
+  this.slots=[{id:'pistol',ammo:12,attachments:{}},null];this.reserves={light:60,rifle:0,shells:0};this.activeSlot=0;
   this.items=[];this.heldModels=new Map();this.time=0;this.nearest=null;this.message='';this.messageTime=0;
   scene.updateMatrixWorld(true);this.staticBoxes=[];this.staticMeshes=[];
   scene.traverse(o=>{if(!o.isMesh||o.geometry?.type==='PlaneGeometry')return;for(let p=o;p;p=p.parent)if(p===player||p.userData.ignoreCombat)return;this.staticBoxes.push(new THREE.Box3().setFromObject(o));this.staticMeshes.push(o);});
@@ -172,15 +217,18 @@ class WeaponLootSystem {
   return null;
  }
  saveActive(){
-  const slot=this.slots[this.activeSlot];if(!slot)return;slot.ammo=this.controller.ammo;
+  const slot=this.slots[this.activeSlot];if(!slot)return;slot.ammo=this.controller.ammo;slot.attachments=slot.attachments||{};
   this.reserves[DEFINITIONS[slot.id].ammoType]=this.controller.reserveAmmo;
  }
  applyActive(equip){
-  const spec=this.definition,gun=this.controller;
+  const spec=this.definition,gun=this.controller,slot=this.slots[this.activeSlot];
+  slot.attachments=slot.attachments||{};
+  const mods=accessoryStats(spec,slot.attachments);
   this.avatar.setWeapon?.(spec.id);
-  Object.assign(gun,{weaponSpec:spec,magSize:spec.magSize,ammo:this.slots[this.activeSlot].ammo,reserveAmmo:this.reserves[spec.ammoType],fireRate:spec.fireRate,reloadTime:spec.reloadTime,spread:spec.spread,isReloading:false,reloadTimer:0,triggerHeld:false});
+  Object.assign(gun,{weaponSpec:spec,attachments:slot.attachments,attachmentMods:mods,magSize:mods.magSize,ammo:Math.min(slot.ammo,mods.magSize),reserveAmmo:this.reserves[spec.ammoType],fireRate:spec.fireRate,reloadTime:spec.reloadTime,spread:spec.spread,isReloading:false,reloadTimer:0,triggerHeld:false});
   let model=this.heldModels.get(spec.id);
   if(!model){model=createModel(spec.id);this.heldModels.set(spec.id,model);this.avatar.gun.add(model);}
+  applyAccessoryVisuals(model,spec.id,slot.attachments);
   for(const [id,m]of this.heldModels)m.visible=id===spec.id;
   gun.muzzlePoint.position.set(0,.035,spec.muzzleZ);this.avatar.flash.position.z=spec.muzzleZ+.04;
   if(equip){gun.fireCooldown=Math.max(gun.fireCooldown,.18);gun.equip();}
@@ -191,20 +239,34 @@ class WeaponLootSystem {
  }
  notify(text){this.message=text;this.messageTime=2;}
  add(kind,id,amount,position,options={}){
-  if(kind==='weapon'&&!DEFINITIONS[id]||kind==='ammo'&&!AMMO_NAMES[id])return null;
+  if(kind==='weapon'&&!DEFINITIONS[id]||kind==='ammo'&&!AMMO_NAMES[id]||kind==='accessory'&&!ACCESSORIES[id])return null;
   if(!this.isSafePoint(position,kind==='weapon'?.65:.16))return null;
   const group=new THREE.Group();group.userData.ignoreCombat=true;group.userData.ignoreCamera=true;
-  const spec=kind==='weapon'?DEFINITIONS[id]:null,color=spec?.color||({light:0x80c4de,rifle:0x91c388,shells:0xe8b17f})[id];
+  const spec=kind==='weapon'?DEFINITIONS[id]:null,color=spec?.color||ACCESSORIES[id]?.color||({light:0x80c4de,rifle:0x91c388,shells:0xe8b17f})[id];
   if(spec){const model=createModel(id);model.scale.setScalar(1.3);model.rotation.y=this.random()*Math.PI*2;group.add(model);}
   else{const material=new THREE.MeshStandardMaterial({color,roughness:.9});const box=new THREE.Mesh(new THREE.BoxGeometry(.17,.12,.13),material);group.add(box);}
   const halo=new THREE.Mesh(new THREE.RingGeometry(.24,.29,24),new THREE.MeshBasicMaterial({color,side:THREE.DoubleSide,transparent:true,opacity:.5}));halo.rotation.x=-Math.PI/2;halo.position.y=-.19;group.add(halo);
-  const item={kind,id,amount,group,position:position.clone(),ammo:options.ammo??spec?.magSize,bonusAmmo:options.bonusAmmo??spec?.magSize??0,drop:!!options.drop};
+  const item={kind,id,amount,group,position:position.clone(),ammo:options.ammo??spec?.magSize,attachments:{...(options.attachments||{})},bonusAmmo:options.bonusAmmo??spec?.magSize??0,drop:!!options.drop};
   group.position.copy(position).add(new THREE.Vector3(0,.22,0));this.scene.add(group);this.items.push(item);
   if(item.drop){const drops=this.items.filter(i=>i.drop);if(drops.length>32)this.remove(drops[0]);}
   return item;
  }
  addWeapon(id,position,options={}){return this.add('weapon',id,0,position,options);}
  addAmmo(type,amount,position,options={}){return this.add('ammo',type,amount,position,options);}
+ addAccessory(id,position,options={}){return this.add('accessory',id,1,position,options);}
+ equipAccessory(id){
+  const slot=this.slots[this.activeSlot];
+  if(!slot||!accessoryAllowed(slot.id,id)){this.notify('Acessório incompatível com esta arma');return false;}
+  slot.attachments=slot.attachments||{};
+  if(slot.attachments[id]){this.notify(ACCESSORIES[id].name+' já instalado');return false;}
+  this.saveActive();slot.attachments[id]=true;
+  const mods=accessoryStats(this.definition,slot.attachments);
+  this.controller.attachmentMods=mods;
+  this.controller.attachments=slot.attachments;
+  this.controller.magSize=mods.magSize;
+  applyAccessoryVisuals(this.heldModels.get(slot.id),slot.id,slot.attachments);
+  this.notify(ACCESSORIES[id].name+' instalado');return true;
+ }
  remove(item){
   const index=this.items.indexOf(item);if(index<0)return;
   this.items.splice(index,1);this.scene.remove(item.group);
@@ -222,6 +284,10 @@ class WeaponLootSystem {
  pickup(item=this.nearest){
   if(!item||!this.canReach(item))return false;
   this.saveActive();
+  if(item.kind==='accessory'){
+   if(!this.equipAccessory(item.id))return false;
+   this.remove(item);return true;
+  }
   if(item.kind==='ammo'){
    const before=this.reserves[item.id];this.reserves[item.id]=Math.min(CAPS[item.id],before+item.amount);
    if(this.reserves[item.id]===before){this.notify('Reserva de munição cheia');return false;}
@@ -232,14 +298,17 @@ class WeaponLootSystem {
   const previous=this.slots[slot];
   if(previous){
    const p=this.safeDrop(this.player.position);if(!p){this.notify('Sem espaço seguro para trocar a arma');return false;}
-   this.addWeapon(previous.id,p,{ammo:previous.ammo,bonusAmmo:0,drop:true});
+   this.addWeapon(previous.id,p,{ammo:previous.ammo,attachments:previous.attachments,bonusAmmo:0,drop:true});
   }
-  const spec=DEFINITIONS[item.id];this.slots[slot]={id:item.id,ammo:item.ammo};
+  const spec=DEFINITIONS[item.id];this.slots[slot]={id:item.id,ammo:item.ammo,attachments:{...(item.attachments||{})}};
   this.reserves[spec.ammoType]=Math.min(CAPS[spec.ammoType],this.reserves[spec.ammoType]+item.bonusAmmo);
   this.activeSlot=slot;this.remove(item);this.applyActive(true);this.notify(spec.name+' equipada');return true;
  }
  populate(){
   for(const [id,x,z]of [['smg',-2,-1],['rifle',2,-2],['shotgun',0,-5],['pistol',-3,-7],['sniper',4,-8]])this.addWeapon(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
+  for(const [id,x,z]of [['optic',-1,-4],['suppressor',2,-5],['extended',-4,-4],['grip',4,-3]]){
+   this.addAccessory(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
+  }
   const ids=Object.keys(DEFINITIONS),types=Object.keys(AMMO_NAMES);
   for(let n=0;n<22;n++)for(let attempt=0;attempt<100;attempt++){
    const extent=n<4||n>=8&&n<14?62:220;
@@ -305,12 +374,12 @@ class WeaponLootSystem {
  get prompt(){
   if(this.nearest){
    if(this.nearest.kind==='weapon'&&this.slots.every(Boolean))return 'E · trocar '+this.definition.name+' por '+DEFINITIONS[this.nearest.id].name;
-   return 'E · pegar '+(this.nearest.kind==='weapon'?DEFINITIONS[this.nearest.id].name:AMMO_NAMES[this.nearest.id]+' ×'+this.nearest.amount);
+   return 'E · pegar '+(this.nearest.kind==='weapon'?DEFINITIONS[this.nearest.id].name:this.nearest.kind==='accessory'?ACCESSORIES[this.nearest.id].name:AMMO_NAMES[this.nearest.id]+' ×'+this.nearest.amount);
   }
   return this.messageTime>0?this.message:'';
  }
 }
-WeaponLootSystem.DEFINITIONS=DEFINITIONS;WeaponLootSystem.AMMO_NAMES=AMMO_NAMES;WeaponLootSystem.createModel=createModel;WeaponLootSystem.animateMechanics=animateMechanics;
+WeaponLootSystem.ACCESSORIES=ACCESSORIES;WeaponLootSystem.accessoryStats=accessoryStats;WeaponLootSystem.applyAccessoryVisuals=applyAccessoryVisuals;WeaponLootSystem.DEFINITIONS=DEFINITIONS;WeaponLootSystem.AMMO_NAMES=AMMO_NAMES;WeaponLootSystem.createModel=createModel;WeaponLootSystem.animateMechanics=animateMechanics;
 window.WeaponLootSystem=WeaponLootSystem;
 })();
 
