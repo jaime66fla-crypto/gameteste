@@ -1499,6 +1499,9 @@ class PlayerController {
   this.forwardAmount=0;
   this.braking=0;
   this.previousMoveDir=new THREE.Vector3(0,0,1);
+  this.turnAmount=0;
+  this.turnSharpness=0;
+  this.aimTransition=0;
   this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false,aiming:false,jetpack:false};
   this.stamina=100;
   this.maxStamina=100;
@@ -1552,6 +1555,7 @@ class PlayerController {
   }
  }
  update(dt){
+  this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
   if(this.jumpPreparation>0){
    if(!this.isGrounded||this.isCrouching)this.jumpPreparation=0;
    else{this.jumpPreparation=Math.max(0,this.jumpPreparation-dt);if(this.jumpPreparation===0){this.velocity.y=this.jumpForce;this.isGrounded=false;}}
@@ -1806,6 +1810,16 @@ class GTACameraController {
  update(delta,aiming=false){
   if(!this.target)return;
 
+  const applyBodyTurn=(desiredYaw)=>{
+   const current=this.target.rotation.y;
+   const diff=Math.atan2(Math.sin(desiredYaw-current),Math.cos(desiredYaw-current));
+   const speed=aiming?16:controller.horizontalSpeed>6?10:12;
+   const blend=1-Math.exp(-speed*delta);
+   this.target.rotation.y=current+diff*blend;
+   controller.turnAmount=THREE.MathUtils.lerp(controller.turnAmount,THREE.MathUtils.clamp(diff/(Math.PI*.55),-1,1),1-Math.exp(-18*delta));
+   controller.turnSharpness=THREE.MathUtils.lerp(controller.turnSharpness,THREE.MathUtils.clamp(Math.abs(diff)/(Math.PI*.75),0,1),1-Math.exp(-14*delta));
+  };
+
   const blend=1-Math.exp(-this.zoomSpeed*delta);
   const adsTarget=0;
   this.adsBlend=THREE.MathUtils.lerp(this.adsBlend,adsTarget,1-Math.exp(-delta*(adsTarget?14:10)));
@@ -1843,7 +1857,7 @@ class GTACameraController {
    this.camera.lookAt(focusPoint.clone().add(lookDir));
 
    if(!this.isLookingBack){
-    this.target.rotation.y=controller.cover.facingYaw(this.yaw+Math.PI);
+    applyBodyTurn(controller.cover.facingYaw(this.yaw+Math.PI));
    }
 
    if(typeof humanCharacter!=='undefined'&&humanCharacter.model){
@@ -1887,7 +1901,7 @@ class GTACameraController {
   this.camera.lookAt(focusPoint);
 
   if(!this.isLookingBack){
-   this.target.rotation.y=controller.cover.facingYaw(this.yaw+Math.PI);
+   applyBodyTurn(controller.cover.facingYaw(this.yaw+Math.PI));
   }
 
   if(typeof humanCharacter!=='undefined'&&humanCharacter.model){
@@ -2436,7 +2450,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
