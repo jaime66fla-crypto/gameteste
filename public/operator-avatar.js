@@ -163,7 +163,7 @@ class OperatorAvatar{
   this.arms=[{shoulder:this.bones[9],elbow:this.bones[10],hand:this.bones[11],s:1},{shoulder:this.bones[6],elbow:this.bones[7],hand:this.bones[8],s:-1}];
   this.legs=[{hip:this.bones[15],knee:this.bones[16],ankle:this.bones[17],s:1},{hip:this.bones[12],knee:this.bones[13],ankle:this.bones[14],s:-1}];
   this.rotations=Array.from({length:18},()=>[0,0,0]);this.shift=[0,0,0];this.weaponAngles=[.38,0,0];this.weaponGripTargets=[];
-  this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
+  this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
@@ -179,7 +179,10 @@ class OperatorAvatar{
    for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
    this.group.updateMatrixWorld(true);this.skeleton.update();return;
   }
-  this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
+  this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);
+  const oldCrouch=this.crouchBlend,oldCover=this.coverBlend;
+  this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
+  const crouchRate=dt>0?(this.crouchBlend-oldCrouch)/dt:0,coverRate=dt>0?(this.coverBlend-oldCover)/dt:0;
   if(!grounded){if(this.wasGrounded)this.airTime=0;this.airTime+=dt;this.landingTime=1}
   else if(!this.wasGrounded)this.landingTime=0;
   else this.landingTime=Math.min(1,this.landingTime+dt);
@@ -297,9 +300,49 @@ class OperatorAvatar{
   }
 
   if(crouch>.001){
-   for(const [leg,s] of [[12,0],[15,1]]){const cycle=Math.sin(this.phase*Math.PI*2+s*Math.PI)*Math.min(speed/2,1)*.10;r[leg][0]=THREE.MathUtils.lerp(r[leg][0],-.90+cycle,crouch);r[leg+1][0]=THREE.MathUtils.lerp(r[leg+1][0],1.70-cycle,crouch);r[leg+2][0]=THREE.MathUtils.lerp(r[leg+2][0],-.80,crouch)}
+   const crouchMove=clamp(speed/3,0,1);
+   for(const [leg,s] of [[12,0],[15,1]]){
+    const cycle=Math.sin(this.phase*Math.PI*2+s*Math.PI);
+    const stride=THREE.MathUtils.lerp(.10,.18,crouchMove);
+    r[leg][0]=THREE.MathUtils.lerp(r[leg][0],-.90+cycle*stride,crouch);
+    r[leg+1][0]=THREE.MathUtils.lerp(r[leg+1][0],1.70-cycle*stride*.9,crouch);
+    r[leg+2][0]=THREE.MathUtils.lerp(r[leg+2][0],-.80-cycle*.05*crouchMove,crouch);
+   }
    const support=.22+Math.max(...[12,15].map(i=>.428*Math.cos(r[i][0])+.397*Math.cos(r[i][0]+r[i+1][0])));
-   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],support-1.045,crouch);r[2][0]+=.12*crouch;
+   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],support-1.045,crouch);
+   r[2][0]+=.12*crouch;
+   r[3][0]+=.055*crouch;
+   r[1][2]+=clamp(strafe,-1,1)*.045*crouch*crouchMove;
+
+   // Entry/exit impulse removes the robotic pop when crouching or standing.
+   const transition=clamp(Math.abs(crouchRate)/6,0,1);
+   if(crouchRate>0){
+    r[2][0]+=.07*transition;
+    r[13][0]+=.14*transition;
+    r[16][0]+=.14*transition;
+    pose.root[1]-=.025*transition;
+   }else if(crouchRate<0){
+    r[2][0]-=.04*transition;
+    r[13][0]+=.08*transition;
+    r[16][0]+=.08*transition;
+    pose.root[1]+=.018*transition;
+   }
+  }
+
+  if(this.coverBlend>.001){
+   const cover=this.coverBlend,entry=clamp(Math.abs(coverRate)/6,0,1);
+   const side=coverSide>=0?1:-1;
+   r[1][1]+=side*.10*cover;
+   r[2][1]-=side*.06*cover;
+   r[3][1]-=side*.05*cover;
+   r[1][2]+=side*.045*cover;
+   r[12][1]-=side*.05*cover;
+   r[15][1]-=side*.05*cover;
+   if(entry>.01){
+    r[13][0]+=.10*entry;
+    r[16][0]+=.10*entry;
+    pose.root[1]-=.018*entry;
+   }
   }
   if(armed){
    const a=pose.weaponAngles.slice();
