@@ -1031,6 +1031,9 @@ class PistolController {
   this.fireCooldown=0;
   this.reloadTime=1.15;
   this.reloadTimer=0;
+  this.reloadBlend=0;
+  this.equipBlend=0;
+  this.equipTimer=0;
 
   this.recoil=0;
   this.recoilVelocity=0;
@@ -1286,6 +1289,8 @@ class PistolController {
   if(typeof tacticalGear!=='undefined')tacticalGear.unequip();
   this.isEquipped=true;
   this.isReloading=false;
+  this.equipTimer=.34;
+  this.equipBlend=1;
   this.pistol.visible=true;
 
   // Right-hand / two-handed TPS posture.
@@ -1303,6 +1308,8 @@ class PistolController {
   this.isEquipped=false;
   this.isReloading=false;
   this.triggerHeld=false;
+  this.equipTimer=0;
+  this.equipBlend=0;
   this.pistol.visible=true;
 
   // Holster on right hip/back side, not inside torso.
@@ -1323,6 +1330,8 @@ class PistolController {
   if(this.isReloading||this.ammo>=this.magSize||this.reserveAmmo<=0)return;
   this.isReloading=true;
   this.reloadTimer=0;
+  this.reloadBlend=0;
+  this.triggerHeld=false;
  }
 
  finishReload(){
@@ -1331,6 +1340,7 @@ class PistolController {
   this.ammo+=loaded;
   this.reserveAmmo-=loaded;
   this.isReloading=false;
+  this.reloadBlend=0;
   this.loot?.saveActive();
  }
 
@@ -1392,12 +1402,17 @@ class PistolController {
 
  update(dt,isMoving){
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
+  this.equipTimer=Math.max(0,this.equipTimer-dt);
+  this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/.34,0,1):0;
 
   if(this.isReloading){
    this.reloadTimer+=dt;
+   this.reloadBlend=THREE.MathUtils.clamp(this.reloadTimer/Math.max(.01,this.reloadTime),0,1);
    if(this.reloadTimer>=this.reloadTime){
     this.finishReload();
    }
+  }else{
+   this.reloadBlend=THREE.MathUtils.lerp(this.reloadBlend,0,1-Math.exp(-14*dt));
   }
 
   if(this.triggerHeld&&this.weaponSpec.auto&&!this.isReloading&&this.isEquipped)this.fire();
@@ -2029,7 +2044,7 @@ function ensureAdsViewWeapon(id){
  return adsViewWeapon;
 }
 function updateAdsViewModel(dt){
- const active=controller?.keys?.aiming&&pistolWeapon.isEquipped;
+ const active=controller?.keys?.aiming&&pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&pistolWeapon.equipTimer<=0;
  const id=weaponLoot?.definition?.id||'pistol';
  adsViewModel.visible=!!active;
  if(!active)return;
@@ -2491,7 +2506,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
