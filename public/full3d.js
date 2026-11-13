@@ -11,25 +11,53 @@ renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=.95;
 
-// 3D performance diagnostics: read the previous completed frame, not a per-frame console flood.
-let lastRenderMetricsLog=0;
+// Lightweight in-game performance monitor. F8 toggles expanded metrics.
+const performancePanel=(()=>{
+ const root=document.createElement('section');
+ root.id='gameteste-performance';
+ root.setAttribute('aria-label','Monitor de desempenho');
+ root.style.cssText='position:fixed;left:12px;bottom:12px;z-index:35;pointer-events:none;min-width:112px;max-width:235px;color:#eaf7ff;font:600 11px/1.5 system-ui,Arial;background:rgba(6,17,24,.84);border:1px solid rgba(133,187,209,.5);border-radius:9px;padding:8px 10px;box-shadow:0 5px 20px #0005;font-variant-numeric:tabular-nums';
+ const header=document.createElement('div');header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
+ const headline=document.createElement('strong');headline.textContent='FPS --';headline.style.cssText='color:#85e8ac;font-size:16px;white-space:nowrap';
+ const toggle=document.createElement('button');toggle.type='button';toggle.textContent='DETALHES';toggle.title='Alternar detalhes (F8)';
+ toggle.style.cssText='pointer-events:auto;cursor:pointer;background:#244454;color:#dff5ff;border:1px solid #527688;border-radius:5px;font:700 9px system-ui;padding:3px 5px';
+ header.append(headline,toggle);
+ const details=document.createElement('div');details.hidden=true;details.style.cssText='margin-top:5px;border-top:1px solid #ffffff24;padding-top:5px;white-space:pre-line;font-size:10px;color:#c8dfe9';
+ root.append(header,details);document.body.appendChild(root);
+ let expanded=false,frames=0,elapsed=0,lastFrameTime=0,lastSample=performance.now();
+ let durations=[],snapshot=null;
+ function togglePanel(){expanded=!expanded;details.hidden=!expanded;toggle.textContent=expanded?'OCULTAR':'DETALHES';}
+ toggle.addEventListener('click',togglePanel);
+ addEventListener('keydown',e=>{if(e.code==='F8'){e.preventDefault();togglePanel();}});
+ function frame(deltaMs){
+  if(!Number.isFinite(deltaMs)||deltaMs<=0)return;
+  frames++;elapsed+=deltaMs;lastFrameTime=deltaMs;durations.push(deltaMs);
+  if(durations.length>180)durations.shift();
+  if(elapsed<1000)return;
+  const fps=Math.round(frames*1000/elapsed);
+  const ordered=durations.slice().sort((a,b)=>a-b);
+  const p99=ordered[Math.min(ordered.length-1,Math.floor(ordered.length*.99))]||0;
+  const low1=p99>0?Math.round(1000/p99):0;
+  const avgMs=elapsed/Math.max(1,frames);
+  const info=renderer.info;
+  snapshot={
+   fps,frameMs:Number(avgMs.toFixed(1)),fpsLow1:low1,
+   drawCalls:info.render.calls,triangulos:info.render.triangles,
+   geometriasNaMemoria:info.memory.geometries,texturasNaMemoria:info.memory.textures,
+   memoriaJS:performance.memory?Number((performance.memory.usedJSHeapSize/1048576).toFixed(1)):null
+  };
+  headline.textContent='FPS '+fps+'  |  '+avgMs.toFixed(1)+' ms';
+  headline.style.color=fps>=55?'#85e8ac':fps>=30?'#ffd57c':'#ff8e88';
+  if(expanded)details.textContent='1% baixo (estim.): '+low1+' FPS\\nDraw calls: '+snapshot.drawCalls+'\\nTriângulos: '+snapshot.triangulos.toLocaleString('pt-BR')+'\\nGeometrias: '+snapshot.geometriasNaMemoria+'  • Texturas: '+snapshot.texturasNaMemoria+(snapshot.memoriaJS===null?'':'\\nMemória JS: '+snapshot.memoriaJS+' MB');
+  elapsed=0;frames=0;lastSample=performance.now();
+ }
+ return {frame,getSnapshot:()=>snapshot,toggle:togglePanel};
+})();
 window.gametesteRenderStats=()=>{
- const stats={
-  drawCalls:renderer.info.render.calls,
-  triangulos:renderer.info.render.triangles,
-  geometriasNaMemoria:renderer.info.memory.geometries,
-  texturasNaMemoria:renderer.info.memory.textures
- };
- console.log('[Gameteste 3D] Desempenho',stats);
+ const stats=performancePanel.getSnapshot();
+ if(stats)console.log('[Gameteste 3D] Desempenho',stats);
  return stats;
 };
-function logRenderMetricsPeriodically(){
- const now=performance.now();
- if(now-lastRenderMetricsLog>=5000){
-  lastRenderMetricsLog=now;
-  window.gametesteRenderStats();
- }
-}
 
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,250);
@@ -3030,10 +3058,10 @@ addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
- if(!gameStarted){ renderer.render(scene,camera);logRenderMetricsPeriodically(); return; }
+ if(!gameStarted){ renderer.render(scene,camera);performancePanel.frame(elapsed*1000); return; }
  if(updateDeployment(dt)){
   if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);}}
-  renderer.render(scene,camera);logRenderMetricsPeriodically();return;
+  renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
  }
  playerLife.update(elapsed,multiplayer.active);
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
@@ -3123,7 +3151,7 @@ function loop(){
  if(staminaBarEl)staminaBarEl.style.width=(controller.stamina/controller.maxStamina*100).toFixed(0)+'%';
  if(altitudeEl)altitudeEl.textContent=player.position.y.toFixed(1)+' m';
  stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • Y '+player.position.y.toFixed(1)+' m';
- renderer.render(scene,camera);logRenderMetricsPeriodically();
+ renderer.render(scene,camera);performancePanel.frame(elapsed*1000);
 }
 loop();
 
