@@ -2590,8 +2590,10 @@ function updateAdsViewModel(dt){
  // of the scope image made its front sight cover the lower half of the lens.
  const scoped=active&&id==='sniper';
  adsViewModel.visible=!!active&&!scoped;
- adsArms.visible=!!active&&!scoped;
- for(const [weaponId,group] of Object.entries(adsArmSets))group.visible=active&&weaponId===id;
+ // Hide the old procedural cylinder arms: they occluded the receiver
+ // and looked disconnected from the weapon. The weapon model takes priority.
+ adsArms.visible=false;
+ for(const group of Object.values(adsArmSets))group.visible=false;
  if(!active||scoped)return;
  const gun=ensureAdsViewWeapon(id);
  window.WeaponLootSystem?.applyAccessoryVisuals?.(gun,id,weaponLoot?.slots?.[weaponLoot.activeSlot]?.attachments||{});
