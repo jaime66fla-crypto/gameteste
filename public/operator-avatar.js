@@ -166,7 +166,7 @@ class OperatorAvatar{
   this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
-  this.footPlant={left:0,right:0};
+  this.footPlant={left:0,right:0};this.stairBlend=0;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
@@ -648,6 +648,20 @@ class OperatorAvatar{
    r[hip][0]-=h*.54;
    r[hip+1][0]+=h*1.16;
    r[hip+2][0]-=h*.68;
+  }
+  // Stair gait: alternating lift with a slight forward body lean and knee recovery.
+  // StepBlend originates from the existing step-up collision controller.
+  const footDifference=Math.abs(footLeft-footRight);
+  const stairIntent=grounded&&speed>.12?clamp(Math.max(stepBlend*.9,footDifference*2.0),0,1):0;
+  this.stairBlend=M.damp(this.stairBlend,stairIntent,stairIntent>this.stairBlend?10:6,dt);
+  if(this.stairBlend>.001){
+   const lift=this.stairBlend;
+   const cadence=this.phase*Math.PI*2;
+   const l=Math.max(0,Math.sin(cadence)),rStep=Math.max(0,-Math.sin(cadence));
+   r[15][0]-=.25*l*lift;r[16][0]+=.53*l*lift;r[17][0]-=.16*l*lift;
+   r[12][0]-=.25*rStep*lift;r[13][0]+=.53*rStep*lift;r[14][0]-=.16*rStep*lift;
+   r[1][0]+=.055*lift;r[2][0]+=.085*lift;r[3][0]+=.04*lift;
+   pose.root[1]-=.015*lift;
   }
   // Apply crossfade after procedural reactions and arm IK have been calculated.
   if(this.poseTransition){
