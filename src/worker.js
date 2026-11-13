@@ -94,7 +94,8 @@ export class GameRoom {
   }
   // Battle Royale state is copied into WebSocket attachments for hibernation recovery.
   const previous=[...this.sessions.values()][0]?.deserializeAttachment()?.battle;
-  this.battle=previous?{...previous,roster:[...previous.roster]}:{enabled:false,phase:'waiting',roster:[],winnerId:null};
+  this.battle=previous?{...previous,roster:[...previous.roster]}:{enabled:false,phase:'waiting',roster:[],winnerId:null,deadline:0,bots:[]};
+  for(const bot of this.battle.bots||[])this.players.set(bot.id,{...bot});
   this.tactical=new globalThis.TacticalRoom(this,ctx);
  }
  async fetch(request) {
@@ -150,7 +151,7 @@ export class GameRoom {
   const first=this.sessions.values().next().value?.deserializeAttachment();
   const publicRoom=mode==='3d'&&(first?first.publicRoom===true:query.get('visibility')==='public');
   const battle=mode==='3d'&&(this.battle.enabled||query.get('battle')==='1');
-  if(battle&&!this.battle.enabled&&this.sessions.size===0)this.battle={enabled:true,phase:'waiting',roster:[],winnerId:null};
+  if(battle&&!this.battle.enabled&&this.sessions.size===0)this.battle={enabled:true,phase:'waiting',roster:[],winnerId:null,deadline:Date.now()+20000,bots:[]};
   const name=String(query.get('name')||'Operador').slice(0,16);
   server.serializeAttachment({id,mode,publicRoom,battle:{...this.battle,roster:[...this.battle.roster]}});
   this.sessions.set(id, server);
@@ -167,12 +168,10 @@ export class GameRoom {
   server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()],tactical:this.tactical.snapshot(),battle:this.battle.enabled}:{type:"welcome",id}));
   if(this.battle.enabled&&mode==='3d'){
    if(this.battle.phase==='waiting'&&this.sessions.size===8){
-    this.battle.phase='running';
-    this.syncBattleAttachments();
-    this.broadcast3D({type:'battle-start',total:8,alive:8});
+    this.startBattle();
    }else{
     this.syncBattleAttachments();
-    this.broadcastBattleStatus();
+    this.broadcastBattleStatus();this.scheduleRespawns();
    }
   }
   return new Response(null, {status:101, webSocket:client});
@@ -232,6 +231,46 @@ export class GameRoom {
   const shots=[...this.shots3D.values()].filter(s=>s.ownerId===id&&Date.now()-s.at<2000).slice(-1);
   ws.serializeAttachment({...meta,state:this.players.get(id),shots});
  }
+ startBattle(){
+  if(!this.battle.enabled||this.battle.phase!=='waiting')return;
+  const missing=Math.max(0,8-this.sessions.size);this.battle.bots=[];
+  for(let n=0;n<missing;n++){
+   const id='bot-'+n,angle=2*Math.PI*n/Math.max(1,missing);
+   const bot={type:'state3d',id,name:'BOT '+String(n+1).padStart(2,'0'),bot:true,
+    x:Math.cos(angle)*(24+n*3),y:0,z:Math.sin(angle)*(24+n*3),angle:angle+Math.PI,
+    health:100,dead:false,deadUntil:0,kills:0,weapon:'rifle',attachments:{},gear:'none',
+    moving:false,running:false,grounded:true,aiming:false,lastShot:0,lastBotAttack:0};
+   this.players.set(id,bot);this.battle.roster.push(id);this.battle.bots.push({...bot});
+  }
+  this.battle.phase='running';this.syncBattleAttachments();
+  this.broadcast3D({type:'battle-start',total:8,alive:8,bots:this.battle.bots,players:[...this.players.values()]});
+  this.broadcastBattleStatus();this.scheduleRespawns();
+ }
+ tickBattleBots(now){
+  if(!this.battle.enabled||this.battle.phase!=='running')return;
+  for(const id of this.battle.roster){
+   const bot=this.players.get(id);if(!bot?.bot||bot.dead)continue;
+   const candidates=this.battle.roster.map(pid=>this.players.get(pid)).filter(p=>p&&!p.dead&&p.id!==id&&p.y<12);
+   if(!candidates.length)continue;
+   candidates.sort((a,b)=>Math.hypot(a.x-bot.x,a.z-bot.z)-Math.hypot(b.x-bot.x,b.z-bot.z));
+   const target=candidates[0],dx=target.x-bot.x,dz=target.z-bot.z,dist=Math.hypot(dx,dz);
+   bot.angle=Math.atan2(dx,dz);bot.moving=dist>7;
+   if(dist>7&&dist<90){const step=Math.min(dist-7,2.5);bot.x+=dx/dist*step;bot.z+=dz/dist*step;}
+   this.broadcast3D(bot);
+   if(dist<27&&now-(bot.lastBotAttack||0)>1800){
+    bot.lastBotAttack=now;
+    if(Math.random()<.45){
+     target.health=Math.max(0,target.health-11);const killed=target.health===0;
+     if(killed){target.dead=true;target.deadUntil=0;bot.kills++;target.moving=false;}
+     this.broadcast3D({type:'hit3d',attackerId:id,targetId:target.id,damage:11,health:target.health,killed,respawnIn:0,shotId:'bot-'+now+'-'+id});
+     if(killed){this.broadcast3D(target);this.checkBattleEnd();}
+     if(this.sessions.has(target.id))this.save3D(target.id);
+    }
+   }
+  }
+  this.battle.bots=this.battle.roster.map(id=>this.players.get(id)).filter(p=>p?.bot).map(p=>({...p}));
+  this.syncBattleAttachments();
+ }
  syncBattleAttachments(){
   for(const peer of this.sessions.values()){
    const attachment=peer.deserializeAttachment();
@@ -240,12 +279,12 @@ export class GameRoom {
  }
  broadcastBattleStatus(){
   if(!this.battle.enabled)return;
-  const alive=this.battle.roster.filter(id=>this.sessions.has(id)&&!this.players.get(id)?.dead);
-  this.broadcast3D({type:'battle-status',phase:this.battle.phase,connected:this.sessions.size,capacity:8,alive:alive.length,winnerId:this.battle.winnerId});
+  const alive=this.battle.roster.filter(id=>this.players.has(id)&&!this.players.get(id)?.dead);
+  this.broadcast3D({type:'battle-status',phase:this.battle.phase,connected:this.sessions.size,capacity:8,alive:alive.length,winnerId:this.battle.winnerId,remainingSeconds:this.battle.phase==='waiting'?Math.max(0,Math.ceil((this.battle.deadline-Date.now())/1000)):0});
  }
  checkBattleEnd(){
   if(!this.battle.enabled||this.battle.phase!=='running')return;
-  const alive=this.battle.roster.filter(id=>this.sessions.has(id)&&!this.players.get(id)?.dead);
+  const alive=this.battle.roster.filter(id=>this.players.has(id)&&!this.players.get(id)?.dead);
   if(alive.length<=1){
    this.battle.phase='finished';this.battle.winnerId=alive[0]||null;
    this.syncBattleAttachments();
@@ -311,10 +350,16 @@ export class GameRoom {
  scheduleRespawns(){
   const deadlines=[...this.players.values()].filter(p=>p.dead&&p.deadUntil>0).map(p=>p.deadUntil);
   const tacticalDeadline=this.tactical.nextAlarm(Date.now());if(tacticalDeadline!==null)deadlines.push(tacticalDeadline);
-  if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.min(...deadlines)));
+  if(this.battle.enabled&&this.battle.phase==='waiting'&&this.sessions.size)deadlines.push(this.battle.deadline);
+  if(this.battle.enabled&&this.battle.phase==='running'&&this.sessions.size)deadlines.push(Date.now()+500);
+  if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.max(Date.now()+20,Math.min(...deadlines))));
  }
  async alarm(){
   const now=Date.now();await this.tactical.tick(now);
+  if(this.battle.enabled&&this.battle.phase==='waiting'&&this.sessions.size){
+   if(now>=this.battle.deadline)this.startBattle();else this.broadcastBattleStatus();
+  }
+  if(this.battle.enabled&&this.battle.phase==='running')this.tickBattleBots(now);
   for(const target of this.players.values())if(!this.battle.enabled&&target.dead&&target.deadUntil<=now){
    Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
    this.tactical.inventory(target);this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
@@ -332,7 +377,7 @@ export class GameRoom {
   const meta = ws.deserializeAttachment();
   if (!meta?.id) return;
   this.sessions.delete(meta.id);this.players.delete(meta.id);for(const [key,shot]of this.shots3D)if(shot.ownerId===meta.id)this.shots3D.delete(key);this.broadcastRanking();
-  if(this.battle.enabled){this.checkBattleEnd();if(this.sessions.size===0)this.battle={enabled:false,phase:'waiting',roster:[],winnerId:null};this.syncBattleAttachments();this.broadcastBattleStatus();}
+  if(this.battle.enabled){this.checkBattleEnd();if(this.sessions.size===0){this.battle={enabled:false,phase:'waiting',roster:[],winnerId:null,deadline:0,bots:[]};for(const [id,p]of this.players)if(p.bot)this.players.delete(id);}this.syncBattleAttachments();this.broadcastBattleStatus();}
   const out = JSON.stringify({type:"leave", id:meta.id});
   for (const peer of this.sessions.values()) { try { peer.send(out); } catch {} }
  }
