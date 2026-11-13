@@ -399,10 +399,9 @@ export class GameRoom {
    const distance=globalThis.TacticalRules.bodyHitDistance(shot.origin,ray,target,spec.range);
    if(distance===null)return;
    if(shot.stops?.[pellet]!=null&&distance>shot.stops[pellet]+.05)return;
-   shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
-   const killed=target.health===0;
+   shot.used[pellet]=true;const point={x:shot.origin.x+ray.x*distance,y:shot.origin.y+ray.y*distance,z:shot.origin.z+ray.z*distance}; const zone=globalThis.TacticalRules.damageZoneAt(point,target);const damage=Math.round(globalThis.TacticalRules.damageForZone(spec.damage,zone));target.health=Math.max(0,target.health-damage); const killed=target.health===0;
    if(killed){shooter.kills++;target.dead=true;target.deadUntil=this.battle.enabled?0:now+5000;target.moving=false;target.running=false;target.aiming=false;target.jetpack=false;target.jetpackActive=false;}
-   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,respawnIn:killed?(this.battle.enabled?0:5):0,kills:shooter.kills});
+   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage,zone,killed,respawnIn:killed?(this.battle.enabled?0:5):0,kills:shooter.kills});
    if(killed){
     this.broadcast3D(target);if(this.battle.enabled)this.checkBattleEnd();else this.scheduleRespawns();this.broadcastRanking();
    }
