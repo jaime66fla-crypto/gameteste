@@ -95,7 +95,7 @@ export class GameRoom {
   // Battle Royale state is copied into WebSocket attachments for hibernation recovery.
   const previous=[...this.sessions.values()][0]?.deserializeAttachment()?.battle;
   this.battle=previous?{...previous,roster:[...previous.roster]}:{enabled:false,phase:'waiting',roster:[],winnerId:null,deadline:0,bots:[]};
-  for(const bot of this.battle.bots||[])this.players.set(bot.id,{...bot});
+  for(const bot of this.battle.bots||[])this.players.set(bot.id,{...bot,type:'state3d',weapon:'rifle',attachments:{},gear:'none',grounded:true,moving:false,running:false,lastShot:0});
   this.tactical=new globalThis.TacticalRoom(this,ctx);
  }
  async fetch(request) {
@@ -274,7 +274,10 @@ export class GameRoom {
  syncBattleAttachments(){
   for(const peer of this.sessions.values()){
    const attachment=peer.deserializeAttachment();
-   if(attachment?.mode==='3d')peer.serializeAttachment({...attachment,battle:{...this.battle,roster:[...this.battle.roster]}});
+   if(attachment?.mode==='3d'){
+    const bots=(this.battle.bots||[]).map(b=>({id:b.id,name:b.name,x:b.x,y:b.y,z:b.z,angle:b.angle,health:b.health,dead:b.dead,kills:b.kills,lastBotAttack:b.lastBotAttack,bot:true,weapon:'rifle'}));
+    peer.serializeAttachment({...attachment,battle:{enabled:this.battle.enabled,phase:this.battle.phase,roster:[...this.battle.roster],winnerId:this.battle.winnerId,deadline:this.battle.deadline,bots}});
+   }
   }
  }
  broadcastBattleStatus(){
@@ -350,7 +353,7 @@ export class GameRoom {
  scheduleRespawns(){
   const deadlines=[...this.players.values()].filter(p=>p.dead&&p.deadUntil>0).map(p=>p.deadUntil);
   const tacticalDeadline=this.tactical.nextAlarm(Date.now());if(tacticalDeadline!==null)deadlines.push(tacticalDeadline);
-  if(this.battle.enabled&&this.battle.phase==='waiting'&&this.sessions.size)deadlines.push(this.battle.deadline);
+  if(this.battle.enabled&&this.battle.phase==='waiting'&&this.sessions.size)deadlines.push(Math.min(this.battle.deadline,Date.now()+1000));
   if(this.battle.enabled&&this.battle.phase==='running'&&this.sessions.size)deadlines.push(Date.now()+500);
   if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.max(Date.now()+20,Math.min(...deadlines))));
  }
