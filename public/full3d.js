@@ -1806,6 +1806,7 @@ class PlayerController {
   this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
   this.crouchInputs=new Set();
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
+  this.climb=null;this.climbCooldown=0;
   this.jumpForce=8.5;
   this.jumpPreparation=0;
   this.stepHeight=.42;
@@ -1835,7 +1836,7 @@ class PlayerController {
  _initListeners(){
   addEventListener('keydown',e=>{
    if(!gameStarted||player.userData.dead)return;
-   if((e.code==='KeyC'||e.code==='KeyQ')&&e.repeat)return;
+   if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='KeyF')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
   });
@@ -1851,7 +1852,18 @@ class PlayerController {
   const button=document.getElementById('crouchBtn');
   button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.keys.crouch=!this.keys.crouch;});
  }
- clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;}
+ clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;}
+  startClimb(){
+   if(this.climb||this.climbCooldown>0||!this.isGrounded||this.isCrouching||this.cover.active||this.mesh.userData.dead||!gameStarted)return false;
+   const direction=new THREE.Vector3();this.camera.getWorldDirection(direction);
+   const ledge=window.ClimbRules?.findLedge(houseParkour.solidBoxes,this.mesh.position,direction);
+   if(!ledge)return false;
+   this.climb={start:this.mesh.position.clone(),target:ledge.landing,time:0,duration:Math.max(.48,Math.min(.86,.45+ledge.rise*.14))};
+   this.velocity.set(0,0,0);this.moveVelocity.set(0,0,0);
+   this.horizontalSpeed=0;this.jumpPreparation=0;this.keys.aiming=false;
+   this.isGrounded=false;this.climbCooldown=.6;
+   return true;
+  }
  recordLanding(velocityY){
   const speed=Math.max(0,-Number(velocityY||0));
   const impact=THREE.MathUtils.clamp((speed-4.5)/10.5,0,1);
@@ -1873,7 +1885,9 @@ class PlayerController {
    if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
    return;
   }
-  if(code==='KeyQ'){if(isPressed&&this.isGrounded&&gameStarted)this.cover.toggle();return;}
+  if(code==='KeyF'){if(isPressed)this.startClimb();return;}
+   if(this.climb)return;
+   if(code==='KeyQ'){if(isPressed&&this.isGrounded&&gameStarted)this.cover.toggle();return;}
   if(code==='KeyC'){if(isPressed)this.keys.crouch=!this.keys.crouch;return;}
   switch(code){
    case 'KeyW': case 'ArrowUp': this.keys.forward=isPressed; break;
@@ -1891,7 +1905,17 @@ class PlayerController {
   }
  }
  update(dt){
-  this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
+  this.climbCooldown=Math.max(0,this.climbCooldown-dt);
+   if(this.climb){
+    const c=this.climb;c.time+=dt;
+    const p=window.ClimbRules.climbPosition(c.start,c.target,Math.min(1,c.time/c.duration));
+    this.mesh.position.set(p.x,p.y,p.z);
+    this.velocity.set(0,0,0);this.horizontalSpeed=0;
+    setAction('jump');if(mixer)mixer.update(dt);
+    if(c.time>=c.duration){this.mesh.position.set(c.target.x,c.target.y,c.target.z);this.climb=null;this.isGrounded=true;this.recordLanding(-2);}
+    return 'jump';
+   }
+   this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
   this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
   this.landingImpact=THREE.MathUtils.lerp(this.landingImpact,0,1-Math.exp(-3.2*dt));
   this.hardLanding=THREE.MathUtils.lerp(this.hardLanding,0,1-Math.exp(-2.6*dt));
@@ -2864,7 +2888,7 @@ function loop(){
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
- const stateLabel=playerLife.dead?'Caído · renascendo':controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const stateLabel=playerLife.dead?'Caído · renascendo':controller.climb?'Escalando':controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
  const coverPrompt=document.getElementById('coverPrompt');
  if(coverPrompt){
   const near=controller.cover.active?null:controller.cover.findNearby();
