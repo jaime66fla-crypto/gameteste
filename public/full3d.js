@@ -1948,7 +1948,7 @@ class PlayerController {
   this.crouchSpeed=2.1;
   this.standingHeight=1.8;this.crouchingHeight=1.45;
   this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
-  this.posture=0;this.proneBlend=0;this.proneHeight=.65;this.proneSpeed=.85;
+  this.posture=0;this.proneBlend=0;this.proneHeight=.65;this.proneSpeed=.85;this.postureSettle=0;
   this.crouchInputs=new Set();
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.climb=null;this.climbCooldown=0;
@@ -2004,7 +2004,12 @@ class PlayerController {
   const next=(this.posture+1)%3;
   if(next===0&&!this.canStand())return;
   this.posture=next;this.keys.crouch=next===1;
-  if(next===2){this.cover.exit();this.keys.sprint=false;this.jumpPreparation=0;}
+  // Allow enough time for the body to lower/brace itself before crawling.
+  this.postureSettle=next===2?.38:next===0?.46:.25;
+  if(next===2){
+   this.cover.exit();this.keys.sprint=false;this.jumpPreparation=0;
+   this.moveVelocity.multiplyScalar(.2);
+  }
  }
  clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;this.posture=0;}
   jumpOrClimb(){
@@ -2073,6 +2078,7 @@ class PlayerController {
     return 'jump';
    }
    this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
+   this.postureSettle=Math.max(0,this.postureSettle-dt);
    if(!this.isGrounded&&this.posture===2)this.posture=0;
   this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
   this.landingImpact=THREE.MathUtils.lerp(this.landingImpact,0,1-Math.exp(-3.2*dt));
@@ -2088,7 +2094,10 @@ class PlayerController {
   const requestedCrouch=!lowPeek&&(this.posture===1||(this.cover.active&&this.cover.low));
   const prone=this.posture===2&&this.isGrounded;
   this.isCrouching=this.isGrounded&&(requestedCrouch||prone||(this.isCrouching&&!this.canStand()));
-  this.proneBlend=THREE.MathUtils.lerp(this.proneBlend,prone?1:0,1-Math.exp(-9*dt));
+  // Lower slightly faster than rising; smooth from the current pose if Ctrl
+  // is pressed repeatedly, without snapping the pelvis or view height.
+  const proneRate=prone?6.6:5.2;
+  this.proneBlend=THREE.MathUtils.lerp(this.proneBlend,prone?1:0,1-Math.exp(-proneRate*dt));
   this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,this.isCrouching?1:0,1-Math.exp(-12*dt));
   this.collisionHeight=THREE.MathUtils.lerp(THREE.MathUtils.lerp(this.standingHeight,this.crouchingHeight,this.crouchBlend),this.proneHeight,this.proneBlend);
   const crouchButton=document.getElementById('crouchBtn');
@@ -2132,7 +2141,8 @@ class PlayerController {
     directionalScale*=1-lateral*.10-backward*.18;
    }
    const recoveryScale=this.recoveryTimer>0?THREE.MathUtils.lerp(.58,.78,1-this.recoveryStrength):1;
-   const currentSpeed=(prone?this.proneSpeed:this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale*recoveryScale;
+   const settlingScale=prone&&this.postureSettle>0?.35:1;
+   const currentSpeed=(prone?this.proneSpeed:this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale*recoveryScale*settlingScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
 
