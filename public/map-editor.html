@@ -15,7 +15,7 @@
 </aside>
 <main class="main"><div class="toolbar"><button class="primary" id="save">SALVAR NO NAVEGADOR</button><button id="export">EXPORTAR JSON</button><button id="import">IMPORTAR JSON</button><input id="file" type="file" accept=".json,application/json" hidden><button id="undo">DESFAZER</button><button class="danger" id="clear">LIMPAR TUDO</button></div><div class="mapWrap"><canvas id="map" aria-label="Mapa interativo visto de cima"></canvas><span class="info" id="coords">Clique em um ponto do terreno • X: 0, Z: 0</span></div></main>
 <aside class="panel right"><h2>OBJETOS ADICIONADOS <span id="count">0</span></h2><div class="list" id="items"></div><p class="hint">As alterações ficam neste navegador até você exportá-las. Após salvar, reabra o jogo para ver os objetos no cenário 3D.</p></aside></div>
-<script src="/tactical-rules.js?v=2"></script><script src="/map-objects.js?v=1"></script>
+<script src="/tactical-rules.js?v=3"></script><script src="/map-objects.js?v=1"></script>
 <script>
 (()=>{
 'use strict';
@@ -40,6 +40,23 @@ function draw(){
  const img=ctx.createLinearGradient(0,0,w,h);img.addColorStop(0,'#304b3b');img.addColorStop(.5,'#43563c');img.addColorStop(1,'#344a38');ctx.fillStyle=img;ctx.fillRect(0,0,w,h);
  ctx.strokeStyle='#ffffff1c';ctx.lineWidth=1;
  for(let p=-150;p<=150;p+=25){let x=(p+150)/300*w,y=(p+150)/300*h;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+ // Official district roads and plaza are read-only background layers.
+ const roads=window.TacticalRules?.ROAD_LAYOUT||[];
+ for(const [x,z,rw,rd] of roads){
+  const p=projection(x,z,w,h);
+  ctx.fillStyle='#45515a';ctx.fillRect(p.px-rw/300*w/2,p.py-rd/300*h/2,rw/300*w,rd/300*h);
+ }
+ const plaza=projection(0,104,w,h);
+ ctx.fillStyle='#9a9f8f';ctx.beginPath();ctx.ellipse(plaza.px,plaza.py,w*11/300,h*11/300,0,0,Math.PI*2);ctx.fill();
+ const districts=window.TacticalRules?.MAP_DISTRICTS||[];
+ ctx.font='bold 11px system-ui';ctx.textAlign='center';
+ for(const [label,x,z] of districts){
+  const p=projection(x,z,w,h);
+  ctx.fillStyle='#06101abb';const labelWidth=ctx.measureText(label).width+12;
+  ctx.fillRect(p.px-labelWidth/2,p.py-18,labelWidth,16);
+  ctx.fillStyle='#ffdb94';ctx.fillText(label,p.px,p.py-6);
+ }
+ ctx.textAlign='left';
  const base=window.TacticalRules?.URBAN_LAYOUT||[];
  for(const [x,z,bw,bd,bh] of base){const p=projection(x,z,w,h);ctx.fillStyle=bh>11?'#8997a3':'#bdab8f';ctx.fillRect(p.px-bw/300*w/2,p.py-bd/300*h/2,bw/300*w,bd/300*h)}
  for(const [x,z,bw,bd] of [[0,14,12,8],[-16,-4,9,10],[17,-8,11,9],[0,-22,20,4]]){const p=projection(x,z,w,h);ctx.fillStyle='#b99c79';ctx.fillRect(p.px-bw/300*w/2,p.py-bd/300*h/2,bw/300*w,bd/300*h)}
