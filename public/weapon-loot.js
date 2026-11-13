@@ -145,7 +145,9 @@ function createModel(id){
  // Per-model mechanism controls. Models used as loot remain in their rest pose.
  const rest=Object.fromEntries(Object.entries(parts).map(([key,mesh])=>[key,mesh.position.clone()]));
  group.userData.weaponMechanics={id,parts,rest};
- group.name='Weapon_'+id;return group;
+ group.name='Weapon_'+id;
+ if(window.GameSkins)window.GameSkins.paintWeapon(group,id);
+ return group;
 }
 function animateMechanics(model,{reload=0,reloading=false,recoil=0,shot=0}={}){
  const setup=model?.userData?.weaponMechanics;
