@@ -239,7 +239,7 @@ export class GameRoom {
    }
    const key=meta.id+':'+data.shotId;if(this.shots3D.has(key))return;
    shooter.lastShot=now;
-   const shot={type:'shot3d',ownerId:meta.id,shotId:String(data.shotId),weapon:data.weapon,origin,rays,at:now,used:{}};
+   const shot={type:'shot3d',ownerId:meta.id,shotId:String(data.shotId),weapon:data.weapon,attachments:{...(shooter.attachments||{})},origin,rays,at:now,used:{}};
    shot.stops=this.tactical.shoot(shot,spec);
    this.shots3D.set(key,shot);this.save3D(meta.id);this.broadcast3D(shot);return;
   }
