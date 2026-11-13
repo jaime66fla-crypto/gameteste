@@ -179,7 +179,7 @@ class OperatorAvatar{
   this.weaponSwapTime=this.weaponSwapDuration;
  }
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,prone=0,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,prone=0,proneSlope=0,proneRoll=0,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -798,7 +798,8 @@ class OperatorAvatar{
   if(crawlTarget>.01)this.crawlPhase+=dt*Math.max(.45,speed)*4.6;
   if(proneWeight>.001&&grounded){
    const flat=Array.from({length:18},()=>[0,0,0]);
-   flat[0][0]=Math.PI/2;
+   flat[0][0]=Math.PI/2+clamp(proneSlope,-.25,.25)*.60;
+   flat[0][2]=clamp(proneRoll,-.16,.16)*.65;
    flat[1][0]=-.045;
    flat[2][0]=.065;
    flat[3][0]=-.035;
