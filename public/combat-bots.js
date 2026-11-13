@@ -64,7 +64,8 @@ class CombatBotSystem {
    inCover:false,coverAnchor:null,crouching:false,peekSide:index%2===0?1:-1,peekTimer:.7+index*.15,
    flankPoint:null,flankCooldown:2.5+index*.8,
    squadRole:'support',sharedIntelAge:999,
-   grenades:1,grenadeCooldown:3.5+index*.8,evadePoint:null,evadeTimer:0,blockedWallId:null
+   grenades:1,grenadeCooldown:3.5+index*.8,evadePoint:null,evadeTimer:0,blockedWallId:null,
+   preparingGrenade:false,grenadePrepTimer:0,grenadeTarget:null,grenadeDirection:null,heldGrenade:null
   };
 
   bot.takeDamage=amount=>{
@@ -80,6 +81,12 @@ class CombatBotSystem {
     bot.respawn=6;
     bot.state=STATES.PATROL;
     bot.coverPoint=null;
+    bot.preparingGrenade=false;
+    bot.grenadePrepTimer=0;
+    bot.grenadeTarget=null;
+    bot.grenadeDirection=null;
+    if(bot.heldGrenade)bot.heldGrenade.visible=false;
+    bot.avatar.gun.visible=true;
     this.onKill(bot);
     return;
    }
@@ -103,6 +110,16 @@ class CombatBotSystem {
   bot.bar=new THREE.Mesh(new THREE.BoxGeometry(.55,.035,.025),new THREE.MeshBasicMaterial({color:0xe5776e}));
   bot.bar.position.z=.01;
   bars.add(bot.bar);
+
+  if(window.TacticalGear?.grenadeModel){
+   bot.heldGrenade=window.TacticalGear.grenadeModel();
+   bot.heldGrenade.scale.setScalar(.82);
+   bot.heldGrenade.position.set(.02,-.035,.035);
+   bot.heldGrenade.rotation.set(.25,.15,-.25);
+   bot.heldGrenade.visible=false;
+   bot.heldGrenade.userData.ignoreCombat=true;
+   bot.avatar.rightHand.add(bot.heldGrenade);
+  }
 
   return bot;
  }
@@ -215,18 +232,70 @@ class CombatBotSystem {
   return hit?.object?.userData?.iceWallId?{id:hit.object.userData.iceWallId,point:hit.point}:null;
  }
 
- throwGrenade(bot,targetPos=this.player.position){
+ chooseGrenadeDirection(bot,targetPos){
   const R=window.TacticalRules;
-  if(!R||bot.grenades<=0||bot.grenadeCooldown>0)return false;
+  if(!R)return null;
   const start=bot.group.position.clone();
-  const target=targetPos.clone();
-  const flat=target.clone().sub(start);
-  const distance=flat.length();
-  if(distance<7||distance>20)return false;
-  flat.y=Math.min(.3,Math.max(.05,distance*.008));
-  flat.normalize();
-  const state=R.grenade('bot-g-'+bot.index+'-'+Math.floor(this.time*1000),'bot-'+bot.index,start,flat,Date.now());
+  const toTarget=targetPos.clone().sub(start);
+  const flatDistance=Math.hypot(toTarget.x,toTarget.z);
+  if(flatDistance<7||flatDistance>20)return null;
+
+  let best=null,bestScore=Infinity;
+  const baseYaw=Math.atan2(toTarget.x,toTarget.z);
+  for(const yawOffset of [0,-.08,.08,-.14,.14]){
+   for(const lift of [.08,.15,.22,.30,.38]){
+    const yaw=baseYaw+yawOffset;
+    const dir=new THREE.Vector3(Math.sin(yaw),lift,Math.cos(yaw)).normalize();
+    const sim=R.grenade('sim','bot-'+bot.index,start,dir,0);
+    if(!sim)continue;
+
+    let closest=Infinity;
+    for(let t=0;t<R.CONFIG.fuse;t+=.08){
+     R.advance(sim,.08,this.solidBoxes,this.terrainHeight);
+     const dx=sim.position.x-targetPos.x,dz=sim.position.z-targetPos.z;
+     const d=Math.hypot(dx,dz);
+     if(d<closest)closest=d;
+    }
+
+    const selfDistance=Math.hypot(sim.position.x-start.x,sim.position.z-start.z);
+    if(selfDistance<R.CONFIG.radius+1)continue;
+    const score=closest+Math.abs(yawOffset)*1.5+Math.abs(lift-.22)*.45;
+    if(score<bestScore){bestScore=score;best=dir;}
+   }
+  }
+  return best;
+ }
+
+ beginGrenadeThrow(bot,targetPos=this.player.position){
+  if(bot.preparingGrenade||bot.grenades<=0||bot.grenadeCooldown>0)return false;
+  const direction=this.chooseGrenadeDirection(bot,targetPos);
+  if(!direction)return false;
+
+  bot.preparingGrenade=true;
+  bot.grenadePrepTimer=.72+this.random()*.22;
+  bot.grenadeTarget=targetPos.clone();
+  bot.grenadeDirection=direction;
+  bot.inCover=false;
+  bot.crouching=false;
+  bot.avatar.gun.visible=false;
+  if(bot.heldGrenade)bot.heldGrenade.visible=true;
+  return true;
+ }
+
+ releaseGrenade(bot){
+  const R=window.TacticalRules;
+  if(!R||!bot.preparingGrenade||!bot.grenadeDirection)return false;
+
+  const start=bot.group.position.clone();
+  const state=R.grenade('bot-g-'+bot.index+'-'+Math.floor(this.time*1000),'bot-'+bot.index,start,bot.grenadeDirection,Date.now());
+  bot.preparingGrenade=false;
+  bot.grenadePrepTimer=0;
+  bot.grenadeTarget=null;
+  bot.grenadeDirection=null;
+  if(bot.heldGrenade)bot.heldGrenade.visible=false;
+  bot.avatar.gun.visible=true;
   if(!state)return false;
+
   const mesh=window.TacticalGear?.grenadeModel?window.TacticalGear.grenadeModel():new THREE.Mesh(new THREE.SphereGeometry(.11,8,6),new THREE.MeshStandardMaterial({color:0x454545}));
   mesh.userData.ignoreCombat=true;
   mesh.userData.ignoreCamera=true;
@@ -236,6 +305,33 @@ class CombatBotSystem {
   bot.grenades--;
   bot.grenadeCooldown=8+this.random()*4;
   return true;
+ }
+
+ updateGrenadePreparation(bot,dt){
+  if(!bot.preparingGrenade)return false;
+  bot.grenadePrepTimer-=dt;
+  const target=bot.grenadeTarget||this.player.position;
+  this.face(bot,target,dt);
+
+  // Simple throw anticipation: pull the throwing shoulder back, then drive forward.
+  const progress=THREE.MathUtils.clamp(1-bot.grenadePrepTimer/.85,0,1);
+  const shoulder=bot.avatar.rightArm;
+  const elbow=bot.avatar.bones?.[7];
+  if(shoulder){
+   shoulder.rotation.x=THREE.MathUtils.lerp(shoulder.rotation.x,progress<.55?-1.05:-.35,.24);
+   shoulder.rotation.z=THREE.MathUtils.lerp(shoulder.rotation.z,-.45,.2);
+  }
+  if(elbow)elbow.rotation.x=THREE.MathUtils.lerp(elbow.rotation.x,progress<.55?-1.2:-.35,.24);
+
+  if(bot.grenadePrepTimer<=0){
+   this.releaseGrenade(bot);
+   return false;
+  }
+  return true;
+ }
+
+ throwGrenade(bot,targetPos=this.player.position){
+  return this.beginGrenadeThrow(bot,targetPos);
  }
 
  updateBotGrenades(dt){
@@ -497,6 +593,7 @@ class CombatBotSystem {
  updateState(bot,dt){
   bot.stateTime+=dt;
   const playerPos=this.player.position;
+  if(this.updateGrenadePreparation(bot,dt))return 0;
   const distance=bot.group.position.distanceTo(playerPos);
   let movementSpeed=0;
 
@@ -724,6 +821,12 @@ class CombatBotSystem {
      bot.evadePoint=null;
      bot.evadeTimer=0;
      bot.blockedWallId=null;
+     bot.preparingGrenade=false;
+     bot.grenadePrepTimer=0;
+     bot.grenadeTarget=null;
+     bot.grenadeDirection=null;
+     if(bot.heldGrenade)bot.heldGrenade.visible=false;
+     bot.avatar.gun.visible=true;
      bot.squadRole='support';
      bot.sharedIntelAge=999;
      bot.lostSightTime=0;
@@ -738,8 +841,8 @@ class CombatBotSystem {
    bot.avatar.update(dt,{
     speed:movementSpeed,
     grounded:true,
-    armed:true,
-    aiming:bot.state===STATES.ATTACK&&!bot.crouching,
+    armed:!bot.preparingGrenade,
+    aiming:!bot.preparingGrenade&&bot.state===STATES.ATTACK&&!bot.crouching,
     sprinting:movementSpeed>bot.moveSpeed*1.15,
     crouching:bot.crouching,
     covering:bot.inCover&&bot.crouching,
