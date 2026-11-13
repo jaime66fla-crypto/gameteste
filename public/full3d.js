@@ -2784,12 +2784,40 @@ addEventListener('resize',resize);resize();
 const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null,keys:new Set()};
 function createDeploymentVisuals(){
  if(deployment.plane)return;
- const metal=new THREE.MeshStandardMaterial({color:0x899aa3,metalness:.45,roughness:.57});
- const plane=new THREE.Group();
- const fuselage=new THREE.Mesh(new THREE.BoxGeometry(3,2,12),metal);plane.add(fuselage);
- const wings=new THREE.Mesh(new THREE.BoxGeometry(20,.45,3),metal);wings.position.z=.5;plane.add(wings);
- const tail=new THREE.Mesh(new THREE.BoxGeometry(8,.35,1.8),metal);tail.position.z=5;plane.add(tail);
- const fin=new THREE.Mesh(new THREE.BoxGeometry(.4,3.3,2),metal);fin.position.set(0,1.5,5);plane.add(fin);
+ // Original low-poly military transport, using shared materials and simple geometry.
+ const paint=new THREE.MeshStandardMaterial({color:0x758994,metalness:.38,roughness:.62,flatShading:true});
+ const dark=new THREE.MeshStandardMaterial({color:0x293d49,metalness:.45,roughness:.55});
+ const wingPaint=new THREE.MeshStandardMaterial({color:0x5b7480,metalness:.28,roughness:.7});
+ const glass=new THREE.MeshStandardMaterial({color:0x203c50,metalness:.28,roughness:.28,emissive:0x07131b,emissiveIntensity:.35});
+ const beacon=new THREE.MeshBasicMaterial({color:0xff5c43});
+ const plane=new THREE.Group();plane.name='GAMETESTE_TRANSPORT_AIRCRAFT';
+ function mesh(geometry,material,position,rotation){
+  const m=new THREE.Mesh(geometry,material);
+  if(position)m.position.set(...position);
+  if(rotation)m.rotation.set(...rotation);
+  m.castShadow=false;m.receiveShadow=false;plane.add(m);return m;
+ }
+ // Aircraft faces local -Z. Smooth tapered body, raised cockpit and rear cargo ramp.
+ mesh(new THREE.CylinderGeometry(1.55,1.95,14,10,1),paint,[0,0,0],[Math.PI/2,0,0]);
+ mesh(new THREE.ConeGeometry(1.52,4.1,10),paint,[0,0,-8.9],[-Math.PI/2,0,0]);
+ mesh(new THREE.ConeGeometry(1.65,3.3,10),paint,[0,.18,8.5],[Math.PI/2,0,0]);
+ mesh(new THREE.BoxGeometry(2.5,.65,2.2),glass,[0,.94,-5.6],[-.24,0,0]);
+ // Main wings, slight sweep and contrasting leading edge.
+ for(const side of [-1,1]){
+  const wing=mesh(new THREE.BoxGeometry(11.6,.32,3.45),wingPaint,[side*6,1,.2],[0,side*.13,side*.035]);
+  mesh(new THREE.BoxGeometry(4.1,.3,1.55),wingPaint,[side*3.1,.85,7.1],[0,side*.24,0]);
+  // Four engines below the wings.
+  for(const x of [side*4.1,side*8.0]){
+   mesh(new THREE.CylinderGeometry(.55,.64,2.8,10),dark,[x,.15,-1.15],[Math.PI/2,0,0]);
+   mesh(new THREE.CylinderGeometry(.38,.38,.12,10),glass,[x,.15,-2.61],[Math.PI/2,0,0]);
+  }
+  mesh(new THREE.BoxGeometry(.5,1.9,1.7),dark,[side*1.4,2.1,6.8],[0,0,side*.22]);
+ }
+ mesh(new THREE.BoxGeometry(.42,3.3,4.1),wingPaint,[0,2.35,7]);
+ mesh(new THREE.BoxGeometry(2.2,.16,1.3),dark,[0,-1.34,7.1]);
+ mesh(new THREE.BoxGeometry(.5,.16,.7),beacon,[0,2.15,-1.9]);
+ // Painted cargo stripes improve silhouette without loading textures.
+ for(const side of [-1,1])mesh(new THREE.BoxGeometry(.07,.18,4.5),dark,[side*1.58,.28,2.4]);
  scene.add(plane);deployment.plane=plane;plane.visible=false;
  const canopy=new THREE.Group();
  const cloth=new THREE.Mesh(new THREE.SphereGeometry(3.2,20,10,0,Math.PI,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0xf28d47,side:THREE.DoubleSide}));
@@ -2805,9 +2833,9 @@ function createDeploymentVisuals(){
  button.addEventListener('click',deploymentAction);document.body.appendChild(button);deployment.button=button;button.hidden=true;
 }
 function startDeployment(){
- createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=38;deployment.flightZ=0;
+ createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=95;deployment.flightZ=0;
  deployment.plane.visible=true;deployment.chute.visible=false;deployment.button.hidden=false;deployment.button.textContent='PULAR DO AVIÃO';
- deployment.keys.clear();player.position.set(-90,38,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
+ deployment.keys.clear();player.position.set(-90,deployment.height,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
 }
 function deploymentAction(){
  if(!gameStarted)return;
@@ -2824,13 +2852,14 @@ function updateDeployment(dt){
  d.time+=dt;
  if(d.phase==='plane'){
   player.position.x=Math.min(90,player.position.x+11*dt);
-  player.position.y=38;player.position.z=d.flightZ;
-  d.plane.position.copy(player.position);d.plane.rotation.y=Math.PI/2;
+  player.position.y=d.height;player.position.z=d.flightZ;
+  d.plane.position.copy(player.position);d.plane.rotation.y=-Math.PI/2;
+  d.plane.rotation.z=Math.sin(d.time*.38)*.018;
   if(player.position.x>=89.5)deploymentAction();
  }else{
   const keys=d.keys;
   const held=(...codes)=>codes.some(code=>keys.has(code));
-  const speed=d.phase==='glide'?5:9,down=d.phase==='glide'?5:held('ShiftLeft','ShiftRight')?23:15;
+  const speed=d.phase==='glide'?8:12,down=d.phase==='glide'?8:held('ShiftLeft','ShiftRight')?32:23;
   player.position.x=THREE.MathUtils.clamp(player.position.x+(Number(held('KeyD','ArrowRight'))-Number(held('KeyA','ArrowLeft')))*speed*dt,-120,120);
   player.position.z=THREE.MathUtils.clamp(player.position.z+(Number(held('KeyS','ArrowDown'))-Number(held('KeyW','ArrowUp')))*speed*dt,-120,120);
   const floor=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
@@ -2841,9 +2870,14 @@ function updateDeployment(dt){
    controller.velocity.set(0,0,0);controller.isGrounded=true;d.keys.clear();
   }
  }
- camera.position.set(player.position.x-17,player.position.y+12,player.position.z+23);
- camera.lookAt(player.position.x,player.position.y,player.position.z);
- camera.far=350;camera.updateProjectionMatrix();
+ if(d.phase==='plane'){
+  camera.position.set(player.position.x-27,player.position.y+13,player.position.z+30);
+  camera.lookAt(player.position.x+6,player.position.y,player.position.z);
+ }else{
+  camera.position.set(player.position.x-15,player.position.y+9,player.position.z+22);
+  camera.lookAt(player.position.x,player.position.y-2,player.position.z);
+ }
+ if(camera.far!==350){camera.far=350;camera.updateProjectionMatrix();}
  return true;
 }
 addEventListener('keydown',e=>{
