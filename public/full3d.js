@@ -2304,6 +2304,7 @@ function updateAdsViewModel(dt){
  adsViewModel.visible=!!active;
  if(!active)return;
  const gun=ensureAdsViewWeapon(id);
+ window.WeaponLootSystem?.animateMechanics?.(gun,{reload:pistolWeapon.reloadBlend,reloading:pistolWeapon.isReloading,shot:pistolWeapon.mechanismShot});
  const recoil=pistolWeapon.recoil||0;
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
  const poses={
