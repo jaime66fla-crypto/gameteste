@@ -1330,7 +1330,7 @@ class PistolController {
  }
 
  reload(){
-  if(this.isReloading||this.ammo>=this.magSize||this.reserveAmmo<=0)return;
+  if(!this.isEquipped||this.equipTimer>0||this.isReloading||this.ammo>=this.magSize||this.reserveAmmo<=0)return;
   this.isReloading=true;
   this.reloadTimer=0;
   this.reloadBlend=0;
@@ -1348,7 +1348,7 @@ class PistolController {
  }
 
  fire(){
-  if(!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading)return;
+  if(!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading||this.equipTimer>0)return;
   if(controller.cover.active){
    this.player.updateMatrixWorld(true);
    if(!controller.cover.canFireFrom(this.muzzlePoint.getWorldPosition(new THREE.Vector3())))return;
@@ -1356,6 +1356,12 @@ class PistolController {
   if(this.fireCooldown>0)return;
   if(this.ammo<=0){this.reload();return;}
   const spec=this.weaponSpec;
+  const ads=controller.keys.aiming&&this.isEquipped;
+  const locomotion=THREE.MathUtils.clamp(controller.horizontalSpeed/Math.max(1,controller.sprintSpeed),0,1);
+  const movementPenalty=1+locomotion*(ads?.6:1.9);
+  const airbornePenalty=controller.isGrounded?1:2.3;
+  const crouchBonus=controller.isCrouching?.82:1;
+  const effectiveSpread=spec.spread*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
   this.fireCooldown=spec.fireRate;this.ammo--;
   forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
   this.scene.updateMatrixWorld(true);
@@ -1363,7 +1369,7 @@ class PistolController {
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
-   raycaster.setFromCamera(new THREE.Vector2(centered?0:(Math.random()-.5)*this.spread,centered?0:(Math.random()-.5)*this.spread),this.camera);
+   raycaster.setFromCamera(new THREE.Vector2(centered?0:(Math.random()-.5)*effectiveSpread,centered?0:(Math.random()-.5)*effectiveSpread),this.camera);
    let hit=window.CombatBotSystem.firstHit(this.scene,raycaster,this.player);
    let end=hit?.point||raycaster.ray.at(spec.range,new THREE.Vector3());
    const muzzleDirection=end.clone().sub(start),distance=muzzleDirection.length();
@@ -1418,7 +1424,7 @@ class PistolController {
    this.reloadBlend=THREE.MathUtils.lerp(this.reloadBlend,0,1-Math.exp(-14*dt));
   }
 
-  if(this.triggerHeld&&this.weaponSpec.auto&&!this.isReloading&&this.isEquipped)this.fire();
+  if(this.triggerHeld&&this.weaponSpec.auto&&!this.isReloading&&this.isEquipped&&this.equipTimer<=0)this.fire();
 
   // Fast kick, controlled spring-like recovery. The shot impulse is applied instantly in fire().
   this.recoil*=Math.exp(-this.recoilPreset.recovery*dt);
