@@ -2534,21 +2534,43 @@ adsArms.userData.ignoreCamera=true;
 adsViewModel.add(adsArms);
 const adsSleeve=new THREE.MeshStandardMaterial({color:0x252c29,roughness:.91,metalness:.03,depthTest:true});
 const adsGlove=new THREE.MeshStandardMaterial({color:0x161e1d,roughness:.84,depthTest:true});
-function addAdsLimb(from,to,radius,material){
+function addAdsLimb(group,from,to,radius,material){
  const a=new THREE.Vector3(...from),b=new THREE.Vector3(...to),vector=b.clone().sub(a);
  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius*.83,radius,vector.length(),9),material);
  mesh.position.copy(a).add(b).multiplyScalar(.5);
  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),vector.normalize());
  mesh.frustumCulled=false;mesh.castShadow=false;
  mesh.userData.ignoreCombat=true;mesh.userData.ignoreCamera=true;
- adsArms.add(mesh);
+ group.add(mesh);
  return mesh;
 }
-// The firing arm is on the right, supporting arm on the left.
-addAdsLimb([.43,-.43,-.29],[.13,-.22,-.57],.095,adsSleeve);
-addAdsLimb([.13,-.22,-.57],[.055,-.18,-.66],.060,adsGlove);
-addAdsLimb([-.42,-.44,-.32],[-.16,-.23,-.67],.088,adsSleeve);
-addAdsLimb([-.16,-.23,-.67],[-.025,-.19,-.78],.058,adsGlove);
+const adsArmSets={};
+const adsArmPoints={
+ pistol:[
+  [[.29,-.44,-.21],[.11,-.265,-.37],.086,adsSleeve],
+  [[.11,-.265,-.37],[.035,-.205,-.43],.053,adsGlove],
+  [[-.29,-.44,-.21],[-.10,-.27,-.37],.086,adsSleeve],
+  [[-.10,-.27,-.37],[-.032,-.205,-.43],.051,adsGlove]
+ ],
+ shotgun:[
+  [[.42,-.47,-.25],[.13,-.29,-.49],.099,adsSleeve],
+  [[.13,-.29,-.49],[.045,-.24,-.55],.064,adsGlove],
+  [[-.40,-.49,-.31],[-.18,-.31,-.64],.096,adsSleeve],
+  [[-.18,-.31,-.64],[-.055,-.23,-.79],.06,adsGlove]
+ ],
+ rifle:[
+  [[.43,-.43,-.29],[.13,-.22,-.57],.095,adsSleeve],
+  [[.13,-.22,-.57],[.055,-.18,-.66],.06,adsGlove],
+  [[-.42,-.44,-.32],[-.16,-.23,-.67],.088,adsSleeve],
+  [[-.16,-.23,-.67],[-.025,-.19,-.78],.058,adsGlove]
+ ]
+};
+adsArmPoints.smg=adsArmPoints.rifle;
+for(const [weaponId,limbs] of Object.entries(adsArmPoints)){
+ const group=new THREE.Group();group.name='ADS_ARMS_'+weaponId;
+ for(const [a,b,radius,material] of limbs)addAdsLimb(group,a,b,radius,material);
+ group.visible=false;adsArms.add(group);adsArmSets[weaponId]=group;
+}
 function ensureAdsViewWeapon(id){
  if(adsViewWeaponId===id&&adsViewWeapon)return adsViewWeapon;
  if(adsViewWeapon){
@@ -2567,7 +2589,8 @@ function updateAdsViewModel(dt){
  // of the scope image made its front sight cover the lower half of the lens.
  const scoped=active&&id==='sniper';
  adsViewModel.visible=!!active&&!scoped;
- adsArms.visible=!!active&&(id==='rifle'||id==='smg');
+ adsArms.visible=!!active&&!scoped;
+ for(const [weaponId,group] of Object.entries(adsArmSets))group.visible=active&&weaponId===id;
  if(!active||scoped)return;
  const gun=ensureAdsViewWeapon(id);
  window.WeaponLootSystem?.applyAccessoryVisuals?.(gun,id,weaponLoot?.slots?.[weaponLoot.activeSlot]?.attachments||{});
@@ -2575,10 +2598,10 @@ function updateAdsViewModel(dt){
  const recoil=pistolWeapon.recoil||0;
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
  const poses={
-  pistol:{p:[.10,-.20,-.50],r:[-.02,Math.PI,0],s:.58},
+  pistol:{p:[0,-.225,-.38],r:[-.015,Math.PI,0],s:1.02},
   smg:{p:[0,-.285,-.48],r:[-.012,Math.PI,0],s:1.05},
   rifle:{p:[0,-.295,-.49],r:[-.01,Math.PI,0],s:1.12},
-  shotgun:{p:[.035,-.15,-.78],r:[-.012,Math.PI,0],s:.48},
+  shotgun:{p:[.02,-.30,-.52],r:[-.012,Math.PI,0],s:1.12},
   sniper:{p:[.015,-.165,-.90],r:[-.008,Math.PI,0],s:.46}
  };
  const pose=poses[id]||poses.pistol;
