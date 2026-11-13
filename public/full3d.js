@@ -3036,8 +3036,16 @@ function initBattlePreview(){
  const scene2=new THREE.Scene(),cam2=new THREE.PerspectiveCamera(39,1,.1,30);
  scene2.add(new THREE.HemisphereLight(0xc5e7ef,0x35444f,1.7));
  const key=new THREE.DirectionalLight(0xffe3bb,1.4);key.position.set(2,4,5);scene2.add(key);
- let model;
- try{model=mainAvatar.group.clone(true);}catch{
+ // A SkinnedMesh cannot be cloned with Group.clone(true): its skeleton keeps
+ // references to the original player's bones, separating boots/armor in preview.
+ // Create an independent operator with its own 18-bone skeleton instead.
+ let previewAvatar=null,model;
+ try{
+  previewAvatar=new window.OperatorAvatar({team:'player'});
+  previewAvatar.update(0,{armed:false,grounded:true,speed:0});
+  model=previewAvatar.group;
+ }catch(error){
+  console.warn('Independent Soldier preview unavailable:',error);
   model=new THREE.Group();
   const body=new THREE.Mesh(new THREE.BoxGeometry(.9,1.4,.5),new THREE.MeshStandardMaterial({color:0x344653}));
   body.position.y=.9;model.add(body);
@@ -3052,6 +3060,7 @@ function initBattlePreview(){
   if(t-last<90||!menuOverlay||menuOverlay.classList.contains('hidden-menu')||!battleUI.waiting.hidden||!battleUI.result.hidden)return;
   last=t;const w=canvas.clientWidth||320,h=canvas.clientHeight||300;
   if(canvas.width!==w||canvas.height!==h){pr.setSize(w,h,false);cam2.aspect=w/h;cam2.updateProjectionMatrix();}
+  if(previewAvatar)previewAvatar.update(Math.min((t-last+90)/1000,.05),{armed:false,grounded:true,speed:0});
   model.rotation.y+=.012;pr.render(scene2,cam2);
  }
  requestAnimationFrame(draw);
