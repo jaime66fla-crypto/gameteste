@@ -153,7 +153,20 @@ function initPreview(){
 }
 function updatePreview(){
  if(!previewScene)return;
- if(previewRoot){previewScene.remove(previewRoot);previewRoot=null}
+ if(previewRoot){
+  previewScene.remove(previewRoot);
+  if(previewRoot.name==='SKIN_PREVIEW'){
+   const geos=new Set(),mats=new Set();
+   previewRoot.traverse(o=>{
+    if(o.geometry)geos.add(o.geometry);
+    const list=Array.isArray(o.material)?o.material:[o.material];
+    for(const material of list)if(material)mats.add(material);
+   });
+   for(const geometry of geos)geometry.dispose();
+   for(const material of mats)material.dispose();
+  }
+  previewRoot=null;
+ }
  if(tab==='soldier'){
   if(previewAvatar){
    const previous=state.soldier;state.soldier=selected;tintAvatar(previewAvatar);state.soldier=previous;
