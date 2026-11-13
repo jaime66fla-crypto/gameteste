@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -301,18 +301,30 @@ class OperatorAvatar{
 
   if(grounded&&this.landingTime<.34){
    const u=clamp(this.landingTime/.34,0,1);
-   const impact=1-Math.abs(u*2-1);
+   const pulse=1-Math.abs(u*2-1);
    const settle=1-u;
-   r[12][0]-=.12*settle;
-   r[15][0]-=.12*settle;
-   r[13][0]+=.42*impact;
-   r[16][0]+=.42*impact;
-   r[14][0]-=.12*impact;
-   r[17][0]-=.12*impact;
-   r[2][0]+=.12*impact;
-   r[3][0]+=.06*impact;
-   r[5][0]+=.05*impact;
-   pose.root[1]-=.055*impact;
+   const force=THREE.MathUtils.lerp(.35,1,clamp(landingImpact,0,1));
+   const heavy=clamp(hardLanding,0,1);
+   r[12][0]-=(.08+.10*heavy)*settle*force;
+   r[15][0]-=(.08+.10*heavy)*settle*force;
+   r[13][0]+=(.22+.42*heavy)*pulse*force;
+   r[16][0]+=(.22+.42*heavy)*pulse*force;
+   r[14][0]-=(.07+.12*heavy)*pulse*force;
+   r[17][0]-=(.07+.12*heavy)*pulse*force;
+   r[2][0]+=(.07+.15*heavy)*pulse*force;
+   r[3][0]+=(.035+.09*heavy)*pulse*force;
+   r[5][0]+=(.025+.07*heavy)*pulse*force;
+   r[6][0]+=.08*heavy*pulse;
+   r[9][0]+=.08*heavy*pulse;
+   pose.root[1]-=(.028+.075*heavy)*pulse*force;
+
+   if(heavy>.15){
+    const stagger=Math.sin(u*Math.PI)*heavy;
+    r[1][2]+=.035*stagger;
+    r[2][2]-=.025*stagger;
+    r[13][0]+=.08*stagger;
+    r[16][0]+=.05*stagger;
+   }
   }
 
   if(grounded&&stepBlend>.01){
