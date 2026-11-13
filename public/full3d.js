@@ -1814,7 +1814,10 @@ class PistolController {
    const target=hit?.object?.userData?.enemyRef;
    if(target?.alive){
     const falloff=spec.id==='shotgun'?THREE.MathUtils.clamp(1-Math.max(0,start.distanceTo(end)-8)/25,.25,1):1;
-    damageByTarget.set(target,(damageByTarget.get(target)||0)+spec.damage*falloff);
+    const localTarget=target.group?.position||target.position||target.mesh?.position||target.actor?.position;
+    const zone=localTarget?window.TacticalRules?.damageZoneAt?.(end,{x:localTarget.x,y:localTarget.y,z:localTarget.z,angle:target.group?.rotation?.y||0}):'chest';
+    const multiplier=window.TacticalRules?.damageForZone?.(spec.damage,zone)||spec.damage;
+    damageByTarget.set(target,(damageByTarget.get(target)||0)+multiplier*falloff);
    }
   }
   for(const [id,damage]of damageByWall)tacticalGear.damageWall(id,damage);
@@ -3334,6 +3337,7 @@ const multiplayer=new window.MultiplayerClient({
    if(data.targetId===multiplayer.id){combatBots.health=data.health;playerLife.receiveHealth(data.health,data.respawnIn??0);}
    else{const remote=multiplayerWorld.players.get(data.targetId);if(remote)multiplayerWorld.receive({...remote.state,health:data.health,dead:data.killed||false});}
    if(data.attackerId===multiplayer.id){
+    if(data.zone==='head')roomStatus('HEADSHOT • '+Math.round(data.damage||0)+' de dano');
     if(!confirmedNetworkShots.has(data.shotId)){confirmedNetworkShots.add(data.shotId);if(confirmedNetworkShots.size>128)confirmedNetworkShots.delete(confirmedNetworkShots.values().next().value);hitCount++;score+=12;flashHitmarker();forestAudio.playHit();}
     if(data.killed){score+=100;window.GameRanks?.award('kill');}else window.GameRanks?.award('hit');
    }
