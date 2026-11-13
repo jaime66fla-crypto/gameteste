@@ -81,7 +81,7 @@ const rifleAnchor=[.055,1.36,.30];
 // The visible face and chest point toward +Z: anatomical right is -X.
 const rifleShift=[-.205,.085,.082];
 // Negative-X trigger hand grips near the receiver; positive-X support hand grips\n // farther up the fore-end to avoid overlapping wrists during tactical ADS.
-const rifleGrips=[[6,[.060,1.305,.255],-1],[9,[.125,1.315,.475],1]];
+const rifleGrips=[[6,[.065,1.30,.26],-1],[9,[.12,1.30,.43],1]];
 function weaponFrame(angles,weaponId='rifle',aimBlend=0){
  // ADS rifle posture: bring the stock to the right shoulder and sight line.
  // Both IK wrists and the weapon inherit exactly the same transform.
