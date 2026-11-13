@@ -1836,7 +1836,7 @@ class PlayerController {
  _initListeners(){
   addEventListener('keydown',e=>{
    if(!gameStarted||player.userData.dead)return;
-   if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='KeyF')&&e.repeat)return;
+   if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='Space')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
   });
@@ -1846,7 +1846,7 @@ class PlayerController {
   addEventListener('mouseup',e=>{if(e.button===2)this.keys.aiming=false;});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
   document.getElementById('coverBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead&&this.isGrounded)this.cover.toggle();});
-  document.getElementById('climbBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.startClimb();});
+  document.getElementById('climbBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.jumpOrClimb();});
   const peekButton=document.getElementById('peekBtn');
   peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted&&!player.userData.dead)this.keys.aiming=true;});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])peekButton?.addEventListener(type,()=>{this.keys.aiming=false;});
@@ -1854,6 +1854,12 @@ class PlayerController {
   button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.keys.crouch=!this.keys.crouch;});
  }
  clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;}
+  jumpOrClimb(){
+   if(this.startClimb())return 'climb';
+   if(this.climb)return 'climb';
+   if(this.isGrounded&&!this.isCrouching&&this.jumpPreparation<=0){this.cover.exit();this.jumpPreparation=.12;return 'jump';}
+   return null;
+  }
   startClimb(){
    if(this.climb||this.climbCooldown>0||!this.isGrounded||this.isCrouching||this.cover.active||this.mesh.userData.dead||!gameStarted)return false;
    const direction=new THREE.Vector3();this.camera.getWorldDirection(direction);
@@ -1886,8 +1892,7 @@ class PlayerController {
    if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
    return;
   }
-  if(code==='KeyF'){if(isPressed)this.startClimb();return;}
-   if(this.climb)return;
+  if(this.climb){if(code==='Space'&&!isPressed)this.keys.jetpack=false;return;}
    if(code==='KeyQ'){if(isPressed&&this.isGrounded&&gameStarted)this.cover.toggle();return;}
   if(code==='KeyC'){if(isPressed)this.keys.crouch=!this.keys.crouch;return;}
   switch(code){
@@ -1897,11 +1902,8 @@ class PlayerController {
    case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
    case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
    case 'Space':
-    this.keys.jetpack=isPressed;
-    if(isPressed)this.cover.exit();
-    if(isPressed&&this.isGrounded&&!this.isCrouching&&this.jumpPreparation<=0){
-     this.jumpPreparation=.12;
-    }
+    if(isPressed){const action=this.jumpOrClimb();this.keys.jetpack=action!=='climb';}
+    else this.keys.jetpack=false;
     break;
   }
  }
@@ -2625,7 +2627,7 @@ const tacticalGear=new window.TacticalGear({
 combatBots.onCoverHit=(id,damage)=>tacticalGear.damageWall(id,damage);
 combatBots.getGrenades=()=>[...tacticalGear.grenades.values()].map(entry=>entry.state);
 combatBots.getWalls=()=>[...tacticalGear.walls.values()];
-addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&!e.repeat&&e.code==='KeyV')tacticalGear.deployIce();});
+addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&!e.repeat&&e.code==='KeyF')tacticalGear.deployIce();});
 addEventListener('mousedown',e=>{if(e.button===0&&e.target===canvas)tacticalGear.beginThrow();});
 addEventListener('mouseup',e=>{if(e.button===0)tacticalGear.endThrow();});
 addEventListener('blur',()=>tacticalGear.cancelThrow());
