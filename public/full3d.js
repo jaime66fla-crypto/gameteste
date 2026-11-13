@@ -1050,6 +1050,8 @@ class PistolController {
   this.spread=.0025;
   this.weaponSpec=window.WeaponLootSystem.DEFINITIONS.pistol;
   this.triggerHeld=false;
+  this.casings=[];
+  this.muzzleBursts=[];
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1347,6 +1349,53 @@ class PistolController {
   this.loot?.saveActive();
  }
 
+ emitShotEffects(start,spec){
+  const isShotgun=spec.id==='shotgun';
+  const casingMaterial=new THREE.MeshStandardMaterial({
+   color:isShotgun?0xb96d36:0xc9a15c,metalness:.72,roughness:.3
+  });
+  // Cases eject from the right of the receiver, not from the muzzle itself.
+  const side=new THREE.Vector3(1,0,0).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
+  const back=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
+  const receiver=start.clone().addScaledVector(back,Math.max(.10,spec.muzzleZ*.65)).addScaledVector(side,.12);
+  const capsule=new THREE.Mesh(new THREE.CylinderGeometry(isShotgun?.019:.009,isShotgun?.019:.009,isShotgun?.065:.039,8),casingMaterial);
+  capsule.position.copy(receiver);
+  capsule.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);
+  capsule.castShadow=false;capsule.userData.ignoreCombat=true;capsule.userData.ignoreCamera=true;
+  this.scene.add(capsule);
+  this.casings.push({mesh:capsule,velocity:side.multiplyScalar(1.3+Math.random()*1.2).add(new THREE.Vector3(0,1.5+Math.random()*.8,0)).addScaledVector(back,.45),life:1.35});
+  if(this.casings.length>24){
+   const old=this.casings.shift();this.scene.remove(old.mesh);old.mesh.geometry.dispose();old.mesh.material.dispose();
+  }
+  const burst=new THREE.Group();
+  burst.position.copy(start);
+  const direction=new THREE.Vector3(0,0,1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
+  burst.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),direction);
+  const flame=new THREE.Mesh(new THREE.ConeGeometry(isShotgun?.095:.054,isShotgun?.36:.22,7),new THREE.MeshBasicMaterial({color:0xffe39a,transparent:true,opacity:.9,depthWrite:false}));
+  flame.rotation.x=Math.PI/2;flame.position.z=.105;burst.add(flame);
+  const core=new THREE.Mesh(new THREE.SphereGeometry(isShotgun?.065:.04,7,5),new THREE.MeshBasicMaterial({color:0xffffff,transparent:true,opacity:.95,depthWrite:false}));
+  burst.add(core);burst.userData.ignoreCombat=true;burst.userData.ignoreCamera=true;
+  this.scene.add(burst);
+  this.muzzleBursts.push({mesh:burst,life:.065});
+ }
+ updateShotEffects(dt){
+  for(let i=this.casings.length-1;i>=0;i--){
+   const c=this.casings[i];c.life-=dt;
+   c.velocity.y-=12*dt;
+   c.mesh.position.addScaledVector(c.velocity,dt);
+   c.mesh.rotation.x+=dt*13;c.mesh.rotation.z+=dt*9;
+   if(c.life<=0){
+    this.scene.remove(c.mesh);c.mesh.geometry.dispose();c.mesh.material.dispose();this.casings.splice(i,1);
+   }
+  }
+  for(let i=this.muzzleBursts.length-1;i>=0;i--){
+   const b=this.muzzleBursts[i];b.life-=dt;
+   b.mesh.scale.setScalar(Math.max(.05,b.life/.065));
+   if(b.life<=0){
+    this.scene.remove(b.mesh);b.mesh.traverse(o=>{o.geometry?.dispose?.();o.material?.dispose?.()});this.muzzleBursts.splice(i,1);
+   }
+  }
+ }
  fire(){
   if(!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading||this.equipTimer>0)return;
   if(controller.cover.active){
@@ -1366,6 +1415,7 @@ class PistolController {
   forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
   this.scene.updateMatrixWorld(true);
   const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
+  this.emitShotEffects(start,spec);
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
@@ -1410,6 +1460,7 @@ class PistolController {
  }
 
  update(dt,isMoving){
+  this.updateShotEffects(dt);
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
   this.equipTimer=Math.max(0,this.equipTimer-dt);
   this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/Math.max(.01,this.equipDuration),0,1):0;
