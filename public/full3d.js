@@ -2697,7 +2697,10 @@ document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMe
 document.getElementById('btn-mode-solo')?.addEventListener('click',hideGameMenu);
 document.getElementById('btn-mode-multi')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
 document.getElementById('btn-multi-back')?.addEventListener('click',()=>{leaveRoom();switchMenuView('view-modes');});
-const multiplayerWorld=new window.MultiplayerWorld(scene,corpseFloorAt);
+const multiplayerWorld=new window.MultiplayerWorld(scene,corpseFloorAt,{
+ playShoot:(weapon,volume)=>{forestAudio.init();forestAudio.playShoot(weapon,volume);},
+ listenerPosition:()=>camera.position
+});
 let networkTick=0,multiplayerShotSequence=0;
 const confirmedNetworkShots=new Set();
 function roomStatus(message){
