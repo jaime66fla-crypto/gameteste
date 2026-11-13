@@ -2939,7 +2939,15 @@ function initBattlePreview(){
  const scene2=new THREE.Scene(),cam2=new THREE.PerspectiveCamera(39,1,.1,30);
  scene2.add(new THREE.HemisphereLight(0xc5e7ef,0x35444f,1.7));
  const key=new THREE.DirectionalLight(0xffe3bb,1.4);key.position.set(2,4,5);scene2.add(key);
- const model=mainAvatar.group.clone(true);model.position.set(0,-.9,0);scene2.add(model);
+ let model;
+ try{model=mainAvatar.group.clone(true);}catch{
+  model=new THREE.Group();
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.9,1.4,.5),new THREE.MeshStandardMaterial({color:0x344653}));
+  body.position.y=.9;model.add(body);
+  const head=new THREE.Mesh(new THREE.SphereGeometry(.32,12,8),new THREE.MeshStandardMaterial({color:0xc7ac8f}));
+  head.position.y=1.8;model.add(head);
+ }
+ model.position.set(0,-.9,0);scene2.add(model);
  cam2.position.set(0,1.1,5.6);cam2.lookAt(0,.7,0);
  let last=0;
  function draw(t){
@@ -2977,7 +2985,7 @@ function showGameMenu(){
 const nickname='Operador_'+Math.floor(100+Math.random()*900);
 const nameInput=document.getElementById('input-player-name');
 if(nameInput)nameInput.value=nickname;
-document.getElementById('btn-menu-play')?.addEventListener('click',()=>switchMenuView('view-modes'));
+document.getElementById('btn-menu-play')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
 document.getElementById('btn-menu-settings')?.addEventListener('click',()=>switchMenuView('view-settings'));
 document.getElementById('btn-menu-exit')?.addEventListener('click',()=>{ try{window.close()}catch(_){} });
 document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMenuView('view-main'));
