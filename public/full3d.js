@@ -1948,6 +1948,7 @@ class PlayerController {
   this.crouchSpeed=2.1;
   this.standingHeight=1.8;this.crouchingHeight=1.45;
   this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
+  this.posture=0;this.proneBlend=0;this.proneHeight=.65;this.proneSpeed=.85;
   this.crouchInputs=new Set();
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.climb=null;this.climbCooldown=0;
@@ -1981,7 +1982,7 @@ class PlayerController {
   addEventListener('keydown',e=>{
    if(!gameStarted||player.userData.dead)return;
    if(typeof deployment!=='undefined'&&deployment.phase!=='idle'&&deployment.phase!=='landed')return;
-   if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='Space')&&e.repeat)return;
+   if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='Space'||e.code==='ControlLeft'||e.code==='ControlRight')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
   });
@@ -1996,10 +1997,18 @@ class PlayerController {
   peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted&&!player.userData.dead)this.keys.aiming=true;});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])peekButton?.addEventListener(type,()=>{this.keys.aiming=false;});
   const button=document.getElementById('crouchBtn');
-  button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.keys.crouch=!this.keys.crouch;});
+  button?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.cyclePosture();});
+ }
+ cyclePosture(){
+  if(!this.isGrounded||this.climb||this.mesh.userData.dead)return;
+  const next=(this.posture+1)%3;
+  if(next===0&&!this.canStand())return;
+  this.posture=next;this.keys.crouch=next===1;
+  if(next===2){this.cover.exit();this.keys.sprint=false;this.jumpPreparation=0;}
  }
  clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;}
   jumpOrClimb(){
+   if(this.posture===2){if(this.canStand()){this.posture=0;this.keys.crouch=false;}return null;}
    if(this.startClimb())return 'climb';
    if(this.climb)return 'climb';
    if(this.isGrounded&&!this.isCrouching&&this.jumpPreparation<=0){this.cover.exit();this.jumpPreparation=.12;return 'jump';}
@@ -2034,7 +2043,7 @@ class PlayerController {
  _onKeyChange(code,isPressed){
   if(this.mesh.userData.dead&&isPressed)return;
   if(code==='ControlLeft'||code==='ControlRight'){
-   if(isPressed)this.crouchInputs.add(code);else this.crouchInputs.delete(code);
+   if(isPressed)this.cyclePosture();
    return;
   }
   if(this.climb){if(code==='Space'&&!isPressed)this.keys.jetpack=false;return;}
@@ -2064,6 +2073,7 @@ class PlayerController {
     return 'jump';
    }
    this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
+   if(!this.isGrounded&&this.posture===2)this.posture=0;
   this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
   this.landingImpact=THREE.MathUtils.lerp(this.landingImpact,0,1-Math.exp(-3.2*dt));
   this.hardLanding=THREE.MathUtils.lerp(this.hardLanding,0,1-Math.exp(-2.6*dt));
@@ -2075,13 +2085,15 @@ class PlayerController {
   }
   this.cover.update(dt,{left:this.keys.left,right:this.keys.right,backward:this.keys.backward,aiming:this.keys.aiming,grounded:this.isGrounded,canStand:this.canStand()});
   const lowPeek=this.cover.active&&this.cover.low&&this.cover.isPeeking;
-  const requestedCrouch=!lowPeek&&(this.keys.crouch||this.crouchInputs.size>0||(this.cover.active&&this.cover.low));
-  this.isCrouching=this.isGrounded&&(requestedCrouch||(this.isCrouching&&!this.canStand()));
+  const requestedCrouch=!lowPeek&&(this.posture===1||(this.cover.active&&this.cover.low));
+  const prone=this.posture===2&&this.isGrounded;
+  this.isCrouching=this.isGrounded&&(requestedCrouch||prone||(this.isCrouching&&!this.canStand()));
+  this.proneBlend=THREE.MathUtils.lerp(this.proneBlend,prone?1:0,1-Math.exp(-9*dt));
   this.crouchBlend=THREE.MathUtils.lerp(this.crouchBlend,this.isCrouching?1:0,1-Math.exp(-12*dt));
-  this.collisionHeight=THREE.MathUtils.lerp(this.standingHeight,this.crouchingHeight,this.crouchBlend);
+  this.collisionHeight=THREE.MathUtils.lerp(THREE.MathUtils.lerp(this.standingHeight,this.crouchingHeight,this.crouchBlend),this.proneHeight,this.proneBlend);
   const crouchButton=document.getElementById('crouchBtn');
   crouchButton?.setAttribute('aria-pressed',String(this.isCrouching));
-  if(crouchButton)crouchButton.textContent=this.isCrouching?'LEVANTAR':'AGACHAR';
+  if(crouchButton)crouchButton.textContent=prone?'DEITADO':this.isCrouching?'AGACHADO':'EM PÉ';
   const inputDir=new THREE.Vector3();
   if(this.keys.forward)inputDir.z-=1;
   if(this.keys.backward)inputDir.z+=1;
@@ -2120,7 +2132,7 @@ class PlayerController {
     directionalScale*=1-lateral*.10-backward*.18;
    }
    const recoveryScale=this.recoveryTimer>0?THREE.MathUtils.lerp(.58,.78,1-this.recoveryStrength):1;
-   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale*recoveryScale;
+   const currentSpeed=(prone?this.proneSpeed:this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale*recoveryScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
 
@@ -2377,7 +2389,7 @@ class GTACameraController {
   this.recoilTime=Math.max(0,this.recoilTime-delta);
   const effectivePitch=THREE.MathUtils.clamp(this.pitch-this.recoilPitch,this.minPitch,this.maxPitch);
 
-  this.offset.y=(aiming?1.55:1.5)-controller.crouchBlend*.35;
+  this.offset.y=(aiming?1.55:1.5)-controller.crouchBlend*.35-controller.proneBlend*.68;
   const activeYaw=this.isLookingBack?this.yaw+Math.PI:this.yaw;
   const bodyFocus=this.target.position.clone().add(this.offset);
   const focusPoint=bodyFocus.clone();
@@ -3283,6 +3295,7 @@ function loop(){
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
  else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
  player.userData.crouching=controller.isCrouching;
+ player.userData.prone=controller.posture===2;
  if(!multiplayer.active&&!window.GametesteTraining?.isActive())combatBots.update(dt);
  tacticalGear.update(elapsed);
  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);safeZoneVisual.update();}
@@ -3301,7 +3314,7 @@ function loop(){
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
   const footHeights=sampleSoldierFootHeights(dt);
-  mainAvatar.update(dt,{footLeft:footHeights.left,footRight:footHeights.right,dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
+  mainAvatar.update(dt,{footLeft:footHeights.left,footRight:footHeights.right,dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),crouching:controller.isCrouching,prone:controller.proneBlend,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
