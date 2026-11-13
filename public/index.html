@@ -56,9 +56,9 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 /* Weapon-specific ADS */
 #opticReticle,#sniperScope{position:fixed;inset:0;z-index:12;pointer-events:none;opacity:0;transition:opacity .1s ease}
 #opticReticle.active,#sniperScope.active{opacity:1}
-#opticReticle .optic-frame{position:absolute;left:50%;top:50%;width:120px;height:92px;transform:translate(-50%,-50%);border:9px solid rgba(19,23,24,.94);border-radius:25px 25px 18px 18px;box-shadow:0 0 0 2px rgba(0,0,0,.85),0 8px 16px rgba(0,0,0,.45)}
-#opticReticle .optic-glass{position:absolute;left:50%;top:50%;width:100px;height:72px;transform:translate(-50%,-50%);border-radius:18px;background:radial-gradient(circle,rgba(190,225,220,.06),rgba(20,30,31,.08) 65%,rgba(0,0,0,.18));box-shadow:inset 0 0 22px rgba(100,170,155,.12)}
-#opticReticle .optic-dot{position:absolute;left:50%;top:50%;width:9px;height:9px;transform:translate(-50%,-50%);border:2px solid #ff2b36;border-radius:50%;box-shadow:0 0 8px #ff1b2dcc,0 0 2px #fff inset}
+#opticReticle .optic-frame{position:absolute;left:50%;top:50%;width:132px;height:112px;box-sizing:border-box;transform:translate(-50%,-50%);border:9px solid #151a19;border-bottom-width:12px;border-radius:25px 25px 17px 17px;box-shadow:0 0 0 2px #4b5450,0 7px 15px #0009,inset 0 0 0 2px #718a85}
+#opticReticle .optic-glass{position:absolute;left:50%;top:50%;width:110px;height:91px;box-sizing:border-box;transform:translate(-50%,-50%);border-radius:17px;background:radial-gradient(circle,rgba(176,212,205,.02),rgba(27,50,49,.065) 80%,rgba(0,0,0,.1));box-shadow:inset 0 0 12px #5a928a33;}
+#opticReticle .optic-dot{position:absolute;left:50%;top:50%;width:5px;height:5px;transform:translate(-50%,-50%);border:1px solid #ff5960;border-radius:50%;background:#ff2437;box-shadow:0 0 6px #ff233d,0 0 2px #fff}
 #sniperScope{background:radial-gradient(circle at center,transparent 0 34vh,rgba(0,0,0,.97) 34.5vh)}
 #sniperScope .scope-ring{position:absolute;left:50%;top:50%;width:68vh;height:68vh;max-width:92vw;max-height:92vw;transform:translate(-50%,-50%);border:10px solid rgba(8,8,8,.96);border-radius:50%;box-shadow:0 0 0 3px rgba(80,80,80,.55) inset,0 0 45px #000}
 #sniperScope .scope-v,#sniperScope .scope-h{position:absolute;left:50%;top:50%;background:rgba(12,12,12,.92);transform:translate(-50%,-50%)}
@@ -205,7 +205,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/tactical-rules.js?v=1"></script>
 <script src="/tactical-gear.js?v=1"></script>
 <script src="/skin-vault.js?v=3"></script>
-<script src="/full3d.js?v=66"></script>
+<script src="/full3d.js?v=67"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 <script src="/training-ground.js?v=2"></script>
 </body>
