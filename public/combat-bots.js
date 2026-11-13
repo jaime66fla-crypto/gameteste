@@ -347,7 +347,7 @@ class CombatBotSystem {
 
    const origin=entry.state.position;
    const damage=R.blastDamage(origin,this.player.position,this.solidBoxes);
-   if(damage>0)this.damagePlayer(damage);
+   if(damage>0)this.damagePlayer(damage,new THREE.Vector3(origin.x,origin.y,origin.z));
 
    for(const wall of this.getWalls?.()||[]){
     const state=wall.state||wall;
@@ -495,10 +495,10 @@ class CombatBotSystem {
   this.effects.push({line,life:.07});
  }
 
- damagePlayer(amount){
+ damagePlayer(amount,source=null){
   if(this.health<=0)return;
   this.health=Math.max(0,this.health-amount);
-  this.onPlayerHit(this.health,amount);
+  this.onPlayerHit(this.health,amount,source);
   if(this.health===0){
    for(const bot of this.bots)bot.cooldown=3+bot.index*.7;
    this.onPlayerDeath();
@@ -536,7 +536,7 @@ class CombatBotSystem {
   if(hit?.object?.userData?.iceWallId)this.onCoverHit?.(hit.object.userData.iceWallId,6);
   if(hit){
    for(let o=hit.object;o;o=o.parent){
-    if(o===this.player){this.damagePlayer(6);break;}
+    if(o===this.player){this.damagePlayer(6,bot.group.position);break;}
    }
   }
  }
