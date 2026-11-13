@@ -133,9 +133,9 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
     <span>VIDA <strong id="playerHealth">100</strong></span>
   </div>
   <div class="stamina-wrap"><span>STAMINA</span><div class="stamina-track"><div id="staminaBar"></div></div></div>
-  <details><summary>Controles</summary><small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1/2 trocar arma • 3 guardar • E pegar loot • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás • Q entrar/sair de cobertura • F escalar obstáculos • A/D mover na parede • botão direito para se expor</small></details>
+  <details><summary>Controles</summary><small>WASD mover • Shift correr • Espaço pular/escalar • botão direito gira câmera • clique esquerdo atirar • 1/2 trocar arma • 3 guardar • E pegar loot • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás • Q entrar/sair de cobertura • F criar gelo • A/D mover na parede • botão direito para se expor</small></details>
 </div>
-<button id="climbBtn" class="cover-action" aria-label="Escalar obstáculo à frente">ESCALAR</button>
+<button id="climbBtn" class="cover-action" aria-label="Pular ou escalar obstáculo à frente">PULAR / ESCALAR</button>
 <button id="coverBtn" class="cover-action" aria-pressed="false" aria-label="Entrar ou sair da cobertura">COVER</button>
 <button id="peekBtn" class="cover-action" aria-label="Segurar para se expor e mirar">MIRAR</button>
 <button id="crouchBtn" aria-pressed="false" aria-label="Alternar agachamento">AGACHAR</button>
@@ -158,7 +158,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <div id="vitals" aria-label="Vida"><span>VIDA</span><b id="vitalValue">100 / 100</b><div class="vital-track"><i id="vitalFill"></i></div></div>
 <div id="receivedDamage" role="status" aria-live="polite"></div>
 <div id="deathOverlay" hidden><div><span>VOCÊ FOI ABATIDO</span><h2 id="deathCountdown">RENASCENDO EM 5s</h2><p>Aguarde para voltar ao combate.</p></div></div>
-<button id="iceWallBtn" title="V · Criar proteção de gelo">V · GELO <span id="iceCount">3</span></button>
+<button id="iceWallBtn" title="F · Criar proteção de gelo">F · GELO <span id="iceCount">3</span></button>
 <button id="grenadeThrowBtn" hidden>SEGURE PARA MIRAR<br>SOLTE PARA LANÇAR</button>
 <div id="tacticalNotice" role="status" aria-live="polite" hidden></div>
 <div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
@@ -177,7 +177,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/player-life.js?v=1"></script>
 <script src="/tactical-rules.js?v=1"></script>
 <script src="/tactical-gear.js?v=1"></script>
-<script src="/full3d.js?v=47"></script>
+<script src="/full3d.js?v=48"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 </body>
 </html>
