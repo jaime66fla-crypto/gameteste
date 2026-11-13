@@ -1846,6 +1846,7 @@ class PlayerController {
   addEventListener('mouseup',e=>{if(e.button===2)this.keys.aiming=false;});
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
   document.getElementById('coverBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead&&this.isGrounded)this.cover.toggle();});
+  document.getElementById('climbBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)this.startClimb();});
   const peekButton=document.getElementById('peekBtn');
   peekButton?.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();peekButton.setPointerCapture?.(e.pointerId);if(gameStarted&&!player.userData.dead)this.keys.aiming=true;});
   for(const type of ['pointerup','pointercancel','lostpointercapture'])peekButton?.addEventListener(type,()=>{this.keys.aiming=false;});
