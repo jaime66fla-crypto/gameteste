@@ -230,6 +230,28 @@ class OperatorAvatar{
    }
   }
 
+  if(armed&&recoil>.001){
+   const id=this.weaponId||'pistol';
+   const kick=id==='pistol'?.72:id==='smg'?.48:id==='rifle'?.78:id==='shotgun'?1.28:1.12;
+   const torsoKick=recoil*kick;
+   const shoulderKick=torsoKick*(id==='smg'?.55:.8);
+   r[1][0]-=.045*torsoKick;
+   r[2][0]-=.075*torsoKick;
+   r[3][0]-=.095*torsoKick;
+   r[3][2]+=(id==='shotgun'?.024:id==='sniper'?.018:.010)*torsoKick;
+   r[6][0]+=.10*shoulderKick;
+   r[9][0]+=.07*shoulderKick;
+   r[7][0]+=.06*shoulderKick;
+   r[10][0]+=.04*shoulderKick;
+   pose.root[2]-=.010*torsoKick;
+   if(id==='shotgun'||id==='sniper'){
+    r[12][0]-=.025*torsoKick;
+    r[15][0]+=.018*torsoKick;
+    r[13][0]+=.045*torsoKick;
+    r[16][0]+=.035*torsoKick;
+   }
+  }
+
   if(grounded&&turnSharpness>.03){
    const t=clamp(turn,-1,1),sharp=clamp(turnSharpness,0,1);
    const pivot=Math.abs(t)*sharp;
@@ -498,7 +520,8 @@ class OperatorAvatar{
     a[1]+=yaw*e;
     a[2]+=roll*e;
    }
-   a[0]+=.40*this.coverBlend-recoil*.04;
+   const recoilScale=this.weaponId==='pistol'?.045:this.weaponId==='smg'?.030:this.weaponId==='rifle'?.050:this.weaponId==='shotgun'?.085:.072;
+   a[0]+=.40*this.coverBlend-recoil*recoilScale;
    a[1]+=coverSide*.12*this.coverBlend;
    if(aiming&&grounded&&speed>.08){
     a[0]-=.10*clamp(aimTransition,0,1);
