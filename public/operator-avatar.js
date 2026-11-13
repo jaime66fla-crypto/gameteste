@@ -163,7 +163,7 @@ class OperatorAvatar{
   this.arms=[{shoulder:this.bones[9],elbow:this.bones[10],hand:this.bones[11],s:1},{shoulder:this.bones[6],elbow:this.bones[7],hand:this.bones[8],s:-1}];
   this.legs=[{hip:this.bones[15],knee:this.bones[16],ankle:this.bones[17],s:1},{hip:this.bones[12],knee:this.bones[13],ankle:this.bones[14],s:-1}];
   this.rotations=Array.from({length:18},()=>[0,0,0]);this.shift=[0,0,0];this.weaponAngles=[.38,0,0];this.weaponGripTargets=[];
-  this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
+  this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
@@ -180,6 +180,9 @@ class OperatorAvatar{
    this.group.updateMatrixWorld(true);this.skeleton.update();return;
   }
   this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);
+  const oldSprint=this.sprintBlend;
+  this.sprintBlend=M.damp(this.sprintBlend,armed&&sprinting&&grounded&&!aiming?1:0,sprinting?13:9,dt);
+  const sprintRate=dt>0?(this.sprintBlend-oldSprint)/dt:0;
   const oldCrouch=this.crouchBlend,oldCover=this.coverBlend;
   this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
   const crouchRate=dt>0?(this.crouchBlend-oldCrouch)/dt:0,coverRate=dt>0?(this.coverBlend-oldCover)/dt:0;
@@ -227,6 +230,31 @@ class OperatorAvatar{
     r[13][0]+=.24*stopBlend;
     r[16][0]+=.18*stopBlend;
     pose.root[1]-=.035*stopBlend;
+   }
+  }
+
+  if(armed&&this.sprintBlend>.001){
+   const s=clamp(this.sprintBlend,0,1);
+   const q=this.phase*Math.PI*2;
+   const heavy=this.weaponId==='sniper'?1.15:this.weaponId==='shotgun'?1.08:this.weaponId==='rifle'?1:.84;
+   // Lower the weapon into a true sprint carry while keeping it clear of the legs.
+   r[2][0]+=.08*s*heavy;
+   r[3][0]+=.14*s*heavy;
+   r[3][1]-=.07*Math.sin(q)*s;
+   r[6][0]+=.20*s*heavy;
+   r[9][0]+=.16*s*heavy;
+   r[7][0]+=.10*s;
+   r[10][0]+=.08*s;
+   r[1][2]+=.018*Math.sin(q)*s;
+   pose.root[1]-=.012*s;
+
+   // When sprint ends, the upper body catches the gun before returning to ready.
+   if(sprintRate<-.01){
+    const recover=clamp(-sprintRate/6,0,1);
+    r[2][0]+=.05*recover;
+    r[3][0]-=.07*recover;
+    r[6][0]-=.08*recover;
+    r[9][0]-=.06*recover;
    }
   }
 
@@ -546,6 +574,13 @@ class OperatorAvatar{
     a[0]+=pitch*e;
     a[1]+=yaw*e;
     a[2]+=roll*e;
+   }
+   if(this.sprintBlend>.001){
+    const s=clamp(this.sprintBlend,0,1);
+    const heavy=this.weaponId==='sniper'?1.15:this.weaponId==='shotgun'?1.08:this.weaponId==='rifle'?1:.84;
+    a[0]+=.52*s*heavy;
+    a[1]+=.10*s;
+    a[2]+=.06*Math.sin(this.phase*Math.PI*2)*s;
    }
    const recoilScale=this.weaponId==='pistol'?.045:this.weaponId==='smg'?.030:this.weaponId==='rifle'?.050:this.weaponId==='shotgun'?.085:.072;
    a[0]+=.40*this.coverBlend-recoil*recoilScale;
