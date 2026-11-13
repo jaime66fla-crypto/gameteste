@@ -83,6 +83,21 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 #view-multiplayer>*{flex-shrink:0}.menu-content:has(#view-multiplayer:not(.hidden-view)) .menu-title{display:none}
 .public-rooms{border-top:1px solid #d4af6e33;border-bottom:1px solid #d4af6e33;padding:12px 0;text-align:left}.public-rooms-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.public-rooms h3{margin:0;color:#e1c795;font:700 12px system-ui;letter-spacing:.12em}.public-rooms button{min-height:36px;padding:7px 11px;border:1px solid #80948e66;border-radius:6px;background:#233b3c;color:#d9f6e9;font:700 10px system-ui;cursor:pointer}.public-rooms button:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.public-rooms button:disabled{opacity:.45;cursor:default}#public-room-status{font:12px/1.5 system-ui;color:#aebed1;margin:9px 0 3px}#public-room-list{max-height:160px;overflow-y:auto;display:grid;gap:6px}.public-room-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;background:#0a1220;border:1px solid #ffffff14;border-radius:7px;color:#ecf2fa;font:12px system-ui}.public-room-join{flex-shrink:0}#view-multiplayer .multi-heading h2{font-size:23px;margin:6px 0}#view-multiplayer .multi-heading p{margin:5px 0;font-size:12px}
 #weaponHud{grid-template-columns:repeat(3,1fr);width:280px}#iceWallBtn{position:fixed;right:12px;bottom:12px;z-index:20;min-height:45px;width:88px;border:1px solid #97dcec88;border-radius:8px;background:#153b4ae8;color:#c7f8ff;font:700 11px system-ui;cursor:pointer;touch-action:manipulation}#grenadeThrowBtn{position:fixed;bottom:115px;left:50%;transform:translateX(-50%);z-index:21;min-height:50px;padding:10px 18px;border:1px solid #e8ca8299;border-radius:10px;background:#3a3218ed;color:#ffe6ad;font:700 10px/1.5 system-ui;touch-action:none;user-select:none;cursor:pointer}#grenadeThrowBtn[hidden],#tacticalNotice[hidden]{display:none}#jetpackHud{bottom:70px}#tacticalNotice{position:fixed;bottom:180px;left:50%;transform:translateX(-50%);z-index:22;max-width:calc(100vw - 30px);padding:9px 12px;border:1px solid #b7e8eb77;border-radius:8px;background:#0b1820ed;color:#d9faff;font:12px system-ui;text-align:center}#grenadeSlotBtn[aria-pressed="true"]{border-color:#e6cd85;background:#34311ce8}@media(max-width:600px){#weaponHud{width:calc(100vw - 115px);gap:3px}#weaponHud button{padding-left:19px;font-size:10px}#weaponHud small{font-size:9px}#jetpackHud{bottom:300px;width:120px}#grenadeThrowBtn{bottom:130px}}
+/* Battle Royale lobby: operator display and quick access to loadout. */
+#aventura-menu-overlay .menu-content{max-width:960px}
+#battleLobby{display:grid;grid-template-columns:minmax(210px,360px) minmax(280px,1fr);gap:18px;width:min(920px,94vw);align-items:stretch}
+.battle-preview{background:linear-gradient(145deg,#172c36,#0a131b);border:1px solid #50758a;border-radius:14px;min-height:340px;overflow:hidden;display:flex;flex-direction:column}
+#battleCharacterPreview{height:315px;width:100%;display:block;touch-action:none}
+.battle-preview p{text-align:center;font-size:12px;letter-spacing:.12em;color:#93bfd0;margin:0 0 12px}
+.battle-actions{display:flex;flex-direction:column;justify-content:center;gap:12px}
+.battle-actions h2{margin:0;font-size:28px;color:#f1f5f8;letter-spacing:.08em}
+.battle-actions small{color:#aec4d0;line-height:1.6}
+#battleQueueStatus{font:700 13px system-ui;color:#96d5f6;padding:10px;border:1px solid #355b6c;border-radius:8px;background:#0d202bbd}
+#battleWaiting{position:fixed;inset:0;z-index:20020;background:rgba(4,11,18,.95);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;text-align:center;padding:28px;color:white;font:600 16px system-ui}
+#battleWaiting[hidden],#battleResult[hidden]{display:none}
+#battleResult{position:fixed;inset:0;z-index:20040;background:#06121aef;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:white;font:700 18px system-ui}
+#battleResult button,#battleWaiting button{padding:12px 22px;color:#fff;background:#17628b;border:1px solid #78d7fa;border-radius:9px;cursor:pointer}
+@media(max-width:680px){#battleLobby{grid-template-columns:1fr;max-height:72vh;overflow:auto}.battle-preview{min-height:180px}#battleCharacterPreview{height:180px}.battle-actions h2{font-size:22px}}
 </style>
 </head>
 <body>
@@ -91,19 +106,26 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
   <div class="menu-mountains"></div>
   <canvas id="menu-particles-canvas"></canvas>
   <div class="menu-content">
-    <h1 class="menu-title">AVENTURA</h1>
-    <div id="view-main" class="menu-stack">
-      <button id="btn-menu-play" class="menu-btn">JOGAR</button>
-      <button id="btn-menu-settings" class="menu-btn">CONFIGURAÇÕES</button>
-      <button id="btn-menu-exit" class="menu-btn">SAIR</button>
+    <h1 class="menu-title">GAMETESTE</h1>
+    <div id="view-main" class="menu-stack" style="width:auto">
+      <div id="battleLobby">
+        <section class="battle-preview"><canvas id="battleCharacterPreview" aria-label="Visualização 3D do Soldier"></canvas><p>SEU SOLDIER • PERSONAGEM</p></section>
+        <section class="battle-actions">
+          <h2>BATTLE ROYALE</h2>
+          <small>8 jogadores por partida. Um único sobrevivente. Personalize seu arsenal antes do combate.</small>
+          <button id="btn-lobby-arsenal" class="menu-btn">ARSENAL E ACESSÓRIOS</button>
+          <button id="btn-menu-play" class="menu-btn">INICIAR PARTIDA</button>
+          <button id="btn-menu-settings" class="menu-btn menu-btn-secondary">CONFIGURAÇÕES</button>
+          <button id="btn-menu-exit" class="menu-btn menu-btn-secondary">SAIR</button>
+        </section>
+      </div>
     </div>
     <div id="view-modes" class="menu-stack hidden-view">
-      <button id="btn-mode-solo" class="menu-btn">MODO SOLO</button>
-      <button id="btn-mode-multi" class="menu-btn">MULTIPLAYER</button>
+      <button id="btn-mode-multi" class="menu-btn">BATTLE ROYALE • 8 JOGADORES</button>
       <button id="btn-modes-back" class="menu-btn menu-btn-secondary">VOLTAR</button>
     </div>
     <div id="view-multiplayer" class="menu-panel-box hidden-view">
-      <div class="multi-heading"><span>JOGAR ONLINE</span><h2>Seu esquadrão começa aqui.</h2><p>Entre em uma sala pública ou convide amigos pelo código.</p></div>
+      <div class="multi-heading"><span>BATTLE ROYALE</span><h2>8 jogadores. Um vencedor.</h2><p>Crie ou entre em uma sala. A partida começa quando os oito jogadores estiverem conectados.</p></div><p id="battleQueueStatus">Aguardando seleção de sala</p>
       <div><label class="menu-label" for="input-player-name">Seu nome</label><input id="input-player-name" class="menu-input" maxlength="16"></div>
       <div><label class="menu-label" for="room-visibility">Visibilidade da nova sala</label><select id="room-visibility" class="menu-input"><option value="public">Pública · aparece na lista</option><option value="private">Privada · entrar pelo código</option></select></div>
       <button id="btn-create-room" class="menu-btn">CRIAR NOVA SALA</button>
@@ -162,6 +184,8 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <button id="grenadeThrowBtn" hidden>SEGURE PARA MIRAR<br>SOLTE PARA LANÇAR</button>
 <div id="tacticalNotice" role="status" aria-live="polite" hidden></div>
 <div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
+<div id="battleWaiting" hidden><h2>AGUARDANDO JOGADORES</h2><strong id="battleWaitingCount">1 / 8</strong><p>O avião parte quando a sala estiver completa.</p><button id="battleCancel" type="button">CANCELAR E VOLTAR</button></div>
+<div id="battleResult" hidden><h2 id="battleResultTitle">FIM DE PARTIDA</h2><p id="battleResultText"></p><button id="battleReturn" type="button">VOLTAR AO LOBBY</button></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
@@ -171,13 +195,13 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/cover-controller.js?v=1"></script>
 <script src="/climb-rules.js?v=1"></script>
 <script src="/weapon-loot.js?v=8"></script>
-<script src="/multiplayer-client.js?v=2"></script>
+<script src="/multiplayer-client.js?v=3"></script>
 <script src="/room-browser.js?v=1"></script>
 <script src="/multiplayer-world.js?v=6"></script>
 <script src="/player-life.js?v=1"></script>
 <script src="/tactical-rules.js?v=1"></script>
 <script src="/tactical-gear.js?v=1"></script>
-<script src="/full3d.js?v=49"></script>
+<script src="/full3d.js?v=50"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 </body>
 </html>
