@@ -1034,6 +1034,7 @@ class PistolController {
   this.reloadBlend=0;
   this.equipBlend=0;
   this.equipTimer=0;
+  this.equipDuration=.34;
 
   this.recoil=0;
   this.recoilVelocity=0;
@@ -1289,7 +1290,9 @@ class PistolController {
   if(typeof tacticalGear!=='undefined')tacticalGear.unequip();
   this.isEquipped=true;
   this.isReloading=false;
-  this.equipTimer=.34;
+  const id=this.weaponSpec?.id||'pistol';
+  this.equipDuration=id==='pistol'?.22:id==='smg'?.28:id==='rifle'?.38:id==='shotgun'?.42:id==='sniper'?.58:.34;
+  this.equipTimer=this.equipDuration;
   this.equipBlend=1;
   this.pistol.visible=true;
 
@@ -1403,7 +1406,7 @@ class PistolController {
  update(dt,isMoving){
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
   this.equipTimer=Math.max(0,this.equipTimer-dt);
-  this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/.34,0,1):0;
+  this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/Math.max(.01,this.equipDuration),0,1):0;
 
   if(this.isReloading){
    this.reloadTimer+=dt;
