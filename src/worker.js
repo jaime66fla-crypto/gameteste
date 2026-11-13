@@ -62,6 +62,13 @@ async function handleDeepMotion(request,env,url){
 export default {
  async fetch(request, env) {
   const url = new URL(request.url);
+  if(url.pathname==='/api/rooms'){
+   if(request.method!=='GET')return json({error:'Método não permitido.'},405);
+   try{
+    const directory=env.GAME_ROOMS.get(env.GAME_ROOMS.idFromName('public-room-directory'));
+    return await directory.fetch(new Request('https://internal/internal/public-rooms'+url.search));
+   }catch{return json({error:'Não foi possível carregar as salas. Tente atualizar.'},503);}
+  }
   if (url.pathname === "/ws") {
    const room = (url.searchParams.get("room") || "cidade-1").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cidade-1";
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);
@@ -75,6 +82,7 @@ export default {
 export class GameRoom {
  constructor(ctx, env) {
   this.ctx = ctx;
+  this.env = env;
   this.sessions = new Map();
   this.players = new Map();
   this.shots3D = new Map();
@@ -84,6 +92,40 @@ export class GameRoom {
   }
  }
  async fetch(request) {
+  const url=new URL(request.url);
+  // These paths are called only by other Durable Objects, never forwarded from the public Worker.
+  if(url.pathname==='/internal/room-info'){
+   const meta=this.sessions.values().next().value?.deserializeAttachment();
+   return json({public:meta?.publicRoom===true,players:this.sessions.size,capacity:8});
+  }
+  if(url.pathname==='/internal/public-rooms'){
+   if(request.method==='POST'){
+    const {code}=await request.json();
+    if(!/^flr-[a-z0-9]{5}$/.test(String(code)))return json({error:'Código inválido.'},400);
+    await this.ctx.storage.put('room:'+code,{code,token:crypto.randomUUID()});return json({ok:true});
+   }
+   if(request.method!=='GET')return json({error:'Método não permitido.'},405);
+   const cursor=url.searchParams.get('cursor')||'';
+   if(cursor&&!/^room:flr-[a-z0-9]{5}$/.test(cursor))return json({error:'Página inválida.'},400);
+   const entries=[...await this.ctx.storage.list({prefix:'room:',limit:41,...(cursor?{startAfter:cursor}:{})})];
+   const page=entries.slice(0,40),nextCursor=entries.length>40?page.at(-1)[0]:null;
+   const rooms=(await Promise.all(page.map(async([key,entry])=>{
+    const code=typeof entry==='string'?entry:entry.code,token=entry?.token;
+    try{
+     const room=this.env.GAME_ROOMS.get(this.env.GAME_ROOMS.idFromName('3d:'+code));
+     const response=await room.fetch(new Request('https://internal/internal/room-info'));
+     if(!response.ok)return null;
+     const info=await response.json();
+     if(!info.public||info.players<1){
+      await this.ctx.storage.transaction(async tx=>{const current=await tx.get(key);if(current&&(typeof current==='string'?current===entry:current.token===token))await tx.delete(key);});
+      return null;
+     }
+     return {code:code.toUpperCase(),players:info.players,capacity:8};
+    }catch{return null;}
+   }))).filter(Boolean);
+   rooms.sort((a,b)=>(a.players===8)-(b.players===8)||b.players-a.players||a.code.localeCompare(b.code));
+   return json({rooms,cursor:nextCursor});
+  }
   if (request.headers.get("Upgrade") !== "websocket") return new Response("WebSocket required", {status: 426});
   const query=new URL(request.url).searchParams;
   if(query.get('mode')==='3d'){
@@ -97,8 +139,15 @@ export class GameRoom {
   const id = crypto.randomUUID().slice(0, 8);
   this.ctx.acceptWebSocket(server);
   const mode=new URL(request.url).searchParams.get("mode")==="3d"?"3d":"2d";
-  server.serializeAttachment({id,mode});
+  const first=this.sessions.values().next().value?.deserializeAttachment();
+  const publicRoom=mode==='3d'&&(first?first.publicRoom===true:query.get('visibility')==='public');
+  server.serializeAttachment({id,mode,publicRoom});
   this.sessions.set(id, server);
+  if(publicRoom&&query.get('action')==='create'){
+   const code=(query.get('room')||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,24);
+   const directory=this.env.GAME_ROOMS.get(this.env.GAME_ROOMS.idFromName('public-room-directory'));
+   this.ctx.waitUntil(directory.fetch(new Request('https://internal/internal/public-rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})})).catch(error=>console.error('Room directory registration failed',error)));
+  }
   server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()]}:{type:"welcome",id}));
   return new Response(null, {status:101, webSocket:client});
  }

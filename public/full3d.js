@@ -2227,8 +2227,10 @@ const menuViews=['view-main','view-modes','view-multiplayer','view-settings'];
 function switchMenuView(id){
  menuViews.forEach(v=>document.getElementById(v)?.classList.add('hidden-view'));
  document.getElementById(id)?.classList.remove('hidden-view');
+ if(id==='view-multiplayer')publicRoomBrowser.open();else publicRoomBrowser.close();
 }
 function hideGameMenu(){
+ publicRoomBrowser.close();
  menuOverlay?.classList.add('hidden-menu');
  gameStarted=true;
  forestAudio.init();
@@ -2300,8 +2302,12 @@ function enterRoom(action){
  const input=document.getElementById('input-room-code');
  let code=input?.value||'';
  if(action==='create'){const letters='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';code='FLR-';for(let i=0;i<5;i++)code+=letters[Math.floor(Math.random()*letters.length)];if(input)input.value=code;}
- multiplayer.connect(action,code,nameInput?.value||'');
+ multiplayer.connect(action,code,nameInput?.value||'',document.getElementById('room-visibility')?.value||'public');
 }
+const publicRoomBrowser=new window.PublicRoomBrowser({
+ root:document.getElementById('public-room-list'),status:document.getElementById('public-room-status'),refreshButton:document.getElementById('btn-refresh-rooms'),moreButton:document.getElementById('btn-more-rooms'),
+ onJoin:code=>{if(multiplayer.pending)return;const input=document.getElementById('input-room-code');if(input)input.value=code;enterRoom('join');}
+});
 document.getElementById('btn-create-room')?.addEventListener('click',()=>enterRoom('create'));
 document.getElementById('btn-join-room')?.addEventListener('click',()=>enterRoom('join'));
 document.getElementById('input-room-code')?.addEventListener('keydown',e=>{if(e.key==='Enter')enterRoom('join');});

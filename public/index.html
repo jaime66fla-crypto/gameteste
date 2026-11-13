@@ -79,6 +79,9 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-color:#ff665c;animation:dangerPulse 1s ease-in-out infinite}@keyframes dangerPulse{50%{box-shadow:0 0 22px #ff332560}}
 #deathOverlay{position:fixed;inset:0;z-index:20;display:flex;align-items:flex-end;justify-content:center;padding-bottom:120px;box-sizing:border-box;background:linear-gradient(transparent 20%,#19080988);pointer-events:none;text-align:center}#deathOverlay[hidden]{display:none}#deathOverlay span{color:#ff8d81;font:700 12px system-ui;letter-spacing:.18em}#deathOverlay h2{font:750 26px system-ui;color:white;margin:10px}#deathOverlay p{font:12px system-ui;color:#d9c8c2}
 @media(max-width:700px){#vitals{bottom:75px;width:150px}#receivedDamage{top:28%;font-size:17px}#deathOverlay{padding-bottom:155px}}
+#view-multiplayer{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto;gap:11px;padding:20px}
+#view-multiplayer>*{flex-shrink:0}.menu-content:has(#view-multiplayer:not(.hidden-view)) .menu-title{display:none}
+.public-rooms{border-top:1px solid #d4af6e33;border-bottom:1px solid #d4af6e33;padding:12px 0;text-align:left}.public-rooms-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.public-rooms h3{margin:0;color:#e1c795;font:700 12px system-ui;letter-spacing:.12em}.public-rooms button{min-height:36px;padding:7px 11px;border:1px solid #80948e66;border-radius:6px;background:#233b3c;color:#d9f6e9;font:700 10px system-ui;cursor:pointer}.public-rooms button:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.public-rooms button:disabled{opacity:.45;cursor:default}#public-room-status{font:12px/1.5 system-ui;color:#aebed1;margin:9px 0 3px}#public-room-list{max-height:160px;overflow-y:auto;display:grid;gap:6px}.public-room-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;background:#0a1220;border:1px solid #ffffff14;border-radius:7px;color:#ecf2fa;font:12px system-ui}.public-room-join{flex-shrink:0}#view-multiplayer .multi-heading h2{font-size:23px;margin:6px 0}#view-multiplayer .multi-heading p{margin:5px 0;font-size:12px}
 </style>
 </head>
 <body>
@@ -99,9 +102,11 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
       <button id="btn-modes-back" class="menu-btn menu-btn-secondary">VOLTAR</button>
     </div>
     <div id="view-multiplayer" class="menu-panel-box hidden-view">
-      <div class="multi-heading"><span>JOGAR ONLINE</span><h2>Seu esquadrão começa aqui.</h2><p>Crie uma sala e compartilhe o código. Até 8 jogadores.</p></div>
+      <div class="multi-heading"><span>JOGAR ONLINE</span><h2>Seu esquadrão começa aqui.</h2><p>Entre em uma sala pública ou convide amigos pelo código.</p></div>
       <div><label class="menu-label" for="input-player-name">Seu nome</label><input id="input-player-name" class="menu-input" maxlength="16"></div>
+      <div><label class="menu-label" for="room-visibility">Visibilidade da nova sala</label><select id="room-visibility" class="menu-input"><option value="public">Pública · aparece na lista</option><option value="private">Privada · entrar pelo código</option></select></div>
       <button id="btn-create-room" class="menu-btn">CRIAR NOVA SALA</button>
+      <section class="public-rooms" aria-labelledby="public-rooms-title"><div class="public-rooms-heading"><h3 id="public-rooms-title">SALAS PÚBLICAS</h3><button id="btn-refresh-rooms" type="button">ATUALIZAR</button></div><p id="public-room-status" role="status" aria-live="polite">Buscando salas públicas…</p><div id="public-room-list"></div><button id="btn-more-rooms" type="button" hidden>CARREGAR MAIS SALAS</button></section>
       <div><label class="menu-label" for="input-room-code">Código da sala</label><input id="input-room-code" class="menu-input" maxlength="9" placeholder="FLR-XXXXX" autocomplete="off" spellcheck="false" autocapitalize="characters"></div>
       <button id="btn-join-room" class="menu-btn">ENTRAR NA SALA</button>
       <div id="multi-status-msg" role="status" aria-live="polite" style="font-size:.78rem;color:#34d399;text-align:center;min-height:18px"></div>
@@ -160,9 +165,10 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/combat-bots.js?v=3"></script>
 <script src="/cover-controller.js?v=1"></script>
 <script src="/weapon-loot.js?v=4"></script>
-<script src="/multiplayer-client.js?v=1"></script>
+<script src="/multiplayer-client.js?v=2"></script>
+<script src="/room-browser.js?v=1"></script>
 <script src="/multiplayer-world.js?v=2"></script>
 <script src="/player-life.js?v=1"></script>
-<script src="/full3d.js?v=23"></script>
+<script src="/full3d.js?v=24"></script>
 </body>
 </html>

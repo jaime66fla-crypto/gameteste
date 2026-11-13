@@ -2,13 +2,13 @@
 (()=>{'use strict';
 class MultiplayerClient{
  constructor({onStatus=()=>{},onReady=()=>{},onMessage=()=>{},onDisconnect=()=>{}}={}){Object.assign(this,{onStatus,onReady,onMessage,onDisconnect});this.active=false;this.pending=false;this.socket=null;this.id=null;}
- connect(action,code,name){
+ connect(action,code,name,visibility='public'){
   code=String(code||'').trim().toUpperCase();name=String(name||'').trim().slice(0,16);
   if(!name){this.onStatus('Digite seu nome.');return false;}
   if(!/^FLR-[A-Z0-9]{5}$/.test(code)){this.onStatus('Digite o código completo: FLR-XXXXX.');return false;}
   this.disconnect();this.room=code;this.name=name;this.pending=true;
   this.onStatus(action==='create'?'Criando sala…':'Entrando na sala…');
-  let ws;try{ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws?mode=3d&action='+action+'&room='+encodeURIComponent(code));}catch{this.fail('Não foi possível conectar ao servidor.');return false;}
+  let ws;try{ws=new WebSocket((location.protocol==='https:'?'wss://':'ws://')+location.host+'/ws?mode=3d&action='+action+'&room='+encodeURIComponent(code)+'&visibility='+(visibility==='private'?'private':'public'));}catch{this.fail('Não foi possível conectar ao servidor.');return false;}
   this.socket=ws;
   const fail=()=>{if(this.socket===ws)this.fail('Sem conexão. Verifique a rede e se a sala ainda está aberta.');};
   this.timer=setTimeout(fail,10000);
