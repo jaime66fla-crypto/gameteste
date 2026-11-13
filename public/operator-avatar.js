@@ -114,7 +114,9 @@ class JaimeSourceAvatar{
       const el=J['e'+S]=grp(sh,0,-.3,0);
       part(limbGeo(.043*B,.033*B,.27),shirt,el);
       const wr=J['w'+S]=grp(el,0,-.27,0);
-      const hd=part(new THREE.SphereGeometry(1,low?8:16,low?6:12),o.gloves?gloves:skin,wr,0,-.045,0);hd.scale.set(.036,.055,.026);
+      // Detailed articulated fingers are now mounted to wrist bones at runtime.
+       // Keep the editor's palm as a fallback only when that hand system is absent.
+       if(!window.JaimeArticulatedHands){const hd=part(new THREE.SphereGeometry(1,low?8:16,low?6:12),o.gloves?gloves:skin,wr,0,-.045,0);hd.scale.set(.036,.055,.026);}
       return wr;
     };
     const wL=arm('L',1),wR=arm('R',-1);
@@ -267,6 +269,7 @@ class OperatorAvatar{
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
   this.footPlant={left:0,right:0};this.crawlPhase=0;this.crawlBlend=0;this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
   this.fireReadyBlend=0;
+  window.JaimeArticulatedHands?.attach(THREE,this);
   this.weaponSwapTime=0;this.weaponSwapDuration=.4;this.weaponSwapFrom='pistol';
   this.update(0,{armed:false});
  }
@@ -971,7 +974,8 @@ class OperatorAvatar{
   }
   for(let k=0;k<3;k++)this.shift[k]=M.damp(this.shift[k],pose.root[k],22,dt);
   for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
-  this.gun.visible=armed;this.group.updateMatrixWorld(true);this.skeleton.update();
+  window.JaimeArticulatedHands?.update(this,THREE,dt,armed,aiming,reload);
+   this.gun.visible=armed;this.group.updateMatrixWorld(true);this.skeleton.update();
   this.weaponGripTargets=(this.gripBindPoints||[]).map(g=>({bone:g.bone,point:this.group.worldToLocal(this.bones[3].localToWorld(g.point.clone().sub(new THREE.Vector3().fromArray(bind[3].slice(12,15)))))}));
  }
 }
