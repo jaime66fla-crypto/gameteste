@@ -2422,6 +2422,7 @@ function getAimRaycastHit(raycaster,camera,scene,avatarGroup,ignoredObjects=[]){
 }
 
 const mainAvatar=new window.OperatorAvatar();
+window.GameSkins?.attachAvatar(mainAvatar);
 // Operator local +Z already follows the player root facing set by the camera.
 mainAvatar.group.rotation.y=0;
 mainAvatar.group.userData.combatHitWhenHidden=true;
