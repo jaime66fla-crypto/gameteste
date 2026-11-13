@@ -51,15 +51,17 @@ function paintWeapon(model,id){
 let playerAvatar=null,previewAvatar=null,previewRoot=null,previewRenderer=null,previewCamera=null,previewScene=null,previewActive=false;
 function attachAvatar(avatar){playerAvatar=avatar;tintAvatar(avatar);if(previewAvatar)tintAvatar(previewAvatar)}
 function refreshWeapons(){
- if(window.weaponLoot?.slots){
-  const loot=window.weaponLoot;
-  for(const slot of loot.slots)if(slot?.model&&slot.id)paintWeapon(slot.model,slot.id);
+ const loot=window.weaponLoot;
+ if(loot){
+  for(const [id,model] of loot.heldModels||[])paintWeapon(model,id);
+  for(const item of loot.items||[]){
+   if(item.kind==='weapon'){
+    const model=item.group?.children?.find(child=>child.userData?.skinWeaponId===item.id);
+    if(model)paintWeapon(model,item.id);
+   }
+  }
  }
  if(window.weaponController?.pistol)paintWeapon(window.weaponController.pistol,'pistol');
- // The actual equipped and floor models use their own material instances.
- if(window.gametesteScene)window.gametesteScene.traverse(o=>{
-  if(o.userData?.skinWeaponId)paintWeapon(o,o.userData.skinWeaponId);
- });
 }
 const css=document.createElement('style');
 css.textContent=`
