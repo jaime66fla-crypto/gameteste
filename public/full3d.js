@@ -3141,6 +3141,10 @@ function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
  if(!gameStarted){ renderer.render(scene,camera);performancePanel.frame(elapsed*1000); return; }
  if(updateDeployment(dt)){
+  // Keep the Soldier's rig animated while leaving the aircraft and under the parachute.
+  if(deployment.phase==='freefall'||deployment.phase==='glide'){
+   mainAvatar.update(dt,{grounded:false,armed:false,aiming:false,speed:0,verticalVelocity:deployment.phase==='glide'?-8:-23});
+  }
   if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);safeZoneVisual.update();}}
   renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
  }
