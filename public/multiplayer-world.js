@@ -34,6 +34,7 @@ class MultiplayerWorld{
   const attachments=state.attachments&&typeof state.attachments==='object'?state.attachments:{};
   const attachmentsKey=['optic','suppressor','extended','grip','stock'].filter(key=>attachments[key]).join(',');
   if(remote.weapon!==state.weapon||remote.gear!==state.gear||remote.attachmentsKey!==attachmentsKey||remote.weaponSkin!==state.weaponSkin){
+   remote.weaponModel=null;
    for(const child of [...remote.avatar.gun.children])if(child!==remote.avatar.flash){remote.avatar.gun.remove(child);this.disposeObject(child,true);}
    if(state.gear==='grenade')remote.avatar.gun.add(window.TacticalGear.grenadeModel());
    else if(state.weapon!=='none'){
@@ -41,6 +42,7 @@ class MultiplayerWorld{
     window.WeaponLootSystem.applyAccessoryVisuals?.(model,state.weapon,attachments);
     window.GameSkins?.paintWeapon(model,state.weapon,state.weaponSkin||'original');
     remote.avatar.gun.add(model);
+    remote.weaponModel=model;
    }
    remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;remote.attachmentsKey=attachmentsKey;remote.weaponSkin=state.weaponSkin;
   }
@@ -72,6 +74,12 @@ class MultiplayerWorld{
   remote.poseTime=(remote.poseTime||0)+dt;
   if(far&&remote.poseTime<.045)continue;
   const poseDt=Math.min(remote.poseTime,.05);remote.poseTime=0;
+  if(remote.weaponModel){
+   window.WeaponLootSystem.animateMechanics(remote.weaponModel,{
+    reload:s.reload||0,reloading:(s.reload||0)>0,
+    recoil:a.recoil||0,shot:remote.flashTime>0?1:0
+   });
+  }
   a.update(poseDt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,firing:!!s.firing,reload:s.reload||0,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
