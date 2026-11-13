@@ -24,13 +24,19 @@ class MultiplayerWorld{
  receive(state){
   if(!state?.id||![state.x,state.y,state.z,state.angle].every(Number.isFinite))return;
   let remote=this.players.get(state.id);
-  if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,gear:null,jetpack:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
+  if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,gear:null,attachmentsKey:'',jetpack:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
   remote.state=state;
-  if(remote.weapon!==state.weapon||remote.gear!==state.gear){
+  const attachments=state.attachments&&typeof state.attachments==='object'?state.attachments:{};
+  const attachmentsKey=['optic','suppressor','extended','grip','stock'].filter(key=>attachments[key]).join(',');
+  if(remote.weapon!==state.weapon||remote.gear!==state.gear||remote.attachmentsKey!==attachmentsKey){
    for(const child of [...remote.avatar.gun.children])if(child!==remote.avatar.flash){remote.avatar.gun.remove(child);this.disposeObject(child,true);}
    if(state.gear==='grenade')remote.avatar.gun.add(window.TacticalGear.grenadeModel());
-   else if(state.weapon!=='none')remote.avatar.gun.add(window.WeaponLootSystem.createModel(state.weapon));
-   remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;
+   else if(state.weapon!=='none'){
+    const model=window.WeaponLootSystem.createModel(state.weapon);
+    window.WeaponLootSystem.applyAccessoryVisuals?.(model,state.weapon,attachments);
+    remote.avatar.gun.add(model);
+   }
+   remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;remote.attachmentsKey=attachmentsKey;
   }
   if(!!state.jetpack!==!!remote.jetpack){
    if(state.jetpack){remote.jetpack=this._buildRemoteJetpack();remote.avatar.group.add(remote.jetpack);}
