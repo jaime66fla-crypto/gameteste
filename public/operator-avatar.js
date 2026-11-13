@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -228,6 +228,33 @@ class OperatorAvatar{
     r[16][0]+=.18*stopBlend;
     pose.root[1]-=.035*stopBlend;
    }
+  }
+
+  if(hitStrength>.001){
+   const h=clamp(hitStrength,0,1),side=clamp(hitSide,-1,1),front=clamp(hitFront,-1,1);
+   const fromFront=Math.max(0,front),fromBack=Math.max(0,-front);
+   r[1][2]-=side*.10*h;
+   r[2][2]-=side*.14*h;
+   r[3][2]-=side*.17*h;
+   r[3][1]+=side*.08*h;
+   r[5][2]-=side*.08*h;
+   r[2][0]-=.10*fromFront*h;
+   r[3][0]-=.14*fromFront*h;
+   r[2][0]+=.10*fromBack*h;
+   r[3][0]+=.12*fromBack*h;
+   const hitArm=side>=0?6:9;
+   const otherArm=side>=0?9:6;
+   r[hitArm][0]+=.18*h;
+   r[hitArm][2]-=Math.sign(side||1)*.12*h;
+   r[otherArm][0]+=.05*h;
+   if(grounded){
+    const hitLeg=side>=0?12:15;
+    r[hitLeg][0]-=.06*h;
+    r[hitLeg+1][0]+=.10*h;
+   }
+   pose.root[0]-=side*.012*h;
+   pose.root[2]-=.012*fromFront*h;
+   pose.root[2]+=.010*fromBack*h;
   }
 
   if(armed&&recoil>.001){
