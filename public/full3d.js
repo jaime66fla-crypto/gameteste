@@ -3148,6 +3148,14 @@ const safeZoneVisual=(()=>{
  function clear(){zone=null;ring.visible=false;hud.hidden=true;}
  return {receive,clear,update};
 })();
+function refreshLobbyRank(){
+ const state=window.GameRanks?.getState();if(!state)return;
+ const name=document.getElementById('battleLobbyRank'),fill=document.getElementById('battleLobbyRankFill'),xp=document.getElementById('battleLobbyXp');
+ if(name)name.textContent=state.rank.toUpperCase()+' · '+state.rankIndex+'/'+state.totalRanks;
+ if(fill)fill.style.width=Math.round(state.progress*100)+'%';
+ if(xp)xp.textContent=state.nextAt===null?state.xp.toLocaleString('pt-BR')+' XP · MÁXIMA':state.xp.toLocaleString('pt-BR')+' / '+state.nextAt.toLocaleString('pt-BR')+' XP';
+}
+refreshLobbyRank();window.addEventListener('gameteste-rank-change',refreshLobbyRank);
 const battleUI={waiting:document.getElementById('battleWaiting'),count:document.getElementById('battleWaitingCount'),result:document.getElementById('battleResult'),queue:document.getElementById('battleQueueStatus'),active:false};
 function battleReturn(){safeZoneVisual.clear();battleUI.waiting.hidden=true;battleUI.result.hidden=true;battleUI.active=false;showGameMenu();}
 document.getElementById('battleCancel')?.addEventListener('click',battleReturn);
