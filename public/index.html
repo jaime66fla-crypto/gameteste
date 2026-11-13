@@ -49,7 +49,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #crouchBtn{display:none;position:fixed;right:22px;bottom:95px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323cc;color:#fff;font-weight:700;touch-action:manipulation}#crouchBtn[aria-pressed="true"]{background:#667a45}
 @media(pointer:coarse){#crouchBtn{display:block}}
 #damageFlash{position:fixed;inset:0;pointer-events:none;z-index:2;opacity:0;box-shadow:inset 0 0 100px 25px #cd342580}
-.cover-action{display:none;position:fixed;right:22px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323dd;color:#fff;font-weight:700;touch-action:none;user-select:none}#coverBtn{bottom:165px}#peekBtn{bottom:235px}#coverBtn[aria-pressed="true"]{background:#667a45}@media(pointer:coarse){.cover-action{display:block}}
+.cover-action{display:none;position:fixed;right:22px;z-index:30;padding:15px;border:1px solid #ffffff66;border-radius:50%;background:#122323dd;color:#fff;font-weight:700;touch-action:none;user-select:none}#coverBtn{bottom:165px}#peekBtn{bottom:235px}#climbBtn{bottom:305px}#coverBtn[aria-pressed="true"]{background:#667a45}@media(pointer:coarse){.cover-action{display:block}}
 #weaponHud{position:fixed;left:10px;bottom:12px;z-index:5;display:grid;grid-template-columns:1fr 1fr;gap:5px;width:232px}#weaponHud button{position:relative;text-align:left;padding:6px 7px 6px 24px;border:1px solid #ffffff25;border-radius:7px;background:#0b1118cf;color:#d5e0df;font:11px system-ui;cursor:pointer}#weaponHud button[aria-pressed="true"]{border-color:#7ee8ff;background:#10272be8}#weaponHud b{position:absolute;left:7px;top:7px;font-size:10px;color:#8fa9ad}#weaponHud span{display:block;font-weight:600}#weaponHud small{display:block;font-size:10px;margin-top:2px;color:#8db6bf}#jetpackPrompt{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:7;padding:8px 12px;border-radius:999px;border:1px solid #ffb52e88;background:#22170be8;color:#ffd27a;font:700 11px system-ui;letter-spacing:.05em}#jetpackHud{position:fixed;right:14px;bottom:14px;z-index:6;width:150px;padding:8px 10px;border:1px solid #ffb52e66;border-radius:9px;background:#18120be6;color:#ffd27a;font:700 10px system-ui}#jetpackHud .fuelTrack{height:6px;background:#342413;border-radius:99px;overflow:hidden;margin-top:5px}#jetpackFuelFill{display:block;height:100%;width:100%;background:#ffb52e;transition:width .08s linear}
 #lootPrompt{position:fixed;left:50%;bottom:55px;transform:translateX(-50%);z-index:6;max-width:calc(100vw - 24px);padding:7px 11px;border-radius:8px;border:1px solid #9dc4ad55;background:#0b181ee8;color:#dbe9de;font:12px system-ui;text-align:center}#pickupBtn{margin-left:8px;background:#5d7750;color:white;border:0;padding:7px;border-radius:5px;cursor:pointer}@media(max-width:700px){#lootPrompt{bottom:107px;font-size:11px;width:max-content}#coverPrompt{bottom:70px;font-size:10px}}
 
@@ -135,6 +135,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
   <div class="stamina-wrap"><span>STAMINA</span><div class="stamina-track"><div id="staminaBar"></div></div></div>
   <details><summary>Controles</summary><small>WASD mover • Shift correr • Espaço pular • botão direito gira câmera • clique esquerdo atirar • 1/2 trocar arma • 3 guardar • E pegar loot • R recarregar • C agachar/levantar • Ctrl segurar agachado • B olhar atrás • Q entrar/sair de cobertura • F escalar obstáculos • A/D mover na parede • botão direito para se expor</small></details>
 </div>
+<button id="climbBtn" class="cover-action" aria-label="Escalar obstáculo à frente">ESCALAR</button>
 <button id="coverBtn" class="cover-action" aria-pressed="false" aria-label="Entrar ou sair da cobertura">COVER</button>
 <button id="peekBtn" class="cover-action" aria-label="Segurar para se expor e mirar">MIRAR</button>
 <button id="crouchBtn" aria-pressed="false" aria-label="Alternar agachamento">AGACHAR</button>
@@ -176,7 +177,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/player-life.js?v=1"></script>
 <script src="/tactical-rules.js?v=1"></script>
 <script src="/tactical-gear.js?v=1"></script>
-<script src="/full3d.js?v=46"></script>
+<script src="/full3d.js?v=47"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 </body>
 </html>
