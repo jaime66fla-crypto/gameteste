@@ -44,6 +44,48 @@ function createModel(id){
    glass.castShadow=false;
   }
  }
+ // Readable mechanical details at third-person distance; preserve original grip coordinates.
+ const trim=new THREE.MeshStandardMaterial({color:0x111719,metalness:.58,roughness:.43});
+ const highlight=new THREE.MeshStandardMaterial({color:0x869096,metalness:.8,roughness:.3});
+ const rubber=new THREE.MeshStandardMaterial({color:0x283231,roughness:.96});
+ function tube(radius,length,x,y,z,material=steel){
+  const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius,radius,length,10),material);
+  mesh.rotation.x=Math.PI/2;mesh.position.set(x,y,z);mesh.castShadow=true;group.add(mesh);return mesh;
+ }
+ // Muzzle rim and concentric bore show which end of the weapon is forward (+Z).
+ const tip=DEFINITIONS[id].muzzleZ;
+ tube(id==='shotgun'?.030:.019,.028,0,.035,tip-.012,highlight);
+ tube(id==='shotgun'?.018:.010,.030,0,.035,tip+.005,trim);
+ if(id==='pistol'){
+  // Slide serrations, ejection port, magazine floor and separate rear sight.
+  for(let i=0;i<4;i++)box(.043,.013,.006,trim,0,.053,-.020+i*.018);
+  box(.028,.006,.034,trim,.006,.060,.058);
+  box(.045,.010,.037,trim,0,-.104,-.020);
+  box(.031,.008,.011,highlight,0,.064,-.038);
+ }else{
+  // Receiver pins, magazine base, rail sections and sling anchor.
+  box(.012,.010,.017,highlight,.031,.018,.004);
+  box(.012,.010,.017,highlight,-.031,.018,.004);
+  box(.062,.010,.026,trim,0,-.102,-.023);
+  for(let i=0;i<4;i++)box(.041,.007,.010,highlight,0,.071,.012+i*.035);
+  box(.009,.035,.014,trim,-.062,.020,-.090);
+  if(id==='shotgun'){
+   // Pump ribs and brass-colored shell loading gate.
+   for(let i=0;i<4;i++)box(.073,.007,.012,trim,0,.035,.155+i*.027);
+   box(.039,.009,.057,highlight,0,-.033,.085);
+  }else if(id==='sniper'){
+   // Scope adjustment turrets, bolt handle and barrel band.
+   tube(.025,.046,0,.19,.064,trim);
+   box(.052,.020,.013,highlight,.041,.038,-.003);
+   box(.015,.047,.018,trim,.059,.002,-.003);
+   box(.057,.022,.024,trim,0,.040,.39);
+  }else{
+   // Charging handle and grooved handguard.
+   box(.042,.013,.020,highlight,-.014,.073,-.033);
+   for(let i=0;i<3;i++)box(.059,.008,.012,trim,0,.003,.155+i*.026);
+   box(.065,.010,.020,rubber,0,-.014,.19);
+  }
+ }
  group.name='Weapon_'+id;return group;
 }
 function asBox(b){return b.isBox3?b:new THREE.Box3(new THREE.Vector3(b.minX,b.minY,b.minZ),new THREE.Vector3(b.maxX,b.maxY,b.maxZ));}
