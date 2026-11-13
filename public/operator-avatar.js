@@ -12,7 +12,7 @@ function buildGeometry(rings=16,sides=24){
 class JaimeSourceAvatar{
   constructor(o={}){
     this.o=Object.assign({skin:'#c98f6b',eye:'#4a7a96',hair:'#2a1c14',hairStyle:'short',shirt:'#4a5a3a',pants:'#3b3f36',
-      boots:'#1d1b19',gloves:'#1a1a1a',vest:false,vestColor:'#2f3329',backpack:false,weapon:false,accessory:'none',height:1,build:1},o);
+      boots:'#1d1b19',gloves:'#1a1a1a',vest:false,vestColor:'#2f3329',backpack:false,weapon:false,accessory:'none',height:1,build:1.08},o);
     this.root=new THREE.Group();this.t=0;this.anim='idle';this.nb=2;this.bl=0;this.lk=[0,0];this.build();
   }
   set(p){Object.assign(this.o,p);this.build()}
@@ -35,16 +35,17 @@ class JaimeSourceAvatar{
     const hips=J.hips=grp(this.root,0,.97,0);
     const spine=J.spine=grp(hips);
     // pelve + cinto + torso
-    const pel=part(new THREE.SphereGeometry(1,low?8:28,low?6:18),pants,hips,0,0,0);pel.scale.set(.185*B,.13,.125*B);
+    const pel=part(new THREE.SphereGeometry(1,low?8:28,low?6:18),pants,hips,0,0,0);pel.scale.set(.193*B,.15,.139*B);
     const belt=part(new THREE.TorusGeometry(.17,.012,8,32),std('#15130f',.6,.3),spine,0,.13,0);belt.rotation.x=Math.PI/2;belt.scale.set(B,.72*B,1);
-    const tg=prof([[.001,.1],[.15,.12],[.165,.2],[.15,.3],[.185,.44],[.205,.54],[.17,.61],[.085,.66],[.001,.67]],32);tg.scale(B,1,.62*B);
+    // Human silhouette: defined waist, natural chest volume, gradual deltoid taper.
+    const tg=prof([[.001,.10],[.159,.12],[.165,.19],[.172,.29],[.201,.43],[.224,.52],[.207,.57],[.157,.61],[.090,.65],[.001,.66]],32);tg.scale(B,1,.70*B);
     part(tg,shirt,spine);
     // pescoço e cabeça
     const neck=J.neck=grp(spine,0,.6,0);
     part(new THREE.CylinderGeometry(.045,.052,.12,20).translate(0,.06,0),skin,neck);
     const headP=J.head=grp(neck,0,.1,0);
     const face=grp(headP,0,.105,.012);
-    const hg=new THREE.SphereGeometry(.1,low?8:56,low?6:40),pp=hg.attributes.position;
+    const hg=new THREE.SphereGeometry(.096,low?8:56,low?6:40),pp=hg.attributes.position;
     for(let i=0;i<pp.count;i++){let x=pp.getX(i),y=pp.getY(i),z=pp.getZ(i);
       if(y<-.02){const t=Math.min(1,(-.02-y)/.08);x*=1-.3*Math.pow(t,1.4);z*=1-.12*t;if(z>0)z+=.012*t}
       pp.setXYZ(i,x*.9,y*1.2,z)}
@@ -109,10 +110,10 @@ class JaimeSourceAvatar{
     const arm=(S,s)=>{
       const sh=J['s'+S]=grp(spine,s*.178*B,.515,0);
       // Keep the rounded shoulder seated inside the sleeve and torso seam.
-      part(new THREE.SphereGeometry(.073*B,low?8:20,low?6:14),shirt,sh);
-      part(limbGeo(.052*B,.043*B,.3),shirt,sh);
+      part(new THREE.SphereGeometry(.077*B,low?8:20,low?6:14),shirt,sh);
+      part(limbGeo(.061*B,.048*B,.3),shirt,sh);
       const el=J['e'+S]=grp(sh,0,-.3,0);
-      part(limbGeo(.043*B,.033*B,.27),shirt,el);
+      part(limbGeo(.049*B,.035*B,.27),shirt,el);
       const wr=J['w'+S]=grp(el,0,-.27,0);
       // Detailed articulated fingers are now mounted to wrist bones at runtime.
        // Keep the editor's palm as a fallback only when that hand system is absent.
@@ -131,12 +132,12 @@ class JaimeSourceAvatar{
     // pernas
     const leg=(S,s)=>{
       const th=J['t'+S]=grp(hips,s*.101*B,-.02,0);
-      part(limbGeo(.095*B,.066*B,.46),pants,th);
+      part(limbGeo(.109*B,.076*B,.46),pants,th);
       const kn=J['k'+S]=grp(th,0,-.46,0);
-      part(limbGeo(.066*B,.047*B,.45),pants,kn);
+      part(limbGeo(.078*B,.054*B,.45),pants,kn);
       const bt=part(new THREE.CylinderGeometry(.055,.05,.16,18),boots,kn,0,-.37,0);
       const ft=J['f'+S]=grp(kn,0,-.45,0);
-      part(new THREE.SphereGeometry(1,low?8:20,low?6:14),boots,ft,0,-.035,.045).scale.set(.052,.042,.125);
+      part(new THREE.SphereGeometry(1,low?8:20,low?6:14),boots,ft,0,-.035,.045).scale.set(.058,.045,.126);
     };
     leg('L',1);leg('R',-1);
     // colete e mochila
