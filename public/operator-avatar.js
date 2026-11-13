@@ -168,9 +168,16 @@ class OperatorAvatar{
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
   this.footPlant={left:0,right:0};this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
   this.fireReadyBlend=0;
+  this.weaponSwapTime=0;this.weaponSwapDuration=.4;this.weaponSwapFrom='pistol';
   this.update(0,{armed:false});
  }
- setWeapon(id){this.weaponId=id;}
+ setWeapon(id){
+  if(!id||id===this.weaponId)return;
+  this.weaponSwapFrom=this.weaponId;
+  this.weaponId=id;
+  this.weaponSwapDuration=id==='sniper'?.58:id==='shotgun'?.48:id==='rifle'?.42:id==='smg'?.34:.29;
+  this.weaponSwapTime=this.weaponSwapDuration;
+ }
  setRecoil(value){this.recoil=value;}
  update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
@@ -183,7 +190,7 @@ class OperatorAvatar{
    for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
    this.group.updateMatrixWorld(true);this.skeleton.update();return;
   }
-  this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);
+  this.time+=dt;this.weaponSwapTime=Math.max(0,this.weaponSwapTime-dt);this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);
   // Firing interrupts the lowered sprint carry; returning to sprint remains smooth.
   const activeFire=armed&&firing;
   const fireReadiness=activeFire?1:aiming&&armed?1:0;
@@ -602,6 +609,23 @@ class OperatorAvatar{
    pose.root[1]-=THREE.MathUtils.lerp(.010,.032,weight)*(1-raise);
   }
 
+  if(armed&&this.weaponSwapTime>0){
+   // Two-stage visual swap; movement and shot availability remain in their controllers.
+   const t=1-this.weaponSwapTime/this.weaponSwapDuration;
+   const lower=t<.36?Math.sin(t/.36*Math.PI*.5):Math.max(0,1-(t-.36)/.64);
+   const switchCurve=lower*lower*(3-2*lower);
+   const running=grounded?clamp(speed/10,0,1):0;
+   r[2][0]+=.12*switchCurve;
+   r[3][0]+=.17*switchCurve;
+   r[3][1]+=.11*switchCurve;
+   r[6][0]+=.22*switchCurve;
+   r[9][0]+=.19*switchCurve;
+   r[7][0]+=.08*switchCurve;
+   r[10][0]+=.07*switchCurve;
+   r[1][0]+=.035*switchCurve*running;
+   pose.root[1]-=.018*switchCurve;
+  }
+
   if(this.coverBlend>.001){
    const cover=this.coverBlend,entry=clamp(Math.abs(coverRate)/6,0,1);
    const side=coverSide>=0?1:-1;
@@ -635,6 +659,14 @@ class OperatorAvatar{
     r[9][0]+=.012;
    }
    const a=pose.weaponAngles.slice();
+   if(this.weaponSwapTime>0){
+    const t=1-this.weaponSwapTime/this.weaponSwapDuration;
+    const lower=t<.36?Math.sin(t/.36*Math.PI*.5):Math.max(0,1-(t-.36)/.64);
+    const switchCurve=lower*lower*(3-2*lower);
+    a[0]+=.48*switchCurve;
+    a[1]+=.14*switchCurve;
+    a[2]+=.09*switchCurve;
+   }
    if(reload>.001){
     const t=clamp(reload,0,1),down=1-Math.abs(t*2-1),id=this.weaponId||'pistol';
     const pitch=id==='shotgun'?.32:id==='sniper'?.38:id==='pistol'?.50:.44;
