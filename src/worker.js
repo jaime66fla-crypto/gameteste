@@ -379,7 +379,8 @@ export class GameRoom {
  drop(ws) {
   const meta = ws.deserializeAttachment();
   if (!meta?.id) return;
-  this.sessions.delete(meta.id);this.players.delete(meta.id);for(const [key,shot]of this.shots3D)if(shot.ownerId===meta.id)this.shots3D.delete(key);this.broadcastRanking();
+  this.sessions.delete(meta.id);this.players.delete(meta.id);
+  if(this.battle.enabled&&this.battle.phase==='waiting')this.battle.roster=this.battle.roster.filter(id=>id!==meta.id);for(const [key,shot]of this.shots3D)if(shot.ownerId===meta.id)this.shots3D.delete(key);this.broadcastRanking();
   if(this.battle.enabled){this.checkBattleEnd();if(this.sessions.size===0){this.battle={enabled:false,phase:'waiting',roster:[],winnerId:null,deadline:0,bots:[]};for(const [id,p]of this.players)if(p.bot)this.players.delete(id);}this.syncBattleAttachments();this.broadcastBattleStatus();}
   const out = JSON.stringify({type:"leave", id:meta.id});
   for (const peer of this.sessions.values()) { try { peer.send(out); } catch {} }
