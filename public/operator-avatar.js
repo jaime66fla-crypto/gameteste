@@ -167,11 +167,12 @@ class OperatorAvatar{
   // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
   this.footPlant={left:0,right:0};this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
+  this.fireReadyBlend=0;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -183,8 +184,13 @@ class OperatorAvatar{
    this.group.updateMatrixWorld(true);this.skeleton.update();return;
   }
   this.time+=dt;this.speed=M.damp(this.speed,speed,12,dt);this.aimBlend=M.damp(this.aimBlend,armed?1:0,12,dt);
+  // Firing interrupts the lowered sprint carry; returning to sprint remains smooth.
+  const activeFire=armed&&firing;
+  const fireReadiness=activeFire?1:aiming&&armed?1:0;
+  this.fireReadyBlend=M.damp(this.fireReadyBlend,fireReadiness,activeFire?22:10,dt);
+  const sprintTarget=armed&&sprinting&&grounded&&!aiming&&!activeFire?1:0;
   const oldSprint=this.sprintBlend;
-  this.sprintBlend=M.damp(this.sprintBlend,armed&&sprinting&&grounded&&!aiming?1:0,sprinting?13:9,dt);
+  this.sprintBlend=M.damp(this.sprintBlend,sprintTarget,activeFire?24:sprinting?13:11,dt);
   const sprintRate=dt>0?(this.sprintBlend-oldSprint)/dt:0;
   const oldCrouch=this.crouchBlend,oldCover=this.coverBlend;
   this.crouchBlend=M.damp(this.crouchBlend,crouching&&grounded?1:0,12,dt);this.coverBlend=M.damp(this.coverBlend,covering?1:0,12,dt);
@@ -252,6 +258,20 @@ class OperatorAvatar{
     r[16][0]+=.18*stopBlend;
     pose.root[1]-=.035*stopBlend;
    }
+  }
+
+  if(armed&&grounded&&this.fireReadyBlend>.002&&speed>.3){
+   // Combat gait stabilizes the weapon shoulder without freezing running legs.
+   const moving=clamp(speed/9,0,1)*this.fireReadyBlend;
+   const sideways=clamp(strafe,-1,1);
+   r[2][0]-=.035*moving;
+   r[3][0]-=.06*moving;
+   r[1][1]+=sideways*.035*moving;
+   r[3][1]-=sideways*.04*moving;
+   r[12][0]*=1-.065*moving;
+   r[15][0]*=1-.065*moving;
+   r[13][0]+=.085*moving;
+   r[16][0]+=.085*moving;
   }
 
   if(armed&&this.sprintBlend>.001){
@@ -640,6 +660,10 @@ class OperatorAvatar{
     a[1]+=.10*s;
     a[2]+=.06*Math.sin(this.phase*Math.PI*2)*s;
    }
+   // Raise the weapon from its sprint carry into a supported hip-fire position.
+   const ready=this.fireReadyBlend*clamp(speed/8,0,1);
+   a[0]-=.16*ready;
+   a[1]-=clamp(strafe,-1,1)*.024*ready;
    const recoilScale=this.weaponId==='pistol'?.045:this.weaponId==='smg'?.030:this.weaponId==='rifle'?.050:this.weaponId==='shotgun'?.085:.072;
    a[0]+=.40*this.coverBlend-recoil*recoilScale;
    a[1]+=coverSide*.12*this.coverBlend;
