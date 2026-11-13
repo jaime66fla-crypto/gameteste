@@ -242,9 +242,57 @@ export class GameRoom {
     moving:false,running:false,grounded:true,aiming:false,lastShot:0,lastBotAttack:0};
    this.players.set(id,bot);this.battle.roster.push(id);this.battle.bots.push({...bot});
   }
-  this.battle.phase='running';this.syncBattleAttachments();
+  this.battle.phase='running';
+  const now=Date.now();
+  this.battle.zone={phase:0,centerX:0,centerZ:0,radius:115,fromX:0,fromZ:0,fromRadius:115,
+   toX:0,toZ:0,toRadius:115,stage:'waiting',stageStarted:now,stageEnds:now+30000,lastDamageAt:now};
+  this.syncBattleAttachments();
   this.broadcast3D({type:'battle-start',total:8,alive:8,bots:this.battle.bots,players:[...this.players.values()]});
-  this.broadcastBattleStatus();this.scheduleRespawns();
+  this.broadcastBattleStatus();this.broadcastZone();this.scheduleRespawns();
+ }
+ advanceSafeZone(now){
+  const zone=this.battle.zone;
+  if(!zone||this.battle.phase!=='running')return;
+  if(zone.stage==='waiting'&&now>=zone.stageEnds){
+   const radii=[72,42,22,10,5],target=radii[Math.min(zone.phase,radii.length-1)];
+   const theta=Math.random()*Math.PI*2;
+   const distance=Math.sqrt(Math.random())*Math.max(0,zone.radius-target)*.85;
+   zone.fromX=zone.centerX;zone.fromZ=zone.centerZ;zone.fromRadius=zone.radius;
+   zone.toX=zone.centerX+Math.cos(theta)*distance;
+   zone.toZ=zone.centerZ+Math.sin(theta)*distance;
+   zone.toRadius=target;
+   zone.stage='shrinking';zone.stageStarted=now;zone.stageEnds=now+45000;
+  }
+  if(zone.stage==='shrinking'){
+   const t=Math.max(0,Math.min(1,(now-zone.stageStarted)/(zone.stageEnds-zone.stageStarted)));
+   zone.centerX=zone.fromX+(zone.toX-zone.fromX)*t;
+   zone.centerZ=zone.fromZ+(zone.toZ-zone.fromZ)*t;
+   zone.radius=zone.fromRadius+(zone.toRadius-zone.fromRadius)*t;
+   if(t>=1){zone.phase++;zone.stage='waiting';zone.stageStarted=now;zone.stageEnds=now+(zone.phase>=5?15000:20000);}
+  }
+  if(now-zone.lastDamageAt>=1000){
+   const seconds=Math.min(3,Math.floor((now-zone.lastDamageAt)/1000));
+   zone.lastDamageAt+=seconds*1000;
+   const damage=Math.min(24,6+zone.phase*3)*seconds;
+   for(const id of this.battle.roster){
+    const p=this.players.get(id);if(!p||p.dead||p.y>12)continue;
+    if(Math.hypot(p.x-zone.centerX,p.z-zone.centerZ)<=zone.radius)continue;
+    p.health=Math.max(0,p.health-damage);
+    const killed=p.health===0;
+    if(killed){p.dead=true;p.deadUntil=0;p.moving=false;}
+    this.broadcast3D({type:'hit3d',attackerId:'safezone',targetId:id,health:p.health,damage,killed,respawnIn:0,shotId:'zone-'+now+'-'+id});
+    if(killed){this.broadcast3D(p);this.checkBattleEnd();}
+    if(this.sessions.has(id))this.save3D(id);
+    if(this.battle.phase!=='running')break;
+   }
+  }
+  this.broadcastZone();
+ }
+ broadcastZone(){
+  const z=this.battle.zone;if(!z||this.battle.phase!=='running')return;
+  this.broadcast3D({type:'safezone3d',x:z.centerX,z:z.centerZ,radius:z.radius,
+   phase:z.phase+1,stage:z.stage,seconds:Math.max(0,Math.ceil((z.stageEnds-Date.now())/1000)),
+   damagePerSecond:Math.min(24,6+z.phase*3)});
  }
  tickBattleBots(now){
   if(!this.battle.enabled||this.battle.phase!=='running')return;
@@ -254,8 +302,14 @@ export class GameRoom {
    if(!candidates.length)continue;
    candidates.sort((a,b)=>Math.hypot(a.x-bot.x,a.z-bot.z)-Math.hypot(b.x-bot.x,b.z-bot.z));
    const target=candidates[0],dx=target.x-bot.x,dz=target.z-bot.z,dist=Math.hypot(dx,dz);
-   bot.angle=Math.atan2(dx,dz);bot.moving=dist>7;
-   if(dist>7&&dist<90){const step=Math.min(dist-7,2.5);bot.x+=dx/dist*step;bot.z+=dz/dist*step;}
+   const zone=this.battle.zone;
+   const outside=zone&&Math.hypot(bot.x-zone.centerX,bot.z-zone.centerZ)>Math.max(3,zone.radius-4);
+   const mx=outside?zone.centerX-bot.x:dx,mz=outside?zone.centerZ-bot.z:dz,md=Math.hypot(mx,mz)||1;
+   bot.angle=Math.atan2(mx,mz);bot.moving=outside||dist>7;
+   if(outside||(dist>7&&dist<90)){
+    const step=Math.min(outside?4:2.5,outside?md:Math.max(0,dist-7));
+    bot.x+=mx/md*step;bot.z+=mz/md*step;
+   }
    this.broadcast3D(bot);
    if(dist<27&&now-(bot.lastBotAttack||0)>1800){
     bot.lastBotAttack=now;
@@ -281,7 +335,7 @@ export class GameRoom {
    const attachment=peer.deserializeAttachment();
    if(attachment?.mode==='3d'){
     const bots=(this.battle.bots||[]).map(b=>({id:b.id,name:b.name,x:b.x,y:b.y,z:b.z,angle:b.angle,health:b.health,dead:b.dead,kills:b.kills,lastBotAttack:b.lastBotAttack,bot:true,weapon:'rifle'}));
-    peer.serializeAttachment({...attachment,battle:{enabled:this.battle.enabled,phase:this.battle.phase,roster:[...this.battle.roster],winnerId:this.battle.winnerId,deadline:this.battle.deadline,bots}});
+    peer.serializeAttachment({...attachment,battle:{enabled:this.battle.enabled,phase:this.battle.phase,roster:[...this.battle.roster],winnerId:this.battle.winnerId,deadline:this.battle.deadline,zone:this.battle.zone,bots}});
    }
   }
  }
@@ -367,7 +421,7 @@ export class GameRoom {
   if(this.battle.enabled&&this.battle.phase==='waiting'&&this.sessions.size){
    if(now>=this.battle.deadline)this.startBattle();else this.broadcastBattleStatus();
   }
-  if(this.battle.enabled&&this.battle.phase==='running')this.tickBattleBots(now);
+  if(this.battle.enabled&&this.battle.phase==='running'){this.tickBattleBots(now);this.advanceSafeZone(now);}
   for(const target of this.players.values())if(!this.battle.enabled&&target.dead&&target.deadUntil<=now){
    Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
    this.tactical.inventory(target);this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
