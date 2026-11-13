@@ -471,6 +471,28 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 
 const houseParkour=new HouseParkourBuilder(scene,forestEnvironment.getTerrainHeight);
 houseParkour.convertExistingBlocksToHouses(legacyBlocks);
+// Walkable practice stairs near the central district; steps use real platform colliders.
+// Each riser is a short standalone solid so existing step-up physics can traverse it.
+function createWalkableStairs(x,z,count=6){
+ const width=2.5,rise=.19,run=.55;
+ const material=new THREE.MeshStandardMaterial({color:0x808a86,roughness:.92});
+ const edgeMaterial=new THREE.MeshStandardMaterial({color:0xa5aba0,roughness:.78});
+ const base=forestEnvironment.getTerrainHeight(x,z);
+ for(let i=0;i<count;i++){
+  const height=(i+1)*rise;
+  const step=new THREE.Mesh(new THREE.BoxGeometry(width,height,run),material);
+  step.name='WALKABLE_STAIR_'+i;
+  step.position.set(x,base+height/2,z+(i-count/2)*run);
+  step.castShadow=true;step.receiveShadow=true;step.userData.impactMaterial='concrete';
+  scene.add(step);
+  houseParkour.registerSolidBox(step,width,height,run);
+  const stripe=new THREE.Mesh(new THREE.BoxGeometry(width,.016,.055),edgeMaterial);
+  stripe.position.set(x,base+height+.012,step.position.z+run*.38);
+  stripe.userData.ignoreCombat=true;stripe.castShadow=false;
+  scene.add(stripe);
+ }
+}
+createWalkableStairs(10,26);
 
 /* Migrated urban expansion: standalone 3D houses and tower cover, registered in the
    same collision/cover/loot system as original parkour buildings. */
