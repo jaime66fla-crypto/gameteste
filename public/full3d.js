@@ -1797,7 +1797,7 @@ class PistolController {
    this.recoilPreset.recovery
   );
   shots++;
-  if(damageByTarget.size){hitCount++;score+=12;flashHitmarker();forestAudio.playHit();for(const [target,damage]of damageByTarget)target.takeDamage(damage);}
+  if(damageByTarget.size){hitCount++;score+=12;window.GameRanks?.award('hit');flashHitmarker();forestAudio.playHit();for(const [target,damage]of damageByTarget)target.takeDamage(damage);}
   this.loot?.saveActive();
  }
 
@@ -2895,7 +2895,7 @@ let lastReceivedDamage=0;
 let playerHitReaction={strength:0,side:0,front:0};
 const combatBots=new window.CombatBotSystem({
  scene,player,camera,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:houseParkour.solidBoxes,
- onKill:bot=>{score+=100;weaponLoot.dropFromBot(bot.group.position);},
+ onKill:bot=>{score+=100;window.GameRanks?.award('kill');weaponLoot.dropFromBot(bot.group.position);},
  onPlayerHit:(health,damage,source)=>{
   if(source){
    const toSource=new THREE.Vector3(source.x-player.position.x,0,source.z-player.position.z);
@@ -3158,6 +3158,7 @@ function battleEnd(data){
  const won=data.winnerId===multiplayer.id;
  document.getElementById('battleResultTitle').textContent=won?'VITÓRIA ROYALE!':'PARTIDA ENCERRADA';
  document.getElementById('battleResultText').textContent=won?'Você foi o último sobrevivente.':data.winnerName?'Vencedor: '+data.winnerName:'Sem sobreviventes.';
+  if(won)window.GameRanks?.award('victory');
 }
 function initBattlePreview(){
  const canvas=document.getElementById('battleCharacterPreview');if(!canvas)return;
@@ -3278,7 +3279,7 @@ const multiplayer=new window.MultiplayerClient({
    else{const remote=multiplayerWorld.players.get(data.targetId);if(remote)multiplayerWorld.receive({...remote.state,health:data.health,dead:data.killed||false});}
    if(data.attackerId===multiplayer.id){
     if(!confirmedNetworkShots.has(data.shotId)){confirmedNetworkShots.add(data.shotId);if(confirmedNetworkShots.size>128)confirmedNetworkShots.delete(confirmedNetworkShots.values().next().value);hitCount++;score+=12;flashHitmarker();forestAudio.playHit();}
-    if(data.killed)score+=100;
+    if(data.killed){score+=100;window.GameRanks?.award('kill');}else window.GameRanks?.award('hit');
    }
   }else if(data.type==='respawn3d'){
    if(data.id===multiplayer.id){player.position.set(data.x,forestEnvironment.getTerrainHeight(data.x,data.z),data.z);controller.velocity.set(0,0,0);controller.clearInput();controller.cover.exit();combatBots.health=100;playerLife.respawn();}
@@ -3346,7 +3347,8 @@ addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
- if(!gameStarted){ renderer.render(scene,camera);performancePanel.frame(elapsed*1000); return; }
+ window.GameRanks?.tick();
+  if(!gameStarted){ renderer.render(scene,camera);performancePanel.frame(elapsed*1000); return; }
  if(updateDeployment(dt)){
   // Keep the Soldier's rig animated while leaving the aircraft and under the parachute.
   if(deployment.phase==='freefall'||deployment.phase==='glide'){
