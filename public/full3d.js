@@ -504,29 +504,54 @@ createWalkableStairs(10,26);
 
 /* Migrated urban expansion: standalone 3D houses and tower cover, registered in the
    same collision/cover/loot system as original parkour buildings. */
-// Organized road corridors and plazas, using lightweight shared materials.
+// Roads must hug the actual terrain: flat boxes on hills previously covered the player.
+// This surface has no colliders and is raised only a few centimeters above the ground.
 const roadLayout=globalThis.TacticalRules.ROAD_LAYOUT||[];
-const roadMaterial=new THREE.MeshStandardMaterial({color:0x39434a,roughness:.96});
-const laneMaterial=new THREE.MeshBasicMaterial({color:0xe3ce8c});
+const roadMaterial=new THREE.MeshStandardMaterial({color:0x424b4b,roughness:.98,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-1,polygonOffsetUnits:-1});
+const shoulderMaterial=new THREE.MeshStandardMaterial({color:0x837f6b,roughness:.96,side:THREE.DoubleSide});
+const laneMaterial=new THREE.MeshBasicMaterial({color:0xd8c590,side:THREE.DoubleSide});
+function terrainSurface(x,z,width,depth,lift,material,step=2.2){
+ const gx=Math.max(1,Math.ceil(width/step)),gz=Math.max(1,Math.ceil(depth/step));
+ const geometry=new THREE.PlaneGeometry(width,depth,gx,gz);
+ geometry.rotateX(-Math.PI/2);
+ const positions=geometry.attributes.position;
+ for(let i=0;i<positions.count;i++){
+  const wx=x+positions.getX(i),wz=z+positions.getZ(i);
+  positions.setY(i,forestEnvironment.getTerrainHeight(wx,wz)+lift);
+ }
+ positions.needsUpdate=true;geometry.computeVertexNormals();
+ const mesh=new THREE.Mesh(geometry,material);
+ mesh.position.set(x,0,z);mesh.receiveShadow=true;mesh.castShadow=false;
+ mesh.userData.ignoreCombat=true;mesh.userData.ignoreCamera=true;scene.add(mesh);
+ return mesh;
+}
 for(const [x,z,w,d] of roadLayout){
- const y=forestEnvironment.getTerrainHeight(x,z);
- const road=new THREE.Mesh(new THREE.BoxGeometry(w,.045,d),roadMaterial);
- road.position.set(x,y+.045,z);
- road.receiveShadow=true;road.castShadow=false;road.userData.ignoreCombat=true;road.userData.ignoreCamera=true;scene.add(road);
- const vertical=d>w;
- const lineCount=Math.floor((vertical?d:w)/9);
+ // Soil shoulder makes streets legible but does not create a raised pavement wall.
+ terrainSurface(x,z,w+1.6,d+1.6,.048,shoulderMaterial,3);
+ terrainSurface(x,z,w,d,.068,roadMaterial,2);
+ const vertical=d>w,length=vertical?d:w;
+ const lineCount=Math.floor(length/12);
  for(let i=0;i<lineCount;i++){
-  const offset=(i+.5)*9-(vertical?d:w)/2;
-  const stripe=new THREE.Mesh(new THREE.BoxGeometry(vertical?.12:3,.015,vertical?3:.12),laneMaterial);
-  stripe.position.set(x+(vertical?0:offset),y+.078,z+(vertical?offset:0));
-  stripe.userData.ignoreCombat=true;stripe.userData.ignoreCamera=true;scene.add(stripe);
+  const offset=-length/2+(i+.5)*12;
+  const lineX=x+(vertical?0:offset),lineZ=z+(vertical?offset:0);
+  terrainSurface(lineX,lineZ,vertical?.12:4,vertical?4:.12,.09,laneMaterial,1.5);
  }
 }
-// Southern plaza landmark for navigation, with no collision restrictions.
-const plazaMaterial=new THREE.MeshStandardMaterial({color:0x9c9e8e,roughness:.94});
-const plaza=new THREE.Mesh(new THREE.CylinderGeometry(11,11,.15,20),plazaMaterial);
-plaza.position.set(0,forestEnvironment.getTerrainHeight(0,104)+.04,104);
-plaza.receiveShadow=true;plaza.userData.ignoreCombat=true;plaza.userData.ignoreCamera=true;scene.add(plaza);
+// Terrain-conforming paved plaza: never a thick cylinder intersecting the player.
+const plazaMaterial=new THREE.MeshStandardMaterial({color:0x979b89,roughness:.95,side:THREE.DoubleSide});
+const plazaRadius=10.5,plazaSegments=32;
+const plazaPositions=[0,forestEnvironment.getTerrainHeight(0,104)+.085,0];
+const plazaIndices=[];
+for(let i=0;i<=plazaSegments;i++){
+ const angle=i%plazaSegments/plazaSegments*Math.PI*2,px=Math.cos(angle)*plazaRadius,pz=Math.sin(angle)*plazaRadius;
+ plazaPositions.push(px,forestEnvironment.getTerrainHeight(px,104+pz)+.085,pz);
+ if(i>0)plazaIndices.push(0,i,i+1);
+}
+const plazaGeometry=new THREE.BufferGeometry();
+plazaGeometry.setAttribute('position',new THREE.Float32BufferAttribute(plazaPositions,3));
+plazaGeometry.setIndex(plazaIndices);plazaGeometry.computeVertexNormals();
+const plaza=new THREE.Mesh(plazaGeometry,plazaMaterial);
+plaza.position.z=104;plaza.receiveShadow=true;plaza.userData.ignoreCombat=true;plaza.userData.ignoreCamera=true;scene.add(plaza);
 
 const urbanLayout=globalThis.TacticalRules.URBAN_LAYOUT;
 const urbanTowers=[];
