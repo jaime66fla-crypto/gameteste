@@ -92,6 +92,9 @@ export class GameRoom {
    const data = ws.deserializeAttachment();
    if (data?.id){this.sessions.set(data.id,ws);if(data.state)this.players.set(data.id,data.state);for(const shot of data.shots||[])if(Date.now()-shot.at<2000)this.shots3D.set(data.id+":"+shot.shotId,shot)}
   }
+  // Battle Royale state is copied into WebSocket attachments for hibernation recovery.
+  const previous=[...this.sessions.values()][0]?.deserializeAttachment()?.battle;
+  this.battle=previous?{...previous,roster:[...previous.roster]}:{enabled:false,phase:'waiting',roster:[],winnerId:null};
   this.tactical=new globalThis.TacticalRoom(this,ctx);
  }
  async fetch(request) {
@@ -99,7 +102,7 @@ export class GameRoom {
   // These paths are called only by other Durable Objects, never forwarded from the public Worker.
   if(url.pathname==='/internal/room-info'){
    const meta=this.sessions.values().next().value?.deserializeAttachment();
-   return json({public:meta?.publicRoom===true,players:this.sessions.size,capacity:8});
+   return json({public:meta?.publicRoom===true,players:this.sessions.size,capacity:8,phase:this.battle.phase});
   }
   if(url.pathname==='/internal/public-rooms'){
    if(request.method==='POST'){
@@ -134,6 +137,7 @@ export class GameRoom {
   if(query.get('mode')==='3d'){
    const action=query.get('action');
    if(action==='join'&&!this.sessions.size)return new Response('Sala não encontrada ou encerrada', {status:404});
+   if(this.battle.enabled&&this.battle.phase!=='waiting')return new Response('Partida em andamento ou encerrada', {status:409});
    if(action==='create'&&this.sessions.size)return new Response('Código já em uso', {status:409});
    if(this.sessions.size>=8)return new Response('Sala cheia', {status:409});
   }
@@ -144,14 +148,32 @@ export class GameRoom {
   const mode=new URL(request.url).searchParams.get("mode")==="3d"?"3d":"2d";
   const first=this.sessions.values().next().value?.deserializeAttachment();
   const publicRoom=mode==='3d'&&(first?first.publicRoom===true:query.get('visibility')==='public');
-  server.serializeAttachment({id,mode,publicRoom});
+  const battle=mode==='3d'&&(this.battle.enabled||query.get('battle')==='1');
+  if(battle&&!this.battle.enabled&&this.sessions.size===0)this.battle={enabled:true,phase:'waiting',roster:[],winnerId:null};
+  if(this.battle.enabled&&!battle)return new Response('Modo de sala incompatível',{status:409});
+  const name=String(query.get('name')||'Operador').slice(0,16);
+  server.serializeAttachment({id,mode,publicRoom,battle:{...this.battle,roster:[...this.battle.roster]}});
   this.sessions.set(id, server);
+  if(this.battle.enabled&&mode==='3d'){
+   this.players.set(id,{type:'state3d',id,name,health:100,dead:false,x:0,y:0,z:0,angle:0,kills:0});
+   this.battle.roster.push(id);
+  }
   if(publicRoom&&query.get('action')==='create'){
    const code=(query.get('room')||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,24);
    const directory=this.env.GAME_ROOMS.get(this.env.GAME_ROOMS.idFromName('public-room-directory'));
    this.ctx.waitUntil(directory.fetch(new Request('https://internal/internal/public-rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})})).catch(error=>console.error('Room directory registration failed',error)));
   }
-  server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()],tactical:this.tactical.snapshot()}:{type:"welcome",id}));
+  server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()],tactical:this.tactical.snapshot(),battle:this.battle.enabled}:{type:"welcome",id}));
+  if(this.battle.enabled&&mode==='3d'){
+   if(this.battle.phase==='waiting'&&this.sessions.size===8){
+    this.battle.phase='running';
+    this.syncBattleAttachments();
+    this.broadcast3D({type:'battle-start',total:8,alive:8});
+   }else{
+    this.syncBattleAttachments();
+    this.broadcastBattleStatus();
+   }
+  }
   return new Response(null, {status:101, webSocket:client});
  }
  webSocketMessage(ws, message) {
@@ -209,10 +231,31 @@ export class GameRoom {
   const shots=[...this.shots3D.values()].filter(s=>s.ownerId===id&&Date.now()-s.at<2000).slice(-1);
   ws.serializeAttachment({...meta,state:this.players.get(id),shots});
  }
+ syncBattleAttachments(){
+  for(const peer of this.sessions.values()){
+   const attachment=peer.deserializeAttachment();
+   if(attachment?.mode==='3d')peer.serializeAttachment({...attachment,battle:{...this.battle,roster:[...this.battle.roster]}});
+  }
+ }
+ broadcastBattleStatus(){
+  if(!this.battle.enabled)return;
+  const alive=this.battle.roster.filter(id=>this.sessions.has(id)&&!this.players.get(id)?.dead);
+  this.broadcast3D({type:'battle-status',phase:this.battle.phase,connected:this.sessions.size,capacity:8,alive:alive.length,winnerId:this.battle.winnerId});
+ }
+ checkBattleEnd(){
+  if(!this.battle.enabled||this.battle.phase!=='running')return;
+  const alive=this.battle.roster.filter(id=>this.sessions.has(id)&&!this.players.get(id)?.dead);
+  if(alive.length<=1){
+   this.battle.phase='finished';this.battle.winnerId=alive[0]||null;
+   this.syncBattleAttachments();
+   this.broadcast3D({type:'battle-end',winnerId:this.battle.winnerId,winnerName:this.players.get(this.battle.winnerId)?.name||'Sem vencedor',alive:alive.length});
+  }else this.broadcastBattleStatus();
+ }
  handle3D(ws,meta,data){
   const finite=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max;
   const weapons={pistol:{damage:30,range:65,delay:60/340*1000,pellets:1},smg:{damage:18,range:45,delay:95,pellets:1},rifle:{damage:28,range:85,delay:140,pellets:1},shotgun:{damage:11,range:28,delay:850,pellets:6},sniper:{damage:95,range:220,delay:1050,pellets:1}};
   const now=Date.now();for(const [id,shot]of this.shots3D)if(now-shot.at>2000)this.shots3D.delete(id);
+  if(this.battle.enabled&&this.battle.phase!=='running')return;
   if(data.type==='state3d'){
    if(!finite(data.x,-160,160)||!finite(data.y,-25,150)||!finite(data.z,-160,160)||!finite(data.angle,-1000,1000))return;
    const prev=this.players.get(meta.id);
@@ -254,23 +297,23 @@ export class GameRoom {
    if(along<-.25||along>spec.range+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
    shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
    const killed=target.health===0;
-   if(killed){shooter.kills++;target.dead=true;target.deadUntil=now+5000;target.moving=false;target.running=false;target.aiming=false;}
-   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,respawnIn:killed?5:0,kills:shooter.kills});
+   if(killed){shooter.kills++;target.dead=true;target.deadUntil=this.battle.enabled?0:now+5000;target.moving=false;target.running=false;target.aiming=false;}
+   this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,respawnIn:killed?(this.battle.enabled?0:5):0,kills:shooter.kills});
    if(killed){
-    this.broadcast3D(target);this.scheduleRespawns();this.broadcastRanking();
+    this.broadcast3D(target);if(this.battle.enabled)this.checkBattleEnd();else this.scheduleRespawns();this.broadcastRanking();
    }
    this.save3D(meta.id);this.save3D(target.id);
   }
  }
 
  scheduleRespawns(){
-  const deadlines=[...this.players.values()].filter(p=>p.dead).map(p=>p.deadUntil);
+  const deadlines=[...this.players.values()].filter(p=>p.dead&&p.deadUntil>0).map(p=>p.deadUntil);
   const tacticalDeadline=this.tactical.nextAlarm(Date.now());if(tacticalDeadline!==null)deadlines.push(tacticalDeadline);
   if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.min(...deadlines)));
  }
  async alarm(){
   const now=Date.now();await this.tactical.tick(now);
-  for(const target of this.players.values())if(target.dead&&target.deadUntil<=now){
+  for(const target of this.players.values())if(!this.battle.enabled&&target.dead&&target.deadUntil<=now){
    Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
    this.tactical.inventory(target);this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
   }
@@ -287,6 +330,7 @@ export class GameRoom {
   const meta = ws.deserializeAttachment();
   if (!meta?.id) return;
   this.sessions.delete(meta.id);this.players.delete(meta.id);for(const [key,shot]of this.shots3D)if(shot.ownerId===meta.id)this.shots3D.delete(key);this.broadcastRanking();
+  if(this.battle.enabled){this.checkBattleEnd();this.syncBattleAttachments();this.broadcastBattleStatus();}
   const out = JSON.stringify({type:"leave", id:meta.id});
   for (const peer of this.sessions.values()) { try { peer.send(out); } catch {} }
  }
