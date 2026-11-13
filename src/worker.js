@@ -138,6 +138,7 @@ export class GameRoom {
    const action=query.get('action');
    if(action==='join'&&!this.sessions.size)return new Response('Sala não encontrada ou encerrada', {status:404});
    if(this.battle.enabled&&this.battle.phase!=='waiting')return new Response('Partida em andamento ou encerrada', {status:409});
+   if(this.sessions.size&&this.battle.enabled!==(query.get('battle')==='1'))return new Response('Modo de sala incompatível',{status:409});
    if(action==='create'&&this.sessions.size)return new Response('Código já em uso', {status:409});
    if(this.sessions.size>=8)return new Response('Sala cheia', {status:409});
   }
@@ -150,7 +151,6 @@ export class GameRoom {
   const publicRoom=mode==='3d'&&(first?first.publicRoom===true:query.get('visibility')==='public');
   const battle=mode==='3d'&&(this.battle.enabled||query.get('battle')==='1');
   if(battle&&!this.battle.enabled&&this.sessions.size===0)this.battle={enabled:true,phase:'waiting',roster:[],winnerId:null};
-  if(this.battle.enabled&&!battle)return new Response('Modo de sala incompatível',{status:409});
   const name=String(query.get('name')||'Operador').slice(0,16);
   server.serializeAttachment({id,mode,publicRoom,battle:{...this.battle,roster:[...this.battle.roster]}});
   this.sessions.set(id, server);
@@ -255,10 +255,11 @@ export class GameRoom {
   const finite=(v,min,max)=>typeof v==='number'&&Number.isFinite(v)&&v>=min&&v<=max;
   const weapons={pistol:{damage:30,range:65,delay:60/340*1000,pellets:1},smg:{damage:18,range:45,delay:95,pellets:1},rifle:{damage:28,range:85,delay:140,pellets:1},shotgun:{damage:11,range:28,delay:850,pellets:6},sniper:{damage:95,range:220,delay:1050,pellets:1}};
   const now=Date.now();for(const [id,shot]of this.shots3D)if(now-shot.at>2000)this.shots3D.delete(id);
-  if(this.battle.enabled&&this.battle.phase!=='running')return;
+  if(this.battle.enabled&&this.battle.phase!=='running'&&data.type!=='state3d')return;
   if(data.type==='state3d'){
    if(!finite(data.x,-160,160)||!finite(data.y,-25,150)||!finite(data.z,-160,160)||!finite(data.angle,-1000,1000))return;
    const prev=this.players.get(meta.id);
+   if(this.battle.enabled&&this.battle.phase!=='running')return;
    if(prev?.dead){this.broadcast3D(prev);return;}
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,inCar:!!data.inCar,
