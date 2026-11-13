@@ -157,6 +157,7 @@ export class GameRoom {
   if(this.battle.enabled&&mode==='3d'){
    this.players.set(id,{type:'state3d',id,name,health:100,dead:false,x:0,y:0,z:0,angle:0,kills:0});
    this.battle.roster.push(id);
+   this.save3D(id);
   }
   if(publicRoom&&query.get('action')==='create'){
    const code=(query.get('room')||'').toLowerCase().replace(/[^a-z0-9-]/g,'').slice(0,24);
@@ -331,7 +332,7 @@ export class GameRoom {
   const meta = ws.deserializeAttachment();
   if (!meta?.id) return;
   this.sessions.delete(meta.id);this.players.delete(meta.id);for(const [key,shot]of this.shots3D)if(shot.ownerId===meta.id)this.shots3D.delete(key);this.broadcastRanking();
-  if(this.battle.enabled){this.checkBattleEnd();this.syncBattleAttachments();this.broadcastBattleStatus();}
+  if(this.battle.enabled){this.checkBattleEnd();if(this.sessions.size===0)this.battle={enabled:false,phase:'waiting',roster:[],winnerId:null};this.syncBattleAttachments();this.broadcastBattleStatus();}
   const out = JSON.stringify({type:"leave", id:meta.id});
   for (const peer of this.sessions.values()) { try { peer.send(out); } catch {} }
  }
