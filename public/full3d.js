@@ -2544,25 +2544,26 @@ function addAdsLimb(group,from,to,radius,material){
  group.add(mesh);
  return mesh;
 }
+// Small sleeves near the bottom corners; do not hide the gun with big cylinders.
 const adsArmSets={};
 const adsArmPoints={
  pistol:[
-  [[.29,-.44,-.21],[.11,-.265,-.37],.086,adsSleeve],
-  [[.11,-.265,-.37],[.035,-.205,-.43],.053,adsGlove],
-  [[-.29,-.44,-.21],[-.10,-.27,-.37],.086,adsSleeve],
-  [[-.10,-.27,-.37],[-.032,-.205,-.43],.051,adsGlove]
+  [[.31,-.50,-.10],[.105,-.33,-.32],.053,adsSleeve],
+  [[.105,-.33,-.32],[.032,-.25,-.40],.036,adsGlove],
+  [[-.31,-.50,-.10],[-.10,-.33,-.32],.053,adsSleeve],
+  [[-.10,-.33,-.32],[-.025,-.25,-.40],.036,adsGlove]
  ],
  shotgun:[
-  [[.42,-.47,-.25],[.13,-.29,-.49],.099,adsSleeve],
-  [[.13,-.29,-.49],[.045,-.24,-.55],.064,adsGlove],
-  [[-.40,-.49,-.31],[-.18,-.31,-.64],.096,adsSleeve],
-  [[-.18,-.31,-.64],[-.055,-.23,-.79],.06,adsGlove]
+  [[.46,-.55,-.12],[.14,-.41,-.37],.053,adsSleeve],
+  [[.14,-.41,-.37],[.06,-.34,-.48],.036,adsGlove],
+  [[-.46,-.55,-.15],[-.17,-.42,-.54],.052,adsSleeve],
+  [[-.17,-.42,-.54],[-.045,-.32,-.68],.036,adsGlove]
  ],
  rifle:[
-  [[.43,-.43,-.29],[.13,-.22,-.57],.095,adsSleeve],
-  [[.13,-.22,-.57],[.055,-.18,-.66],.06,adsGlove],
-  [[-.42,-.44,-.32],[-.16,-.23,-.67],.088,adsSleeve],
-  [[-.16,-.23,-.67],[-.025,-.19,-.78],.058,adsGlove]
+  [[.42,-.54,-.13],[.13,-.39,-.42],.052,adsSleeve],
+  [[.13,-.39,-.42],[.045,-.32,-.51],.035,adsGlove],
+  [[-.43,-.53,-.13],[-.14,-.38,-.50],.052,adsSleeve],
+  [[-.14,-.38,-.50],[-.04,-.31,-.61],.035,adsGlove]
  ]
 };
 adsArmPoints.smg=adsArmPoints.rifle;
@@ -2598,10 +2599,10 @@ function updateAdsViewModel(dt){
  const recoil=pistolWeapon.recoil||0;
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
  const poses={
-  pistol:{p:[0,-.225,-.38],r:[-.015,Math.PI,0],s:1.02},
-  smg:{p:[0,-.285,-.48],r:[-.012,Math.PI,0],s:1.05},
-  rifle:{p:[0,-.295,-.49],r:[-.01,Math.PI,0],s:1.12},
-  shotgun:{p:[.02,-.30,-.52],r:[-.012,Math.PI,0],s:1.12},
+  pistol:{p:[0,-.22,-.44],r:[-.015,Math.PI,0],s:.89},
+  smg:{p:[0,-.205,-.51],r:[-.012,Math.PI,0],s:.90},
+  rifle:{p:[0,-.205,-.52],r:[-.01,Math.PI,0],s:.94},
+  shotgun:{p:[0,-.22,-.58],r:[-.012,Math.PI,0],s:.95},
   sniper:{p:[.015,-.165,-.90],r:[-.008,Math.PI,0],s:.46}
  };
  const pose=poses[id]||poses.pistol;
@@ -2939,9 +2940,9 @@ function updateCamera(dt){
  let mode='iron';
 
  if(weaponId==='smg'||weaponId==='rifle'){
-  // Tactical ADS: sight housing in the foreground, reticle on the camera axis.
-  mode='optic';
-  targetFov=38;
+  // Physical iron sights now supply the aiming picture; avoid detached HUD frames.
+  mode='iron';
+  targetFov=42;
  }else if(weaponId==='sniper'){
   mode='scope';
   targetFov=20;
