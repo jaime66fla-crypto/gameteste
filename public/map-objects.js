@@ -40,7 +40,20 @@ function mount(scene,terrain,register){
   }else if(o.type==='rock'){
    const m=mesh(new THREE.DodecahedronGeometry(1.45*s,0),materials.rock,o.x,y+.85*s,o.z);m.scale.set(1,.65,1);
   }else if(o.type==='road'){
-   const m=mesh(new THREE.BoxGeometry(12*s,.05,4*s),materials.road,o.x,y+.026,o.z);m.rotation.y=o.rotation*Math.PI/180;
+   // Follow the terrain at each vertex; flat road boxes can bury the avatar on hills.
+   const width=12*s,depth=4*s,angle=o.rotation*Math.PI/180;
+   const geometry=new THREE.PlaneGeometry(width,depth,Math.ceil(width/1.5),Math.ceil(depth/1.5));
+   geometry.rotateX(-Math.PI/2);
+   const points=geometry.attributes.position;
+   for(let i=0;i<points.count;i++){
+    const lx=points.getX(i),lz=points.getZ(i);
+    const wx=o.x+lx*Math.cos(angle)+lz*Math.sin(angle);
+    const wz=o.z-lx*Math.sin(angle)+lz*Math.cos(angle);
+    points.setY(i,terrain(wx,wz)-y+.075);
+   }
+   points.needsUpdate=true;geometry.computeVertexNormals();
+   const road=mesh(geometry,materials.road,o.x,y,o.z);
+   road.rotation.y=angle;road.castShadow=false;road.userData.ignoreCombat=true;road.userData.ignoreCamera=true;
   }else{
    const sizes={house:[8,5,7],tower:[7,13,7],crate:[2,1.7,2],wall:[8,2.6,.7]};
    const [w,h,d]=sizes[o.type].map(v=>v*s);
