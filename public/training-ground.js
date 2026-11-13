@@ -7,7 +7,7 @@ const button=document.createElement('button');
 button.id='btn-training-ground';
 button.className='menu-btn';
 button.textContent='ÁREA DE TESTES • SOLO';
-document.getElementById('btn-menu-play')?.before(button);
+document.getElementById('btn-menu-settings')?.before(button);
 const panel=document.createElement('div');
 panel.id='training-hud';
 panel.hidden=true;
