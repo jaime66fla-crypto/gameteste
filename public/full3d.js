@@ -166,62 +166,61 @@ function buildForestEnvironment(scene,options={}){
  const forestGroup=new THREE.Group();
  const colliders=[];
 
- function createPineTree(scale){
-  const tree=new THREE.Group();
-  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-  const trunk=new THREE.Mesh(pineTrunkGeo,trunkMat);
-  trunk.scale.setScalar(scale);trunk.position.y=1.25*scale;
-  trunk.castShadow=false;trunk.receiveShadow=false;tree.add(trunk);
+ const vegetationInstances={
+  pineTrunk:[], oakTrunk:[], rock:[],
+  pineLeaves:[[],[],[]],
+  oakLeaves:[[],[],[]],
+  bushLeaves:[[],[],[]]
+ };
+ function matrixAt(x,y,z,sx,sy,sz,rx=0,ry=0,rz=0){
+  const o=new THREE.Object3D();
+  o.position.set(x,y,z);o.scale.set(sx,sy,sz);o.rotation.set(rx,ry,rz);o.updateMatrix();
+  return o.matrix.clone();
+ }
+ function addPineInstance(pos,scale,rot,matIndex){
+  vegetationInstances.pineTrunk.push(matrixAt(pos.x,pos.y+1.25*scale,pos.z,scale,scale,scale,0,rot,0));
   for(let i=0;i<3;i++){
    const radius=(2.4-i*.55)*scale;
-   const cone=new THREE.Mesh(pineConeGeo,mat);
-   cone.scale.set(radius,scale,radius);
-   cone.position.y=(3+i*1.5)*scale;cone.rotation.y=random()*Math.PI;
-   cone.castShadow=false;cone.receiveShadow=false;tree.add(cone);
+   vegetationInstances.pineLeaves[matIndex].push(matrixAt(pos.x,pos.y+(3+i*1.5)*scale,pos.z,radius,scale,radius,0,rot+random()*Math.PI,0));
   }
-  return tree;
  }
-
- function createOakTree(scale){
-  const tree=new THREE.Group();
-  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-  const trunk=new THREE.Mesh(oakTrunkGeo,trunkMat);
-  trunk.scale.setScalar(scale);trunk.position.y=1.6*scale;
-  trunk.castShadow=false;trunk.receiveShadow=false;tree.add(trunk);
-  const crownPositions=[
+ function addOakInstance(pos,scale,rot,matIndex){
+  vegetationInstances.oakTrunk.push(matrixAt(pos.x,pos.y+1.6*scale,pos.z,scale,scale,scale,0,rot,0));
+  const crowns=[
    {x:0,y:4.2,z:0,r:2.2},
    {x:1.1,y:3.6,z:.6,r:1.5},
    {x:-1,y:3.8,z:-.7,r:1.6}
   ];
-  crownPositions.forEach(p=>{
-   const crown=new THREE.Mesh(oakCrownGeo,mat);
-   crown.scale.setScalar(p.r*scale);
-   crown.position.set(p.x*scale,p.y*scale,p.z*scale);
-   crown.rotation.set(random(),random(),random());
-   crown.castShadow=false;crown.receiveShadow=false;tree.add(crown);
-  });
-  return tree;
- }
-
- function createRock(scale){
-  const rock=new THREE.Mesh(rockSharedGeo,rockMat);
-  rock.scale.set(scale*(.85+random()*.3),scale*(.62+random()*.28),scale*(.85+random()*.3));
-  rock.userData.impactMaterial='concrete';rock.castShadow=false;rock.receiveShadow=false;
-  return rock;
- }
-
- function createBush(scale){
-  const bush=new THREE.Group();
-  const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-  for(let i=0;i<2;i++){
-   const part=new THREE.Mesh(bushSharedGeo,mat);
-   const r=(.7+random()*.35)*scale;part.scale.setScalar(r);
-   part.position.set((random()-.5)*scale,.4*scale,(random()-.5)*scale);
-   part.castShadow=false;part.receiveShadow=false;bush.add(part);
+  for(const p of crowns){
+   const c=Math.cos(rot),sn=Math.sin(rot);
+   const ox=p.x*scale*c-p.z*scale*sn,oz=p.x*scale*sn+p.z*scale*c;
+   const rr=p.r*scale;
+   vegetationInstances.oakLeaves[matIndex].push(matrixAt(pos.x+ox,pos.y+p.y*scale,pos.z+oz,rr,rr,rr,random(),rot+random(),random()));
   }
-  return bush;
  }
-
+ function addBushInstance(pos,scale,matIndex){
+  for(let i=0;i<2;i++){
+   const rr=(.7+random()*.35)*scale;
+   vegetationInstances.bushLeaves[matIndex].push(matrixAt(pos.x+(random()-.5)*scale,pos.y+.4*scale,pos.z+(random()-.5)*scale,rr,rr,rr,random(),random(),random()));
+  }
+ }
+ function addRockInstance(pos,scale){
+  vegetationInstances.rock.push(matrixAt(
+   pos.x,pos.y+scale*.3,pos.z,
+   scale*(.85+random()*.3),scale*(.62+random()*.28),scale*(.85+random()*.3),
+   random()*Math.PI,random()*Math.PI,0
+  ));
+ }
+ function mountInstances(geometry,material,matrices,name){
+  if(!matrices.length)return null;
+  const mesh=new THREE.InstancedMesh(geometry,material,matrices.length);
+  mesh.name=name;mesh.castShadow=false;mesh.receiveShadow=false;
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  for(let i=0;i<matrices.length;i++)mesh.setMatrixAt(i,matrices[i]);
+  mesh.instanceMatrix.needsUpdate=true;
+  mesh.computeBoundingSphere?.();
+  forestGroup.add(mesh);return mesh;
+ }
  function getValidPosition(minRadius){
   let x,z,dist,attempts=0;
   do{
@@ -242,30 +241,31 @@ function buildForestEnvironment(scene,options={}){
 
  for(let i=0;i<treeCount;i++){
   const pos=getValidPosition(safeZoneRadius);
-  const scale=.8+random()*.9;
-  const tree=random()>.45?createPineTree(scale):createOakTree(scale);
-  tree.position.set(pos.x,pos.y,pos.z);
-  tree.rotation.y=random()*Math.PI*2;
-  forestGroup.add(tree);
+  const scale=.8+random()*.9,rot=random()*Math.PI*2,matIndex=Math.floor(random()*leafMaterials.length);
+  if(random()>.45)addPineInstance(pos,scale,rot,matIndex);else addOakInstance(pos,scale,rot,matIndex);
   colliders.push({type:'tree',x:pos.x,z:pos.z,radius:.6*scale});
  }
 
  for(let i=0;i<rockCount;i++){
   const pos=getValidPosition(safeZoneRadius*.7);
   const scale=.6+random()*1.4;
-  const rock=createRock(scale);
-  rock.position.set(pos.x,pos.y+scale*.3,pos.z);
-  rock.rotation.set(random()*Math.PI,random()*Math.PI,0);
-  forestGroup.add(rock);
+  addRockInstance(pos,scale);
   colliders.push({type:'rock',x:pos.x,z:pos.z,radius:scale*.9});
  }
 
  for(let i=0;i<bushCount;i++){
   const pos=getValidPosition(safeZoneRadius*.5);
-  const scale=.7+random()*.8;
-  const bush=createBush(scale);
-  bush.position.set(pos.x,pos.y,pos.z);
-  forestGroup.add(bush);
+  const scale=.7+random()*.8,matIndex=Math.floor(random()*leafMaterials.length);
+  addBushInstance(pos,scale,matIndex);
+ }
+
+ mountInstances(pineTrunkGeo,trunkMat,vegetationInstances.pineTrunk,'PINE_TRUNKS_INSTANCED');
+ mountInstances(oakTrunkGeo,trunkMat,vegetationInstances.oakTrunk,'OAK_TRUNKS_INSTANCED');
+ mountInstances(rockSharedGeo,rockMat,vegetationInstances.rock,'ROCKS_INSTANCED');
+ for(let i=0;i<leafMaterials.length;i++){
+  mountInstances(pineConeGeo,leafMaterials[i],vegetationInstances.pineLeaves[i],'PINE_LEAVES_'+i);
+  mountInstances(oakCrownGeo,leafMaterials[i],vegetationInstances.oakLeaves[i],'OAK_LEAVES_'+i);
+  mountInstances(bushSharedGeo,leafMaterials[i],vegetationInstances.bushLeaves[i],'BUSHES_'+i);
  }
 
  scene.add(forestGroup);
