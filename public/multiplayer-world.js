@@ -72,7 +72,7 @@ class MultiplayerWorld{
   remote.poseTime=(remote.poseTime||0)+dt;
   if(far&&remote.poseTime<.045)continue;
   const poseDt=Math.min(remote.poseTime,.05);remote.poseTime=0;
-  a.update(poseDt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,firing:!!s.firing,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
+  a.update(poseDt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,firing:!!s.firing,reload:s.reload||0,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }
