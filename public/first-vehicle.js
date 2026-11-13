@@ -72,7 +72,7 @@ class FirstVehicleSystem {
  available(){return this.isActive()&&!this.isDead()&&!this.isMultiplayer();}
  distance(){return Math.hypot(this.player.position.x-this.root.position.x,this.player.position.z-this.root.position.z)}
  ground(x,z){
-  if(this.isTraining()&&x>81&&x<129&&z>81&&z<129)return this.terrainHeight(105,105)+6;
+  // Practice mode shares exactly the normal 3D map height.
   return this.terrainHeight(x,z);
  }
  relocate(){
