@@ -1602,7 +1602,7 @@ class PistolController {
   }
  }
  fire(){
-  if(!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading||this.equipTimer>0)return;
+  if((typeof deployment!=='undefined'&&deployment.phase!=='idle'&&deployment.phase!=='landed')||!gameStarted||this.player.userData.dead||!this.isEquipped||this.isReloading||this.equipTimer>0)return;
   if(controller.cover.active){
    this.player.updateMatrixWorld(true);
    if(!controller.cover.canFireFrom(this.muzzlePoint.getWorldPosition(new THREE.Vector3())))return;
