@@ -531,6 +531,7 @@ class ForestAudioSystem {
   this.isAmbiencePlaying=false;
   this.birdTimer=null;
   this.lastFootstepAt=0;
+  this.lastImpactAt=-Infinity;
  }
  init(){
   if(!this.ctx){
@@ -696,6 +697,59 @@ class ForestAudioSystem {
   // Layer 5: projectile crack + outdoor reflection tail.
   this._shotNoise(now+.010,.018,spec.crack,2300,7600);
   this._shotTail(now+.035,spec.tail,.055);
+ }
+ playMaterialImpact(kind,position,listenerCamera){
+  if(!this.ctx||!this.enabled||!this.masterGain||!position||!listenerCamera)return;
+  const now=this.ctx.currentTime;
+  // Prevent pellet bursts/automatic fire from creating too many sound nodes.
+  if(now-this.lastImpactAt<.045)return;
+  const distance=position.distanceTo(listenerCamera.position);
+  if(distance>85)return;
+  this.lastImpactAt=now;
+  const profiles={
+   concrete:{low:180,high:2200,volume:.21,duration:.12,tone:170},
+   wood:{low:120,high:1100,volume:.23,duration:.10,tone:120},
+   metal:{low:900,high:6500,volume:.24,duration:.15,tone:1850},
+   dirt:{low:85,high:750,volume:.16,duration:.14,tone:95},
+   ice:{low:800,high:4600,volume:.20,duration:.18,tone:910}
+  };
+  const p=profiles[kind]||profiles.concrete;
+  const attenuation=1/(1+distance*.09+distance*distance*.004);
+  const local=position.clone().sub(listenerCamera.position);
+  const cameraRight=new THREE.Vector3(1,0,0).applyQuaternion(listenerCamera.quaternion);
+  const panValue=THREE.MathUtils.clamp(local.normalize().dot(cameraRight),-1,1);
+  const gain=this.ctx.createGain(),filter=this.ctx.createBiquadFilter();
+  const panner=this.ctx.createStereoPanner?.();
+  gain.gain.value=Math.max(.001,p.volume*attenuation);
+  filter.type='bandpass';
+  filter.frequency.value=Math.sqrt(p.low*p.high)*THREE.MathUtils.clamp(1-distance/145,.35,1);
+  filter.Q.value=.6;
+  const noise=this.ctx.createBufferSource();
+  noise.buffer=this._noiseBuffer(p.duration);
+  const envelope=this.ctx.createGain();
+  envelope.gain.setValueAtTime(.0001,now);
+  envelope.gain.exponentialRampToValueAtTime(.85,now+.004);
+  envelope.gain.exponentialRampToValueAtTime(.0001,now+p.duration);
+  noise.connect(filter);filter.connect(envelope);envelope.connect(gain);
+  if(panner){panner.pan.value=panValue;gain.connect(panner);panner.connect(this.masterGain);}
+  else gain.connect(this.masterGain);
+  noise.start(now);noise.stop(now+p.duration+.01);
+  // Short pitched ring for ricochet, brittle ice, and wood/stone knocks.
+  const oscillator=this.ctx.createOscillator(),ringGain=this.ctx.createGain();
+  oscillator.type=kind==='metal'?'sine':'triangle';
+  const pitch=p.tone*(.88+Math.random()*.24);
+  oscillator.frequency.setValueAtTime(pitch,now);
+  oscillator.frequency.exponentialRampToValueAtTime(Math.max(35,pitch*(kind==='metal'?.48:.72)),now+p.duration);
+  ringGain.gain.setValueAtTime(.0001,now);
+  ringGain.gain.exponentialRampToValueAtTime(kind==='metal'?.22:.08,now+.004);
+  ringGain.gain.exponentialRampToValueAtTime(.0001,now+p.duration);
+  oscillator.connect(ringGain);ringGain.connect(gain);
+  oscillator.start(now);oscillator.stop(now+p.duration+.01);
+  noise.onended=()=>{
+   noise.disconnect();filter.disconnect();envelope.disconnect();
+   oscillator.disconnect();ringGain.disconnect();gain.disconnect();
+   if(panner)panner.disconnect();
+  };
  }
  playTactical(kind,distance=0){
   if(!this.ctx||!this.enabled)return;const now=this.ctx.currentTime,volume=Math.max(.025,1/(1+distance*.1));
@@ -1365,6 +1419,7 @@ class PistolController {
  }
  emitImpact(hit,spec){
   const material=this.impactMaterial(hit);if(!material||!hit?.point)return;
+  forestAudio.playMaterialImpact(material,hit.point,this.camera);
   const config={
    concrete:{mark:0x454646,dust:0xa5a29a,count:5},
    wood:{mark:0x493321,dust:0xa67e53,count:6},
