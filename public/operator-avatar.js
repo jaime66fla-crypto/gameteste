@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -387,6 +387,40 @@ class OperatorAvatar{
    }
   }
 
+  if(armed&&reload>.001){
+   const t=clamp(reload,0,1);
+   const down=1-Math.abs(t*2-1);
+   const magPhase=clamp((t-.18)/.48,0,1);
+   const settle=clamp((t-.68)/.32,0,1);
+
+   r[2][0]+=.12*down;
+   r[3][0]+=.08*down;
+   r[3][1]+=.16*down;
+   r[6][0]+=.18*down;
+   r[6][1]-=.10*down;
+   r[7][0]+=.20*down;
+
+   // Support hand drops toward the magazine well, then returns to the fore-end.
+   r[9][0]=THREE.MathUtils.lerp(r[9][0],-.55+.18*settle,magPhase);
+   r[9][1]=THREE.MathUtils.lerp(r[9][1],.34-.18*settle,magPhase);
+   r[9][2]=THREE.MathUtils.lerp(r[9][2],-.22+.14*settle,magPhase);
+   r[10][0]=THREE.MathUtils.lerp(r[10][0],-1.18+.26*settle,magPhase);
+   r[11][0]=THREE.MathUtils.lerp(r[11][0],.20-.12*settle,magPhase);
+   pose.root[1]-=.018*down;
+  }
+
+  if(armed&&equip>.001){
+   const e=clamp(equip,0,1);
+   const progress=1-e;
+   const raise=progress*progress*(3-2*progress);
+   r[2][0]+=THREE.MathUtils.lerp(.18,0,raise);
+   r[3][0]+=THREE.MathUtils.lerp(.12,0,raise);
+   r[3][1]+=THREE.MathUtils.lerp(.10,0,raise);
+   r[6][0]+=THREE.MathUtils.lerp(.22,0,raise);
+   r[9][0]+=THREE.MathUtils.lerp(.16,0,raise);
+   pose.root[1]-=.018*(1-raise);
+  }
+
   if(this.coverBlend>.001){
    const cover=this.coverBlend,entry=clamp(Math.abs(coverRate)/6,0,1);
    const side=coverSide>=0?1:-1;
@@ -404,6 +438,18 @@ class OperatorAvatar{
   }
   if(armed){
    const a=pose.weaponAngles.slice();
+   if(reload>.001){
+    const t=clamp(reload,0,1),down=1-Math.abs(t*2-1);
+    a[0]+=.48*down;
+    a[1]+=.18*down;
+    a[2]+=.10*down;
+   }
+   if(equip>.001){
+    const e=clamp(equip,0,1);
+    a[0]+=.42*e;
+    a[1]+=.12*e;
+    a[2]+=.08*e;
+   }
    a[0]+=.40*this.coverBlend-recoil*.04;
    a[1]+=coverSide*.12*this.coverBlend;
    if(aiming&&grounded&&speed>.08){
