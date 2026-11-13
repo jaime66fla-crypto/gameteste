@@ -409,6 +409,93 @@ function killPlayer(){
  touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;
  for(const k of Object.keys(keys))keys[k]=false;
 }
+
+/* Battle Royale insertion phase: local aircraft flight, guided freefall and safe parachute landing.
+   Combat remains disabled until landing; existing map collisions are not altered. */
+const insertion={phase:"idle",t:0,x:0,y:0,z:0,routeY:0,parachute:false,landed:false};
+function beginInsertion(){
+ insertion.phase="plane";insertion.t=0;insertion.z=850;insertion.parachute=false;insertion.landed=false;
+ insertion.routeY=420+Math.random()*(H-840);insertion.x=80;insertion.y=insertion.routeY;
+ player.x=insertion.x;player.y=insertion.y;player.roof=null;clearCover();
+ document.getElementById("insertionAction")?.remove();
+ const btn=document.createElement("button");btn.id="insertionAction";btn.type="button";
+ btn.textContent="PULAR DO AVIÃO";btn.style.cssText="position:absolute;right:24px;bottom:120px;z-index:20;padding:13px 20px;border:2px solid #b5e7ff;border-radius:9px;background:#173e5e;color:#fff;font-weight:900;cursor:pointer;";
+ btn.addEventListener("click",()=>insertionAction());
+ document.getElementById("gameWrap")?.appendChild(btn);
+}
+function insertionAction(){
+ if(!started||paused)return;
+ if(insertion.phase==="plane"){
+  insertion.phase="fall";insertion.t=0;insertion.z=850;player.x=insertion.x;player.y=insertion.y;
+  const btn=document.getElementById("insertionAction");if(btn)btn.textContent="ABRIR PARAQUEDAS";
+ }else if(insertion.phase==="fall")openParachute();
+}
+function openParachute(){
+ if(insertion.phase!=="fall")return;
+ insertion.phase="glide";insertion.parachute=true;
+ document.getElementById("insertionAction")?.remove();
+}
+function insertionUpdate(dt){
+ if(insertion.phase==="idle"||insertion.phase==="landed")return false;
+ insertion.t+=dt;
+ if(insertion.phase==="plane"){
+  insertion.x=Math.min(W-90,insertion.x+245*dt);insertion.y=insertion.routeY;
+  player.x=insertion.x;player.y=insertion.y;
+  if(insertion.x>=W-90)insertionAction();
+ }else{
+  const ix=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x;
+  const iy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
+  const direction=screenAlignedInput(ix,iy),speed=insertion.phase==="glide"?155:235;
+  player.x=Math.max(player.r,Math.min(W-player.r,player.x+direction.x*speed*dt));
+  player.y=Math.max(player.r,Math.min(H-player.r,player.y+direction.y*speed*dt));
+  insertion.z-=dt*(insertion.phase==="glide"?85:(keys.shift?345:245));
+  if(insertion.phase==="fall"&&insertion.z<=240)openParachute();
+  if(insertion.z<=0){
+   const p=findNearestFreePoint(player.x,player.y,player.r);
+   player.x=p.x;player.y=p.y;insertion.phase="landed";insertion.z=0;insertion.landed=true;
+   document.getElementById("insertionAction")?.remove();
+   if(gameMode==="solo")spawnEnemies();
+  }
+ }
+ followCamera(player.x,player.y,dt,4.5,0);
+ return true;
+}
+function insertionDraw(){
+ if(insertion.phase==="idle"||insertion.phase==="landed")return;
+ const cx=canvas.width/2,cy=canvas.height*.42;
+ ctx.save();ctx.setTransform(1,0,0,1,0,0);
+ ctx.translate(cx,cy);
+ if(insertion.phase==="plane"){
+  // Distinct top-down transport silhouette, not a copy of existing games.
+  ctx.rotate(.05);
+  ctx.fillStyle="#14252e";ctx.beginPath();ctx.ellipse(8,17,116,28,0,0,Math.PI*2);ctx.fill();
+  ctx.fillStyle="#8d9faa";ctx.beginPath();ctx.moveTo(-100,0);ctx.lineTo(-26,-14);ctx.lineTo(12,-110);ctx.lineTo(45,-112);ctx.lineTo(40,-18);ctx.lineTo(120,-8);ctx.lineTo(120,15);ctx.lineTo(38,18);ctx.lineTo(30,66);ctx.lineTo(0,64);ctx.lineTo(-3,18);ctx.lineTo(-100,14);ctx.closePath();ctx.fill();
+  ctx.fillStyle="#314d5e";ctx.fillRect(-72,-7,142,15);
+  ctx.fillStyle="#c9e3eb";ctx.fillRect(55,-5,22,10);
+ }else{
+  const parachute=insertion.phase==="glide";
+  ctx.fillStyle="#07141b88";ctx.beginPath();ctx.ellipse(0,70,23,10,0,0,Math.PI*2);ctx.fill();
+  if(parachute){
+   ctx.fillStyle="#ed8f4d";ctx.beginPath();ctx.ellipse(0,-85,94,37,0,Math.PI,0);ctx.lineTo(94,-85);ctx.closePath();ctx.fill();
+   ctx.strokeStyle="#d7e6e9";ctx.lineWidth=2;
+   for(const dx of [-75,-40,0,40,75]){ctx.beginPath();ctx.moveTo(dx,-84);ctx.lineTo(dx*.17,5);ctx.stroke();}
+  }
+  ctx.fillStyle="#313d4b";ctx.fillRect(-11,3,22,29);ctx.fillStyle="#d4ae89";ctx.beginPath();ctx.arc(0,-7,12,0,Math.PI*2);ctx.fill();
+  ctx.strokeStyle="#1b2e3a";ctx.lineWidth=9;ctx.beginPath();
+  ctx.moveTo(-9,13);ctx.lineTo(parachute?-28:-38,parachute?-8:33);
+  ctx.moveTo(9,13);ctx.lineTo(parachute?28:38,parachute?-8:33);
+  ctx.moveTo(-7,30);ctx.lineTo(-18,58);ctx.moveTo(7,30);ctx.lineTo(18,58);ctx.stroke();
+ }
+ ctx.restore();
+ ctx.fillStyle="#071922df";ctx.fillRect(cx-160,25,320,58);ctx.strokeStyle="#5185a0";ctx.strokeRect(cx-160,25,320,58);
+ ctx.textAlign="center";ctx.fillStyle="#fff";ctx.font="900 17px system-ui";
+ ctx.fillText(insertion.phase==="plane"?"AVIÃO DE TRANSPORTE":insertion.phase==="fall"?"QUEDA LIVRE":"PARAQUEDAS ABERTO",cx,49);
+ ctx.font="700 12px system-ui";ctx.fillStyle="#b8dced";
+ ctx.fillText(insertion.phase==="plane"?"ESPAÇO: SALTAR":insertion.phase==="fall"?"ESPAÇO: ABRIR • SHIFT: MERGULHAR":"WASD: CONTROLAR POUSO",cx,68);
+ if(insertion.phase!=="plane"){ctx.font="800 14px system-ui";ctx.fillStyle="#fff";ctx.fillText("ALTITUDE "+Math.max(0,Math.ceil(insertion.z))+" m",cx,cy+112);}
+ ctx.textAlign="left";
+}
+
 function respawnPlayer(){
  const p=randomOpenPoint();
  player.x=p.x;player.y=p.y;
@@ -426,6 +513,7 @@ function respawnPlayer(){
 
 addEventListener("keydown",e=>{
  const k=e.key.toLowerCase();keys[k]=true;
+ if(k===" "&&!e.repeat&&insertion.phase!=="landed"&&insertion.phase!=="idle")insertionAction();
  if(k==="e")toggleCar();if(k==="p")togglePause();if(k==="r")startReload();if(k==="g")throwGrenade();if(k==="q"&&!e.repeat)selectCover();if(k==="x"&&!e.repeat)selectCover(true);
  if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k))e.preventDefault()
 },{passive:false});
@@ -468,9 +556,9 @@ document.getElementById("startBtn").onclick=()=>{
  localStorage.setItem("streetPlayerName",(document.getElementById("playerName")?.value||"Jogador").trim());
  playerName=(document.getElementById("playerName")?.value||"Jogador").trim().slice(0,18)||"Jogador";
  roomCode=(document.getElementById("roomCode")?.value||"cidade-1").trim().toLowerCase().replace(/[^a-z0-9-]/g,"").slice(0,24)||"cidade-1";
- started=true;document.getElementById("startOverlay").classList.add("hidden");resizeGameCanvas();canvas.focus();spawnWeaponPickups();
- if(gameMode==="multi")connectMultiplayer(); else spawnEnemies();
- if(!localStorage.getItem("streetTutorialDone"))startTutorial();
+ started=true;document.getElementById("startOverlay").classList.add("hidden");resizeGameCanvas();canvas.focus();spawnWeaponPickups();beginInsertion();
+ if(gameMode==="multi")connectMultiplayer();
+ // Tutorial is available from the pause menu; do not interrupt the aircraft insertion.
 };
 document.getElementById("pauseBtn").onclick=togglePause;
 document.getElementById("resumeBtn")?.addEventListener("click",()=>setPauseState(false));
@@ -571,7 +659,7 @@ function setPauseState(value){
 }
 function togglePause(){setPauseState(!paused)}
 function toggleCar(){
- if(!started||paused||player.dead||player.roof!==null)return;
+ if(!started||paused||player.dead||player.roof!==null||(insertion.phase!=="idle"&&insertion.phase!=="landed"))return;
  playSound("car");
  if(player.inCar){
   player.inCar=false;
@@ -689,6 +777,7 @@ function drawCoverIndicator(){
 }
 
 function shoot(){
+ if(insertion.phase!=="landed"&&insertion.phase!=="idle")return;
  if(!started||paused||player.dead||player.inCar||player.climb||player.reloading||player.shootCd>0)return;
  coverMove(0,0,0,1);
  if(player.ammo<=0){startReload();return}
@@ -1356,6 +1445,7 @@ function updateBullets(dt){
 }
 function update(dt){
  if(!started||paused)return;
+ if(insertionUpdate(dt))return;
  if(bossDeathIntro>0&&bossDeathScene){
   bossDeathIntro=Math.max(0,bossDeathIntro-dt);bossDeathScene.t+=dt;
   const p=1-bossDeathIntro/bossDeathIntroTotal;
@@ -2007,6 +2097,7 @@ function drawTopDownCharacter(opts){
  ctx.restore();
 }
 function drawPlayer(){
+ if(insertion.phase!=="idle"&&insertion.phase!=="landed")return;
  if(player.inCar||player.dead)return;
  drawCoverIndicator();
  const climbPos=playerClimbVisual();
@@ -2326,7 +2417,7 @@ function render(){
  ctx.fillStyle="#d9b761";shells.forEach(s=>ctx.fillRect(s.x,s.y,3,2));
  sparks.forEach(s=>{ctx.fillStyle="#ffd76b";ctx.fillRect(s.x,s.y,3,3)});damageChunks.forEach(p=>{ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.globalAlpha=Math.max(0,Math.min(1,p.t/(p.maxT||.7)));ctx.fillStyle=p.dark?"#6b171d":"#c92f39";ctx.fillRect(-p.r,-p.r*.55,p.r*2,p.r*1.1);ctx.restore()});ctx.globalAlpha=1;hitMarks.forEach(h=>{ctx.save();ctx.globalAlpha=Math.max(.15,Math.min(1,h.t/.25));ctx.strokeStyle="#fff";ctx.lineWidth=2;ctx.shadowColor="#ff4d5a";ctx.shadowBlur=8;ctx.beginPath();ctx.moveTo(h.x-9,h.y-9);ctx.lineTo(h.x-3,h.y-3);ctx.moveTo(h.x+9,h.y-9);ctx.lineTo(h.x+3,h.y-3);ctx.moveTo(h.x-9,h.y+9);ctx.lineTo(h.x-3,h.y+3);ctx.moveTo(h.x+9,h.y+9);ctx.lineTo(h.x+3,h.y+3);ctx.stroke();ctx.restore()});
  damageNumbers.forEach(n=>{ctx.save();ctx.translate(n.x,n.y);undoProjection(ctx);const a=Math.max(0,Math.min(1,n.t/(n.maxT||.72)));ctx.globalAlpha=a;ctx.textAlign="center";ctx.font=(n.critical?"900 18px":"800 14px")+" system-ui";ctx.fillStyle=n.critical?"#ffd05b":"#ffffff";ctx.shadowColor=n.critical?"#ff7a2f":"#000";ctx.shadowBlur=n.critical?10:5;ctx.fillText((n.critical?"! ":"")+n.value,0,0);ctx.restore()});
- ctx.restore();hud();drawBossDeathOverlay()
+ ctx.restore();hud();drawBossDeathOverlay();insertionDraw()
 }
 let fps=60,fpsFrames=0,fpsAccum=0,last=performance.now();
 function loop(t){
