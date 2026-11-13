@@ -192,7 +192,11 @@ class OperatorAvatar{
   else if(!this.wasGrounded)this.landingTime=0;
   else this.landingTime=Math.min(1,this.landingTime+dt);
   let state=speed>.1?(sprinting?'run':'walk'):'idle';if(armed&&aiming&&speed<.1)state='aim';
-  const duration=state==='run'?.84:state==='walk'?1.15:4;this.phase+=dt/duration*(1-this.crouchBlend*.45);
+  // Match stride cadence to actual velocity, avoiding the "running in place" impression.
+  const runCadence=clamp(this.speed/10,.70,1.28);
+  const walkCadence=clamp(this.speed/4,.65,1.3);
+  const duration=state==='run'?.84/runCadence:state==='walk'?1.15/walkCadence:4;
+  this.phase+=dt/duration*(1-this.crouchBlend*.45);
   let phase=this.phase;
   if(jumpPreparation>0){state='jump';phase=.22*clamp(1-jumpPreparation/.12,0,1)}
   else if(!grounded){
