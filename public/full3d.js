@@ -1138,6 +1138,11 @@ class PistolController {
   this.reloadSoundStage=0;
   this.emptyClickCooldown=0;
   this.mechanismShot=0;
+  this.shotHeat=0;
+  this.burstShots=0;
+  this.timeSinceShot=10;
+  this.spreadKick=0;
+  this.lastHandlingWeapon='pistol';
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1383,6 +1388,11 @@ class PistolController {
   this.equipTimer=this.equipDuration;
   this.equipBlend=1;
   this.reloadSoundStage=0;
+  this.shotHeat=0;
+  this.burstShots=0;
+  this.timeSinceShot=10;
+  this.spreadKick=0;
+  this.lastHandlingWeapon=id;
   forestAudio.playWeaponMechanic(id,'equip');
   this.pistol.visible=true;
 
@@ -1423,6 +1433,7 @@ class PistolController {
  reload(){
   if(!this.isEquipped||this.equipTimer>0||this.isReloading||this.ammo>=this.magSize||this.reserveAmmo<=0)return;
   this.isReloading=true;
+  this.burstShots=0;
   this.reloadTimer=0;
   this.reloadBlend=0;
   this.reloadSoundStage=0;
@@ -1573,12 +1584,31 @@ class PistolController {
    return;
   }
   const spec=this.weaponSpec;
+  if(this.lastHandlingWeapon!==spec.id){
+   this.lastHandlingWeapon=spec.id;this.shotHeat=0;this.spreadKick=0;this.burstShots=0;this.timeSinceShot=10;
+  }
+  const handling={
+   pistol:{heat:.17,maxHeat:.46,recovery:1.45,spread:1.0,kick:.90,camera:.85},
+   smg:{heat:.105,maxHeat:1.0,recovery:.88,spread:1.65,kick:.72,camera:.70},
+   rifle:{heat:.14,maxHeat:.85,recovery:1.10,spread:1.32,kick:1.0,camera:1.0},
+   shotgun:{heat:.28,maxHeat:.44,recovery:1.8,spread:.42,kick:1.55,camera:1.36},
+   sniper:{heat:.38,maxHeat:.45,recovery:2.0,spread:.25,kick:1.70,camera:1.48}
+  }[spec.id]||{heat:.15,maxHeat:.8,recovery:1,spread:1,kick:1,camera:1};
+  if(this.timeSinceShot>Math.max(.30,spec.fireRate*2.8))this.burstShots=0;
+  const burstFactor=Math.min(1,this.burstShots/7);
+  this.shotHeat=Math.min(handling.maxHeat,this.shotHeat+handling.heat);
+  this.spreadKick=Math.min(1.2,this.spreadKick+handling.heat*.7);
+  this.burstShots=Math.min(20,this.burstShots+1);
+  this.timeSinceShot=0;
   const ads=controller.keys.aiming&&this.isEquipped;
   const locomotion=THREE.MathUtils.clamp(controller.horizontalSpeed/Math.max(1,controller.sprintSpeed),0,1);
   const movementPenalty=1+locomotion*(ads?.6:1.9);
   const airbornePenalty=controller.isGrounded?1:2.3;
   const crouchBonus=controller.isCrouching?.82:1;
-  const effectiveSpread=spec.spread*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
+  const baseSpread=spec.spread*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
+  // Heat increases sustained-fire bloom; pause firing to recover accuracy.
+  const effectiveSpread=baseSpread*(1+handling.spread*(this.shotHeat+this.spreadKick*.35));
+  const yawDrift=(this.burstShots%6<3?1:-1)*burstFactor*baseSpread*.13;
   this.fireCooldown=spec.fireRate;this.ammo--;
   this.mechanismShot=1;
   forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
@@ -1588,7 +1618,7 @@ class PistolController {
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
-   raycaster.setFromCamera(new THREE.Vector2(centered?0:(Math.random()-.5)*effectiveSpread,centered?0:(Math.random()-.5)*effectiveSpread),this.camera);
+   raycaster.setFromCamera(new THREE.Vector2(centered?0:(Math.random()-.5)*effectiveSpread+yawDrift,centered?0:(Math.random()-.5)*effectiveSpread),this.camera);
    let hit=window.CombatBotSystem.firstHit(this.scene,raycaster,this.player);
    let end=hit?.point||raycaster.ray.at(spec.range,new THREE.Vector3());
    const muzzleDirection=end.clone().sub(start),distance=muzzleDirection.length();
@@ -1616,12 +1646,12 @@ class PistolController {
    for(const hit of networkHits)multiplayer.send({type:'hit3d',shotId,...hit});
   }
   const flash=new THREE.PointLight(0xffd27a,1.5,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
-  const weaponScale=spec.id==='shotgun'?1.45:spec.id==='smg'?.68:spec.id==='rifle'?1.08:1;
+  const weaponScale=handling.kick*(1+burstFactor*.22);
   this.recoil=Math.min(2.4,this.recoil+this.recoilPreset.weaponKick*weaponScale);
   this.recoilVelocity=0;
   if(typeof thirdPersonCamera!=='undefined')thirdPersonCamera.addShotRecoil(
-   this.recoilPreset.aimKickDeg*weaponScale,
-   this.recoilPreset.cameraShake*weaponScale,
+   this.recoilPreset.aimKickDeg*handling.camera*(1+burstFactor*.40)*(ads?.78:1),
+   this.recoilPreset.cameraShake*handling.camera*(1+burstFactor*.25),
    this.recoilPreset.recovery
   );
   shots++;
@@ -1635,6 +1665,11 @@ class PistolController {
   this.mechanismShot=Math.max(0,this.mechanismShot-dt*16);
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
   this.emptyClickCooldown=Math.max(0,this.emptyClickCooldown-dt);
+  this.timeSinceShot+=dt;
+  const handlingRecovery={pistol:1.45,smg:.88,rifle:1.10,shotgun:1.8,sniper:2}[this.weaponSpec?.id]||1;
+  this.shotHeat=Math.max(0,this.shotHeat-handlingRecovery*dt*.45);
+  this.spreadKick=Math.max(0,this.spreadKick-handlingRecovery*dt*.75);
+  if(this.timeSinceShot>.36)this.burstShots=0;
   this.equipTimer=Math.max(0,this.equipTimer-dt);
   this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/Math.max(.01,this.equipDuration),0,1):0;
 
