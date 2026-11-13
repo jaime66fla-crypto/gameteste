@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -556,6 +556,22 @@ class OperatorAvatar{
    }
   }
   if(armed){
+   const accessoryAim=aiming?1:0;
+   if(stock&&this.weaponId!=='pistol'){
+    r[2][0]-=.025*accessoryAim;
+    r[3][0]-=.035*accessoryAim;
+    r[3][1]+=.018*accessoryAim;
+    r[6][0]-=.045*accessoryAim;
+    r[9][0]-=.025*accessoryAim;
+   }
+   if(optic&&aiming){
+    r[5][0]-=.025;
+    r[3][1]-=.018;
+   }
+   if(suppressed&&this.weaponId!=='pistol'){
+    r[6][0]+=.018;
+    r[9][0]+=.012;
+   }
    const a=pose.weaponAngles.slice();
    if(reload>.001){
     const t=clamp(reload,0,1),down=1-Math.abs(t*2-1),id=this.weaponId||'pistol';
@@ -585,6 +601,9 @@ class OperatorAvatar{
    const recoilScale=this.weaponId==='pistol'?.045:this.weaponId==='smg'?.030:this.weaponId==='rifle'?.050:this.weaponId==='shotgun'?.085:.072;
    a[0]+=.40*this.coverBlend-recoil*recoilScale;
    a[1]+=coverSide*.12*this.coverBlend;
+   if(stock&&this.weaponId!=='pistol')a[0]-=.035*(aiming?1:.35);
+   if(optic&&aiming){a[0]-=.025;a[1]-=.012;}
+   if(suppressed&&this.weaponId!=='pistol')a[0]+=.012;
    if(aiming&&grounded&&speed>.08){
     a[0]-=.10*clamp(aimTransition,0,1);
     a[1]-=clamp(strafe,-1,1)*.035;
