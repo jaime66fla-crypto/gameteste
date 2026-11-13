@@ -3022,18 +3022,22 @@ const multiplayer=new window.MultiplayerClient({
  onDisconnect:wasActive=>{tacticalGear.clear();tacticalGear.resetInventory();multiplayerWorld.clear();setMultiplayerBots(true);roomHud();battleUI.waiting.hidden=true;if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
  onMessage:data=>{
   if(data.type==='battle-status'){
-   battleUI.queue.textContent=data.phase==='waiting'?'Aguardando jogadores: '+data.connected+' / 8':'Sobreviventes: '+data.alive+' / 8';
-   if(data.phase==='waiting'){battleUI.waiting.hidden=false;battleUI.count.textContent=data.connected+' / 8';}
+   battleUI.queue.textContent=data.phase==='waiting'?'Jogadores '+data.connected+'/8 • Início em '+data.remainingSeconds+'s • vagas restantes serão bots':'Sobreviventes: '+data.alive+' / 8';
+   if(data.phase==='waiting'){battleUI.waiting.hidden=false;battleUI.count.textContent=data.connected+' / 8 · '+data.remainingSeconds+'s';}
    return;
   }
-  if(data.type==='battle-start'){battleUI.active=true;battleUI.waiting.hidden=true;hideGameMenu();networkTick=1;sendNetworkState();return;}
+  if(data.type==='battle-start'){
+   battleUI.active=true;battleUI.waiting.hidden=true;
+   for(const state of data.players||[])if(state.id!==multiplayer.id)multiplayerWorld.receive(state);
+   hideGameMenu();networkTick=1;sendNetworkState();roomHud();return;
+  }
   if(data.type==='battle-end'){battleEnd(data);return;}
   if(['grenade3d','icewall3d','icewall-remove3d','explosion3d','inventory3d'].includes(data.type)){tacticalGear.receive(data);return;}
   if(data.type==='state3d'&&data.id!==multiplayer.id)multiplayerWorld.receive(data);
   else if(data.type==='leave')multiplayerWorld.remove(data.id);
   else if(data.type==='shot3d'&&data.ownerId!==multiplayer.id)multiplayerWorld.shot(data);
   else if(data.type==='hit3d'){
-   if(data.targetId===multiplayer.id){combatBots.health=data.health;playerLife.receiveHealth(data.health,data.respawnIn||5);}
+   if(data.targetId===multiplayer.id){combatBots.health=data.health;playerLife.receiveHealth(data.health,data.respawnIn??0);}
    else{const remote=multiplayerWorld.players.get(data.targetId);if(remote)multiplayerWorld.receive({...remote.state,health:data.health,dead:data.killed||false});}
    if(data.attackerId===multiplayer.id){
     if(!confirmedNetworkShots.has(data.shotId)){confirmedNetworkShots.add(data.shotId);if(confirmedNetworkShots.size>128)confirmedNetworkShots.delete(confirmedNetworkShots.values().next().value);hitCount++;score+=12;flashHitmarker();forestAudio.playHit();}
