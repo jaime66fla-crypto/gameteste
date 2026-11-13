@@ -259,6 +259,11 @@ export class GameRoom {
    this.broadcast3D(bot);
    if(dist<27&&now-(bot.lastBotAttack||0)>1800){
     bot.lastBotAttack=now;
+    // Replicate shot FX and sound to every human client, regardless of hit chance.
+    const ox=bot.x,oy=bot.y+1.3,oz=bot.z;
+    const vx=target.x-ox,vy=target.y+1.3-oy,vz=target.z-oz;
+    const len=Math.hypot(vx,vy,vz)||1;
+    this.broadcast3D({type:'shot3d',ownerId:id,weapon:'rifle',origin:{x:ox,y:oy,z:oz},rays:[{x:vx/len,y:vy/len,z:vz/len}],attachments:{},at:now});
     if(Math.random()<.45){
      target.health=Math.max(0,target.health-11);const killed=target.health===0;
      if(killed){target.dead=true;target.deadUntil=0;bot.kills++;target.moving=false;}
