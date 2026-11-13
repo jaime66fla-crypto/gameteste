@@ -2,16 +2,39 @@
 (()=>{'use strict';
 class MultiplayerWorld{
  constructor(scene,terrainHeight=()=>0){this.scene=scene;this.terrainHeight=terrainHeight;this.players=new Map();this.effects=[];}
+ _buildRemoteJetpack(){
+  const g=new THREE.Group();g.name='REMOTE_SPECIAL_JETPACK';
+  const dark=new THREE.MeshStandardMaterial({color:0x22282a,metalness:.55,roughness:.42});
+  const panel=new THREE.MeshStandardMaterial({color:0x3c4243,metalness:.35,roughness:.5});
+  const gold=new THREE.MeshStandardMaterial({color:0xe59b21,emissive:0x5b2a00,emissiveIntensity:.45,metalness:.5,roughness:.35});
+  const body=new THREE.Mesh(new THREE.BoxGeometry(.52,.58,.22),panel);body.castShadow=true;g.add(body);
+  const handle=new THREE.Mesh(new THREE.TorusGeometry(.16,.035,6,16,Math.PI),dark);handle.rotation.z=Math.PI;handle.position.set(0,.37,0);g.add(handle);
+  g.userData.flames=[];
+  for(const sx of [-.38,.38]){
+   const tank=new THREE.Mesh(new THREE.CylinderGeometry(.13,.16,.58,12),dark);tank.position.set(sx,0,0);tank.castShadow=true;g.add(tank);
+   const band=new THREE.Mesh(new THREE.CylinderGeometry(.145,.145,.08,12),gold);band.position.set(sx,.10,0);g.add(band);
+   const nozzle=new THREE.Mesh(new THREE.CylinderGeometry(.11,.075,.18,12),dark);nozzle.position.set(sx,-.36,0);g.add(nozzle);
+   const flame=new THREE.Mesh(new THREE.ConeGeometry(.09,.46,10),new THREE.MeshBasicMaterial({color:0xffb12b,transparent:true,opacity:0}));
+   flame.position.set(sx,-.66,0);flame.rotation.z=Math.PI;g.add(flame);g.userData.flames.push(flame);
+  }
+  const emblem=new THREE.Mesh(new THREE.BoxGeometry(.26,.07,.235),gold);emblem.position.set(0,.02,.02);g.add(emblem);
+  g.scale.setScalar(.72);g.position.set(0,1.28,-.34);
+  return g;
+ }
  receive(state){
   if(!state?.id||![state.x,state.y,state.z,state.angle].every(Number.isFinite))return;
   let remote=this.players.get(state.id);
-  if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
+  if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,gear:null,jetpack:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
   remote.state=state;
   if(remote.weapon!==state.weapon||remote.gear!==state.gear){
    for(const child of [...remote.avatar.gun.children])if(child!==remote.avatar.flash){remote.avatar.gun.remove(child);this.disposeObject(child,true);}
    if(state.gear==='grenade')remote.avatar.gun.add(window.TacticalGear.grenadeModel());
    else if(state.weapon!=='none')remote.avatar.gun.add(window.WeaponLootSystem.createModel(state.weapon));
    remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;
+  }
+  if(!!state.jetpack!==!!remote.jetpack){
+   if(state.jetpack){remote.jetpack=this._buildRemoteJetpack();remote.avatar.group.add(remote.jetpack);}
+   else if(remote.jetpack){remote.avatar.group.remove(remote.jetpack);this.disposeObject(remote.jetpack,true);remote.jetpack=null;}
   }
  }
  update(dt){for(const remote of this.players.values()){
@@ -21,6 +44,14 @@ class MultiplayerWorld{
   else a.group.position.lerp(new THREE.Vector3(s.x,y,s.z),k);
   a.group.rotation.y+=Math.atan2(Math.sin(s.angle-a.group.rotation.y),Math.cos(s.angle-a.group.rotation.y))*k;
   remote.flashTime=Math.max(0,remote.flashTime-dt);a.flash.visible=remote.flashTime>0;a.setRecoil((a.recoil||0)*Math.exp(-15*dt));
+  if(remote.jetpack){
+   remote.jetpack.visible=!s.dead;
+   for(const flame of remote.jetpack.userData.flames||[]){
+    const active=!!s.jetpackActive&&!s.dead;
+    flame.material.opacity=THREE.MathUtils.lerp(flame.material.opacity,active?.95:0,1-Math.exp(-dt*16));
+    flame.scale.y=active?.75+Math.random()*.45:.2;
+   }
+  }
   a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
