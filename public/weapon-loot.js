@@ -144,6 +144,31 @@ function createModel(id){
  }
  // Per-model mechanism controls. Models used as loot remain in their rest pose.
  const rest=Object.fromEntries(Object.entries(parts).map(([key,mesh])=>[key,mesh.position.clone()]));
+ // Reusable animated reload props. No transient meshes, shadows or per-frame allocations.
+ const reloadVisuals={};
+ if(id==='shotgun'){
+  const brass=new THREE.MeshStandardMaterial({color:0xcda05e,metalness:.72,roughness:.32});
+  const shellColor=new THREE.MeshStandardMaterial({color:0xa63e30,roughness:.73});
+  const shells=[];
+  for(let i=0;i<3;i++){
+   const item=new THREE.Group();item.name='ReloadShell_'+i;item.userData.ignoreCombat=true;
+   const shell=new THREE.Mesh(new THREE.CylinderGeometry(.012,.012,.057,8),shellColor);
+   shell.rotation.x=Math.PI/2;item.add(shell);
+   const rim=new THREE.Mesh(new THREE.CylinderGeometry(.013,.013,.01,8),brass);
+   rim.rotation.x=Math.PI/2;rim.position.z=-.028;item.add(rim);
+   item.visible=false;group.add(item);shells.push(item);
+  }
+  reloadVisuals.shells=shells;
+ }else{
+  const magMat=new THREE.MeshStandardMaterial({color:id==='pistol'?0x1f292a:0x384340,metalness:.25,roughness:.72});
+  const magSize=id==='pistol'?[.036,.085,.041]:id==='smg'?[.047,.135,.063]:id==='sniper'?[.043,.085,.059]:[.050,.120,.067];
+  const dropped=new THREE.Mesh(new THREE.BoxGeometry(...magSize),magMat);
+  dropped.name='ReloadMagazine_Eject';dropped.userData.ignoreCombat=true;dropped.castShadow=false;dropped.visible=false;
+  const inserted=dropped.clone();inserted.name='ReloadMagazine_Insert';inserted.visible=false;
+  group.add(dropped,inserted);
+  reloadVisuals.dropped=dropped;reloadVisuals.inserted=inserted;
+ }
+ group.userData.reloadVisuals=reloadVisuals;
  group.userData.weaponMechanics={id,parts,rest};
  group.name='Weapon_'+id;
  if(window.GameSkins)window.GameSkins.paintWeapon(group,id);
@@ -153,7 +178,13 @@ function animateMechanics(model,{reload=0,reloading=false,recoil=0,shot=0}={}){
  const setup=model?.userData?.weaponMechanics;
  if(!setup)return;
  const {id,parts,rest}=setup;
+ const visual=model.userData.reloadVisuals;
  for(const [key,part] of Object.entries(parts))part.position.copy(rest[key]);
+ if(visual){
+  if(visual.dropped)visual.dropped.visible=false;
+  if(visual.inserted)visual.inserted.visible=false;
+  if(visual.shells)for(const shell of visual.shells)shell.visible=false;
+ }
  const t=THREE.MathUtils.clamp(reload,0,1);
  const impulse=THREE.MathUtils.clamp(shot,0,1);
  // Magazine drop / insertion / return, driven by the real reload progress.
@@ -162,6 +193,39 @@ function animateMechanics(model,{reload=0,reloading=false,recoil=0,shot=0}={}){
  const magTravel=magOut*magIn;
  if(parts.magazine)parts.magazine.position.y-=.07*magTravel;
  if(parts.magazine)parts.magazine.position.z-=.025*magTravel;
+ if(visual&&reloading){
+  if(id==='shotgun'&&visual.shells){
+   // Three readable loading pulses, synchronized to the existing shotgun reload sequence.
+   for(let i=0;i<visual.shells.length;i++){
+    const start=.17+i*.21,finish=start+.20;
+    if(t<start||t>=finish)continue;
+    const progress=(t-start)/(finish-start);
+    const shell=visual.shells[i];
+    shell.visible=true;
+    shell.position.set(-.065+.065*progress,-.115+.068*progress,.14-.06*progress);
+    shell.rotation.set(.15+progress*.7,0,progress*.18);
+   }
+  }else if(visual.dropped&&visual.inserted){
+   // Separate old magazine falls away; fresh magazine is brought up into the receiver.
+   const outlet=id==='pistol'?-.09:id==='smg'?-.11:-.085;
+   const startZ=id==='pistol'?-.018:id==='sniper'?-.014:.05;
+   if(t>=.14&&t<.48){
+    const progress=(t-.14)/.34;
+    visual.dropped.visible=true;
+    visual.dropped.position.set(-.018*progress,outlet-.32*progress*progress,startZ+.10*progress);
+    visual.dropped.rotation.set(.14*progress,0,.75*progress);
+   }
+   if(t>=.40&&t<.78){
+    const progress=(t-.40)/.38;
+    visual.inserted.visible=true;
+    visual.inserted.position.set(.045*(1-progress),outlet-.18*(1-progress),startZ+.095*(1-progress));
+    visual.inserted.rotation.set(.11*(1-progress),0,-.23*(1-progress));
+   }
+   // Temporarily hide the seated magazine while the replacement is in flight.
+   if(parts.magazine&&t>.18&&t<.76)parts.magazine.visible=false;
+  }
+ }
+ if(parts.magazine&&(!reloading||t<=.18||t>=.76))parts.magazine.visible=true;
  if(parts.slide){
   const rack=reloading?Math.max(0,1-Math.abs(t-.82)/.13):0;
   parts.slide.position.z-=.055*Math.max(impulse,rack);
