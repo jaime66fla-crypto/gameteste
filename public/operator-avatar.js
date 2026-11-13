@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -325,6 +325,23 @@ class OperatorAvatar{
     r[13][0]+=.08*stagger;
     r[16][0]+=.05*stagger;
    }
+  }
+
+  if(grounded&&recovery>.01){
+   const rec=clamp(recovery,0,1);
+   const roll=Math.sin(this.time*11)*.12*rec;
+   r[1][0]-=.24*rec;
+   r[2][0]-=.18*rec;
+   r[3][0]+=.10*rec;
+   r[1][2]+=roll*.35;
+   r[12][0]-=.20*rec;
+   r[15][0]-=.08*rec;
+   r[13][0]+=.52*rec;
+   r[16][0]+=.34*rec;
+   r[6][0]+=.20*rec;
+   r[9][0]+=.12*rec;
+   pose.root[1]-=.08*rec;
+   pose.root[2]+=.035*rec;
   }
 
   if(grounded&&stepBlend>.01){
