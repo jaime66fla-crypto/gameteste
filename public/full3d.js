@@ -375,6 +375,16 @@ class HouseParkourBuilder {
     continue;
    }
 
+   const stepUp=b.maxY-footY;
+   if(controller.isGrounded&&controller.horizontalSpeed>.05&&stepUp>0&&stepUp<=controller.stepHeight){
+    p.y=b.maxY;
+    controller.velocity.y=0;
+    controller.isGrounded=true;
+    controller.stepBlend=Math.max(controller.stepBlend,THREE.MathUtils.clamp(stepUp/controller.stepHeight,0,1));
+    if(b.maxY>highestPlatformY)highestPlatformY=b.maxY;
+    continue;
+   }
+
    const headY=p.y+playerHeight;
    if(headY>b.minY+.1&&footY<b.maxY-.35){
     const overlapLeft=(p.x+playerRadius)-b.minX;
@@ -1489,6 +1499,8 @@ class PlayerController {
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.jumpForce=8.5;
   this.jumpPreparation=0;
+  this.stepHeight=.42;
+  this.stepBlend=0;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
@@ -1556,6 +1568,7 @@ class PlayerController {
  }
  update(dt){
   this.aimTransition=THREE.MathUtils.lerp(this.aimTransition,this.keys.aiming?1:0,1-Math.exp(-(this.keys.aiming?14:10)*dt));
+  this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
   if(this.jumpPreparation>0){
    if(!this.isGrounded||this.isCrouching)this.jumpPreparation=0;
    else{this.jumpPreparation=Math.max(0,this.jumpPreparation-dt);if(this.jumpPreparation===0){this.velocity.y=this.jumpForce;this.isGrounded=false;}}
@@ -2456,7 +2469,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
