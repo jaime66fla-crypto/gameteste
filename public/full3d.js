@@ -673,7 +673,7 @@ class ForestAudioSystem {
   gain.connect(delay);delay.connect(feedback);feedback.connect(delay);delay.connect(this.masterGain);
   src.start(when);src.stop(when+duration+.05);
  }
- playShoot(kind='pistol'){
+ playShoot(kind='pistol',volumeScale=1){
   if(!this.ctx||!this.enabled)return;
   const specs={
    pistol:{body:150,sub:72,mech:1150,tail:.24,transient:.31,bodyVol:.25,lfe:.08,crack:.12},
@@ -682,7 +682,7 @@ class ForestAudioSystem {
    shotgun:{body:76,sub:42,mech:720,tail:.48,transient:.40,bodyVol:.34,lfe:.14,crack:.09}
   };
   const spec=specs[kind]||specs.pistol,now=this.ctx.currentTime+.005;
-  const variation=1+(Math.random()-.5)*.08;
+  const variation=(1+(Math.random()-.5)*.08)*volumeScale;
 
   // Layer 1: sharp muzzle transient.
   this._shotNoise(now,.028,spec.transient*variation,950,6500);
@@ -1521,7 +1521,7 @@ class PistolController {
    }
   }
  }
- emitShotEffects(start,spec){
+ emitShotEffects(start,spec,flashScale=1){
   const isShotgun=spec.id==='shotgun';
   const casingMaterial=new THREE.MeshStandardMaterial({
    color:isShotgun?0xb96d36:0xc9a15c,metalness:.72,roughness:.3
@@ -1541,6 +1541,7 @@ class PistolController {
   }
   const burst=new THREE.Group();
   burst.position.copy(start);
+  burst.scale.setScalar(Math.max(.02,flashScale));
   const direction=new THREE.Vector3(0,0,1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
   burst.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),direction);
   const flame=new THREE.Mesh(new THREE.ConeGeometry(isShotgun?.095:.054,isShotgun?.36:.22,7),new THREE.MeshBasicMaterial({color:0xffe39a,transparent:true,opacity:.9,depthWrite:false}));
@@ -1584,6 +1585,7 @@ class PistolController {
    return;
   }
   const spec=this.weaponSpec;
+  const mods=this.attachmentMods||{spreadMultiplier:1,recoilMultiplier:1,soundMultiplier:1,muzzleFlashMultiplier:1};
   if(this.lastHandlingWeapon!==spec.id){
    this.lastHandlingWeapon=spec.id;this.shotHeat=0;this.spreadKick=0;this.burstShots=0;this.timeSinceShot=10;
   }
@@ -1605,16 +1607,16 @@ class PistolController {
   const movementPenalty=1+locomotion*(ads?.6:1.9);
   const airbornePenalty=controller.isGrounded?1:2.3;
   const crouchBonus=controller.isCrouching?.82:1;
-  const baseSpread=spec.spread*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
+  const baseSpread=spec.spread*mods.spreadMultiplier*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
   // Heat increases sustained-fire bloom; pause firing to recover accuracy.
   const effectiveSpread=baseSpread*(1+handling.spread*(this.shotHeat+this.spreadKick*.35));
   const yawDrift=(this.burstShots%6<3?1:-1)*burstFactor*baseSpread*.13;
   this.fireCooldown=spec.fireRate;this.ammo--;
   this.mechanismShot=1;
-  forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
+  forestAudio.init();forestAudio.playShoot(spec.id,mods.soundMultiplier);combatBots?.reportSound?.(this.player.position,mods.suppressor?18:34,'gunshot');
   this.scene.updateMatrixWorld(true);
   const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
-  this.emitShotEffects(start,spec);
+  this.emitShotEffects(start,spec,mods.muzzleFlashMultiplier);
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
@@ -1645,13 +1647,13 @@ class PistolController {
    multiplayer.send({type:'shot3d',shotId,weapon:spec.id,origin:{x:start.x,y:start.y,z:start.z},rays:networkRays.map(r=>({x:r.x,y:r.y,z:r.z}))});
    for(const hit of networkHits)multiplayer.send({type:'hit3d',shotId,...hit});
   }
-  const flash=new THREE.PointLight(0xffd27a,1.5,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
-  const weaponScale=handling.kick*(1+burstFactor*.22);
+  const flash=new THREE.PointLight(0xffd27a,1.5*mods.muzzleFlashMultiplier,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
+  const weaponScale=handling.kick*mods.recoilMultiplier*(1+burstFactor*.22);
   this.recoil=Math.min(2.4,this.recoil+this.recoilPreset.weaponKick*weaponScale);
   this.recoilVelocity=0;
   if(typeof thirdPersonCamera!=='undefined')thirdPersonCamera.addShotRecoil(
-   this.recoilPreset.aimKickDeg*handling.camera*(1+burstFactor*.40)*(ads?.78:1),
-   this.recoilPreset.cameraShake*handling.camera*(1+burstFactor*.25),
+   this.recoilPreset.aimKickDeg*handling.camera*mods.recoilMultiplier*(1+burstFactor*.40)*(ads?.78:1),
+   this.recoilPreset.cameraShake*handling.camera*mods.recoilMultiplier*(1+burstFactor*.25),
    this.recoilPreset.recovery
   );
   shots++;
@@ -2339,6 +2341,7 @@ function updateAdsViewModel(dt){
  adsViewModel.visible=!!active;
  if(!active)return;
  const gun=ensureAdsViewWeapon(id);
+ window.WeaponLootSystem?.applyAccessoryVisuals?.(gun,id,weaponLoot?.slots?.[weaponLoot.activeSlot]?.attachments||{});
  window.WeaponLootSystem?.animateMechanics?.(gun,{reload:pistolWeapon.reloadBlend,reloading:pistolWeapon.isReloading,shot:pistolWeapon.mechanismShot});
  const recoil=pistolWeapon.recoil||0;
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
