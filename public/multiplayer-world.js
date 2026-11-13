@@ -58,7 +58,8 @@ class MultiplayerWorld{
     flame.scale.y=active?.75+Math.random()*.45:.2;
    }
   }
-  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
+  const att=s.attachments&&typeof s.attachments==='object'?s.attachments:{};
+  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }
