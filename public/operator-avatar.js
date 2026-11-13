@@ -827,12 +827,16 @@ class OperatorAvatar{
    // Shoulder-supported rifle: subtle forward chest lean and cheek weld.
    // Applied before IK so the hands remain attached to the receiver.
    if(tacticalAds>.001){
-    r[2][0]+=.045*tacticalAds;
-    r[3][0]+=.035*tacticalAds;
-    r[5][0]+=.065*tacticalAds;
-    r[5][1]-=.028*tacticalAds;
-    a[1]-=.012*tacticalAds;
-   }
+     // Reference posture: shoulder the stock, lean slightly into recoil,
+     // bring cheek closer to the sights and keep the rifle square to target.
+     r[2][0]+=.058*tacticalAds;
+     r[3][0]+=.044*tacticalAds;
+     r[3][1]-=.018*tacticalAds;
+     r[5][0]+=.082*tacticalAds;
+     r[5][1]-=.036*tacticalAds;
+     a[0]-=.014*tacticalAds;
+     a[1]-=.018*tacticalAds;
+    }
    const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
