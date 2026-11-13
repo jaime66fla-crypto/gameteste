@@ -2189,6 +2189,8 @@ const tacticalGear=new window.TacticalGear({
  notify:message=>{const notice=document.getElementById('tacticalNotice');if(notice){notice.textContent=message;notice.hidden=false;tacticalNoticeTime=2.5;}}
 });
 combatBots.onCoverHit=(id,damage)=>tacticalGear.damageWall(id,damage);
+combatBots.getGrenades=()=>[...tacticalGear.grenades.values()].map(entry=>entry.state);
+combatBots.getWalls=()=>[...tacticalGear.walls.values()];
 addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&!e.repeat&&e.code==='KeyV')tacticalGear.deployIce();});
 addEventListener('mousedown',e=>{if(e.button===0&&e.target===canvas)tacticalGear.beginThrow();});
 addEventListener('mouseup',e=>{if(e.button===0)tacticalGear.endThrow();});
