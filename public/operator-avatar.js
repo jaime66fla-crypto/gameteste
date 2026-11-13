@@ -253,6 +253,47 @@ class OperatorAvatar{
     r[13][0]+=a*.04;
     r[16][0]+=a*.04;
    }
+
+   // Combat locomotion: keep the weapon platform quiet while the legs strafe/backpedal.
+   if(aiming&&grounded&&speed>.08){
+    const move=clamp(speed/5,0,1);
+    const side=clamp(strafe,-1,1);
+    const fwd=clamp(forward,-1,1);
+    const back=Math.max(0,-fwd);
+    const lateral=Math.abs(side);
+
+    // Chest counters pelvis movement so the sight remains stable.
+    r[1][1]+=side*.055*move;
+    r[2][1]-=side*.040*move;
+    r[3][1]-=side*.030*move;
+    r[2][2]+=side*.028*move;
+    r[3][2]-=side*.020*move;
+
+    // Shorter, wider steps for lateral movement.
+    if(lateral>.08){
+     const phaseSide=Math.sin(this.phase*Math.PI*2);
+     r[12][2]+=-side*(.11+.035*phaseSide)*move;
+     r[15][2]+=-side*(.11-.035*phaseSide)*move;
+     r[13][0]+=(.20+.08*Math.max(0,phaseSide))*lateral*move;
+     r[16][0]+=(.20+.08*Math.max(0,-phaseSide))*lateral*move;
+     r[14][2]+=side*.08*move;
+     r[17][2]+=side*.08*move;
+     pose.root[0]+=side*.018*move;
+    }
+
+    // Backpedal uses shorter steps, bent knees and a slight rearward balance.
+    if(back>.05){
+     r[1][0]-=.055*back*move;
+     r[2][0]-=.035*back*move;
+     r[12][0]*=.62;
+     r[15][0]*=.62;
+     r[13][0]+=.16*back*move;
+     r[16][0]+=.16*back*move;
+     r[14][0]-=.055*back*move;
+     r[17][0]-=.055*back*move;
+     pose.root[2]-=.012*back*move;
+    }
+   }
   }
 
   if(crouch>.001){
@@ -261,7 +302,14 @@ class OperatorAvatar{
    pose.root[1]=THREE.MathUtils.lerp(pose.root[1],support-1.045,crouch);r[2][0]+=.12*crouch;
   }
   if(armed){
-   const a=pose.weaponAngles.slice();a[0]+=.40*this.coverBlend-recoil*.04;a[1]+=coverSide*.12*this.coverBlend;
+   const a=pose.weaponAngles.slice();
+   a[0]+=.40*this.coverBlend-recoil*.04;
+   a[1]+=coverSide*.12*this.coverBlend;
+   if(aiming&&grounded&&speed>.08){
+    a[0]-=.10*clamp(aimTransition,0,1);
+    a[1]-=clamp(strafe,-1,1)*.035;
+    a[2]+=clamp(strafe,-1,1)*.018;
+   }
    for(let k=0;k<3;k++)this.weaponAngles[k]=M.damp(this.weaponAngles[k],a[k],22,dt);
    pose.weapon=M.weaponFrame(this.weaponAngles);
    const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
