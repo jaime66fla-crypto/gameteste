@@ -497,6 +497,30 @@ createWalkableStairs(10,26);
 
 /* Migrated urban expansion: standalone 3D houses and tower cover, registered in the
    same collision/cover/loot system as original parkour buildings. */
+// Organized road corridors and plazas, using lightweight shared materials.
+const roadLayout=globalThis.TacticalRules.ROAD_LAYOUT||[];
+const roadMaterial=new THREE.MeshStandardMaterial({color:0x39434a,roughness:.96});
+const laneMaterial=new THREE.MeshBasicMaterial({color:0xe3ce8c});
+for(const [x,z,w,d] of roadLayout){
+ const y=forestEnvironment.getTerrainHeight(x,z);
+ const road=new THREE.Mesh(new THREE.BoxGeometry(w,.045,d),roadMaterial);
+ road.position.set(x,y+.045,z);
+ road.receiveShadow=true;road.castShadow=false;road.userData.ignoreCombat=true;road.userData.ignoreCamera=true;scene.add(road);
+ const vertical=d>w;
+ const lineCount=Math.floor((vertical?d:w)/9);
+ for(let i=0;i<lineCount;i++){
+  const offset=(i+.5)*9-(vertical?d:w)/2;
+  const stripe=new THREE.Mesh(new THREE.BoxGeometry(vertical?.12:3,.015,vertical?3:.12),laneMaterial);
+  stripe.position.set(x+(vertical?0:offset),y+.078,z+(vertical?offset:0));
+  stripe.userData.ignoreCombat=true;stripe.userData.ignoreCamera=true;scene.add(stripe);
+ }
+}
+// Southern plaza landmark for navigation, with no collision restrictions.
+const plazaMaterial=new THREE.MeshStandardMaterial({color:0x9c9e8e,roughness:.94});
+const plaza=new THREE.Mesh(new THREE.CylinderGeometry(11,11,.15,20),plazaMaterial);
+plaza.position.set(0,forestEnvironment.getTerrainHeight(0,104)+.04,104);
+plaza.receiveShadow=true;plaza.userData.ignoreCombat=true;plaza.userData.ignoreCamera=true;scene.add(plaza);
+
 const urbanLayout=globalThis.TacticalRules.URBAN_LAYOUT;
 const urbanTowers=[];
 const urbanWindowGeometry=new THREE.PlaneGeometry(1.35,1.35);
