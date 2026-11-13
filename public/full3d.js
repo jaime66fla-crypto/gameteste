@@ -63,8 +63,8 @@ function buildForestEnvironment(scene,options={}){
  const sunLight=new THREE.DirectionalLight(0xffd3a1,1.1);
  sunLight.position.set(60,75,40);
  sunLight.castShadow=true;
- sunLight.shadow.mapSize.width=2048;
- sunLight.shadow.mapSize.height=2048;
+ sunLight.shadow.mapSize.width=1024;
+ sunLight.shadow.mapSize.height=1024;
  sunLight.shadow.camera.near=10;
  sunLight.shadow.camera.far=250;
  const d=100;
@@ -139,7 +139,7 @@ function buildForestEnvironment(scene,options={}){
   const trunkGeo=new THREE.CylinderGeometry(.35*scale,.55*scale,2.5*scale,6);
   const trunk=new THREE.Mesh(trunkGeo,trunkMat);
   trunk.position.y=1.25*scale;
-  trunk.castShadow=true;
+  trunk.castShadow=false;
   trunk.receiveShadow=true;
   tree.add(trunk);
 
@@ -150,7 +150,7 @@ function buildForestEnvironment(scene,options={}){
    const cone=new THREE.Mesh(coneGeo,mat);
    cone.position.y=(3+i*1.5)*scale;
    cone.rotation.y=random()*Math.PI;
-   cone.castShadow=true;
+   cone.castShadow=false;
    cone.receiveShadow=true;
    tree.add(cone);
   }
@@ -164,7 +164,7 @@ function buildForestEnvironment(scene,options={}){
   const trunkGeo=new THREE.CylinderGeometry(.4*scale,.65*scale,3.2*scale,6);
   const trunk=new THREE.Mesh(trunkGeo,trunkMat);
   trunk.position.y=1.6*scale;
-  trunk.castShadow=true;
+  trunk.castShadow=false;
   trunk.receiveShadow=true;
   tree.add(trunk);
 
@@ -178,7 +178,7 @@ function buildForestEnvironment(scene,options={}){
    const crown=new THREE.Mesh(crownGeo,mat);
    crown.position.set(p.x*scale,p.y*scale,p.z*scale);
    crown.rotation.set(random(),random(),random());
-   crown.castShadow=true;
+   crown.castShadow=false;
    crown.receiveShadow=true;
    tree.add(crown);
   });
@@ -198,7 +198,7 @@ function buildForestEnvironment(scene,options={}){
   }
   rockGeo.computeVertexNormals();
   const rock=new THREE.Mesh(rockGeo,rockMat);
-  rock.userData.impactMaterial='concrete';rock.castShadow=true;
+  rock.userData.impactMaterial='concrete';rock.castShadow=false;
   rock.receiveShadow=true;
   return rock;
  }
@@ -210,7 +210,7 @@ function buildForestEnvironment(scene,options={}){
    const geo=new THREE.IcosahedronGeometry((.7+random()*.4)*scale,0);
    const part=new THREE.Mesh(geo,mat);
    part.position.set((random()-.5)*scale,.4*scale,(random()-.5)*scale);
-   part.castShadow=true;
+   part.castShadow=false;
    part.receiveShadow=true;
    bush.add(part);
   }
@@ -1203,6 +1203,11 @@ class PistolController {
   this.weaponSpec=window.WeaponLootSystem.DEFINITIONS.pistol;
   this.triggerHeld=false;
   this.casings=[];
+  this.tracerPool=[];
+  this.tracerCursor=0;
+  this.tracerMaterial=new THREE.LineBasicMaterial({color:0xffe8a3,transparent:true,opacity:.8,depthWrite:false});
+  this.casingGeometry={small:new THREE.CylinderGeometry(.009,.009,.039,8),shotgun:new THREE.CylinderGeometry(.019,.019,.065,8)};
+  this.casingMaterial={small:new THREE.MeshStandardMaterial({color:0xc9a15c,metalness:.72,roughness:.3}),shotgun:new THREE.MeshStandardMaterial({color:0xb96d36,metalness:.72,roughness:.3})};
   this.muzzleBursts=[];
   this.impactEffects=[];
   this.reloadSoundStage=0;
@@ -1559,7 +1564,7 @@ class PistolController {
   if(Math.abs(normal.x)>.85)tangent.set(0,0,1);
   tangent.addScaledVector(normal,-tangent.dot(normal)).normalize();
   const binormal=new THREE.Vector3().crossVectors(normal,tangent).normalize();
-  const count=spec.id==='shotgun'?3:config.count;
+  const count=spec.id==='shotgun'?2:Math.min(3,config.count);
   for(let i=0;i<count;i++){
    const size=(material==='metal'?.009:.016)*(.65+Math.random()*.7);
    const part=new THREE.Mesh(new THREE.TetrahedronGeometry(size,0),
@@ -1572,7 +1577,7 @@ class PistolController {
    const particleLife=.22+Math.random()*.38;
    this.impactEffects.push({mesh:part,velocity,life:particleLife,maxLife:particleLife});
   }
-  while(this.impactEffects.length>140){
+  while(this.impactEffects.length>64){
    const old=this.impactEffects.shift();
    this.scene.remove(old.mesh);old.mesh.geometry.dispose();old.mesh.material.dispose();
   }
@@ -1593,21 +1598,19 @@ class PistolController {
  }
  emitShotEffects(start,spec,flashScale=1){
   const isShotgun=spec.id==='shotgun';
-  const casingMaterial=new THREE.MeshStandardMaterial({
-   color:isShotgun?0xb96d36:0xc9a15c,metalness:.72,roughness:.3
-  });
+  const casingMaterial=this.casingMaterial[isShotgun?'shotgun':'small'];
   // Cases eject from the right of the receiver, not from the muzzle itself.
   const side=new THREE.Vector3(1,0,0).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
   const back=new THREE.Vector3(0,0,-1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
   const receiver=start.clone().addScaledVector(back,Math.max(.10,spec.muzzleZ*.65)).addScaledVector(side,.12);
-  const capsule=new THREE.Mesh(new THREE.CylinderGeometry(isShotgun?.019:.009,isShotgun?.019:.009,isShotgun?.065:.039,8),casingMaterial);
+  const capsule=new THREE.Mesh(this.casingGeometry[isShotgun?'shotgun':'small'],casingMaterial);
   capsule.position.copy(receiver);
   capsule.rotation.set(Math.random()*3,Math.random()*3,Math.random()*3);
   capsule.castShadow=false;capsule.userData.ignoreCombat=true;capsule.userData.ignoreCamera=true;
   this.scene.add(capsule);
   this.casings.push({mesh:capsule,velocity:side.multiplyScalar(1.3+Math.random()*1.2).add(new THREE.Vector3(0,1.5+Math.random()*.8,0)).addScaledVector(back,.45),life:1.35});
-  if(this.casings.length>24){
-   const old=this.casings.shift();this.scene.remove(old.mesh);old.mesh.geometry.dispose();old.mesh.material.dispose();
+  if(this.casings.length>12){
+   const old=this.casings.shift();this.scene.remove(old.mesh);
   }
   const burst=new THREE.Group();
   burst.position.copy(start);
@@ -1621,14 +1624,31 @@ class PistolController {
   this.scene.add(burst);
   this.muzzleBursts.push({mesh:burst,life:.065});
  }
+ emitTracer(start,end){
+  let tracer=this.tracerPool[this.tracerCursor];
+  if(!tracer){
+   const geometry=new THREE.BufferGeometry();
+   geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
+   tracer=new THREE.Line(geometry,this.tracerMaterial);
+   tracer.userData.ignoreCombat=true;tracer.userData.ignoreCamera=true;
+   this.scene.add(tracer);this.tracerPool[this.tracerCursor]=tracer;
+  }
+  const a=tracer.geometry.attributes.position;
+  a.setXYZ(0,start.x,start.y,start.z);a.setXYZ(1,end.x,end.y,end.z);
+  a.needsUpdate=true;tracer.geometry.computeBoundingSphere();
+  tracer.visible=true;tracer.userData.expiresAt=performance.now()+45;
+  this.tracerCursor=(this.tracerCursor+1)%24;
+ }
  updateShotEffects(dt){
+  const now=performance.now();
+  for(const tracer of this.tracerPool)if(tracer.visible&&now>=tracer.userData.expiresAt)tracer.visible=false;
   for(let i=this.casings.length-1;i>=0;i--){
    const c=this.casings[i];c.life-=dt;
    c.velocity.y-=12*dt;
    c.mesh.position.addScaledVector(c.velocity,dt);
    c.mesh.rotation.x+=dt*13;c.mesh.rotation.z+=dt*9;
    if(c.life<=0){
-    this.scene.remove(c.mesh);c.mesh.geometry.dispose();c.mesh.material.dispose();this.casings.splice(i,1);
+    this.scene.remove(c.mesh);this.casings.splice(i,1);
    }
   }
   for(let i=this.muzzleBursts.length-1;i>=0;i--){
@@ -1703,8 +1723,7 @@ class PistolController {
    if(hit&&(spec.pellets===1||pellet<3))this.emitImpact(hit,spec);
    const iceId=hit?.object?.userData?.iceWallId;if(iceId)damageByWall.set(iceId,(damageByWall.get(iceId)||0)+spec.damage);
    if(hit?.object?.userData?.remoteId)networkHits.push({targetId:hit.object.userData.remoteId,pellet});
-   const tracer=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffe8a3}));this.scene.add(tracer);
-   setTimeout(()=>{this.scene.remove(tracer);tracer.geometry.dispose();tracer.material.dispose();},45);
+   this.emitTracer(start,end);
    const target=hit?.object?.userData?.enemyRef;
    if(target?.alive){
     const falloff=spec.id==='shotgun'?THREE.MathUtils.clamp(1-Math.max(0,start.distanceTo(end)-8)/25,.25,1):1;
@@ -1717,7 +1736,7 @@ class PistolController {
    multiplayer.send({type:'shot3d',shotId,weapon:spec.id,origin:{x:start.x,y:start.y,z:start.z},rays:networkRays.map(r=>({x:r.x,y:r.y,z:r.z}))});
    for(const hit of networkHits)multiplayer.send({type:'hit3d',shotId,...hit});
   }
-  const flash=new THREE.PointLight(0xffd27a,1.5*mods.muzzleFlashMultiplier,3);flash.position.copy(start);this.scene.add(flash);setTimeout(()=>this.scene.remove(flash),40);
+  // Existing muzzle burst provides the flash without one dynamic point light per shot.
   const weaponScale=handling.kick*mods.recoilMultiplier*(1+burstFactor*.22);
   this.recoil=Math.min(2.4,this.recoil+this.recoilPreset.weaponKick*weaponScale);
   this.recoilVelocity=0;
