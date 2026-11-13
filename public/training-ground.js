@@ -12,10 +12,57 @@ const panel=document.createElement('div');
 panel.id='training-hud';
 panel.hidden=true;
 panel.style.cssText='position:fixed;right:14px;top:145px;z-index:40;background:#091c24ed;border:1px solid #61c9d1;color:#eaffff;border-radius:12px;padding:12px;font:12px/1.6 system-ui;min-width:170px;box-shadow:0 8px 30px #0006';
-panel.innerHTML='<strong>CAMPO DE TESTES MK-II</strong><div>Alvos acertados: <b id="training-score">0</b></div><div>WASD · Shift · Espaço · F · Q</div><button id="training-reset" type="button">REINICIAR POSIÇÃO</button> <button id="training-exit" type="button">SAIR</button>';
+panel.innerHTML='<strong>CAMPO DE TESTES MK-II</strong><div>Alvos acertados: <b id="training-score">0</b></div><div>WASD · Shift · Espaço · F · Q</div><div id="training-arsenal" style="margin-top:9px;border-top:1px solid #61c9d155;padding-top:7px"><strong>ARSENAL DE TESTES</strong><div id="training-weapons" style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:7px 0"></div><div id="training-current" role="status">Escolha uma arma</div><button id="training-refill" type="button">RECARREGAR MUNIÇÃO</button></div><button id="training-reset" type="button">REINICIAR POSIÇÃO</button> <button id="training-exit" type="button">SAIR</button>';
 document.body.append(panel);
 panel.querySelectorAll('button').forEach(b=>b.style.cssText='background:#21444d;color:white;border:1px solid #6cbdc3;border-radius:5px;padding:5px;margin-top:7px;cursor:pointer');
 let active=false,created=false,score=0;
+let savedLoadout=null;
+const weaponNames={pistol:'PISTOLA',smg:'SMG',rifle:'RIFLE',shotgun:'ESCOPETA',sniper:'SNIPER'};
+const weaponGrid=panel.querySelector('#training-weapons');
+const currentWeapon=panel.querySelector('#training-current');
+function copySlots(slots){return slots.map(slot=>slot?{id:slot.id,ammo:slot.ammo,attachments:{...(slot.attachments||{})}}:null);}
+function refillTrainingAmmo(){
+ const defs=window.WeaponLootSystem.DEFINITIONS;
+ weaponLoot.reserves={light:999,rifle:999,shells:999};
+ for(const slot of weaponLoot.slots)if(slot)slot.ammo=defs[slot.id].magSize;
+ // Keep the currently held magazine in sync with the slot.
+ weaponLoot.applyActive(false);
+ currentWeapon.textContent='Munição reabastecida';
+}
+function equipTrainingWeapon(id){
+ if(!active||!window.WeaponLootSystem.DEFINITIONS[id])return;
+ const defs=window.WeaponLootSystem.DEFINITIONS;
+ if(weaponLoot.slots[weaponLoot.activeSlot])weaponLoot.saveActive();
+ // Keep the pistol in slot 1 and switch the second slot through the test arsenal.
+ const slotIndex=id==='pistol'?0:1;
+ weaponLoot.slots[slotIndex]={id,ammo:defs[id].magSize,attachments:{}};
+ weaponLoot.activeSlot=slotIndex;
+ weaponLoot.reserves[defs[id].ammoType]=999;
+ weaponLoot.applyActive(true);
+ pistolWeapon.equip();
+ currentWeapon.textContent=defs[id].name+' equipada · munição de testes';
+ for(const b of weaponGrid.querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.weapon===id));
+}
+function restoreLoadout(){
+ if(!savedLoadout)return;
+ weaponLoot.slots=copySlots(savedLoadout.slots);
+ weaponLoot.reserves={...savedLoadout.reserves};
+ weaponLoot.activeSlot=savedLoadout.activeSlot;
+ if(!weaponLoot.slots[weaponLoot.activeSlot])weaponLoot.activeSlot=weaponLoot.slots[0]?0:1;
+ if(weaponLoot.slots[weaponLoot.activeSlot]){
+  weaponLoot.applyActive(false);
+  if(savedLoadout.equipped)pistolWeapon.equip();else pistolWeapon.holster();
+ }else pistolWeapon.holster();
+ savedLoadout=null;
+}
+for(const id of Object.keys(window.WeaponLootSystem.DEFINITIONS)){
+ const b=document.createElement('button');
+ b.type='button';b.dataset.weapon=id;b.textContent=weaponNames[id]||id.toUpperCase();
+ b.setAttribute('aria-pressed','false');b.title='Equipar '+window.WeaponLootSystem.DEFINITIONS[id].name;
+ b.addEventListener('click',()=>equipTrainingWeapon(id));
+ weaponGrid.appendChild(b);
+}
+panel.querySelector('#training-refill').addEventListener('click',()=>{if(active)refillTrainingAmmo();});
 const x=105,z=105,half=22, floor=forestEnvironment.getTerrainHeight(x,z)+6;
 const objects=[],targets=[];
 const material=(color,metalness=0)=>new T.MeshStandardMaterial({color,roughness:.79,metalness});
@@ -87,7 +134,11 @@ function spawn(){
 }
 button.addEventListener('click',()=>{
  if(multiplayer.active||multiplayer.pending)return;
- create();active=true;score=0;
+ create();
+ // Save the actual inventory so training selections never leak into Battle Royale.
+ if(weaponLoot.slots[weaponLoot.activeSlot])weaponLoot.saveActive();
+ savedLoadout={slots:copySlots(weaponLoot.slots),reserves:{...weaponLoot.reserves},activeSlot:weaponLoot.activeSlot,equipped:pistolWeapon.isEquipped};
+ active=true;score=0;
  document.getElementById('training-score').textContent='0';
  hideGameMenu();
  deployment.phase='idle';
@@ -96,15 +147,16 @@ button.addEventListener('click',()=>{
  if(deployment.chute)deployment.chute.visible=false;
  playerLife.reset();player.userData.dead=false;combatBots.health=100;
  setMultiplayerBots(false);panel.hidden=false;spawn();
+ equipTrainingWeapon('pistol');
 });
 function exit(){
  if(!active)return;active=false;panel.hidden=true;
- setMultiplayerBots(true);
+ restoreLoadout();setMultiplayerBots(true);
  showGameMenu();
 }
 panel.querySelector('#training-reset').addEventListener('click',()=>{if(active)spawn();});
 panel.querySelector('#training-exit').addEventListener('click',exit);
-addEventListener('keydown',e=>{if(active&&e.code==='KeyM') {active=false;panel.hidden=true;setMultiplayerBots(true);}},true);
+addEventListener('keydown',e=>{if(active&&e.code==='KeyM'){active=false;panel.hidden=true;restoreLoadout();setMultiplayerBots(true);}},true);
 const raycaster=new T.Raycaster();
 addEventListener('pointerdown',e=>{
  if(!active||e.button!==0||!gameStarted||player.userData.dead||e.target!==document.getElementById('view'))return;
