@@ -1598,7 +1598,13 @@ class PlayerController {
 
    const canSprint=this.keys.sprint&&this.stamina>0&&!this.isCrouching&&!this.keys.aiming;
    const adsMoveScale=this.keys.aiming?.72:1;
-   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale;
+   let directionalScale=1;
+   if(this.keys.aiming){
+    const lateral=Math.abs(inputDir.x);
+    const backward=Math.max(0,inputDir.z);
+    directionalScale*=1-lateral*.10-backward*.18;
+   }
+   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
 
