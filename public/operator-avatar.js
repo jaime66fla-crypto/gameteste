@@ -166,11 +166,12 @@ class OperatorAvatar{
   this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
+  this.footPlant={left:0,right:0};
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -634,6 +635,19 @@ class OperatorAvatar{
    const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
+  }
+  // Visual foot placement: ground probes affect only the lower body, never physics.
+  // Reduce correction while running to preserve free, rhythmic leg swings.
+  const footWeight=grounded?clamp((8-speed)/8,0,.95)*(1-this.crouchBlend*.35):0;
+  const footTargets=[['left',15,footLeft],['right',12,footRight]];
+  for(const [side,hip,height] of footTargets){
+   const goal=clamp(Number.isFinite(height)?height:0,-.24,.24)*footWeight;
+   this.footPlant[side]=M.damp(this.footPlant[side],goal,grounded?12:17,dt);
+   const h=this.footPlant[side];
+   // Positive ledge heights lift the thigh and flex the knee; downward slopes extend it.
+   r[hip][0]-=h*.54;
+   r[hip+1][0]+=h*1.16;
+   r[hip+2][0]-=h*.68;
   }
   // Apply crossfade after procedural reactions and arm IK have been calculated.
   if(this.poseTransition){
