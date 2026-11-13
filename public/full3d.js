@@ -3250,16 +3250,26 @@ function initBattlePreview(){
   const head=new THREE.Mesh(new THREE.SphereGeometry(.32,12,8),new THREE.MeshStandardMaterial({color:0xc7ac8f}));
   head.position.y=1.8;model.add(head);
  }
- model.position.set(0,-.9,0);scene2.add(model);
- cam2.position.set(0,1.1,5.6);cam2.lookAt(0,.7,0);
- let last=0;
+ model.position.set(0,-.84,0);scene2.add(model);
+ cam2.position.set(0,1.18,3.45);cam2.lookAt(0,.82,0);
+ canvas.style.cursor='grab';canvas.style.touchAction='none';
+ let last=0,dragging=false,lastX=0,manualUntil=0;
+ const begin=e=>{dragging=true;lastX=e.clientX;manualUntil=performance.now()+2600;canvas.style.cursor='grabbing';canvas.setPointerCapture?.(e.pointerId);e.preventDefault();};
+ const move=e=>{if(!dragging)return;const dx=e.clientX-lastX;lastX=e.clientX;model.rotation.y+=dx*.012;manualUntil=performance.now()+2600;e.preventDefault();};
+ const end=e=>{dragging=false;canvas.style.cursor='grab';canvas.releasePointerCapture?.(e.pointerId);};
+ canvas.addEventListener('pointerdown',begin);
+ canvas.addEventListener('pointermove',move);
+ canvas.addEventListener('pointerup',end);
+ canvas.addEventListener('pointercancel',end);
  function draw(t){
   requestAnimationFrame(draw);
-  if(t-last<90||!menuOverlay||menuOverlay.classList.contains('hidden-menu')||!battleUI.waiting.hidden||!battleUI.result.hidden)return;
-  last=t;const w=canvas.clientWidth||320,h=canvas.clientHeight||300;
+  if(t-last<70||!menuOverlay||menuOverlay.classList.contains('hidden-menu')||!battleUI.waiting.hidden||!battleUI.result.hidden)return;
+  const dt=Math.min((t-last)/1000,.05);last=t;
+  const w=canvas.clientWidth||320,h=canvas.clientHeight||300;
   if(canvas.width!==w||canvas.height!==h){pr.setSize(w,h,false);cam2.aspect=w/h;cam2.updateProjectionMatrix();}
-  if(previewAvatar)previewAvatar.update(Math.min((t-last+90)/1000,.05),{armed:false,grounded:true,speed:0});
-  model.rotation.y+=.012;pr.render(scene2,cam2);
+  if(previewAvatar)previewAvatar.update(dt,{armed:false,grounded:true,speed:0});
+  if(!dragging&&performance.now()>manualUntil)model.rotation.y+=.006;
+  pr.render(scene2,cam2);
  }
  requestAnimationFrame(draw);
 }
