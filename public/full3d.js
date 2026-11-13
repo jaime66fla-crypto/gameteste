@@ -2329,7 +2329,7 @@ function updateCamera(dt){
   const offset=new THREE.Vector3(2,2.8,-3.7).applyAxisAngle(new THREE.Vector3(0,1,0),player.rotation.y);
   camera.position.lerp(focus.clone().add(offset),1-Math.exp(-5*dt));camera.lookAt(focus);camera.fov=THREE.MathUtils.lerp(camera.fov,58,1-Math.exp(-5*dt));camera.updateProjectionMatrix();return;
  }
- const ads=controller.keys.aiming&&pistolWeapon.isEquipped;
+ const ads=controller.keys.aiming&&pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&pistolWeapon.equipTimer<=0;
  const aimDot=document.getElementById('aimDot');
  const optic=document.getElementById('opticReticle');
  const scope=document.getElementById('sniperScope');
