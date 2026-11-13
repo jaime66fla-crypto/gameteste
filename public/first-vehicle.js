@@ -80,7 +80,7 @@ class FirstVehicleSystem {
   if(training!==this.wasTraining){
    if(this.driving)this.exit();
    this.wasTraining=training;this.speed=0;this.yaw=0;
-   const x=training?92:-7,z=training?118:-12;
+   const x=training?91:-7,z=training?120:-12;
    this.root.position.set(x,this.ground(x,z),z);
    this.root.rotation.y=0;
   }
