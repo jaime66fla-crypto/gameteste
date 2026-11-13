@@ -682,21 +682,22 @@ class ForestAudioSystem {
    shotgun:{body:76,sub:42,mech:720,tail:.48,transient:.40,bodyVol:.34,lfe:.14,crack:.09}
   };
   const spec=specs[kind]||specs.pistol,now=this.ctx.currentTime+.005;
-  const variation=(1+(Math.random()-.5)*.08)*volumeScale;
+  const variation=1+(Math.random()-.5)*.08;
+  const loudness=THREE.MathUtils.clamp(volumeScale,.15,1);
 
   // Layer 1: sharp muzzle transient.
-  this._shotNoise(now,.028,spec.transient*variation,950,6500);
+  this._shotNoise(now,.028,spec.transient*variation*loudness,950,6500);
   // Layer 2: mid/low body that gives the weapon its weight.
-  this._shotNoise(now+.005,.115,spec.bodyVol*variation,120,1750);
-  this._shotTone(now,spec.body*variation,.12,spec.bodyVol*.42,'sawtooth',spec.body*.56);
+  this._shotNoise(now+.005,.115,spec.bodyVol*variation*loudness,120,1750);
+  this._shotTone(now,spec.body*variation,.12,spec.bodyVol*.42*loudness,'sawtooth',spec.body*.56);
   // Layer 3: short LFE thump.
-  this._shotTone(now,spec.sub,.16,spec.lfe,'sine',spec.sub*.62);
+  this._shotTone(now,spec.sub,.16,spec.lfe*loudness,'sine',spec.sub*.62);
   // Layer 4: slide/bolt/mechanism.
-  this._shotTone(now+.026,spec.mech*variation,.026,.030,'square',spec.mech*.72);
-  this._shotTone(now+.055,spec.mech*.62*variation,.038,.020,'triangle',spec.mech*.43);
+  this._shotTone(now+.026,spec.mech*variation,.026,.030*loudness,'square',spec.mech*.72);
+  this._shotTone(now+.055,spec.mech*.62*variation,.038,.020*loudness,'triangle',spec.mech*.43);
   // Layer 5: projectile crack + outdoor reflection tail.
-  this._shotNoise(now+.010,.018,spec.crack,2300,7600);
-  this._shotTail(now+.035,spec.tail,.055);
+  this._shotNoise(now+.010,.018,spec.crack*loudness,2300,7600);
+  this._shotTail(now+.035,spec.tail,.055*loudness);
  }
  playWeaponMechanic(kind='pistol',action='equip'){
   if(!this.ctx||!this.enabled||!this.masterGain)return;
