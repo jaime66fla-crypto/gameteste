@@ -2921,13 +2921,41 @@ let gameStarted=false;
 const menuOverlay=document.getElementById('aventura-menu-overlay');
 const menuSettings={soundEnabled:true,sensitivity:1,shadows:true};
 const menuViews=['view-main','view-modes','view-multiplayer','view-settings'];
+const safeZoneVisual=(()=>{
+ const geometry=new THREE.BufferGeometry(),vertices=new Float32Array(128*3);
+ geometry.setAttribute('position',new THREE.BufferAttribute(vertices,3));
+ const mat=new THREE.LineBasicMaterial({color:0x60d5ff,transparent:true,opacity:.9,depthWrite:false});
+ const ring=new THREE.LineLoop(geometry,mat);
+ ring.visible=false;ring.frustumCulled=false;ring.userData.ignoreCombat=true;ring.userData.ignoreCamera=true;scene.add(ring);
+ const hud=document.createElement('div');hud.id='safeZoneHud';hud.hidden=true;
+ hud.style.cssText='position:fixed;top:74px;right:12px;z-index:35;background:#081b27dc;color:#e2faff;border:1px solid #60d5ff;border-radius:8px;padding:8px 12px;font:700 12px system-ui;pointer-events:none';
+ document.body.appendChild(hud);
+ let zone=null;
+ function update(){
+  if(!zone)return;
+  const outside=Math.hypot(player.position.x-zone.x,player.position.z-zone.z)>zone.radius&&player.position.y<12;
+  hud.style.borderColor=outside?'#ff6c77':'#60d5ff';
+  hud.textContent=(outside?'FORA DA ZONA! · ':'ZONA SEGURA · ')+'FASE '+zone.phase+' · '+Math.ceil(zone.radius)+'m · '+(zone.stage==='shrinking'?'FECHANDO':'FECHA EM')+' '+zone.seconds+'s';
+ }
+ function receive(data){
+  zone=data;ring.visible=true;hud.hidden=false;
+  const p=geometry.attributes.position;
+  for(let i=0;i<128;i++){
+   const angle=i/128*Math.PI*2,x=data.x+Math.cos(angle)*data.radius,z=data.z+Math.sin(angle)*data.radius;
+   p.setXYZ(i,x,forestEnvironment.getTerrainHeight(x,z)+1.7,z);
+  }
+  p.needsUpdate=true;geometry.computeBoundingSphere();update();
+ }
+ function clear(){zone=null;ring.visible=false;hud.hidden=true;}
+ return {receive,clear,update};
+})();
 const battleUI={waiting:document.getElementById('battleWaiting'),count:document.getElementById('battleWaitingCount'),result:document.getElementById('battleResult'),queue:document.getElementById('battleQueueStatus'),active:false};
-function battleReturn(){battleUI.waiting.hidden=true;battleUI.result.hidden=true;battleUI.active=false;showGameMenu();}
+function battleReturn(){safeZoneVisual.clear();battleUI.waiting.hidden=true;battleUI.result.hidden=true;battleUI.active=false;showGameMenu();}
 document.getElementById('battleCancel')?.addEventListener('click',battleReturn);
 document.getElementById('battleReturn')?.addEventListener('click',battleReturn);
 document.getElementById('btn-lobby-arsenal')?.addEventListener('click',()=>window.WeaponArsenal?.open());
 function battleEnd(data){
- battleUI.active=false;battleUI.waiting.hidden=true;battleUI.result.hidden=false;
+ safeZoneVisual.clear();battleUI.active=false;battleUI.waiting.hidden=true;battleUI.result.hidden=false;
  const won=data.winnerId===multiplayer.id;
  document.getElementById('battleResultTitle').textContent=won?'VITÓRIA ROYALE!':'PARTIDA ENCERRADA';
  document.getElementById('battleResultText').textContent=won?'Você foi o último sobrevivente.':data.winnerName?'Vencedor: '+data.winnerName:'Sem sobreviventes.';
@@ -2973,7 +3001,7 @@ function hideGameMenu(){
  forestAudio.init();
 }
 function showGameMenu(){
- tacticalGear.unequip();
+ safeZoneVisual.clear();tacticalGear.unequip();
  if(multiplayer.active||multiplayer.pending)leaveRoom();
  controller.clearInput();pistolWeapon.triggerHeld=false;
  deployment.keys.clear();if(deployment.button)deployment.button.hidden=true;if(deployment.plane)deployment.plane.visible=false;if(deployment.chute)deployment.chute.visible=false;deployment.phase='idle';
@@ -3021,13 +3049,14 @@ const multiplayer=new window.MultiplayerClient({
  },
  onDisconnect:wasActive=>{tacticalGear.clear();tacticalGear.resetInventory();multiplayerWorld.clear();setMultiplayerBots(true);roomHud();battleUI.waiting.hidden=true;if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
  onMessage:data=>{
+  if(data.type==='safezone3d'){safeZoneVisual.receive(data);return;}
   if(data.type==='battle-status'){
    battleUI.queue.textContent=data.phase==='waiting'?'Jogadores '+data.connected+'/8 • Início em '+data.remainingSeconds+'s • vagas restantes serão bots':'Sobreviventes: '+data.alive+' / 8';
    if(data.phase==='waiting'){battleUI.waiting.hidden=false;battleUI.count.textContent=data.connected+' / 8 · '+data.remainingSeconds+'s';}
    return;
   }
   if(data.type==='battle-start'){
-   battleUI.active=true;battleUI.waiting.hidden=true;
+   safeZoneVisual.clear();battleUI.active=true;battleUI.waiting.hidden=true;
    for(const state of data.players||[])if(state.id!==multiplayer.id)multiplayerWorld.receive(state);
    hideGameMenu();networkTick=1;sendNetworkState();roomHud();return;
   }
@@ -3111,7 +3140,7 @@ function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
  if(!gameStarted){ renderer.render(scene,camera);performancePanel.frame(elapsed*1000); return; }
  if(updateDeployment(dt)){
-  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);}}
+  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);safeZoneVisual.update();}}
   renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
  }
  playerLife.update(elapsed,multiplayer.active);
@@ -3120,7 +3149,7 @@ function loop(){
  player.userData.crouching=controller.isCrouching;
  if(!multiplayer.active)combatBots.update(dt);
  tacticalGear.update(elapsed);
- if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);}
+ if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);safeZoneVisual.update();}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
  playerHitReaction.strength=THREE.MathUtils.lerp(playerHitReaction.strength,0,1-Math.exp(-10*dt));
  playerHitReaction.side=THREE.MathUtils.lerp(playerHitReaction.side,0,1-Math.exp(-7*dt));
