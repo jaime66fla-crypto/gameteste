@@ -79,9 +79,9 @@ function armEuler(m){
 }
 const rifleAnchor=[.055,1.36,.30];
 // The visible face and chest point toward +Z: anatomical right is -X.
-const rifleShift=[-.18,.065,.065];
+const rifleShift=[-.205,.085,.082];
 // Negative-X trigger hand grips near the receiver; positive-X support hand grips\n // farther up the fore-end to avoid overlapping wrists during tactical ADS.
-const rifleGrips=[[6,[.065,1.30,.26],-1],[9,[.12,1.30,.43],1]];
+const rifleGrips=[[6,[.060,1.305,.255],-1],[9,[.125,1.315,.475],1]];
 function weaponFrame(angles,weaponId='rifle',aimBlend=0){
  // ADS rifle posture: bring the stock to the right shoulder and sight line.
  // Both IK wrists and the weapon inherit exactly the same transform.
@@ -90,8 +90,8 @@ function weaponFrame(angles,weaponId='rifle',aimBlend=0){
  const ads=clamp(aimBlend,0,1);
  // Ready stance is already shouldered, at chest height, without looking down
  // the sights. ADS raises it the remaining distance to eye level.
- const lift=pistol?.15:(longGun?.075+.080*ads:0);
- const reach=pistol?.075:(longGun?.045+.018*ads:0);
+ const lift=pistol?.15:(longGun?.082+.102*ads:0);
+ const reach=pistol?.075:(longGun?.050+.026*ads:0);
  return mul(T(rifleAnchor[0]+rifleShift[0],rifleAnchor[1]+rifleShift[1]+lift,rifleAnchor[2]+rifleShift[2]+reach),
   mul(RZ(angles[2]),mul(RY(angles[1]),mul(RX(angles[0]),T(-rifleAnchor[0],-rifleAnchor[1],-rifleAnchor[2])))));
 }
@@ -104,7 +104,7 @@ function armedMotion(r,frame,grips=rifleGrips){
   const a=Math.hypot(...offsets[fore]),b=Math.hypot(...offsets[hand]);
   const distance=clamp(len,Math.abs(a-b)+.001,a+b-.001);
   const along=(a*a-b*b+distance*distance)/(2*distance),height=Math.sqrt(Math.max(0,a*a-along*along));
-  const pole=[side*.35,-.7,-.15],projection=armDot(pole,d);
+  const pole=[side*.32,-.74,-.12],projection=armDot(pole,d);
   const bend=armUnit(pole.map((v,i)=>v-d[i]*projection));
   const elbow=shoulder.map((v,i)=>v+d[i]*along+bend[i]*height);
   const upperMatrix=alignArm(offsets[fore],elbow.map((v,i)=>v-shoulder[i]));
