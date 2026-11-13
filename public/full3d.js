@@ -2329,7 +2329,7 @@ const multiplayer=new window.MultiplayerClient({
   roomHud();
  }
 });
-function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none',gear:tacticalGear.active||'none'});}
+function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none',gear:tacticalGear.active||'none',jetpack:!!jetpackSystem.equipped,jetpackActive:!!(jetpackSystem.equipped&&controller.keys.jetpack&&jetpackSystem.fuel>0&&!controller.cover.active)});}
 function leaveRoom(){tacticalGear.clear();tacticalGear.resetInventory();confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);playerLife.reset();player.userData.dead=false;combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
 function enterRoom(action){
  if(multiplayer.pending)return;
