@@ -2006,7 +2006,7 @@ class PlayerController {
   this.posture=next;this.keys.crouch=next===1;
   if(next===2){this.cover.exit();this.keys.sprint=false;this.jumpPreparation=0;}
  }
- clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;}
+ clearInput(){for(const key of Object.keys(this.keys))this.keys[key]=false;this.crouchInputs.clear();this.jumpPreparation=0;this.climb=null;this.posture=0;}
   jumpOrClimb(){
    if(this.posture===2){if(this.canStand()){this.posture=0;this.keys.crouch=false;}return null;}
    if(this.startClimb())return 'climb';
@@ -2048,7 +2048,7 @@ class PlayerController {
   }
   if(this.climb){if(code==='Space'&&!isPressed)this.keys.jetpack=false;return;}
    if(code==='KeyQ'){if(isPressed&&this.isGrounded&&gameStarted)this.cover.toggle();return;}
-  if(code==='KeyC'){if(isPressed)this.keys.crouch=!this.keys.crouch;return;}
+  if(code==='KeyC'){if(isPressed)this.cyclePosture();return;}
   switch(code){
    case 'KeyW': case 'ArrowUp': this.keys.forward=isPressed; break;
    case 'KeyS': case 'ArrowDown': this.keys.backward=isPressed; break;
@@ -2056,7 +2056,7 @@ class PlayerController {
    case 'KeyD': case 'ArrowRight': this.keys.right=isPressed; break;
    case 'ShiftLeft': case 'ShiftRight': this.keys.sprint=isPressed; break;
    case 'Space':
-    if(isPressed){const action=this.jumpOrClimb();this.keys.jetpack=action!=='climb';}
+    if(isPressed){const action=this.jumpOrClimb();this.keys.jetpack=action!=='climb'&&this.posture!==2;}
     else this.keys.jetpack=false;
     break;
   }
