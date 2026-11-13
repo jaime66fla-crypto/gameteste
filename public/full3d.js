@@ -156,6 +156,12 @@ function buildForestEnvironment(scene,options={}){
   new THREE.MeshStandardMaterial({color:0x456442,roughness:.8,flatShading:true})
  ];
  const rockMat=new THREE.MeshStandardMaterial({color:0x777b73,roughness:.85,flatShading:true});
+ const pineTrunkGeo=new THREE.CylinderGeometry(.35,.55,2.5,6);
+ const pineConeGeo=new THREE.ConeGeometry(1,2.8,7);
+ const oakTrunkGeo=new THREE.CylinderGeometry(.4,.65,3.2,6);
+ const oakCrownGeo=new THREE.IcosahedronGeometry(1,0);
+ const rockSharedGeo=new THREE.DodecahedronGeometry(1,0);
+ const bushSharedGeo=new THREE.IcosahedronGeometry(1,0);
 
  const forestGroup=new THREE.Group();
  const colliders=[];
@@ -163,24 +169,15 @@ function buildForestEnvironment(scene,options={}){
  function createPineTree(scale){
   const tree=new THREE.Group();
   const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-
-  const trunkGeo=new THREE.CylinderGeometry(.35*scale,.55*scale,2.5*scale,6);
-  const trunk=new THREE.Mesh(trunkGeo,trunkMat);
-  trunk.position.y=1.25*scale;
-  trunk.castShadow=false;
-  trunk.receiveShadow=true;
-  tree.add(trunk);
-
+  const trunk=new THREE.Mesh(pineTrunkGeo,trunkMat);
+  trunk.scale.setScalar(scale);trunk.position.y=1.25*scale;
+  trunk.castShadow=false;trunk.receiveShadow=false;tree.add(trunk);
   for(let i=0;i<3;i++){
    const radius=(2.4-i*.55)*scale;
-   const height=2.8*scale;
-   const coneGeo=new THREE.ConeGeometry(radius,height,7);
-   const cone=new THREE.Mesh(coneGeo,mat);
-   cone.position.y=(3+i*1.5)*scale;
-   cone.rotation.y=random()*Math.PI;
-   cone.castShadow=false;
-   cone.receiveShadow=true;
-   tree.add(cone);
+   const cone=new THREE.Mesh(pineConeGeo,mat);
+   cone.scale.set(radius,scale,radius);
+   cone.position.y=(3+i*1.5)*scale;cone.rotation.y=random()*Math.PI;
+   cone.castShadow=false;cone.receiveShadow=false;tree.add(cone);
   }
   return tree;
  }
@@ -188,59 +185,39 @@ function buildForestEnvironment(scene,options={}){
  function createOakTree(scale){
   const tree=new THREE.Group();
   const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-
-  const trunkGeo=new THREE.CylinderGeometry(.4*scale,.65*scale,3.2*scale,6);
-  const trunk=new THREE.Mesh(trunkGeo,trunkMat);
-  trunk.position.y=1.6*scale;
-  trunk.castShadow=false;
-  trunk.receiveShadow=true;
-  tree.add(trunk);
-
+  const trunk=new THREE.Mesh(oakTrunkGeo,trunkMat);
+  trunk.scale.setScalar(scale);trunk.position.y=1.6*scale;
+  trunk.castShadow=false;trunk.receiveShadow=false;tree.add(trunk);
   const crownPositions=[
    {x:0,y:4.2,z:0,r:2.2},
    {x:1.1,y:3.6,z:.6,r:1.5},
    {x:-1,y:3.8,z:-.7,r:1.6}
   ];
   crownPositions.forEach(p=>{
-   const crownGeo=new THREE.IcosahedronGeometry(p.r*scale,1);
-   const crown=new THREE.Mesh(crownGeo,mat);
+   const crown=new THREE.Mesh(oakCrownGeo,mat);
+   crown.scale.setScalar(p.r*scale);
    crown.position.set(p.x*scale,p.y*scale,p.z*scale);
    crown.rotation.set(random(),random(),random());
-   crown.castShadow=false;
-   crown.receiveShadow=true;
-   tree.add(crown);
+   crown.castShadow=false;crown.receiveShadow=false;tree.add(crown);
   });
   return tree;
  }
 
  function createRock(scale){
-  const rockGeo=new THREE.DodecahedronGeometry(scale,0);
-  const pos=rockGeo.attributes.position;
-  for(let i=0;i<pos.count;i++){
-   pos.setXYZ(
-    i,
-    pos.getX(i)*(.8+random()*.4),
-    pos.getY(i)*(.6+random()*.4),
-    pos.getZ(i)*(.8+random()*.4)
-   );
-  }
-  rockGeo.computeVertexNormals();
-  const rock=new THREE.Mesh(rockGeo,rockMat);
-  rock.userData.impactMaterial='concrete';rock.castShadow=false;
-  rock.receiveShadow=true;
+  const rock=new THREE.Mesh(rockSharedGeo,rockMat);
+  rock.scale.set(scale*(.85+random()*.3),scale*(.62+random()*.28),scale*(.85+random()*.3));
+  rock.userData.impactMaterial='concrete';rock.castShadow=false;rock.receiveShadow=false;
   return rock;
  }
 
  function createBush(scale){
   const bush=new THREE.Group();
   const mat=leafMaterials[Math.floor(random()*leafMaterials.length)];
-  for(let i=0;i<3;i++){
-   const geo=new THREE.IcosahedronGeometry((.7+random()*.4)*scale,0);
-   const part=new THREE.Mesh(geo,mat);
+  for(let i=0;i<2;i++){
+   const part=new THREE.Mesh(bushSharedGeo,mat);
+   const r=(.7+random()*.35)*scale;part.scale.setScalar(r);
    part.position.set((random()-.5)*scale,.4*scale,(random()-.5)*scale);
-   part.castShadow=false;
-   part.receiveShadow=true;
-   bush.add(part);
+   part.castShadow=false;part.receiveShadow=false;bush.add(part);
   }
   return bush;
  }
@@ -297,9 +274,9 @@ function buildForestEnvironment(scene,options={}){
 
 const forestEnvironment=buildForestEnvironment(scene,{
  mapSize:300,
- treeCount:180,
- rockCount:60,
- bushCount:90,
+ treeCount:125,
+ rockCount:38,
+ bushCount:55,
  safeZoneRadius:25,
  seed:42
 });
@@ -3186,14 +3163,14 @@ const safeZoneVisual=(()=>{
  const ring=new THREE.LineLoop(geometry,mat);
  ring.visible=false;ring.frustumCulled=false;ring.userData.ignoreCombat=true;ring.userData.ignoreCamera=true;scene.add(ring);
  const hud=document.createElement('div');hud.id='safeZoneHud';hud.hidden=true;
- hud.style.cssText='position:fixed;top:62px;right:12px;z-index:35;background:#081b27dc;color:#e2faff;border:1px solid #60d5ff;border-radius:8px;padding:8px 12px;font:700 12px system-ui;pointer-events:none';
+ hud.style.cssText='position:fixed;top:64px;right:12px;z-index:35;width:268px;max-width:calc(100vw - 24px);box-sizing:border-box;background:#081b27ec;color:#e2faff;border:1px solid #60d5ff;border-radius:8px;padding:7px 10px;font:700 11px/1.35 system-ui;pointer-events:none;text-align:left;white-space:pre-line';
  document.body.appendChild(hud);
  let zone=null;
  function update(){
   if(!zone)return;
   const outside=Math.hypot(player.position.x-zone.x,player.position.z-zone.z)>zone.radius&&player.position.y<12;
   hud.style.borderColor=outside?'#ff6c77':'#60d5ff';
-  hud.textContent=(outside?'FORA DA ZONA! · ':'ZONA SEGURA · ')+'FASE '+zone.phase+' · '+Math.ceil(zone.radius)+'m · '+(zone.stage==='shrinking'?'FECHANDO':'FECHA EM')+' '+zone.seconds+'s';
+  hud.textContent=(outside?'FORA DA ZONA!':'ZONA SEGURA')+' · FASE '+zone.phase+' · '+Math.ceil(zone.radius)+'m\n'+(zone.stage==='shrinking'?'FECHANDO · ':'FECHA EM · ')+zone.seconds+'s';
  }
  function receive(data){
   zone=data;ring.visible=true;hud.hidden=false;
