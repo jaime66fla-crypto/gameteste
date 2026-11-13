@@ -157,7 +157,8 @@ function updatePreview(){
  if(tab==='soldier'){
   if(previewAvatar){
    const previous=state.soldier;state.soldier=selected;tintAvatar(previewAvatar);state.soldier=previous;
-   previewRoot=previewAvatar.group;previewCamera.position.set(0,1.1,4.4);previewCamera.lookAt(0,.5,0);
+   previewRoot=previewAvatar.group;previewScene.add(previewRoot);
+   previewCamera.position.set(0,1.1,4.4);previewCamera.lookAt(0,.5,0);
   }
  }else if(window.WeaponLootSystem){
   previewRoot=new THREE.Group();previewRoot.name='SKIN_PREVIEW';
