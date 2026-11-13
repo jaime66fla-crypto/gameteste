@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Gameteste 3D Rebuild</title>
+<title>Gameteste - Battle Royale</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Orbitron:wght@500;700;900&display=swap" rel="stylesheet">
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;font-family:Inter,system-ui,Arial}
 #view{width:100%;height:100%;display:block;touch-action:none}
@@ -99,6 +100,46 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 #battleResult{position:fixed;inset:0;z-index:20040;background:#06121aef;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:white;font:700 18px system-ui}
 #battleResult button,#battleWaiting button{padding:12px 22px;color:#fff;background:#17628b;border:1px solid #78d7fa;border-radius:9px;cursor:pointer}
 @media(max-width:680px){#battleLobby{grid-template-columns:1fr;max-height:72vh;overflow:auto}.battle-preview{min-height:180px}#battleCharacterPreview{height:180px}.battle-actions h2{font-size:22px}}
+
+/* Dashboard visual adapted from the supplied Battle Royale HTML. */
+#aventura-menu-overlay{background:radial-gradient(ellipse at 65% 20%,#172440 0%,#030712 72%);font-family:Inter,system-ui,Arial;color:#f8fafc}
+#aventura-menu-overlay .menu-mountains{display:none}
+#aventura-menu-overlay .menu-content{max-width:1280px;box-sizing:border-box;height:100dvh;width:100%;padding:12px 26px 18px;justify-content:center}
+#aventura-menu-overlay .menu-title{display:none}
+#aventura-menu-overlay #view-main{width:100%;min-height:0;flex:1;display:flex;flex-direction:column;justify-content:center}
+#aventura-menu-overlay #view-main.hidden-view{display:none!important}
+#battleLobby{width:100%;max-width:1220px;margin:auto;display:grid;grid-template-columns:minmax(290px,5fr) minmax(350px,7fr);gap:26px;align-items:center;min-height:0;max-height:calc(100dvh - 100px)}
+#battleLobby .battle-preview{min-height:0;height:min(68dvh,590px);max-height:100%;background:linear-gradient(145deg,#101d31e8,#09111fe8);border:1px solid #f59e0b55;border-radius:17px;box-shadow:0 18px 42px #0008;position:relative}
+#battleCharacterPreview{height:calc(100% - 58px);min-height:180px;flex:1}
+#battleLobby .battle-preview p{color:#ffedce;margin:0;padding:14px 0;border-top:1px solid #33415599;letter-spacing:.15em;font-weight:750}
+#battleLobby .battle-actions{gap:8px;min-width:0}
+#battleLobby .battle-actions h2{font-family:Orbitron,Inter,system-ui,sans-serif;font-size:clamp(27px,3.4vw,45px);letter-spacing:.18em;color:#fff1cf;margin:0;text-shadow:0 0 18px #f59e0b44}
+#battleLobby .battle-actions h3{color:#fbbf24;font-size:clamp(16px,2vw,24px);letter-spacing:.12em;margin:0}
+#battleLobby .battle-actions small{margin-bottom:8px;color:#cbd5e1;font-size:12px}
+#aventura-menu-overlay #view-main .menu-btn,#aventura-menu-overlay #view-main #btn-training-ground,#aventura-menu-overlay #view-main #btn-lobby-clothes{box-sizing:border-box;width:100%;text-align:left;min-height:43px;font:750 12px Orbitron,Inter,system-ui;letter-spacing:.11em;border:1px solid #f59e0b55;border-radius:11px;background:linear-gradient(120deg,#101c31f0,#1e293bf0);color:#ffefcd;padding:12px 18px;box-shadow:0 6px 20px #0004}
+#aventura-menu-overlay #view-main .menu-btn:hover{border-color:#fbbf24;box-shadow:0 0 18px #f59e0b33}
+#aventura-menu-overlay #view-main #btn-menu-play{border-color:#fbbf24;background:linear-gradient(110deg,#7c421944,#3c2e25cc);color:#fbbf24}
+#aventura-menu-overlay #view-main #btn-menu-exit{color:#fda4af;border-color:#be123c66}
+.battle-lobby-header{width:100%;max-width:1220px;margin:0 auto 12px;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.battle-rank-card{background:#101c30de;border:1px solid #f59e0b77;border-radius:12px;padding:10px 14px;box-shadow:0 6px 25px #0007;min-width:180px}
+.battle-rank-card small{display:block;color:#d4a950;font:650 9px Inter,system-ui;letter-spacing:.12em}
+.battle-rank-card strong{display:block;color:#fff0c8;font:800 13px Orbitron,system-ui;margin:4px 0}
+.battle-rank-progress{height:4px;border-radius:5px;background:#334155;overflow:hidden;margin:7px 0 4px}.battle-rank-progress i{display:block;background:#fbbf24;height:100%;width:0}
+.battle-rank-card span,.battle-status{color:#b6c2d5;font:600 10px Inter,system-ui;letter-spacing:.08em}
+.battle-status b{color:#34d399}
+#aventura-menu-overlay .menu-version{font:550 10px Orbitron,system-ui;color:#64748b}
+@media(max-width:760px){#aventura-menu-overlay .menu-content{padding:10px 12px;overflow-y:auto;justify-content:flex-start}
+#aventura-menu-overlay #view-main{flex:none;min-height:auto}
+#battleLobby{grid-template-columns:1fr;gap:12px;max-height:none;overflow:visible}
+#battleLobby .battle-preview{height:210px;min-height:210px}
+#battleCharacterPreview{height:160px;min-height:140px}
+#battleLobby .battle-actions{gap:6px}
+#battleLobby .battle-actions h2{font-size:24px}
+#aventura-menu-overlay #view-main .menu-btn,#aventura-menu-overlay #view-main #btn-training-ground,#aventura-menu-overlay #view-main #btn-lobby-clothes{min-height:37px;padding:9px 12px;font-size:11px}
+.battle-lobby-header{margin:4px auto 12px}
+#aventura-menu-overlay .menu-version{display:none}}
+@media(max-height:650px) and (min-width:761px){#battleLobby .battle-preview{height:65dvh}#battleLobby .battle-actions{gap:5px}#aventura-menu-overlay #view-main .menu-btn{padding:8px 14px;min-height:36px}#battleLobby .battle-actions h2{font-size:28px}}
+
 </style>
 </head>
 <body>
@@ -109,10 +150,23 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
   <div class="menu-content">
     <h1 class="menu-title">GAMETESTE</h1>
     <div id="view-main" class="menu-stack" style="width:auto">
+      <header class="battle-lobby-header">
+        <div class="battle-rank-card" aria-label="Patente atual do jogador">
+          <small>⬡ PATENTE DO JOGADOR</small>
+          <strong id="battleLobbyRank">RECRUTA</strong>
+          <div class="battle-rank-progress"><i id="battleLobbyRankFill"></i></div>
+          <span id="battleLobbyXp">0 XP</span>
+        </div>
+        <div class="battle-status">STATUS: <b>ONLINE</b></div>
+      </header>
       <div id="battleLobby">
-        <section class="battle-preview"><canvas id="battleCharacterPreview" aria-label="Visualização 3D de Jaime"></canvas><p>JAIME • SEU PERSONAGEM</p></section>
+        <section class="battle-preview">
+          <canvas id="battleCharacterPreview" aria-label="Visualização 3D interativa do Jaime"></canvas>
+          <p>JAIME • SEU PERSONAGEM</p>
+        </section>
         <section class="battle-actions">
-          <h2>BATTLE ROYALE</h2>
+          <h2>GAMETESTE</h2>
+          <h3>BATTLE ROYALE</h3>
           <small>8 jogadores por partida. Um único sobrevivente. Personalize seu arsenal antes do combate.</small>
           <button id="btn-lobby-skins" class="menu-btn">COFRE DE SKINS</button>
           <button id="btn-lobby-arsenal" class="menu-btn">ARSENAL E ACESSÓRIOS</button>
