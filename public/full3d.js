@@ -424,7 +424,8 @@ class HouseParkourBuilder {
    }
 
    const stepUp=b.maxY-footY;
-   if(controller.isGrounded&&controller.horizontalSpeed>.05&&stepUp>0&&stepUp<=controller.stepHeight){
+   // No automatic step-up when crawling: the chest must not pop onto crates.
+   if(controller.isGrounded&&controller.posture!==2&&controller.horizontalSpeed>.05&&stepUp>0&&stepUp<=controller.stepHeight){
     p.y=b.maxY;
     controller.velocity.y=0;
     controller.isGrounded=true;
@@ -1949,6 +1950,7 @@ class PlayerController {
   this.standingHeight=1.8;this.crouchingHeight=1.45;
   this.isCrouching=false;this.crouchBlend=0;this.collisionHeight=this.standingHeight;
   this.posture=0;this.proneBlend=0;this.proneHeight=.65;this.proneSpeed=.85;this.postureSettle=0;
+  this.proneSlope=0;this.proneRoll=0;this.proneGroundGap=0;
   this.crouchInputs=new Set();
   this.cover=new window.CoverController({player:mesh,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight});
   this.climb=null;this.climbCooldown=0;
@@ -2186,7 +2188,25 @@ class PlayerController {
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }
 
-  const terrainY=forestEnvironment.getTerrainHeight(this.mesh.position.x,this.mesh.position.z);
+  // Probe the ground under the torso in the facing direction. Use gentle
+  // corrective height and pitch on hills; never snap the root into a cliff.
+  const p=this.mesh.position,yaw=this.mesh.rotation.y;
+  const forwardX=Math.sin(yaw),forwardZ=Math.cos(yaw);
+  const sidewaysX=Math.cos(yaw),sidewaysZ=-Math.sin(yaw);
+  const terrain=forestEnvironment.getTerrainHeight;
+  const centerGround=terrain(p.x,p.z);
+  const frontGround=terrain(p.x+forwardX*.64,p.z+forwardZ*.64);
+  const rearGround=terrain(p.x-forwardX*.64,p.z-forwardZ*.64);
+  const leftGround=terrain(p.x-sidewaysX*.27,p.z-sidewaysZ*.27);
+  const rightGround=terrain(p.x+sidewaysX*.27,p.z+sidewaysZ*.27);
+  const slopePitch=THREE.MathUtils.clamp(Math.atan2(frontGround-rearGround,1.28),-.25,.25);
+  const slopeRoll=THREE.MathUtils.clamp(Math.atan2(rightGround-leftGround,.54),-.16,.16);
+  const proneCorrection=THREE.MathUtils.clamp(Math.max(frontGround,rearGround,centerGround)-centerGround,0,.20);
+  const terrainRate=1-Math.exp(-8*dt);
+  this.proneSlope=THREE.MathUtils.lerp(this.proneSlope,this.proneBlend*slopePitch,terrainRate);
+  this.proneRoll=THREE.MathUtils.lerp(this.proneRoll,this.proneBlend*slopeRoll,terrainRate);
+  this.proneGroundGap=THREE.MathUtils.lerp(this.proneGroundGap,this.proneBlend*proneCorrection,terrainRate);
+  const terrainY=centerGround+this.proneGroundGap;
 
   if(typeof jetpackSystem!=='undefined')jetpackSystem.update(dt,this);
   this.velocity.y+=this.gravity*dt;
@@ -2199,7 +2219,8 @@ class PlayerController {
    this.isGrounded=true;
   }
 
-  houseParkour.resolvePlayerCollision(this,.45,this.collisionHeight);
+  // Wider crawl footprint avoids sliding the upper body into nearby walls.
+  houseParkour.resolvePlayerCollision(this,this.posture===2?.58:.45,this.collisionHeight);
 
   const actionKind=!this.isGrounded?'jump':this.isCrouching?'idle':moving?((this.keys.sprint&&this.stamina>0)?'run':'walk'):'idle';
   setAction(actionKind);
@@ -3350,7 +3371,7 @@ function loop(){
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
   const footHeights=sampleSoldierFootHeights(dt);
-  mainAvatar.update(dt,{footLeft:footHeights.left,footRight:footHeights.right,dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),crouching:controller.isCrouching,prone:controller.proneBlend,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
+  mainAvatar.update(dt,{footLeft:footHeights.left,footRight:footHeights.right,dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),crouching:controller.isCrouching,prone:controller.proneBlend,proneSlope:controller.proneSlope,proneRoll:controller.proneRoll,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
