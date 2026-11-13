@@ -14,6 +14,7 @@ const dark=mat(0x34403d), rubber=mat(0x293331), steel=mat(0x82908a,.35,.56);
 const buckle=mat(0xb9b199,.35,.52), glass=mat(0x4c7b80,.12,.26);
 const indicator=new T.MeshBasicMaterial({color:0xb0d3bf});
 function install(operator,team){
+ if(operator.characterName==='Jaime')return;
  const armor=mat(team==='red'?0xa26055:0x718378);
  const webbing=mat(team==='red'?0x69433b:0x586c55);
  const group=operator.group, bones=operator.bones;

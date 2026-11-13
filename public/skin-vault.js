@@ -2,10 +2,10 @@
 (()=>{
 'use strict';
 const SOLDIERS=[
- {id:'original',name:'Operador Original',desc:'Uniforme tático padrão',cloth:0xffffff,vest:0xffffff,trim:0xffffff,rarity:'COMUM'},
- {id:'arctic',name:'Operador Ártico',desc:'Camuflagem em tons de gelo',cloth:0xc1e7f4,vest:0xa2d1e2,trim:0xd9e5ec,rarity:'RARO'},
- {id:'desert',name:'Operador Deserto',desc:'Proteção areia e bronze',cloth:0xe5c48d,vest:0xc69b60,trim:0xc9b78d,rarity:'RARO'},
- {id:'shadow',name:'Operador Sombra',desc:'Equipamento preto e grafite',cloth:0x626a79,vest:0x454d61,trim:0x838ca0,rarity:'ÉPICO'}
+ {id:'original',name:'Jaime',desc:'Personagem principal • uniforme texturizado',cloth:0xffffff,vest:0xffffff,trim:0xffffff,rarity:'COMUM'},
+ {id:'arctic',name:'Jaime Ártico',desc:'Camuflagem em tons de gelo',cloth:0xc1e7f4,vest:0xa2d1e2,trim:0xd9e5ec,rarity:'RARO'},
+ {id:'desert',name:'Jaime Deserto',desc:'Proteção areia e bronze',cloth:0xe5c48d,vest:0xc69b60,trim:0xc9b78d,rarity:'RARO'},
+ {id:'shadow',name:'Jaime Sombra',desc:'Equipamento preto e grafite',cloth:0x626a79,vest:0x454d61,trim:0x838ca0,rarity:'ÉPICO'}
 ];
 const WEAPONS=[
  {id:'original',name:'Original',desc:'Acabamento padrão',color:null,rarity:'COMUM'},
@@ -98,7 +98,7 @@ root.innerHTML=`<section class="skin-vault-shell">
  <header class="skin-vault-header"><div><small>GAMETESTE • COLEÇÃO</small><h2>COFRE DE SKINS</h2></div><button type="button" id="skinVaultClose" class="skin-vault-close">FECHAR ✕</button></header>
  <nav class="skin-vault-tabs" aria-label="Categorias"><button type="button" data-tab="soldier" aria-selected="true">PERSONAGEM</button><button type="button" data-tab="weapon" aria-selected="false">ARMAS</button></nav>
  <nav class="skin-vault-weapons" id="skinVaultWeapons" aria-label="Escolher arma" hidden></nav>
- <div class="skin-vault-content"><figure class="skin-vault-preview" style="margin:0"><canvas id="skinVaultPreview"></canvas><figcaption id="skinVaultPreviewLabel">SOLDIER</figcaption></figure><div id="skinVaultOptions" class="skin-vault-options"></div></div>
+ <div class="skin-vault-content"><figure class="skin-vault-preview" style="margin:0"><canvas id="skinVaultPreview"></canvas><figcaption id="skinVaultPreviewLabel">JAIME</figcaption></figure><div id="skinVaultOptions" class="skin-vault-options"></div></div>
  <footer class="skin-vault-footer"><span id="skinVaultStatus">Skins gratuitas • alterações apenas visuais</span><button type="button" id="skinVaultEquip">EQUIPAR</button></footer>
  </section>`;
 document.body.appendChild(root);
@@ -125,7 +125,7 @@ function render(){
  }
  button.disabled=selected===equipped;
  button.textContent=selected===equipped?'EQUIPADA':'EQUIPAR SKIN';
- root.querySelector('#skinVaultPreviewLabel').textContent=tab==='soldier'?'SOLDIER':NAMES[weapon];
+ root.querySelector('#skinVaultPreviewLabel').textContent=tab==='soldier'?'JAIME':NAMES[weapon];
  status.textContent=tab==='soldier'?'Selecione a aparência do personagem':'Personalize a aparência de cada arma, sem mudar os atributos';
 }
 function initPreview(){
