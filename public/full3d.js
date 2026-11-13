@@ -2089,6 +2089,8 @@ class PlayerController {
    this.strafeAmount=THREE.MathUtils.lerp(this.strafeAmount,0,1-Math.exp(-10*dt));
    this.forwardAmount=THREE.MathUtils.lerp(this.forwardAmount,0,1-Math.exp(-10*dt));
    this.braking=THREE.MathUtils.lerp(this.braking,0,1-Math.exp(-10*dt));
+   this.turnAmount=THREE.MathUtils.lerp(this.turnAmount,0,1-Math.exp(-12*dt));
+   this.turnSharpness=THREE.MathUtils.lerp(this.turnSharpness,0,1-Math.exp(-12*dt));
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }else if(inputDir.lengthSq()>0){
    moving=true;
@@ -2117,7 +2119,19 @@ class PlayerController {
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
 
    const targetVelocity=moveDir.multiplyScalar(currentSpeed);
-   const reversal=this.moveVelocity.lengthSq()>.2&&targetVelocity.lengthSq()>.2&&this.moveVelocity.clone().normalize().dot(targetVelocity.clone().normalize())<-.25;
+   // Velocity-vector based direction changes drive visual pivots without turning the aim camera.
+   const oldVX=this.moveVelocity.x,oldVZ=this.moveVelocity.z;
+   const oldSpeedSq=oldVX*oldVX+oldVZ*oldVZ;
+   const newSpeedSq=targetVelocity.x*targetVelocity.x+targetVelocity.z*targetVelocity.z;
+   const turnDot=oldSpeedSq>.36&&newSpeedSq>.36?
+     THREE.MathUtils.clamp((oldVX*targetVelocity.x+oldVZ*targetVelocity.z)/Math.sqrt(oldSpeedSq*newSpeedSq),-1,1):1;
+   const cross=oldVX*targetVelocity.z-oldVZ*targetVelocity.x;
+   const turnAngle=Math.acos(turnDot);
+   const turnDirection=cross>0?1:cross<0?-1:0;
+   const pivotTarget=Math.min(1,turnAngle/(Math.PI*.70));
+   this.turnAmount=THREE.MathUtils.lerp(this.turnAmount,turnDirection,1-Math.exp(-13*dt));
+   this.turnSharpness=THREE.MathUtils.lerp(this.turnSharpness,pivotTarget,1-Math.exp(-17*dt));
+   const reversal=turnDot<-.25;
    const accel=reversal?18:canSprint?10:13;
    this.moveVelocity.lerp(targetVelocity,1-Math.exp(-accel*dt));
    this.mesh.position.addScaledVector(this.moveVelocity,dt);
@@ -2138,6 +2152,8 @@ class PlayerController {
    this.strafeAmount=THREE.MathUtils.lerp(this.strafeAmount,0,1-Math.exp(-10*dt));
    this.forwardAmount=THREE.MathUtils.lerp(this.forwardAmount,0,1-Math.exp(-10*dt));
    this.braking=THREE.MathUtils.lerp(this.braking,wasFast?1:0,1-Math.exp(-(wasFast?13:7)*dt));
+   this.turnAmount=THREE.MathUtils.lerp(this.turnAmount,0,1-Math.exp(-9*dt));
+   this.turnSharpness=THREE.MathUtils.lerp(this.turnSharpness,0,1-Math.exp(-10*dt));
    moving=this.horizontalSpeed>.08;
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }
