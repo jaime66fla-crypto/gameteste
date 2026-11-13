@@ -1333,7 +1333,7 @@ class PistolController {
   if(this.ammo<=0){this.reload();return;}
   const spec=this.weaponSpec;
   this.fireCooldown=spec.fireRate;this.ammo--;
-  forestAudio.init();forestAudio.playShoot(spec.id);
+  forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
   this.scene.updateMatrixWorld(true);
   const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
   for(let pellet=0;pellet<spec.pellets;pellet++){
