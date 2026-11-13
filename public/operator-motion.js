@@ -138,26 +138,41 @@ function sampleMotion(state,phase,armed=true,weaponId='rifle'){
   r[3][1]=-.115*Math.sin(q-.12);r[3][2]=.009*Math.cos(q-.3);
   stabilizeMotion(r,.88);
  }else if(state==='run'){
-  // Armed tactical jog: compact recovery, brief flight and a stable upper body.
+  // More human tactical run: longer stride, clearer weight transfer, softer vertical bounce.
   const step=fractMotion(p*2);
-  m.root[1]=curveMotion([[0,-.012],[.12,-.035],[.38,-.008],[.70,.024],[1,-.012]],step);
-  m.root[0]=-.009*Math.cos(q-.18);
+  m.root[1]=curveMotion([[0,-.018],[.10,-.042],[.32,-.015],[.58,.018],[.76,.030],[1,-.018]],step);
+  m.root[0]=-.014*Math.cos(q-.18);
+  m.root[2]=.010*Math.sin(q);
+
   for(let side=0;side<2;side++){
    const f=fractMotion(p+side*.5),hip=side?15:12,knee=hip+1,ankle=hip+2;
-   r[hip][0]=curveMotion([[0,-.34],[.20,.35],[.43,.18],[.74,-.55],[1,-.34]],f);
-   r[knee][0]=curveMotion([[0,.22],[.10,.39],[.28,1.06],[.49,1.24],[.76,.67],[1,.22]],f);
-   r[ankle][0]=curveMotion([[0,-.12],[.12,-.13],[.24,.30],[.44,.11],[.76,-.15],[1,-.12]],f);
+   const sideSign=side?1:-1;
+   r[hip][0]=curveMotion([[0,-.42],[.16,.28],[.34,.44],[.55,.08],[.76,-.62],[1,-.42]],f);
+   r[knee][0]=curveMotion([[0,.18],[.12,.36],[.30,.98],[.47,1.22],[.67,.88],[.84,.42],[1,.18]],f);
+   r[ankle][0]=curveMotion([[0,-.16],[.12,-.10],[.27,.28],[.45,.18],[.67,-.06],[.84,-.18],[1,-.16]],f);
+   r[hip][2]=sideSign*.018*Math.sin(q+side*Math.PI);
   }
-  r[1][1]=.035*Math.sin(q);r[1][2]=-.016*Math.cos(q);
-  r[2][0]=.09;r[3][0]=.035;
-  r[3][1]=-.06*Math.sin(q-.12);r[3][2]=.009*Math.cos(q-.2);
-  stabilizeMotion(r,.90);
-  // Free-arm running remains available when the rifle is unequipped.
-  for(let side=0;side<2;side++){
-   const upper=side?9:6,a=q+side*Math.PI;
-   r[upper][0]=.43*Math.cos(a)+.04*Math.sin(2*a);
-   r[upper+1][0]=-1.32-.16*Math.sin(a-.35);
-   r[upper+2][0]=.065*Math.sin(a-.7);
+
+  // Pelvis counter-rotation and forward lean make the run feel driven by the whole body.
+  r[1][1]=.052*Math.sin(q);
+  r[1][2]=-.022*Math.cos(q);
+  r[2][0]=armed?.14:.12;
+  r[3][0]=armed?.075:.055;
+  r[3][1]=-.085*Math.sin(q-.12);
+  r[3][2]=.015*Math.cos(q-.2);
+  r[4][0]=armed?-.035:0;
+  r[5][0]=armed?-.025:0;
+  stabilizeMotion(r,.88);
+
+  // Natural arm drive when unarmed. Armed runs are solved by the weapon IK below.
+  if(!armed){
+   for(let side=0;side<2;side++){
+    const upper=side?9:6,a=q+side*Math.PI;
+    r[upper][0]=.58*Math.cos(a)+.05*Math.sin(2*a);
+    r[upper][2]=(side?-1:1)*.05;
+    r[upper+1][0]=-1.08-.24*Math.sin(a-.30);
+    r[upper+2][0]=.08*Math.sin(a-.72);
+   }
   }
 
  }else if(state==='jump'){
@@ -205,13 +220,22 @@ function sampleMotion(state,phase,armed=true,weaponId='rifle'){
   m.root[1]=-.025; // A target, never a direct assignment to the smoothed root.
 
  }else{
-  r[3][0]=Math.sin(q*2)*.009;r[5][1]=Math.sin(q)*.018;
+  // Subtle breathing and asymmetric weight shift keep idle from looking frozen.
+  const breathe=Math.sin(q);
+  r[2][0]=.010*breathe;
+  r[3][0]=.012*Math.sin(q*2);
+  r[3][2]=.008*Math.sin(q*.5);
+  r[5][1]=.020*breathe;
+  r[1][2]=.010*Math.sin(q*.5);
+  m.root[1]=.004+.005*Math.sin(q);
  }
  if(armed){
   // Low ready when moving; shoulder-ready when aiming. This is an original
   // adaptation of contextual weapon carry, not copied game animation data.
-  const pitch=state==='aim'?-.05:state==='idle'?.38:state==='walk'?.22:state==='run'?.35:.27+.04*Math.pow(Math.sin(Math.PI*p),2);
-  m.weaponAngles=[pitch,-(r[1][1]+r[2][1]+r[3][1])*.90,state==='aim'?-.025:0];
+  const pitch=state==='aim'?-.05:state==='idle'?.34:state==='walk'?.18:state==='run'?.30:.27+.04*Math.pow(Math.sin(Math.PI*p),2);
+  const yawComp=-(r[1][1]+r[2][1]+r[3][1])*.90;
+  const roll=state==='aim'?-.025:state==='run'?.018*Math.sin(q):state==='walk'?.010*Math.sin(q):0;
+  m.weaponAngles=[pitch,yawComp,roll];
   m.weapon=weaponFrame(m.weaponAngles);
   armedMotion(r,m.weapon,weaponId==='pistol'?pistolGrips:rifleGrips);
  }else if(state==='aim'){
