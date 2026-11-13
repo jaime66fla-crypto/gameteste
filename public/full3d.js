@@ -1504,6 +1504,8 @@ class PlayerController {
   this.stepBlend=0;
   this.landingImpact=0;
   this.hardLanding=0;
+  this.recoveryTimer=0;
+  this.recoveryStrength=0;
   this.gravity=-22.0;
   this.rotationSpeed=10.0;
   this.velocity=new THREE.Vector3();
@@ -1545,8 +1547,13 @@ class PlayerController {
  recordLanding(velocityY){
   const speed=Math.max(0,-Number(velocityY||0));
   const impact=THREE.MathUtils.clamp((speed-4.5)/10.5,0,1);
+  const hard=THREE.MathUtils.clamp((speed-9)/8,0,1);
   this.landingImpact=Math.max(this.landingImpact,impact);
-  this.hardLanding=Math.max(this.hardLanding,THREE.MathUtils.clamp((speed-9)/8,0,1));
+  this.hardLanding=Math.max(this.hardLanding,hard);
+  if(hard>.45){
+   this.recoveryStrength=Math.max(this.recoveryStrength,hard);
+   this.recoveryTimer=Math.max(this.recoveryTimer,.38+.34*hard);
+  }
  }
  canStand(){
   const p=this.mesh.position,r=.45;
@@ -1580,6 +1587,8 @@ class PlayerController {
   this.stepBlend=THREE.MathUtils.lerp(this.stepBlend,0,1-Math.exp(-8*dt));
   this.landingImpact=THREE.MathUtils.lerp(this.landingImpact,0,1-Math.exp(-3.2*dt));
   this.hardLanding=THREE.MathUtils.lerp(this.hardLanding,0,1-Math.exp(-2.6*dt));
+  this.recoveryTimer=Math.max(0,this.recoveryTimer-dt);
+  if(this.recoveryTimer<=0)this.recoveryStrength=THREE.MathUtils.lerp(this.recoveryStrength,0,1-Math.exp(-7*dt));
   if(this.jumpPreparation>0){
    if(!this.isGrounded||this.isCrouching)this.jumpPreparation=0;
    else{this.jumpPreparation=Math.max(0,this.jumpPreparation-dt);if(this.jumpPreparation===0){this.velocity.y=this.jumpForce;this.isGrounded=false;}}
@@ -1628,7 +1637,8 @@ class PlayerController {
     const backward=Math.max(0,inputDir.z);
     directionalScale*=1-lateral*.10-backward*.18;
    }
-   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale;
+   const recoveryScale=this.recoveryTimer>0?THREE.MathUtils.lerp(.58,.78,1-this.recoveryStrength):1;
+   const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale*directionalScale*recoveryScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
 
@@ -2481,7 +2491,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
