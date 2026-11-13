@@ -82,11 +82,14 @@ const rifleAnchor=[.055,1.36,.30];
 const rifleShift=[-.20,.04,.04];
 // Rendered negative-X arm holds the trigger; positive-X arm supports the fore-end.
 const rifleGrips=[[6,[.07,1.30,.27],-1],[9,[.11,1.33,.32],1]];
-function weaponFrame(angles,weaponId='rifle'){
- // Pistol: two-handed high-ready tactical stance, hands at upper chest/eye line.
- // Move the entire weapon transform, so IK hands and gun mount remain aligned.
+function weaponFrame(angles,weaponId='rifle',aimBlend=0){
+ // ADS rifle posture: bring the stock to the right shoulder and sight line.
+ // Both IK wrists and the weapon inherit exactly the same transform.
  const pistol=weaponId==='pistol';
- const lift=pistol?.15:0,reach=pistol?.075:0;
+ const longGun=!pistol;
+ const ads=clamp(aimBlend,0,1);
+ const lift=(pistol?.15:0)+(longGun?.155*ads:0);
+ const reach=(pistol?.075:0)+(longGun?.045*ads:0);
  return mul(T(rifleAnchor[0]+rifleShift[0],rifleAnchor[1]+rifleShift[1]+lift,rifleAnchor[2]+rifleShift[2]+reach),
   mul(RZ(angles[2]),mul(RY(angles[1]),mul(RX(angles[0]),T(-rifleAnchor[0],-rifleAnchor[1],-rifleAnchor[2])))));
 }
@@ -254,7 +257,7 @@ function sampleMotion(state,phase,armed=true,weaponId='rifle'){
   const yawComp=-(r[1][1]+r[2][1]+r[3][1])*.90;
   const roll=state==='aim'?-.025:state==='run'?.018*Math.sin(q):state==='walk'?.010*Math.sin(q):0;
   m.weaponAngles=[pitch,yawComp,roll];
-  m.weapon=weaponFrame(m.weaponAngles,weaponId);
+  m.weapon=weaponFrame(m.weaponAngles,weaponId,state==='aim'?1:0);
   armedMotion(r,m.weapon,weaponId==='pistol'?pistolGrips:rifleGrips);
  }else if(state==='aim'){
   // Empty-hand readiness has its own relaxed guard rather than an invisible rifle.
