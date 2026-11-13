@@ -2872,7 +2872,8 @@ function updateCamera(dt){
  let mode='iron';
 
  if(weaponId==='smg'||weaponId==='rifle'){
-  mode='optic';
+  // Simple center dot instead of the obstructive square optic.
+  mode='iron';
   targetFov=38;
  }else if(weaponId==='sniper'){
   mode='scope';
@@ -2888,8 +2889,8 @@ function updateCamera(dt){
  camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*(weaponId==='sniper'?10:14)));
  camera.updateProjectionMatrix();
 
- aimDot?.classList.add('ads-hidden');
- optic?.classList.toggle('active',mode==='optic');
+ aimDot?.classList.toggle('ads-hidden',mode==='scope');
+ optic?.classList.remove('active');
  scope?.classList.toggle('active',mode==='scope');
  document.body.classList.toggle('ads-optic',mode==='optic');
  document.body.classList.toggle('ads-scope',mode==='scope');
