@@ -12,7 +12,7 @@ function buildGeometry(rings=16,sides=24){
 class JaimeSourceAvatar{
   constructor(o={}){
     this.o=Object.assign({skin:'#c98f6b',eye:'#4a7a96',hair:'#2a1c14',hairStyle:'short',shirt:'#4a5a3a',pants:'#3b3f36',
-      boots:'#1d1b19',gloves:'#1a1a1a',vest:true,vestColor:'#2f3329',backpack:false,weapon:false,accessory:'none',height:1,build:1},o);
+      boots:'#1d1b19',gloves:'#1a1a1a',vest:false,vestColor:'#2f3329',backpack:false,weapon:false,accessory:'none',height:1,build:1},o);
     this.root=new THREE.Group();this.t=0;this.anim='idle';this.nb=2;this.bl=0;this.lk=[0,0];this.build();
   }
   set(p){Object.assign(this.o,p);this.build()}
