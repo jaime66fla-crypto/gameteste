@@ -88,8 +88,10 @@ function weaponFrame(angles,weaponId='rifle',aimBlend=0){
  const pistol=weaponId==='pistol';
  const longGun=!pistol;
  const ads=clamp(aimBlend,0,1);
- const lift=(pistol?.15:0)+(longGun?.155*ads:0);
- const reach=(pistol?.075:0)+(longGun?.045*ads:0);
+ // Ready stance is already shouldered, at chest height, without looking down
+ // the sights. ADS raises it the remaining distance to eye level.
+ const lift=pistol?.15:(longGun?.075+.080*ads:0);
+ const reach=pistol?.075:(longGun?.035+.010*ads:0);
  return mul(T(rifleAnchor[0]+rifleShift[0],rifleAnchor[1]+rifleShift[1]+lift,rifleAnchor[2]+rifleShift[2]+reach),
   mul(RZ(angles[2]),mul(RY(angles[1]),mul(RX(angles[0]),T(-rifleAnchor[0],-rifleAnchor[1],-rifleAnchor[2])))));
 }
@@ -251,9 +253,13 @@ function sampleMotion(state,phase,armed=true,weaponId='rifle'){
   m.root[1]=.004+.005*Math.sin(q);
  }
  if(armed){
-  // Low ready when moving; shoulder-ready when aiming. This is an original
-  // adaptation of contextual weapon carry, not copied game animation data.
-  const pitch=state==='aim'?-.05:state==='idle'?.34:state==='walk'?.18:state==='run'?.30:.27+.04*Math.pow(Math.sin(Math.PI*p),2);
+  // Equipped long guns remain pointed forward at chest/shoulder height in
+  // normal stance. Only sprint lowers them; ADS lifts them to the eye line.
+  // Pistol carry keeps its separately calibrated two-handed posture.
+  const pistol=weaponId==='pistol';
+  const pitch=pistol
+   ?(state==='aim'?-.05:state==='idle'?.34:state==='walk'?.18:state==='run'?.30:.27)
+   :(state==='aim'?-.05:state==='idle'?.09:state==='walk'?.13:state==='run'?.30:.16+.025*Math.pow(Math.sin(Math.PI*p),2));
   const yawComp=-(r[1][1]+r[2][1]+r[3][1])*.90;
   const roll=state==='aim'?-.025:state==='run'?.018*Math.sin(q):state==='walk'?.010*Math.sin(q):0;
   m.weaponAngles=[pitch,yawComp,roll];
