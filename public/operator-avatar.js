@@ -179,7 +179,7 @@ class OperatorAvatar{
   this.weaponSwapTime=this.weaponSwapDuration;
  }
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,prone=0,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0,landingImpact=0,hardLanding=0,recovery=0,reload=0,equip=0,hitStrength=0,hitSide=0,hitFront=0,optic=false,stock=false,suppressed=false,footLeft=0,footRight=0,firing=false}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -786,6 +786,30 @@ class OperatorAvatar{
    r[12][0]-=.25*rStep*lift;r[13][0]+=.53*rStep*lift;r[14][0]-=.16*rStep*lift;
    r[1][0]+=.055*lift;r[2][0]+=.085*lift;r[3][0]+=.04*lift;
    pose.root[1]-=.015*lift;
+  }
+  // Prone pose: the 18-bone rig folds forward without replacing the
+  // Soldier, weapon inventory, hit mesh, or existing walk/crouch animations.
+  const proneWeight=clamp(prone,0,1);
+  if(proneWeight>.001&&grounded){
+   const flat=Array.from({length:18},()=>[0,0,0]);
+   flat[0][0]=Math.PI/2;
+   flat[1][0]=-.045;
+   flat[2][0]=.065;
+   flat[3][0]=-.035;
+   flat[4][0]=-.06;
+   flat[5][0]=-.10;
+   // Elbows brace on the ground, trigger hand stays close to the receiver.
+   flat[6]=[-.36,-.06,.31];flat[7]=[-.67,.08,.06];flat[8]=[.09,0,0];
+   flat[9]=[-.39,.07,-.34];flat[10]=[-.75,-.04,-.07];flat[11]=[.07,0,0];
+   // Straight legs trail behind the pelvis, slightly separated at the boots.
+   flat[12]=[-.10,0,-.06];flat[13]=[.16,0,.025];flat[14]=[-.08,0,0];
+   flat[15]=[-.11,0,.07];flat[16]=[.18,0,-.025];flat[17]=[-.08,0,0];
+   for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
+    r[bone][axis]=THREE.MathUtils.lerp(r[bone][axis],flat[bone][axis],proneWeight);
+   }
+   // Keep the torso just above terrain instead of passing through it.
+   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],.25,proneWeight);
+   this.gun.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2*proneWeight));
   }
   // Apply crossfade after procedural reactions and arm IK have been calculated.
   if(this.poseTransition){
