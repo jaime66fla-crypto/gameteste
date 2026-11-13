@@ -2535,6 +2535,8 @@ const thirdPersonCamera=new GTACameraController(camera,player,canvas,forestEnvir
 const weaponLoot=new window.WeaponLootSystem({scene,player,avatar:mainAvatar,controller:pistolWeapon,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:()=>houseParkour.solidBoxes});
 window.weaponLoot=weaponLoot;
 window.weaponController=pistolWeapon;
+window.weaponLoot=weaponLoot;
+window.weaponController=pistolWeapon;
 addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='KeyE'&&!e.repeat)weaponLoot.pickup();});
 document.getElementById('pickupBtn')?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)weaponLoot.pickup();});
 for(let slot=0;slot<2;slot++)document.getElementById('weaponSlot'+slot)?.addEventListener('click',()=>{if(gameStarted&&!player.userData.dead)weaponLoot.select(slot);});
