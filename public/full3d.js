@@ -252,7 +252,14 @@ function buildForestEnvironment(scene,options={}){
    z=(random()-.5)*(mapSize-15);
    dist=Math.hypot(x,z);
    attempts++;
-  }while(dist<minRadius&&attempts<30);
+   // Reserve the planned streets and buildings for navigation and cover.
+   const roads=globalThis.TacticalRules?.ROAD_LAYOUT||[];
+   const plots=globalThis.TacticalRules?.URBAN_LAYOUT||[];
+   const roadConflict=roads.some(([rx,rz,w,d])=>Math.abs(x-rx)<w/2+2&&Math.abs(z-rz)<d/2+2);
+   const plotConflict=plots.some(([bx,bz,w,d])=>Math.abs(x-bx)<w/2+3&&Math.abs(z-bz)<d/2+3);
+   const plazaConflict=Math.hypot(x,z-104)<15;
+   if(!roadConflict&&!plotConflict&&!plazaConflict&&dist>=minRadius)break;
+  }while(attempts<90);
   return {x,z,y:getTerrainHeight(x,z)};
  }
 
