@@ -126,7 +126,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
       <button id="btn-modes-back" class="menu-btn menu-btn-secondary">VOLTAR</button>
     </div>
     <div id="view-multiplayer" class="menu-panel-box hidden-view">
-      <div class="multi-heading"><span>BATTLE ROYALE</span><h2>8 jogadores. Um vencedor.</h2><p>Crie ou entre em uma sala. A partida começa quando os oito jogadores estiverem conectados.</p></div><p id="battleQueueStatus">Aguardando seleção de sala</p>
+      <div class="multi-heading"><span>BATTLE ROYALE</span><h2>8 jogadores. Um vencedor.</h2><p>Crie ou entre em uma sala. A partida começa com 8 jogadores ou após 20 segundos, completando as vagas com bots.</p></div><p id="battleQueueStatus">Aguardando seleção de sala</p>
       <div><label class="menu-label" for="input-player-name">Seu nome</label><input id="input-player-name" class="menu-input" maxlength="16"></div>
       <div><label class="menu-label" for="room-visibility">Visibilidade da nova sala</label><select id="room-visibility" class="menu-input"><option value="public">Pública · aparece na lista</option><option value="private">Privada · entrar pelo código</option></select></div>
       <button id="btn-create-room" class="menu-btn">CRIAR NOVA SALA</button>
@@ -185,7 +185,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <button id="grenadeThrowBtn" hidden>SEGURE PARA MIRAR<br>SOLTE PARA LANÇAR</button>
 <div id="tacticalNotice" role="status" aria-live="polite" hidden></div>
 <div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
-<div id="battleWaiting" hidden><h2>AGUARDANDO JOGADORES</h2><strong id="battleWaitingCount">1 / 8</strong><p>O avião parte quando a sala estiver completa.</p><button id="battleCancel" type="button">CANCELAR E VOLTAR</button></div>
+<div id="battleWaiting" hidden><h2>AGUARDANDO JOGADORES</h2><strong id="battleWaitingCount">1 / 8</strong><p>20 segundos para reunir jogadores. As vagas que faltarem serão preenchidas por bots.</p><button id="battleCancel" type="button">CANCELAR E VOLTAR</button></div>
 <div id="battleResult" hidden><h2 id="battleResultTitle">FIM DE PARTIDA</h2><p id="battleResultText"></p><button id="battleReturn" type="button">VOLTAR AO LOBBY</button></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
@@ -202,7 +202,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/player-life.js?v=1"></script>
 <script src="/tactical-rules.js?v=1"></script>
 <script src="/tactical-gear.js?v=1"></script>
-<script src="/full3d.js?v=51"></script>
+<script src="/full3d.js?v=52"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 </body>
 </html>
