@@ -2724,7 +2724,7 @@ addEventListener('resize',resize);resize();
 
 
 /* Current 3D game's aircraft and parachute sequence. No 2D canvas dependencies. */
-const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null};
+const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null,keys:new Set()};
 function createDeploymentVisuals(){
  if(deployment.plane)return;
  const metal=new THREE.MeshStandardMaterial({color:0x899aa3,metalness:.45,roughness:.57});
@@ -2750,7 +2750,7 @@ function createDeploymentVisuals(){
 function startDeployment(){
  createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=38;deployment.flightZ=0;
  deployment.plane.visible=true;deployment.chute.visible=false;deployment.button.hidden=false;deployment.button.textContent='PULAR DO AVIÃO';
- player.position.set(-90,38,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
+ deployment.keys.clear();player.position.set(-90,38,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
 }
 function deploymentAction(){
  if(!gameStarted)return;
@@ -2771,16 +2771,17 @@ function updateDeployment(dt){
   d.plane.position.copy(player.position);d.plane.rotation.y=Math.PI/2;
   if(player.position.x>=89.5)deploymentAction();
  }else{
-  const keys=controller.keys;
-  const speed=d.phase==='glide'?5:9,down=d.phase==='glide'?5:keys.sprint?23:15;
-  player.position.x=THREE.MathUtils.clamp(player.position.x+(Number(keys.right)-Number(keys.left))*speed*dt,-120,120);
-  player.position.z=THREE.MathUtils.clamp(player.position.z+(Number(keys.backward)-Number(keys.forward))*speed*dt,-120,120);
+  const keys=d.keys;
+  const held=(...codes)=>codes.some(code=>keys.has(code));
+  const speed=d.phase==='glide'?5:9,down=d.phase==='glide'?5:held('ShiftLeft','ShiftRight')?23:15;
+  player.position.x=THREE.MathUtils.clamp(player.position.x+(Number(held('KeyD','ArrowRight'))-Number(held('KeyA','ArrowLeft')))*speed*dt,-120,120);
+  player.position.z=THREE.MathUtils.clamp(player.position.z+(Number(held('KeyS','ArrowDown'))-Number(held('KeyW','ArrowUp')))*speed*dt,-120,120);
   const floor=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
   player.position.y=Math.max(floor,player.position.y-down*dt);
   if(d.phase==='freefall'&&player.position.y-floor<12)deployParachute();
   if(player.position.y<=floor+.05){
    player.position.y=floor;d.phase='landed';d.chute.visible=false;d.button.hidden=true;
-   controller.velocity.set(0,0,0);controller.isGrounded=true;
+   controller.velocity.set(0,0,0);controller.isGrounded=true;d.keys.clear();
   }
  }
  camera.position.set(player.position.x-17,player.position.y+12,player.position.z+23);
@@ -2789,9 +2790,13 @@ function updateDeployment(dt){
  return true;
 }
 addEventListener('keydown',e=>{
- if(!gameStarted||e.repeat||deployment.phase==='idle'||deployment.phase==='landed')return;
- if(e.code==='Space'){e.preventDefault();deploymentAction();}
+ if(!gameStarted||deployment.phase==='idle'||deployment.phase==='landed')return;
+ if(['Space','ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
+ deployment.keys.add(e.code);
+ if(e.code==='Space'&&!e.repeat)deploymentAction();
 },true);
+addEventListener('keyup',e=>deployment.keys.delete(e.code),true);
+addEventListener('blur',()=>deployment.keys.clear());
 
 let gameStarted=false;
 const menuOverlay=document.getElementById('aventura-menu-overlay');
@@ -2813,6 +2818,7 @@ function showGameMenu(){
  tacticalGear.unequip();
  if(multiplayer.active||multiplayer.pending)leaveRoom();
  controller.clearInput();pistolWeapon.triggerHeld=false;
+ deployment.keys.clear();if(deployment.button)deployment.button.hidden=true;if(deployment.plane)deployment.plane.visible=false;if(deployment.chute)deployment.chute.visible=false;deployment.phase='idle';
  gameStarted=false;
  switchMenuView('view-main');
  menuOverlay?.classList.remove('hidden-menu');
