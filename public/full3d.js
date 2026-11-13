@@ -11,6 +11,26 @@ renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure=.95;
 
+// 3D performance diagnostics: read the previous completed frame, not a per-frame console flood.
+let lastRenderMetricsLog=0;
+window.gametesteRenderStats=()=>{
+ const stats={
+  drawCalls:renderer.info.render.calls,
+  triangulos:renderer.info.render.triangles,
+  geometriasNaMemoria:renderer.info.memory.geometries,
+  texturasNaMemoria:renderer.info.memory.textures
+ };
+ console.log('[Gameteste 3D] Desempenho',stats);
+ return stats;
+};
+function logRenderMetricsPeriodically(){
+ const now=performance.now();
+ if(now-lastRenderMetricsLog>=5000){
+  lastRenderMetricsLog=now;
+  window.gametesteRenderStats();
+ }
+}
+
 const scene=new THREE.Scene();
 const camera=new THREE.PerspectiveCamera(58,innerWidth/innerHeight,.1,250);
 
@@ -2939,10 +2959,10 @@ addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
- if(!gameStarted){ renderer.render(scene,camera); return; }
+ if(!gameStarted){ renderer.render(scene,camera);logRenderMetricsPeriodically(); return; }
  if(updateDeployment(dt)){
   if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);}}
-  renderer.render(scene,camera);return;
+  renderer.render(scene,camera);logRenderMetricsPeriodically();return;
  }
  playerLife.update(elapsed,multiplayer.active);
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
@@ -3032,7 +3052,7 @@ function loop(){
  if(staminaBarEl)staminaBarEl.style.width=(controller.stamina/controller.maxStamina*100).toFixed(0)+'%';
  if(altitudeEl)altitudeEl.textContent=player.position.y.toFixed(1)+' m';
  stateEl.textContent=(controller.isGrounded?'CHÃO':'AR')+' • '+controller.horizontalSpeed.toFixed(1)+' m/s • Y '+player.position.y.toFixed(1)+' m';
- renderer.render(scene,camera);
+ renderer.render(scene,camera);logRenderMetricsPeriodically();
 }
 loop();
 
