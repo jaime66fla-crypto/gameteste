@@ -795,7 +795,7 @@ class OperatorAvatar{
   // input, so stationary prone aiming remains completely still.
   const crawlTarget=grounded&&proneWeight>.01?clamp((speed-.035)/.42,0,1)*proneWeight:0;
   this.crawlBlend=M.damp(this.crawlBlend,crawlTarget,crawlTarget>this.crawlBlend?8:10,dt);
-  if(this.crawlBlend>.001)this.crawlPhase+=dt*Math.max(.6,speed)*4.6;
+  if(crawlTarget>.01)this.crawlPhase+=dt*Math.max(.45,speed)*4.6;
   if(proneWeight>.001&&grounded){
    const flat=Array.from({length:18},()=>[0,0,0]);
    flat[0][0]=Math.PI/2;
