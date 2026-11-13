@@ -3220,7 +3220,7 @@ function loop(){
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
  else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
  player.userData.crouching=controller.isCrouching;
- if(!multiplayer.active)combatBots.update(dt);
+ if(!multiplayer.active&&!window.GametesteTraining?.isActive())combatBots.update(dt);
  tacticalGear.update(elapsed);
  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);safeZoneVisual.update();}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
