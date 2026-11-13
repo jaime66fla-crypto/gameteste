@@ -600,7 +600,7 @@ for(const [x,z] of [[-4,-3],[4,-5]]){
 }
 
 // Load locally authored map objects on startup. Multiplayer server map is not modified.
-window.GametesteMapEditor?.mount(scene,forestEnvironment.getTerrainHeight,(mesh,w,h,d)=>houseParkour.registerSolidBox(mesh,w,h,d));
+// Official tactical map preserved; editable custom map loading disabled.
 
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
