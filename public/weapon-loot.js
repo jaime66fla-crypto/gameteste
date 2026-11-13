@@ -11,27 +11,29 @@ const DEFINITIONS=Object.freeze({
 const AMMO_NAMES={light:'Munição leve',rifle:'Munição de rifle',shells:'Cartuchos'};
 const CAPS={light:240,rifle:180,shells:48};
 const ACCESSORIES=Object.freeze({
- optic:{name:'Mira tática',color:0x74bade},
- suppressor:{name:'Silenciador',color:0x566672},
- extended:{name:'Carregador estendido',color:0xc7a85b},
- grip:{name:'Empunhadura',color:0x8cc49b}
+ optic:{name:'Mira tática',slot:'Mira',color:0x74bade},
+ suppressor:{name:'Silenciador',slot:'Bocal',color:0x566672},
+ extended:{name:'Carregador estendido',slot:'Pente',color:0xc7a85b},
+ grip:{name:'Empunhadura',slot:'Empunhadura',color:0x8cc49b},
+ stock:{name:'Coronha tática',slot:'Coronha',color:0x87929a}
 });
 function accessoryAllowed(weaponId,id){
- return ACCESSORIES[id]&&!(weaponId==='pistol'&&id==='grip')&&!(weaponId==='shotgun'&&id==='extended');
+ return ACCESSORIES[id]&&!(weaponId==='pistol'&&(id==='grip'||id==='stock'))&&!(weaponId==='shotgun'&&id==='extended');
 }
 function accessoryStats(spec,attachments={}){
  const extended=!!attachments.extended&&accessoryAllowed(spec.id,'extended');
  const grip=!!attachments.grip&&accessoryAllowed(spec.id,'grip');
+ const stock=!!attachments.stock&&accessoryAllowed(spec.id,'stock');
  const optic=!!attachments.optic;
  const suppressor=!!attachments.suppressor;
  return {
   magSize:spec.magSize+(extended?Math.max(4,Math.floor(spec.magSize*.40)):0),
-  spreadMultiplier:(grip?.82:1)*(optic?.88:1),
-  recoilMultiplier:grip?.80:1,
+  spreadMultiplier:(grip?.82:1)*(optic?.88:1)*(stock?.96:1),
+  recoilMultiplier:(grip?.80:1)*(stock?.84:1),
   soundMultiplier:suppressor?.40:1,
   muzzleFlashMultiplier:suppressor?.18:1,
-  adsMultiplier:optic?.88:1,
-  suppressor,grip,optic,extended
+  adsMultiplier:(optic?.88:1)*(stock?.96:1),
+  suppressor,grip,stock,optic,extended
  };
 }
 function applyAccessoryVisuals(model,id,attachments={}){
@@ -52,6 +54,10 @@ function applyAccessoryVisuals(model,id,attachments={}){
   add('grip',.035,.11,.043,0,-.089,Math.max(.14,muzzle*.55));
   add('optic',.072,.077,.055,0,id==='pistol'?.098:.175,id==='pistol'?.020:.06);
   add('optic',.048,.033,.007,0,id==='pistol'?.11:.18,id==='pistol'?.05:.09,glass);
+  if(id!=='pistol'){
+   add('stock',.07,.085,.16,0,.01,-.17);
+   add('stock',.045,.055,.12,0,.025,-.29);
+  }
  }
  for(const mesh of rig.children)mesh.visible=!!attachments[mesh.userData.accessoryKey]&&accessoryAllowed(id,mesh.userData.accessoryKey);
 }
@@ -254,18 +260,21 @@ class WeaponLootSystem {
  addWeapon(id,position,options={}){return this.add('weapon',id,0,position,options);}
  addAmmo(type,amount,position,options={}){return this.add('ammo',type,amount,position,options);}
  addAccessory(id,position,options={}){return this.add('accessory',id,1,position,options);}
+ setAccessory(id,enabled=true){
+  const slot=this.slots[this.activeSlot];
+  if(!slot||!ACCESSORIES[id])return false;
+  if(enabled&&!accessoryAllowed(slot.id,id)){this.notify('Acessório incompatível com esta arma');return false;}
+  this.saveActive();slot.attachments=slot.attachments||{};
+  if(enabled)slot.attachments[id]=true;else delete slot.attachments[id];
+  this.applyActive(false);
+  this.notify(ACCESSORIES[id].name+(enabled?' instalado':' removido'));return true;
+ }
  equipAccessory(id){
   const slot=this.slots[this.activeSlot];
   if(!slot||!accessoryAllowed(slot.id,id)){this.notify('Acessório incompatível com esta arma');return false;}
   slot.attachments=slot.attachments||{};
   if(slot.attachments[id]){this.notify(ACCESSORIES[id].name+' já instalado');return false;}
-  this.saveActive();slot.attachments[id]=true;
-  const mods=accessoryStats(this.definition,slot.attachments);
-  this.controller.attachmentMods=mods;
-  this.controller.attachments=slot.attachments;
-  this.controller.magSize=mods.magSize;
-  applyAccessoryVisuals(this.heldModels.get(slot.id),slot.id,slot.attachments);
-  this.notify(ACCESSORIES[id].name+' instalado');return true;
+  return this.setAccessory(id,true);
  }
  remove(item){
   const index=this.items.indexOf(item);if(index<0)return;
@@ -306,7 +315,7 @@ class WeaponLootSystem {
  }
  populate(){
   for(const [id,x,z]of [['smg',-2,-1],['rifle',2,-2],['shotgun',0,-5],['pistol',-3,-7],['sniper',4,-8]])this.addWeapon(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
-  for(const [id,x,z]of [['optic',-1,-4],['suppressor',2,-5],['extended',-4,-4],['grip',4,-3]]){
+  for(const [id,x,z]of [['optic',-1,-4],['suppressor',2,-5],['extended',-4,-4],['grip',4,-3],['stock',-5,-2]]){
    this.addAccessory(id,new THREE.Vector3(x,this.terrainHeight(x,z),z));
   }
   const ids=Object.keys(DEFINITIONS),types=Object.keys(AMMO_NAMES);
