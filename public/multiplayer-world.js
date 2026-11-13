@@ -1,7 +1,7 @@
 /* Visible remote operators. Shared rig geometry/textures stay owned by OperatorAvatar. */
 (()=>{'use strict';
 class MultiplayerWorld{
- constructor(scene,terrainHeight=()=>0,audio=null){this.scene=scene;this.terrainHeight=terrainHeight;this.audio=audio;this.players=new Map();this.effects=[];}
+ constructor(scene,terrainHeight=()=>0,audio=null){this.scene=scene;this.terrainHeight=terrainHeight;this.audio=audio;this.players=new Map();this.effects=[];this._position=new THREE.Vector3();this._listener=new THREE.Vector3();}
  _buildRemoteJetpack(){
   const g=new THREE.Group();g.name='REMOTE_SPECIAL_JETPACK';
   const dark=new THREE.MeshStandardMaterial({color:0x22282a,metalness:.55,roughness:.42});
@@ -52,8 +52,9 @@ class MultiplayerWorld{
  update(dt){for(const remote of this.players.values()){
   const a=remote.avatar,s=remote.state,k=1-Math.exp(-16*dt);
   const y=s.dead?this.terrainHeight(s.x,s.z,s.y):s.y;
-  if(a.group.position.distanceTo(new THREE.Vector3(s.x,y,s.z))>8)a.group.position.set(s.x,y,s.z);
-  else a.group.position.lerp(new THREE.Vector3(s.x,y,s.z),k);
+  this._position.set(s.x,y,s.z);
+  if(a.group.position.distanceToSquared(this._position)>64)a.group.position.copy(this._position);
+  else a.group.position.lerp(this._position,k);
   a.group.rotation.y+=Math.atan2(Math.sin(s.angle-a.group.rotation.y),Math.cos(s.angle-a.group.rotation.y))*k;
   remote.flashTime=Math.max(0,remote.flashTime-dt);a.flash.visible=remote.flashTime>0;a.setRecoil((a.recoil||0)*Math.exp(-15*dt));
   if(remote.jetpack){
@@ -65,7 +66,13 @@ class MultiplayerWorld{
    }
   }
   const att=s.attachments&&typeof s.attachments==='object'?s.attachments:{};
-  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
+  // Distant characters retain smooth movement but update their skeletal pose at a lower rate.
+  const listener=this.audio?.listenerPosition?.();
+  const far=listener&&a.group.position.distanceToSquared(listener)>55*55;
+  remote.poseTime=(remote.poseTime||0)+dt;
+  if(far&&remote.poseTime<.045)continue;
+  const poseDt=Math.min(remote.poseTime,.05);remote.poseTime=0;
+  a.update(poseDt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }
@@ -84,12 +91,13 @@ class MultiplayerWorld{
    const attenuation=Math.max(.18,1/(1+distance*.055));
    this.audio.playShoot(data.weapon,(suppressed?.26:1)*attenuation);
   }
-  for(const ray of data.rays||[]){
+  for(const ray of (data.rays||[]).slice(0,6)){
    const start=new THREE.Vector3(data.origin.x,data.origin.y,data.origin.z),direction=new THREE.Vector3(ray.x,ray.y,ray.z);
    const range=window.WeaponLootSystem.DEFINITIONS[data.weapon]?.range||65;
    const caster=new THREE.Raycaster(start,direction,0,range);const hit=window.CombatBotSystem.firstHit(this.scene,caster,remote?.avatar.group);
    const end=hit?.point||start.clone().addScaledVector(direction,range);
    const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:suppressed?0xd8c38a:0xffb56a,transparent:true,opacity:suppressed?.45:1}));line.userData.ignoreCombat=true;this.scene.add(line);this.effects.push({line,life:suppressed?.04:.07});
+   if(this.effects.length>36){const old=this.effects.shift();this.scene.remove(old.line);old.line.geometry.dispose();old.line.material.dispose();}
   }
  }
  remove(id){const remote=this.players.get(id);if(!remote)return;const a=remote.avatar;this.scene.remove(a.group);this.disposeObject(a.gun,true);for(const material of a.body.material)material.dispose();a.hitSurface.material.dispose();a.skeleton.dispose();this.players.delete(id);}
