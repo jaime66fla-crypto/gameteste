@@ -713,6 +713,41 @@ class OperatorAvatar{
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
   }
+  // Post-IK manipulation: the support hand must leave the weapon grip during reload.
+  // Apply after armedMotion, which otherwise replaces shoulder/elbow rotations.
+  if(armed&&reload>.001){
+   const t=clamp(reload,0,1),id=this.weaponId||'pistol';
+   const ease=u=>{u=clamp(u,0,1);return u*u*(3-2*u);};
+   const windowPulse=(start,peak,end)=>Math.min(ease((t-start)/(peak-start)),ease((end-t)/(end-peak)));
+   const mag=id==='shotgun'?0:windowPulse(.10,.38,.79);
+   const shells=id==='shotgun'?Math.pow(Math.sin(Math.PI*clamp((t-.12)/.74,0,1)*3),2)*windowPulse(.08,.55,.9):0;
+   const bolt=id==='sniper'?windowPulse(.58,.71,.91):0;
+   const reach=Math.max(mag,shells,bolt);
+   const speedBlend=grounded?clamp(speed/8,0,1):0;
+   if(reach>.001){
+    // The left hand manipulates the magazine/shells while the right holds the receiver.
+    // M.armedMotion has already solved the normal two-hand grip; interpolate away from it.
+    const leftShoulder=9,leftElbow=10,leftWrist=11;
+    const targetShoulder=id==='pistol'?[-.63,.39,-.22]:id==='shotgun'?[-.91,.24,-.29]:id==='sniper'?[-.77,.31,-.17]:[-.82,.32,-.13];
+    const targetElbow=id==='pistol'?-1.27:id==='shotgun'?-1.50:id==='sniper'?-1.32:-1.43;
+    for(let k=0;k<3;k++)r[leftShoulder][k]=THREE.MathUtils.lerp(r[leftShoulder][k],targetShoulder[k],reach*.85);
+    r[leftElbow][0]=THREE.MathUtils.lerp(r[leftElbow][0],targetElbow,reach*.85);
+    r[leftWrist][0]+=reach*.16;
+    if(bolt>.001){r[6][0]+=.09*bolt;r[7][0]+=.14*bolt;}
+   }
+   if(speedBlend>.001){
+    // Keep the feet walking while the upper body steadies the receiver during reload.
+    const stability=speedBlend*windowPulse(.03,.42,.97);
+    r[1][0]+=.035*stability;
+    r[2][0]+=.065*stability;
+    r[3][0]+=.045*stability;
+    r[3][1]-=clamp(strafe,-1,1)*.04*stability;
+    r[12][0]*=1-.10*stability;r[15][0]*=1-.10*stability;
+    r[13][0]+=.07*stability;r[16][0]+=.07*stability;
+    pose.root[1]-=.012*stability;
+   }
+  }
+
   // Visual foot placement: ground probes affect only the lower body, never physics.
   // Reduce correction while running to preserve free, rhythmic leg swings.
   const footWeight=grounded?clamp((8-speed)/8,0,.95)*(1-this.crouchBlend*.35):0;
