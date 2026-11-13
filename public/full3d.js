@@ -423,6 +423,37 @@ for(let i=-24;i<=24;i+=8) box(i,0,4,2,.35,8,0x484d50);
 
 const houseParkour=new HouseParkourBuilder(scene,forestEnvironment.getTerrainHeight);
 houseParkour.convertExistingBlocksToHouses(legacyBlocks);
+
+/* Migrated urban expansion: standalone 3D houses and tower cover, registered in the
+   same collision/cover/loot system as original parkour buildings. */
+const urbanLayout=[
+ [-58,-57,10,9,5.5],[-42,-57,12,10,8],[-25,-57,10,10,5.5],
+ [27,-57,12,10,10],[49,-57,12,10,16],[68,-57,11,11,6],
+ [-61,-31,11,11,6],[-40,-30,13,11,15],[40,-30,13,12,20],[63,-30,12,10,6],
+ [-65,33,12,10,5.5],[-43,35,13,11,17],[-24,38,10,11,6],
+ [28,37,14,12,19],[51,36,13,10,7]
+];
+const urbanTowers=[];
+for(const [x,z,w,d,h] of urbanLayout){
+ const floor=forestEnvironment.getTerrainHeight(x,z);
+ const tall=h>=10;
+ const material=new THREE.MeshStandardMaterial({color:tall?0x627b85:0xb49c83,roughness:.86});
+ const g=new THREE.Group();g.position.set(x,floor,z);scene.add(g);
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);wall.position.y=h/2;
+ wall.castShadow=true;wall.receiveShadow=true;wall.userData.impactMaterial='concrete';g.add(wall);
+ for(const side of [-1,1])for(let level=1;level<=Math.floor((h-1)/2.8);level++){
+  for(let dx=-w/2+1.7;dx<w/2-1;dx+=2.7){
+   const glass=new THREE.Mesh(new THREE.PlaneGeometry(1.35,1.35),new THREE.MeshStandardMaterial({color:0x456779,emissive:0x13222a,emissiveIntensity:.16,side:THREE.DoubleSide}));
+   glass.position.set(dx,level*2.8,side*(d/2+.015));if(side<0)glass.rotation.y=Math.PI;g.add(glass);
+  }
+ }
+ const trim=new THREE.Mesh(new THREE.BoxGeometry(w+.25,.3,d+.25),new THREE.MeshStandardMaterial({color:0x48555b}));
+ trim.position.y=h;g.add(trim);
+ g.updateMatrixWorld(true);
+ houseParkour.registerSolidBox(wall,w,h,d);
+ if(tall)urbanTowers.push({x,z,height:h});
+}
+
 // Waist-high training cover in the existing combat area.
 for(const [x,z] of [[-4,-3],[4,-5]]){
  const barrier=box(x,forestEnvironment.getTerrainHeight(x,z),z,4,1.3,.75,0x826e56);
@@ -1836,6 +1867,7 @@ class PlayerController {
  _initListeners(){
   addEventListener('keydown',e=>{
    if(!gameStarted||player.userData.dead)return;
+   if(typeof deployment!=='undefined'&&deployment.phase!=='idle'&&deployment.phase!=='landed')return;
    if((e.code==='KeyC'||e.code==='KeyQ'||e.code==='Space')&&e.repeat)return;
    if(e.code==='ControlLeft'||e.code==='ControlRight'||(e.ctrlKey&&['KeyW','KeyA','KeyS','KeyD'].includes(e.code)))e.preventDefault?.();
    this._onKeyChange(e.code,true);
@@ -2690,6 +2722,77 @@ function updateCamera(dt){
 function resize(){renderer.setSize(innerWidth,innerHeight,false);camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix()}
 addEventListener('resize',resize);resize();
 
+
+/* Current 3D game's aircraft and parachute sequence. No 2D canvas dependencies. */
+const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null};
+function createDeploymentVisuals(){
+ if(deployment.plane)return;
+ const metal=new THREE.MeshStandardMaterial({color:0x899aa3,metalness:.45,roughness:.57});
+ const plane=new THREE.Group();
+ const fuselage=new THREE.Mesh(new THREE.BoxGeometry(3,2,12),metal);plane.add(fuselage);
+ const wings=new THREE.Mesh(new THREE.BoxGeometry(20,.45,3),metal);wings.position.z=.5;plane.add(wings);
+ const tail=new THREE.Mesh(new THREE.BoxGeometry(8,.35,1.8),metal);tail.position.z=5;plane.add(tail);
+ const fin=new THREE.Mesh(new THREE.BoxGeometry(.4,3.3,2),metal);fin.position.set(0,1.5,5);plane.add(fin);
+ scene.add(plane);deployment.plane=plane;plane.visible=false;
+ const canopy=new THREE.Group();
+ const cloth=new THREE.Mesh(new THREE.SphereGeometry(3.2,20,10,0,Math.PI,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0xf28d47,side:THREE.DoubleSide}));
+ cloth.rotation.x=Math.PI;cloth.position.y=3.3;canopy.add(cloth);
+ const lineMat=new THREE.LineBasicMaterial({color:0xd8ebef});
+ for(const dx of [-2.6,-1.3,0,1.3,2.6]){
+  const points=[new THREE.Vector3(dx,3.3,0),new THREE.Vector3(dx*.12,.7,0)];
+  canopy.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),lineMat));
+ }
+ player.add(canopy);canopy.visible=false;deployment.chute=canopy;
+ const button=document.createElement('button');button.id='deployAction';button.textContent='PULAR DO AVIÃO';
+ button.style.cssText='position:fixed;right:24px;bottom:110px;z-index:30;padding:15px 23px;background:#144f79;color:white;border:2px solid #a8e4fa;border-radius:10px;font:900 14px system-ui;cursor:pointer';
+ button.addEventListener('click',deploymentAction);document.body.appendChild(button);deployment.button=button;button.hidden=true;
+}
+function startDeployment(){
+ createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=38;deployment.flightZ=0;
+ deployment.plane.visible=true;deployment.chute.visible=false;deployment.button.hidden=false;deployment.button.textContent='PULAR DO AVIÃO';
+ player.position.set(-90,38,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
+}
+function deploymentAction(){
+ if(!gameStarted)return;
+ if(deployment.phase==='plane'){
+  deployment.phase='freefall';deployment.time=0;deployment.plane.visible=false;deployment.button.textContent='ABRIR PARAQUEDAS';
+ }else if(deployment.phase==='freefall')deployParachute();
+}
+function deployParachute(){
+ if(deployment.phase!=='freefall')return;
+ deployment.phase='glide';deployment.chute.visible=true;deployment.button.hidden=true;
+}
+function updateDeployment(dt){
+ const d=deployment;if(d.phase==='idle'||d.phase==='landed')return false;
+ d.time+=dt;
+ if(d.phase==='plane'){
+  player.position.x=Math.min(90,player.position.x+11*dt);
+  player.position.y=38;player.position.z=d.flightZ;
+  d.plane.position.copy(player.position);d.plane.rotation.y=Math.PI/2;
+  if(player.position.x>=89.5)deploymentAction();
+ }else{
+  const keys=controller.keys;
+  const speed=d.phase==='glide'?5:9,down=d.phase==='glide'?5:keys.sprint?23:15;
+  player.position.x=THREE.MathUtils.clamp(player.position.x+(Number(keys.right)-Number(keys.left))*speed*dt,-120,120);
+  player.position.z=THREE.MathUtils.clamp(player.position.z+(Number(keys.backward)-Number(keys.forward))*speed*dt,-120,120);
+  const floor=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
+  player.position.y=Math.max(floor,player.position.y-down*dt);
+  if(d.phase==='freefall'&&player.position.y-floor<12)deployParachute();
+  if(player.position.y<=floor+.05){
+   player.position.y=floor;d.phase='landed';d.chute.visible=false;d.button.hidden=true;
+   controller.velocity.set(0,0,0);controller.isGrounded=true;
+  }
+ }
+ camera.position.set(player.position.x-17,player.position.y+12,player.position.z+23);
+ camera.lookAt(player.position.x,player.position.y,player.position.z);
+ camera.far=350;camera.updateProjectionMatrix();
+ return true;
+}
+addEventListener('keydown',e=>{
+ if(!gameStarted||e.repeat||deployment.phase==='idle'||deployment.phase==='landed')return;
+ if(e.code==='Space'){e.preventDefault();deploymentAction();}
+},true);
+
 let gameStarted=false;
 const menuOverlay=document.getElementById('aventura-menu-overlay');
 const menuSettings={soundEnabled:true,sensitivity:1,shadows:true};
@@ -2703,6 +2806,7 @@ function hideGameMenu(){
  publicRoomBrowser.close();
  menuOverlay?.classList.add('hidden-menu');
  gameStarted=true;
+ startDeployment();
  forestAudio.init();
 }
 function showGameMenu(){
@@ -2830,6 +2934,10 @@ const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
  if(!gameStarted){ renderer.render(scene,camera); return; }
+ if(updateDeployment(dt)){
+  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);}}
+  renderer.render(scene,camera);return;
+ }
  playerLife.update(elapsed,multiplayer.active);
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
  else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
