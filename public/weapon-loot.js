@@ -13,20 +13,25 @@ const CAPS={light:240,rifle:180,shells:48};
 function createModel(id){
  const group=new THREE.Group(),dark=new THREE.MeshStandardMaterial({color:0x232c30,roughness:.6,metalness:.35}),steel=new THREE.MeshStandardMaterial({color:0x59636a,roughness:.35,metalness:.75}),grip=new THREE.MeshStandardMaterial({color:id==='shotgun'?0x77583d:0x3c4845,roughness:.9});
  function box(w,h,d,material,x,y,z,angle=0){const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);m.position.set(x,y,z);m.rotation.x=angle;m.castShadow=true;group.add(m);return m;}
+ const parts={};
+ function movingBox(key,w,h,d,material,x,y,z,angle=0){
+  const m=box(w,h,d,material,x,y,z,angle);
+  parts[key]=m;return m;
+ }
  if(id==='pistol'){
-  box(.039,.049,.175,steel,0,.035,.037);box(.034,.034,.16,dark,0,-.005,.03);box(.035,.087,.045,grip,0,-.051,-.018,-.2);
+  movingBox('slide',.039,.049,.175,steel,0,.035,.037);box(.034,.034,.16,dark,0,-.005,.03);box(.035,.087,.045,grip,0,-.051,-.018,-.2);
   box(.05,.006,.043,dark,0,-.043,.025);box(.008,.008,.012,dark,0,.064,.103);
  }else{
   box(.055,.065,id==='smg'?.18:.23,dark,0,.02,.055);box(.041,.085,.05,grip,0,-.047,-.012,-.15);
   box(.045,.055,.14,grip,-.07,.085,-.12);box(.062,.1,.025,dark,-.07,.105,-.2);
   if(id==='shotgun'){
-   box(.035,.035,.39,steel,0,.035,.285);box(.025,.025,.33,dark,0,-.007,.27);box(.07,.065,.12,grip,0,-.004,.21);
+   box(.035,.035,.39,steel,0,.035,.285);box(.025,.025,.33,dark,0,-.007,.27);movingBox('pump',.07,.065,.12,grip,0,-.004,.21);
   }else if(id==='sniper'){
-   box(.045,.055,.36,dark,0,.025,.12);box(.026,.026,.48,steel,0,.04,.47);box(.055,.065,.18,grip,0,.005,-.14);box(.04,.09,.055,grip,0,-.055,-.015,-.12);
+   box(.045,.055,.36,dark,0,.025,.12);box(.026,.026,.48,steel,0,.04,.47);box(.055,.065,.18,grip,0,.005,-.14);movingBox('magazine',.04,.09,.055,grip,0,-.055,-.015,-.12);
    const scope=box(.11,.11,.27,dark,0,.13,.07);scope.geometry.dispose();scope.geometry=new THREE.CylinderGeometry(.055,.055,.27,14);scope.rotation.x=Math.PI/2;
    box(.018,.055,.02,steel,0,.09,.0);box(.018,.055,.02,steel,0,.09,.14);
   }else{
-   box(.05,id==='smg'?.135:.12,.065,grip,0,-.062,.06,-.16);
+   movingBox('magazine',.05,id==='smg'?.135:.12,.065,grip,0,-.062,.06,-.16);
    box(.06,.065,id==='smg'?.09:.14,grip,0,.02,id==='smg'?.16:.23);
    box(.023,.023,id==='smg'?.11:.18,steel,0,.035,id==='smg'?.23:.38);
    box(.035,.012,.19,steel,0,.062,.06);box(.014,.025,.02,dark,0,.075,.11);
@@ -59,8 +64,8 @@ function createModel(id){
  if(id==='pistol'){
   // Slide serrations, ejection port, magazine floor and separate rear sight.
   for(let i=0;i<4;i++)box(.043,.013,.006,trim,0,.053,-.020+i*.018);
-  box(.028,.006,.034,trim,.006,.060,.058);
-  box(.045,.010,.037,trim,0,-.104,-.020);
+  movingBox('ejectionPort',.028,.006,.034,trim,.006,.060,.058);
+  movingBox('magazine',.045,.010,.037,trim,0,-.104,-.020);
   box(.031,.008,.011,highlight,0,.064,-.038);
  }else{
   // Receiver pins, magazine base, rail sections and sling anchor.
@@ -76,17 +81,47 @@ function createModel(id){
   }else if(id==='sniper'){
    // Scope adjustment turrets, bolt handle and barrel band.
    tube(.025,.046,0,.19,.064,trim);
-   box(.052,.020,.013,highlight,.041,.038,-.003);
+   movingBox('bolt',.052,.020,.013,highlight,.041,.038,-.003);
    box(.015,.047,.018,trim,.059,.002,-.003);
    box(.057,.022,.024,trim,0,.040,.39);
   }else{
    // Charging handle and grooved handguard.
-   box(.042,.013,.020,highlight,-.014,.073,-.033);
+   movingBox('bolt',.042,.013,.020,highlight,-.014,.073,-.033);
    for(let i=0;i<3;i++)box(.059,.008,.012,trim,0,.003,.155+i*.026);
    box(.065,.010,.020,rubber,0,-.014,.19);
   }
  }
+ // Per-model mechanism controls. Models used as loot remain in their rest pose.
+ const rest=Object.fromEntries(Object.entries(parts).map(([key,mesh])=>[key,mesh.position.clone()]));
+ group.userData.weaponMechanics={id,parts,rest};
  group.name='Weapon_'+id;return group;
+}
+function animateMechanics(model,{reload=0,reloading=false,recoil=0,shot=0}={}){
+ const setup=model?.userData?.weaponMechanics;
+ if(!setup)return;
+ const {id,parts,rest}=setup;
+ for(const [key,part] of Object.entries(parts))part.position.copy(rest[key]);
+ const t=THREE.MathUtils.clamp(reload,0,1);
+ const impulse=THREE.MathUtils.clamp(shot,0,1);
+ // Magazine drop / insertion / return, driven by the real reload progress.
+ const magOut=reloading?THREE.MathUtils.smoothstep(t,.08,.29):0;
+ const magIn=reloading?1-THREE.MathUtils.smoothstep(t,.43,.72):0;
+ const magTravel=magOut*magIn;
+ if(parts.magazine)parts.magazine.position.y-=.07*magTravel;
+ if(parts.magazine)parts.magazine.position.z-=.025*magTravel;
+ if(parts.slide){
+  const rack=reloading?Math.max(0,1-Math.abs(t-.82)/.13):0;
+  parts.slide.position.z-=.055*Math.max(impulse,rack);
+ }
+ if(parts.ejectionPort)parts.ejectionPort.position.z-=.04*impulse;
+ if(parts.bolt){
+  const bolt=reloading?Math.max(0,1-Math.abs(t-(id==='sniper'?.76:.83))/.14):0;
+  parts.bolt.position.z-=.08*Math.max(bolt,impulse*.6);
+ }
+ if(parts.pump){
+  const pump=reloading?Math.pow(Math.sin(t*Math.PI*3),2)*.04:0;
+  parts.pump.position.z-=Math.max(pump,impulse*.06);
+ }
 }
 function asBox(b){return b.isBox3?b:new THREE.Box3(new THREE.Vector3(b.minX,b.minY,b.minZ),new THREE.Vector3(b.maxX,b.maxY,b.maxZ));}
 function rotateJoint(root,joint,tip,target){
@@ -275,7 +310,7 @@ class WeaponLootSystem {
   return this.messageTime>0?this.message:'';
  }
 }
-WeaponLootSystem.DEFINITIONS=DEFINITIONS;WeaponLootSystem.AMMO_NAMES=AMMO_NAMES;WeaponLootSystem.createModel=createModel;
+WeaponLootSystem.DEFINITIONS=DEFINITIONS;WeaponLootSystem.AMMO_NAMES=AMMO_NAMES;WeaponLootSystem.createModel=createModel;WeaponLootSystem.animateMechanics=animateMechanics;
 window.WeaponLootSystem=WeaponLootSystem;
 })();
 
