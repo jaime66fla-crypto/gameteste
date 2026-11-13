@@ -3422,6 +3422,14 @@ const firstVehicle=typeof window.FirstVehicleSystem==='function'?new window.Firs
  isActive:()=>gameStarted&&(deployment.phase==='idle'||deployment.phase==='landed'),
  isDead:()=>!!player.userData.dead
 }):null;
+// Runtime primitives for the supplied tower and sniper-ammo assets.
+const mapAssetPack=typeof window.GametesteMapAssetPack==='function'
+ ?new window.GametesteMapAssetPack({
+  THREE,scene,terrain:forestEnvironment.getTerrainHeight,
+  solidBoxes:houseParkour.solidBoxes,weaponLoot,player,
+  isActive:()=>gameStarted&&(deployment.phase==='idle'||deployment.phase==='landed')&&!player.userData.dead,
+  isMultiplayer:()=>!!(multiplayer.active||multiplayer.pending)
+ }):null;
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
@@ -3438,6 +3446,7 @@ function loop(){
  if(firstVehicle?.update(dt)){
   renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
  }
+ mapAssetPack?.update(dt);
  playerLife.update(elapsed,multiplayer.active);
  if(!playerLife.dead){controller.update(dt);weaponLoot.update(dt);}
  else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
