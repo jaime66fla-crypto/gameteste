@@ -708,7 +708,7 @@ class OperatorAvatar{
     a[2]+=clamp(strafe,-1,1)*.018;
    }
    for(let k=0;k<3;k++)this.weaponAngles[k]=M.damp(this.weaponAngles[k],a[k],22,dt);
-   pose.weapon=M.weaponFrame(this.weaponAngles);
+   pose.weapon=M.weaponFrame(this.weaponAngles,this.weaponId);
    const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
