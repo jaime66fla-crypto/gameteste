@@ -2528,8 +2528,11 @@ function ensureAdsViewWeapon(id){
 function updateAdsViewModel(dt){
  const active=controller?.keys?.aiming&&pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&pistolWeapon.equipTimer<=0;
  const id=weaponLoot?.definition?.id||'pistol';
- adsViewModel.visible=!!active;
- if(!active)return;
+ // Sniper optics replace the viewmodel during ADS. Drawing the rifle on top
+ // of the scope image made its front sight cover the lower half of the lens.
+ const scoped=active&&id==='sniper';
+ adsViewModel.visible=!!active&&!scoped;
+ if(!active||scoped)return;
  const gun=ensureAdsViewWeapon(id);
  window.WeaponLootSystem?.applyAccessoryVisuals?.(gun,id,weaponLoot?.slots?.[weaponLoot.activeSlot]?.attachments||{});
  window.WeaponLootSystem?.animateMechanics?.(gun,{reload:pistolWeapon.reloadBlend,reloading:pistolWeapon.isReloading,shot:pistolWeapon.mechanismShot});
@@ -2556,6 +2559,11 @@ function updateAdsViewModel(dt){
 // Use the visible gun barrel for local tracers/flash, including the ADS viewmodel.
 // The combat raycast remains camera-aligned and the network payload is unchanged.
 function getVisibleWeaponMuzzle(weaponId,attachments){
+ // The telescopic view is through the optic itself: local sniper VFX
+ // begin on the optical axis, not from a displaced world-model barrel.
+ if(weaponId==='sniper'&&controller?.keys?.aiming){
+  return camera.position.clone().addScaledVector(camera.getWorldDirection(new THREE.Vector3()),.35);
+ }
  const barrelZ=(window.WeaponLootSystem.DEFINITIONS[weaponId]?.muzzleZ||.2)
   +(attachments?.suppressor?.25:0);
  const point=new THREE.Vector3(0,.035,barrelZ+.022);
