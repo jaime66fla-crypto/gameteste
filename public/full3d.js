@@ -91,7 +91,7 @@ function buildForestEnvironment(scene,options={}){
   flatShading:true
  });
  const ground=new THREE.Mesh(groundGeo,groundMat);
- ground.receiveShadow=true;
+ ground.userData.impactMaterial='dirt';ground.receiveShadow=true;
  scene.add(ground);
 
  function getTerrainHeight(x,z){
@@ -178,7 +178,7 @@ function buildForestEnvironment(scene,options={}){
   }
   rockGeo.computeVertexNormals();
   const rock=new THREE.Mesh(rockGeo,rockMat);
-  rock.castShadow=true;
+  rock.userData.impactMaterial='concrete';rock.castShadow=true;
   rock.receiveShadow=true;
   return rock;
  }
@@ -287,7 +287,7 @@ class HouseParkourBuilder {
   this.structuresGroup.add(houseContainer);
 
   const wallMesh=new THREE.Mesh(new THREE.BoxGeometry(width,height,depth),this.materials.stoneWall);
-  wallMesh.position.y=height/2;
+  wallMesh.userData.impactMaterial='concrete';wallMesh.position.y=height/2;
   wallMesh.castShadow=true; wallMesh.receiveShadow=true;
   houseContainer.add(wallMesh);
 
@@ -298,7 +298,7 @@ class HouseParkourBuilder {
   });
 
   const door=new THREE.Mesh(new THREE.BoxGeometry(1.4,2.4,.18),this.materials.darkWood);
-  door.position.set(0,1.2,depth/2+.05); houseContainer.add(door);
+  door.userData.impactMaterial='wood';door.position.set(0,1.2,depth/2+.05); houseContainer.add(door);
 
   const winGeo=new THREE.BoxGeometry(1.1,1.1,.15);
   [-width*.28,width*.28].forEach(wx=>{
@@ -334,7 +334,7 @@ class HouseParkourBuilder {
 
   supports.forEach(s=>{
    const sup=new THREE.Mesh(new THREE.BoxGeometry(s.w,s.h,s.d),s.mat);
-   sup.position.set(s.px,s.py,s.pz);
+   sup.userData.impactMaterial=s.mat===this.materials.crate||s.mat===this.materials.woodWall||s.mat===this.materials.darkWood?'wood':'concrete';sup.position.set(s.px,s.py,s.pz);
    sup.castShadow=true; sup.receiveShadow=true; houseContainer.add(sup);
    if(s.py>2.5){
     const bracket=new THREE.Mesh(new THREE.BoxGeometry(s.w*.7,.2,.2),this.materials.darkWood);
@@ -426,7 +426,7 @@ houseParkour.convertExistingBlocksToHouses(legacyBlocks);
 // Waist-high training cover in the existing combat area.
 for(const [x,z] of [[-4,-3],[4,-5]]){
  const barrier=box(x,forestEnvironment.getTerrainHeight(x,z),z,4,1.3,.75,0x826e56);
- houseParkour.registerSolidBox(barrier,4,1.3,.75);
+ barrier.userData.impactMaterial='wood';houseParkour.registerSolidBox(barrier,4,1.3,.75);
 }
 
 const player=new THREE.Group(); scene.add(player);
@@ -1052,6 +1052,7 @@ class PistolController {
   this.triggerHeld=false;
   this.casings=[];
   this.muzzleBursts=[];
+  this.impactEffects=[];
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1349,6 +1350,73 @@ class PistolController {
   this.loot?.saveActive();
  }
 
+ impactMaterial(hit){
+  if(!hit?.object)return null;
+  const mesh=hit.object;
+  if(mesh.userData?.enemyRef||mesh.userData?.remoteId)return null;
+  if(mesh.userData?.iceWallId)return 'ice';
+  if(mesh.userData?.impactMaterial)return mesh.userData.impactMaterial;
+  if(mesh.geometry?.type==='PlaneGeometry')return 'dirt';
+  const mat=Array.isArray(mesh.material)?mesh.material[0]:mesh.material;
+  if((mat?.metalness||0)>.52)return 'metal';
+  const hex=mat?.color?.getHex?.();
+  if([0x806346,0x453b2b,0x9c7c53,0x826e56,0x614a36,0x35543a,0x617a43,0x456442].includes(hex))return 'wood';
+  return 'concrete';
+ }
+ emitImpact(hit,spec){
+  const material=this.impactMaterial(hit);if(!material||!hit?.point)return;
+  const config={
+   concrete:{mark:0x454646,dust:0xa5a29a,count:5},
+   wood:{mark:0x493321,dust:0xa67e53,count:6},
+   metal:{mark:0x292e32,dust:0xffd17e,count:7},
+   dirt:{mark:0x655742,dust:0x8e8061,count:7},
+   ice:{mark:0x9bdbea,dust:0xb9f3ff,count:8}
+  }[material];
+  const normal=hit.face?.normal?.clone().transformDirection(hit.object.matrixWorld)||new THREE.Vector3(0,1,0);
+  if(normal.lengthSq()<.01)normal.set(0,1,0);normal.normalize();
+  const point=hit.point.clone().addScaledVector(normal,.016);
+  const mark=new THREE.Mesh(new THREE.CircleGeometry(material==='metal'?.027:.038,10),
+   new THREE.MeshBasicMaterial({color:config.mark,transparent:true,opacity:.78,depthWrite:false,side:THREE.DoubleSide,polygonOffset:true,polygonOffsetFactor:-2}));
+  mark.position.copy(point);mark.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),normal);
+  mark.userData.ignoreCombat=true;mark.userData.ignoreCamera=true;this.scene.add(mark);
+  const life=material==='ice'?1.2:5.5;
+  this.impactEffects.push({mesh:mark,life,maxLife:life,velocity:null});
+  const tangent=new THREE.Vector3(1,0,0);
+  if(Math.abs(normal.x)>.85)tangent.set(0,0,1);
+  tangent.addScaledVector(normal,-tangent.dot(normal)).normalize();
+  const binormal=new THREE.Vector3().crossVectors(normal,tangent).normalize();
+  const count=spec.id==='shotgun'?3:config.count;
+  for(let i=0;i<count;i++){
+   const size=(material==='metal'?.009:.016)*(.65+Math.random()*.7);
+   const part=new THREE.Mesh(new THREE.TetrahedronGeometry(size,0),
+    new THREE.MeshBasicMaterial({color:config.dust,transparent:true,opacity:.85,depthWrite:false}));
+   part.position.copy(point);part.userData.ignoreCombat=true;part.userData.ignoreCamera=true;
+   this.scene.add(part);
+   const velocity=normal.clone().multiplyScalar(.6+Math.random()*1.6)
+     .addScaledVector(tangent,(Math.random()-.5)*2.4)
+     .addScaledVector(binormal,(Math.random()-.5)*2.4);
+   const particleLife=.22+Math.random()*.38;
+   this.impactEffects.push({mesh:part,velocity,life:particleLife,maxLife:particleLife});
+  }
+  while(this.impactEffects.length>140){
+   const old=this.impactEffects.shift();
+   this.scene.remove(old.mesh);old.mesh.geometry.dispose();old.mesh.material.dispose();
+  }
+ }
+ updateImpactEffects(dt){
+  for(let i=this.impactEffects.length-1;i>=0;i--){
+   const effect=this.impactEffects[i];effect.life-=dt;
+   if(effect.velocity){
+    effect.velocity.y-=6.5*dt;effect.mesh.position.addScaledVector(effect.velocity,dt);
+    effect.mesh.rotation.x+=dt*9;effect.mesh.rotation.z+=dt*11;
+   }
+   effect.mesh.material.opacity=Math.max(0,effect.life/effect.maxLife)*(effect.velocity?.85:.78);
+   if(effect.life<=0){
+    this.scene.remove(effect.mesh);effect.mesh.geometry.dispose();effect.mesh.material.dispose();
+    this.impactEffects.splice(i,1);
+   }
+  }
+ }
  emitShotEffects(start,spec){
   const isShotgun=spec.id==='shotgun';
   const casingMaterial=new THREE.MeshStandardMaterial({
@@ -1429,6 +1497,7 @@ class PistolController {
     if(obstruction){hit=obstruction;end=obstruction.point;}
    }
    networkRays.push(end.clone().sub(start).normalize());
+   if(hit&&(spec.pellets===1||pellet<3))this.emitImpact(hit,spec);
    const iceId=hit?.object?.userData?.iceWallId;if(iceId)damageByWall.set(iceId,(damageByWall.get(iceId)||0)+spec.damage);
    if(hit?.object?.userData?.remoteId)networkHits.push({targetId:hit.object.userData.remoteId,pellet});
    const tracer=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffe8a3}));this.scene.add(tracer);
@@ -1461,6 +1530,7 @@ class PistolController {
 
  update(dt,isMoving){
   this.updateShotEffects(dt);
+  this.updateImpactEffects(dt);
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
   this.equipTimer=Math.max(0,this.equipTimer-dt);
   this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/Math.max(.01,this.equipDuration),0,1):0;
