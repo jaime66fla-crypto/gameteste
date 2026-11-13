@@ -543,6 +543,9 @@ for(const [x,z] of [[-4,-3],[4,-5]]){
  barrier.userData.impactMaterial='wood';houseParkour.registerSolidBox(barrier,4,1.3,.75);
 }
 
+// Load locally authored map objects on startup. Multiplayer server map is not modified.
+window.GametesteMapEditor?.mount(scene,forestEnvironment.getTerrainHeight,(mesh,w,h,d)=>houseParkour.registerSolidBox(mesh,w,h,d));
+
 const player=new THREE.Group(); scene.add(player);
 player.position.set(0,0,0);
 
