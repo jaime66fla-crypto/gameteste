@@ -197,7 +197,7 @@ class WeaponLootSystem {
  constructor({scene,player,avatar,controller,terrainHeight=()=>0,solidBoxes=()=>[],random=Math.random,populate=true}){
   Object.assign(this,{scene,player,avatar,controller,terrainHeight,solidBoxes,random});
   this.slots=[{id:'pistol',ammo:12,attachments:{}},null];this.reserves={light:60,rifle:0,shells:0};this.activeSlot=0;
-  this.items=[];this.heldModels=new Map();this.time=0;this.nearest=null;this.message='';this.messageTime=0;
+  this.items=[];this.heldModels=new Map();this.visualSwap=null;this.time=0;this.nearest=null;this.message='';this.messageTime=0;
   scene.updateMatrixWorld(true);this.staticBoxes=[];this.staticMeshes=[];
   scene.traverse(o=>{if(!o.isMesh||o.geometry?.type==='PlaneGeometry')return;for(let p=o;p;p=p.parent)if(p===player||p.userData.ignoreCombat)return;this.staticBoxes.push(new THREE.Box3().setFromObject(o));this.staticMeshes.push(o);});
   controller.loot=this;
@@ -230,6 +230,7 @@ class WeaponLootSystem {
  }
  applyActive(equip){
   const spec=this.definition,gun=this.controller,slot=this.slots[this.activeSlot];
+  const oldVisible=[...this.heldModels.entries()].find(([,mesh])=>mesh.visible)?.[0]||null;
   slot.attachments=slot.attachments||{};
   const mods=accessoryStats(spec,slot.attachments);
   this.avatar.setWeapon?.(spec.id);
@@ -237,9 +238,19 @@ class WeaponLootSystem {
   let model=this.heldModels.get(spec.id);
   if(!model){model=createModel(spec.id);this.heldModels.set(spec.id,model);this.avatar.gun.add(model);}
   applyAccessoryVisuals(model,spec.id,slot.attachments);
+  this.visualSwap=null;
   for(const [id,m]of this.heldModels)m.visible=id===spec.id;
   gun.muzzlePoint.position.set(0,.035,spec.muzzleZ);this.avatar.flash.position.z=spec.muzzleZ+.04;
-  if(equip){gun.fireCooldown=Math.max(gun.fireCooldown,.18);gun.equip();}
+  if(equip){
+   gun.fireCooldown=Math.max(gun.fireCooldown,.18);gun.equip();
+   if(oldVisible&&oldVisible!==spec.id&&this.heldModels.has(oldVisible)){
+    // Keep the old mesh visible while the Soldier lowers it. Switch at the
+    // bottom of the carry animation, before bringing the new weapon back up.
+    this.visualSwap={from:oldVisible,to:spec.id,remaining:gun.equipDuration*.36};
+    this.heldModels.get(oldVisible).visible=true;
+    this.heldModels.get(spec.id).visible=false;
+   }
+  }
  }
  select(index){
   if(!Number.isInteger(index)||index<0||index>1||!this.slots[index]){this.notify('Espaço de arma vazio');return false;}
@@ -376,6 +387,14 @@ class WeaponLootSystem {
   root.updateWorldMatrix(true,true);
  }
  update(dt){
+  if(this.visualSwap){
+   this.visualSwap.remaining-=dt;
+   if(this.visualSwap.remaining<=0){
+    const next=this.visualSwap.to;
+    for(const [id,mesh]of this.heldModels)mesh.visible=id===next;
+    this.visualSwap=null;
+   }
+  }
   this.time+=dt;this.messageTime=Math.max(0,this.messageTime-dt);this.saveActive();this.nearest=null;let distance=Infinity;
   for(const item of this.items){
    item.group.position.y=item.position.y+.22+Math.sin(this.time*2+item.position.x)*.025;
