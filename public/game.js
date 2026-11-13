@@ -38,7 +38,7 @@ function screenToWorldY(y){return screenToWorldPoint(viewOffsetX(),y).y}
 function worldToScreenX(x,y){return viewOffsetX()+getViewZoom()*projectVector(x-cam.x,y-cam.y).x}
 function worldToScreenY(y,x=player.x){return viewOffsetY()+getViewZoom()*projectVector(x-cam.x,y-cam.y).y}
 function followCamera(x,y,dt,speed=5.5,height=0){const v=unprojectVector(0,-height),t=Math.min(1,dt*speed);cam.x+=(x+v.x-cam.x)*t;cam.y+=(y+v.y-cam.y)*t}
-function buildingHeight(index){return index===null||index===undefined?0:100+(index%4)*16}
+function buildingHeight(index){return index==null?0:(buildings[index]?.height??(100+(index%4)*16))}
 function elevated(index,draw){const h=buildingHeight(index),v=unprojectVector(0,-h);ctx.save();ctx.translate(v.x,v.y);draw();ctx.restore()}
 function insidePolygon(x,y,points){
  let inside=false;
@@ -250,7 +250,22 @@ const buildings=[
 {x:80,y:1580,w:350,h:230},{x:710,y:1580,w:300,h:230},{x:1270,y:1580,w:300,h:230},
 {x:80,y:2180,w:350,h:230},{x:710,y:2180,w:300,h:230},{x:1270,y:2180,w:300,h:230},{x:1840,y:2180,w:270,h:230},
 {x:2380,y:120,w:330,h:260},{x:2380,y:570,w:330,h:250},{x:2380,y:1070,w:330,h:230},
-{x:3020,y:120,w:310,h:260},{x:3020,y:570,w:310,h:250},{x:3020,y:1070,w:310,h:230}];
+{x:3020,y:120,w:310,h:260},{x:3020,y:570,w:310,h:250},{x:3020,y:1070,w:310,h:230},
+{x:1840,y:1620,w:275,h:245,kind:"apartment",height:230},
+{x:2380,y:1620,w:325,h:255,kind:"tower",height:320},
+{x:3020,y:1620,w:310,h:260,kind:"tower",height:290},
+{x:2380,y:2180,w:330,h:235,kind:"apartment",height:220},
+{x:3020,y:2180,w:310,h:240,kind:"industrial",height:115},
+{x:3650,y:100,w:260,h:245,kind:"tower",height:370},
+{x:3650,y:570,w:270,h:240,kind:"apartment",height:235},
+{x:3650,y:1070,w:270,h:235,kind:"house",height:128},
+{x:3650,y:1600,w:270,h:260,kind:"tower",height:340},
+{x:80,y:2630,w:350,h:120,kind:"house",height:115},
+{x:710,y:2630,w:300,h:120,kind:"house",height:110},
+{x:1270,y:2630,w:300,h:120,kind:"shop",height:95},
+{x:1840,y:2630,w:280,h:120,kind:"apartment",height:210},
+{x:2380,y:2630,w:330,h:120,kind:"house",height:118},
+{x:3020,y:2630,w:310,h:120,kind:"industrial",height:110}];
 
 const ladders=buildings.map((b,i)=>({
  building:i,
@@ -1614,6 +1629,7 @@ function road(){
  }
 }
 function buildingKind(i,b){
+ if(b.kind)return b.kind;
  if(b.x>=3225)return "port";
  if(b.x>=1780&&b.y<1900)return "industrial";
  if(i%7===0||i%7===3)return "house";
@@ -1625,7 +1641,7 @@ function drawBuildings(only=null){
  for(const i of only===null?buildings.map((_,i)=>i):[only]){
   const b=buildings[i],kind=buildingKind(i,b);
   const baseH=buildingHeight(i);
-  const h=kind==="house"?72+(i%3)*10:kind==="townhouse"?92+(i%2)*12:kind==="shop"?78+(i%3)*8:kind==="industrial"?68+(i%3)*12:kind==="port"?58+(i%2)*10:baseH;
+  const h=b.height??(kind==="house"?108+(i%3)*10:kind==="townhouse"?120+(i%2)*12:kind==="shop"?78+(i%3)*8:kind==="industrial"?68+(i%3)*12:kind==="port"?58+(i%2)*10:baseH);
   ctx.save();ctx.translate(b.x,b.y);undoProjection(ctx);
   const point=(x,y,z=0)=>{const p=projectVector(x,y);return [p.x,p.y-z]};
   const poly=(points,color,stroke=null)=>{ctx.beginPath();points.forEach((p,k)=>k?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();ctx.fillStyle=color;ctx.fill();if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.stroke()}};
@@ -1640,6 +1656,7 @@ function drawBuildings(only=null){
    townhouse:[["#8e8f84","#6d7068"],["#8b776b","#685b53"],["#7e8a89","#5f6968"]],
    shop:[["#707f89","#52616b"],["#8c7865","#66584b"],["#6d7c72","#4f5d55"]],
    apartment:[["#777b72","#555e59"],["#846f60","#63564e"],["#686e72","#4d575b"]],
+   tower:[["#586d77","#354651"],["#69747c","#414f59"],["#676b78","#404454"]],
    industrial:[["#6d716f","#505654"],["#77746c","#595750"]],
    port:[["#5f6b70","#414d52"],["#71675d","#504943"]]
   };
@@ -1684,6 +1701,21 @@ function drawBuildings(only=null){
    facade(0,b.w*.5-19,4,38,50,"#2c3433","#b9b9aa");
    poly([ar,br,cr,dr],"#555d5a","#8b9289");
    for(let x=30;x<b.w-30;x+=65)poly([point(x,20,h+3),point(x+34,20,h+3),point(x+34,48,h+18),point(x,48,h+18)],"#727a75","#3a403d");
+  }else if(kind==="tower"){
+   for(let side=0;side<2;side++){
+    const span=side===0?b.w:b.h;
+    facade(side,0,0,span,15,"#293741");
+    for(let z=29;z<h-20;z+=39){
+     facade(side,0,z+31,span,5,"#87949b");
+     for(let u=20;u<span-28;u+=51){
+      facade(side,u,z,29,27,(u+z+i)%4===0?"#a4bac1":"#314f60","#8798a2");
+      facade(side,u+13,z,3,27,"#90a4ac");
+     }
+    }
+   }
+   facade(0,b.w*.5-25,5,50,64,"#1d313d","#c0ced1");
+   poly([ar,br,cr,dr],"#46545e","#9aa6ad");
+   poly([point(15,15,h+3),point(b.w-15,15,h+3),point(b.w-15,b.h-15,h+3),point(15,b.h-15,h+3)],"#303c45","#829097");
   }else if(kind==="industrial"||kind==="port"){
    for(let side=0;side<2;side++){
     const span=side===0?b.w:b.h;
