@@ -123,10 +123,17 @@ class FirstVehicleSystem {
   this.speed=this.T.MathUtils.clamp(this.speed,-.34,.82);
   if(k('Space'))this.speed*=Math.pow(.91,factor);
   const turn=(k('KeyA','ArrowLeft')?1:0)-(k('KeyD','ArrowRight')?1:0);
-  this.steer=this.T.MathUtils.lerp(this.steer,turn*.50,1-Math.exp(-6*d));
-  if(Math.abs(this.speed)>.015)this.yaw+=this.steer*this.speed*.045*factor;
-  const nx=this.root.position.x+Math.sin(this.yaw)*this.speed*factor,nz=this.root.position.z+Math.cos(this.yaw)*this.speed*factor;
-  if(this.blocked(nx,nz)){this.speed=0}else{this.root.position.x=nx;this.root.position.z=nz}
+  // Tighter SUV turning circle: greater steering authority at parking speed,
+  // progressively reduced at high speed to avoid unrealistically sharp swerves.
+  const speedRatio=Math.min(1,Math.abs(this.speed)/.82);
+  const maxSteer=this.T.MathUtils.lerp(.64,.48,speedRatio);
+  this.steer=this.T.MathUtils.lerp(this.steer,turn*maxSteer,1-Math.exp(-9*d));
+  const turnGain=this.T.MathUtils.lerp(.20,.11,speedRatio);
+  const proposedYaw=this.yaw+(Math.abs(this.speed)>.012?this.steer*this.speed*turnGain*factor:0);
+  const nx=this.root.position.x+Math.sin(proposedYaw)*this.speed*factor;
+  const nz=this.root.position.z+Math.cos(proposedYaw)*this.speed*factor;
+  if(this.blocked(nx,nz)){this.speed=0}
+  else{this.yaw=proposedYaw;this.root.position.x=nx;this.root.position.z=nz}
   this.root.position.y=this.ground(this.root.position.x,this.root.position.z);
   this.root.rotation.y=this.yaw;
   for(const w of this.wheels){if(w.front)w.steerPivot.rotation.y=this.steer;w.spin.rotation.x+=this.speed*factor/.5}
