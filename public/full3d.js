@@ -1494,6 +1494,11 @@ class PlayerController {
   this.velocity=new THREE.Vector3();
   this.isGrounded=true;
   this.horizontalSpeed=0;
+  this.moveVelocity=new THREE.Vector3();
+  this.strafeAmount=0;
+  this.forwardAmount=0;
+  this.braking=0;
+  this.previousMoveDir=new THREE.Vector3(0,0,1);
   this.keys={forward:false,backward:false,left:false,right:false,sprint:false,crouch:false,aiming:false,jetpack:false};
   this.stamina=100;
   this.maxStamina=100;
@@ -1569,6 +1574,10 @@ class PlayerController {
   let moving=false;
   if(this.cover.active){
    this.horizontalSpeed=this.cover.speed;moving=this.horizontalSpeed>.02;
+   this.moveVelocity.multiplyScalar(Math.exp(-14*dt));
+   this.strafeAmount=THREE.MathUtils.lerp(this.strafeAmount,0,1-Math.exp(-10*dt));
+   this.forwardAmount=THREE.MathUtils.lerp(this.forwardAmount,0,1-Math.exp(-10*dt));
+   this.braking=THREE.MathUtils.lerp(this.braking,0,1-Math.exp(-10*dt));
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }else if(inputDir.lengthSq()>0){
    moving=true;
@@ -1588,12 +1597,30 @@ class PlayerController {
    const currentSpeed=(this.isCrouching?this.crouchSpeed:canSprint?this.sprintSpeed:this.walkSpeed)*adsMoveScale;
    if(canSprint)this.stamina=Math.max(0,this.stamina-dt*24);
    else this.stamina=Math.min(this.maxStamina,this.stamina+dt*16);
-   this.mesh.position.addScaledVector(moveDir,currentSpeed*dt);
-   this.horizontalSpeed=currentSpeed;
+
+   const targetVelocity=moveDir.multiplyScalar(currentSpeed);
+   const reversal=this.moveVelocity.lengthSq()>.2&&targetVelocity.lengthSq()>.2&&this.moveVelocity.clone().normalize().dot(targetVelocity.clone().normalize())<-.25;
+   const accel=reversal?18:canSprint?10:13;
+   this.moveVelocity.lerp(targetVelocity,1-Math.exp(-accel*dt));
+   this.mesh.position.addScaledVector(this.moveVelocity,dt);
+   this.horizontalSpeed=this.moveVelocity.length();
+
+   this.strafeAmount=THREE.MathUtils.lerp(this.strafeAmount,inputDir.x,1-Math.exp(-12*dt));
+   this.forwardAmount=THREE.MathUtils.lerp(this.forwardAmount,-inputDir.z,1-Math.exp(-12*dt));
+   this.braking=THREE.MathUtils.lerp(this.braking,reversal?1:0,1-Math.exp(-16*dt));
+   this.previousMoveDir.copy(targetVelocity).normalize();
 
    // Facing is controlled by the over-the-shoulder camera yaw.
   }else{
-   this.horizontalSpeed=0;
+   const wasFast=this.moveVelocity.length()>4;
+   this.moveVelocity.multiplyScalar(Math.exp(-(wasFast?7.5:11)*dt));
+   if(this.moveVelocity.length()<.03)this.moveVelocity.set(0,0,0);
+   this.mesh.position.addScaledVector(this.moveVelocity,dt);
+   this.horizontalSpeed=this.moveVelocity.length();
+   this.strafeAmount=THREE.MathUtils.lerp(this.strafeAmount,0,1-Math.exp(-10*dt));
+   this.forwardAmount=THREE.MathUtils.lerp(this.forwardAmount,0,1-Math.exp(-10*dt));
+   this.braking=THREE.MathUtils.lerp(this.braking,wasFast?1:0,1-Math.exp(-(wasFast?13:7)*dt));
+   moving=this.horizontalSpeed>.08;
    this.stamina=Math.min(this.maxStamina,this.stamina+dt*18);
   }
 
@@ -2409,7 +2436,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
