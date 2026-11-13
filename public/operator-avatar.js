@@ -164,6 +164,8 @@ class OperatorAvatar{
   this.legs=[{hip:this.bones[15],knee:this.bones[16],ankle:this.bones[17],s:1},{hip:this.bones[12],knee:this.bones[13],ankle:this.bones[14],s:-1}];
   this.rotations=Array.from({length:18},()=>[0,0,0]);this.shift=[0,0,0];this.weaponAngles=[.38,0,0];this.weaponGripTargets=[];
   this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
+  // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
+  this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
@@ -197,6 +199,19 @@ class OperatorAvatar{
   else if(this.landingTime<.34){state='jump';phase=.72+.28*clamp(this.landingTime/.34,0,1)}
   this.wasGrounded=grounded;this.state=state;
   const pose=M.sampleMotion(state,phase,armed,this.weaponId),r=pose.r;
+  const poseKey=state+'|'+(armed?'armed':'unarmed')+'|'+(aiming?'ads':'hip')+'|'+(crouching?'crouch':'stand');
+  if(this.lastPoseState!==null&&this.lastPoseState!==poseKey){
+   this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:state==='jump'?.16:state==='aim'?.13:.20};
+  }
+  this.lastPoseState=poseKey;
+  if(this.poseTransition){
+   const transition=this.poseTransition;transition.elapsed+=dt;
+   const t=clamp(transition.elapsed/transition.duration,0,1),smooth=t*t*(3-2*t);
+   for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
+    r[bone][axis]=transition.from[bone][axis]*(1-smooth)+r[bone][axis]*smooth;
+   }
+   if(t>=1)this.poseTransition=null;
+  }
   // PlayerController owns the physical jump. Never add the preview's parabola.
   if(!grounded)pose.root[1]=0;
   const crouch=this.crouchBlend;
@@ -615,7 +630,12 @@ class OperatorAvatar{
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
   }
-  for(let i=0;i<18;i++)for(let k=0;k<3;k++)this.rotations[i][k]=M.damp(this.rotations[i][k],r[i][k],22,dt);
+  // Keep the target for a future crossfade, including weapon IK and landing reactions.
+  if(!this.lastDesiredPose)this.lastDesiredPose=Array.from({length:18},()=>[0,0,0]);
+  for(let i=0;i<18;i++)for(let k=0;k<3;k++){
+   this.lastDesiredPose[i][k]=r[i][k];
+   this.rotations[i][k]=M.damp(this.rotations[i][k],r[i][k],22,dt);
+  }
   for(let k=0;k<3;k++)this.shift[k]=M.damp(this.shift[k],pose.root[k],22,dt);
   for(let i=0;i<18;i++){this.bones[i].position.fromArray(offsets[i]);if(i===0)this.bones[i].position.add(new THREE.Vector3().fromArray(this.shift));this.bones[i].rotation.set(...this.rotations[i],'ZYX')}
   this.gun.visible=armed;this.group.updateMatrixWorld(true);this.skeleton.update();
