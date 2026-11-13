@@ -4,7 +4,7 @@ window.addEventListener('unhandledrejection',e=>{const s=document.getElementById
 const canvas=document.getElementById('view');
 const stateEl=document.getElementById('state');
 const renderer=new THREE.WebGLRenderer({canvas,antialias:true,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.35));
 renderer.shadowMap.enabled=true;
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.outputColorSpace=THREE.SRGBColorSpace;
@@ -454,24 +454,42 @@ const urbanLayout=[
  [28,37,14,12,19],[51,36,13,10,7]
 ];
 const urbanTowers=[];
+const urbanWindowGeometry=new THREE.PlaneGeometry(1.35,1.35);
+const urbanWindowMaterial=new THREE.MeshStandardMaterial({color:0x456779,emissive:0x13222a,emissiveIntensity:.16,side:THREE.DoubleSide,roughness:.85});
+const urbanWallMaterials=[
+ new THREE.MeshStandardMaterial({color:0x627b85,roughness:.86}),
+ new THREE.MeshStandardMaterial({color:0xb49c83,roughness:.86})
+];
+const urbanTrimMaterial=new THREE.MeshStandardMaterial({color:0x48555b,roughness:.88});
+const urbanWindows=[];
 for(const [x,z,w,d,h] of urbanLayout){
  const floor=forestEnvironment.getTerrainHeight(x,z);
  const tall=h>=10;
- const material=new THREE.MeshStandardMaterial({color:tall?0x627b85:0xb49c83,roughness:.86});
  const g=new THREE.Group();g.position.set(x,floor,z);scene.add(g);
- const wall=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);wall.position.y=h/2;
- wall.castShadow=true;wall.receiveShadow=true;wall.userData.impactMaterial='concrete';g.add(wall);
+ const wall=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),urbanWallMaterials[tall?0:1]);
+ wall.position.y=h/2;wall.castShadow=true;wall.receiveShadow=true;wall.userData.impactMaterial='concrete';g.add(wall);
+ // Window instances share ONE geometry/material and ONE draw call instead of hundreds.
  for(const side of [-1,1])for(let level=1;level<=Math.floor((h-1)/2.8);level++){
   for(let dx=-w/2+1.7;dx<w/2-1;dx+=2.7){
-   const glass=new THREE.Mesh(new THREE.PlaneGeometry(1.35,1.35),new THREE.MeshStandardMaterial({color:0x456779,emissive:0x13222a,emissiveIntensity:.16,side:THREE.DoubleSide}));
-   glass.position.set(dx,level*2.8,side*(d/2+.015));if(side<0)glass.rotation.y=Math.PI;g.add(glass);
+   urbanWindows.push({x:x+dx,y:floor+level*2.8,z:z+side*(d/2+.015),flip:side<0});
   }
  }
- const trim=new THREE.Mesh(new THREE.BoxGeometry(w+.25,.3,d+.25),new THREE.MeshStandardMaterial({color:0x48555b}));
+ const trim=new THREE.Mesh(new THREE.BoxGeometry(w+.25,.3,d+.25),urbanTrimMaterial);
  trim.position.y=h;g.add(trim);
  g.updateMatrixWorld(true);
  houseParkour.registerSolidBox(wall,w,h,d);
  if(tall)urbanTowers.push({x,z,height:h});
+}
+if(urbanWindows.length){
+ const windows=new THREE.InstancedMesh(urbanWindowGeometry,urbanWindowMaterial,urbanWindows.length);
+ const dummy=new THREE.Object3D();
+ urbanWindows.forEach((w,i)=>{
+  dummy.position.set(w.x,w.y,w.z);dummy.rotation.set(0,w.flip?Math.PI:0,0);dummy.updateMatrix();
+  windows.setMatrixAt(i,dummy.matrix);
+ });
+ windows.instanceMatrix.needsUpdate=true;windows.frustumCulled=false;
+ windows.castShadow=false;windows.receiveShadow=false;
+ scene.add(windows);
 }
 
 // Waist-high training cover in the existing combat area.
