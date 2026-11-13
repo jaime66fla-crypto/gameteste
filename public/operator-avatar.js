@@ -195,13 +195,22 @@ class OperatorAvatar{
   const duration=state==='run'?.84:state==='walk'?1.15:4;this.phase+=dt/duration*(1-this.crouchBlend*.45);
   let phase=this.phase;
   if(jumpPreparation>0){state='jump';phase=.22*clamp(1-jumpPreparation/.12,0,1)}
-  else if(!grounded){state='jump';const flight=Math.max(.25,2*jumpForce/Math.abs(gravity));phase=this.airTime<.10?.22+.13*M.curveMotion([[0,0],[1,1]],this.airTime/.10):.35+.37*clamp((this.airTime-.10)/(flight-.10),0,1)}
+  else if(!grounded){
+   // The descending section becomes a separate falling posture rather than freezing mid-jump.
+   if(verticalVelocity< -3 && this.airTime>.24){
+    state='fall';phase=this.time*.43;
+   }else{
+    state='jump';
+    const flight=Math.max(.25,2*jumpForce/Math.abs(gravity));
+    phase=this.airTime<.10?.22+.13*M.curveMotion([[0,0],[1,1]],this.airTime/.10):.35+.37*clamp((this.airTime-.10)/(flight-.10),0,1);
+   }
+  }
   else if(this.landingTime<.34){state='jump';phase=.72+.28*clamp(this.landingTime/.34,0,1)}
   this.wasGrounded=grounded;this.state=state;
   const pose=M.sampleMotion(state,phase,armed,this.weaponId),r=pose.r;
   const poseKey=state+'|'+(armed?'armed':'unarmed')+'|'+(aiming?'ads':'hip')+'|'+(crouching?'crouch':'stand');
   if(this.lastPoseState!==null&&this.lastPoseState!==poseKey){
-   this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:state==='jump'?.16:state==='aim'?.13:.20};
+   this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:state==='jump'?.16:state==='fall'?.21:state==='aim'?.13:.20};
   }
   this.lastPoseState=poseKey;
   // PlayerController owns the physical jump. Never add the preview's parabola.
