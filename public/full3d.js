@@ -2921,6 +2921,37 @@ let gameStarted=false;
 const menuOverlay=document.getElementById('aventura-menu-overlay');
 const menuSettings={soundEnabled:true,sensitivity:1,shadows:true};
 const menuViews=['view-main','view-modes','view-multiplayer','view-settings'];
+const battleUI={waiting:document.getElementById('battleWaiting'),count:document.getElementById('battleWaitingCount'),result:document.getElementById('battleResult'),queue:document.getElementById('battleQueueStatus'),active:false};
+function battleReturn(){battleUI.waiting.hidden=true;battleUI.result.hidden=true;battleUI.active=false;showGameMenu();}
+document.getElementById('battleCancel')?.addEventListener('click',battleReturn);
+document.getElementById('battleReturn')?.addEventListener('click',battleReturn);
+document.getElementById('btn-lobby-arsenal')?.addEventListener('click',()=>window.WeaponArsenal?.open());
+function battleEnd(data){
+ battleUI.active=false;battleUI.waiting.hidden=true;battleUI.result.hidden=false;
+ const won=data.winnerId===multiplayer.id;
+ document.getElementById('battleResultTitle').textContent=won?'VITÓRIA ROYALE!':'PARTIDA ENCERRADA';
+ document.getElementById('battleResultText').textContent=won?'Você foi o último sobrevivente.':data.winnerName?'Vencedor: '+data.winnerName:'Sem sobreviventes.';
+}
+function initBattlePreview(){
+ const canvas=document.getElementById('battleCharacterPreview');if(!canvas)return;
+ let pr;try{pr=new THREE.WebGLRenderer({canvas,alpha:true,antialias:false,powerPreference:'low-power'});}catch{return;}
+ pr.setPixelRatio(1);
+ const scene2=new THREE.Scene(),cam2=new THREE.PerspectiveCamera(39,1,.1,30);
+ scene2.add(new THREE.HemisphereLight(0xc5e7ef,0x35444f,1.7));
+ const key=new THREE.DirectionalLight(0xffe3bb,1.4);key.position.set(2,4,5);scene2.add(key);
+ const model=mainAvatar.group.clone(true);model.position.set(0,-.9,0);scene2.add(model);
+ cam2.position.set(0,1.1,5.6);cam2.lookAt(0,.7,0);
+ let last=0;
+ function draw(t){
+  requestAnimationFrame(draw);
+  if(t-last<90||!menuOverlay||menuOverlay.classList.contains('hidden-menu')||!battleUI.waiting.hidden||!battleUI.result.hidden)return;
+  last=t;const w=canvas.clientWidth||320,h=canvas.clientHeight||300;
+  if(canvas.width!==w||canvas.height!==h){pr.setSize(w,h,false);cam2.aspect=w/h;cam2.updateProjectionMatrix();}
+  model.rotation.y+=.012;pr.render(scene2,cam2);
+ }
+ requestAnimationFrame(draw);
+}
+initBattlePreview();
 function switchMenuView(id){
  menuViews.forEach(v=>document.getElementById(v)?.classList.add('hidden-view'));
  document.getElementById(id)?.classList.remove('hidden-view');
@@ -2950,7 +2981,7 @@ document.getElementById('btn-menu-play')?.addEventListener('click',()=>switchMen
 document.getElementById('btn-menu-settings')?.addEventListener('click',()=>switchMenuView('view-settings'));
 document.getElementById('btn-menu-exit')?.addEventListener('click',()=>{ try{window.close()}catch(_){} });
 document.getElementById('btn-modes-back')?.addEventListener('click',()=>switchMenuView('view-main'));
-document.getElementById('btn-mode-solo')?.addEventListener('click',hideGameMenu);
+// Solo mode removed from the Battle Royale lobby.
 document.getElementById('btn-mode-multi')?.addEventListener('click',()=>switchMenuView('view-multiplayer'));
 document.getElementById('btn-multi-back')?.addEventListener('click',()=>{leaveRoom();switchMenuView('view-modes');});
 const multiplayerWorld=new window.MultiplayerWorld(scene,corpseFloorAt,{
@@ -2977,10 +3008,18 @@ const multiplayer=new window.MultiplayerClient({
   const slot=welcome.players.length;player.position.set(-4+(slot%4)*2.5,0,6+Math.floor(slot/4)*3);
   player.position.y=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
   for(const state of welcome.players)if(state.id!==welcome.id)multiplayerWorld.receive(state);
-  networkTick=1;sendNetworkState();roomHud();hideGameMenu();
+  networkTick=1;roomHud();battleUI.waiting.hidden=false;battleUI.result.hidden=true;
+  battleUI.count.textContent=Math.min(8,welcome.players.length)+' / 8';
  },
- onDisconnect:wasActive=>{tacticalGear.clear();tacticalGear.resetInventory();multiplayerWorld.clear();setMultiplayerBots(true);roomHud();if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
+ onDisconnect:wasActive=>{tacticalGear.clear();tacticalGear.resetInventory();multiplayerWorld.clear();setMultiplayerBots(true);roomHud();battleUI.waiting.hidden=true;if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
  onMessage:data=>{
+  if(data.type==='battle-status'){
+   battleUI.queue.textContent=data.phase==='waiting'?'Aguardando jogadores: '+data.connected+' / 8':'Sobreviventes: '+data.alive+' / 8';
+   if(data.phase==='waiting'){battleUI.waiting.hidden=false;battleUI.count.textContent=data.connected+' / 8';}
+   return;
+  }
+  if(data.type==='battle-start'){battleUI.active=true;battleUI.waiting.hidden=true;hideGameMenu();networkTick=1;sendNetworkState();return;}
+  if(data.type==='battle-end'){battleEnd(data);return;}
   if(['grenade3d','icewall3d','icewall-remove3d','explosion3d','inventory3d'].includes(data.type)){tacticalGear.receive(data);return;}
   if(data.type==='state3d'&&data.id!==multiplayer.id)multiplayerWorld.receive(data);
   else if(data.type==='leave')multiplayerWorld.remove(data.id);
@@ -3079,7 +3118,7 @@ function loop(){
  const lifeValue=document.getElementById('vitalValue');if(lifeValue)lifeValue.textContent=combatBots.health+' / 100';
  document.body.classList.toggle('low-health',combatBots.health>0&&combatBots.health<=30);
  const deathOverlay=document.getElementById('deathOverlay');if(deathOverlay)deathOverlay.hidden=!playerLife.dead;
- const deathCountdown=document.getElementById('deathCountdown');if(deathCountdown)deathCountdown.textContent=playerLife.remaining>0?'RENASCENDO EM '+Math.ceil(playerLife.remaining)+'s':'RENASCENDO…';
+ const deathCountdown=document.getElementById('deathCountdown');if(deathCountdown)deathCountdown.textContent=multiplayer.active?'ELIMINADO · AGUARDE O VENCEDOR':playerLife.remaining>0?'RENASCENDO EM '+Math.ceil(playerLife.remaining)+'s':'RENASCENDO…';
  if(damageFlashEl)damageFlashEl.style.opacity=String(Math.min(.9,playerDamageFlash/.30));
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
