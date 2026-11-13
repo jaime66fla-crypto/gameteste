@@ -155,7 +155,7 @@ export class GameRoom {
   server.serializeAttachment({id,mode,publicRoom,battle:{...this.battle,roster:[...this.battle.roster]}});
   this.sessions.set(id, server);
   if(this.battle.enabled&&mode==='3d'){
-   this.players.set(id,{type:'state3d',id,name,health:100,dead:false,x:0,y:0,z:0,angle:0,kills:0});
+   this.players.set(id,{type:'state3d',id,name,health:100,dead:false,x:0,y:0,z:0,angle:0,kills:0,weapon:'none',gear:'none',attachments:{},grounded:true,moving:false,running:false,aiming:false,lastShot:0});
    this.battle.roster.push(id);
    this.save3D(id);
   }
