@@ -3281,6 +3281,7 @@ function showGameMenu(){
  if(multiplayer.active||multiplayer.pending)leaveRoom();
  controller.clearInput();pistolWeapon.triggerHeld=false;
  deployment.keys.clear();if(deployment.button)deployment.button.hidden=true;if(deployment.plane)deployment.plane.visible=false;if(deployment.chute)deployment.chute.visible=false;deployment.phase='idle';
+ firstVehicle?.reset();
  gameStarted=false;
  switchMenuView('view-main');
  menuOverlay?.classList.remove('hidden-menu');
@@ -3411,6 +3412,16 @@ addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&e.code==='
  draw();
 })();
 
+// First drivable SUV: local prototype, disabled in multiplayer rooms.
+const firstVehicle=new window.FirstVehicleSystem({
+ THREE,scene,camera,player,controller,
+ terrainHeight:forestEnvironment.getTerrainHeight,
+ solidBoxes:houseParkour.solidBoxes,
+ isTraining:()=>!!window.GametesteTraining?.isActive(),
+ isMultiplayer:()=>!!(multiplayer.active||multiplayer.pending),
+ isActive:()=>gameStarted&&(deployment.phase==='idle'||deployment.phase==='landed'),
+ isDead:()=>!!player.userData.dead
+});
 const clock=new THREE.Clock();
 function loop(){
  requestAnimationFrame(loop); const elapsed=clock.getDelta(),dt=Math.min(elapsed,.033);
@@ -3422,6 +3433,9 @@ function loop(){
    mainAvatar.update(dt,{grounded:false,armed:false,aiming:false,speed:0,verticalVelocity:-deployment.fallSpeed});
   }
   if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);safeZoneVisual.update();}}
+  renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
+ }
+ if(firstVehicle.update(dt)){
   renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
  }
  playerLife.update(elapsed,multiplayer.active);
