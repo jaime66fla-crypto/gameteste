@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gameteste | Editor de mapa</title>
+<style>
+:root{font-family:Inter,system-ui,Arial;color:#e8eef7;background:#08111e}*{box-sizing:border-box}body{margin:0}header{display:flex;gap:14px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:16px 22px;background:#0d1c2b;border-bottom:1px solid #435361}header h1{margin:0;font-size:22px;letter-spacing:.09em;color:#f7c76d}header small{display:block;font-size:11px;color:#91a9be;margin-top:4px}button,select,input{font:inherit}button{border:1px solid #586d83;background:#193044;color:#e8f4ff;padding:9px 12px;border-radius:8px;cursor:pointer}button:hover{border-color:#f8c45a}button:disabled{opacity:.4;cursor:default}.primary{background:#a36a19;border-color:#ffc966;color:#fff;font-weight:800}.danger{background:#4b1e28;border-color:#974557}.app{display:grid;grid-template-columns:260px minmax(0,1fr) 260px;gap:14px;padding:14px;height:calc(100dvh - 79px);min-height:540px}.panel{background:#101f30;border:1px solid #3a5369;border-radius:12px;padding:15px;overflow:auto}.panel h2{font-size:14px;margin:0 0 14px;color:#f6d18c}.field{display:grid;gap:5px;margin:10px 0}.field label{color:#9fb4c7;font-size:11px}.field input,.field select{width:100%;padding:9px 10px;border-radius:6px;border:1px solid #456075;background:#071522;color:white}.palette{display:grid;grid-template-columns:1fr 1fr;gap:7px}.palette button{min-height:55px;font-size:12px}.palette button[aria-pressed=true]{border-color:#ffd06b;background:#63502e}.main{min-width:0;display:flex;flex-direction:column;gap:9px}.toolbar{display:flex;gap:8px;flex-wrap:wrap}canvas{width:100%;height:100%;min-height:320px;display:block;background:#13252c;border:1px solid #3e5664;border-radius:12px;touch-action:none;cursor:crosshair}.mapWrap{position:relative;flex:1;min-height:250px}.info{position:absolute;bottom:12px;left:12px;pointer-events:none;background:#08111edc;border-radius:7px;padding:8px;font-size:11px;color:#cde1ed}.hint,.status{color:#a9bdc9;font-size:12px;line-height:1.5}.status{padding:10px;border:1px solid #324f61;border-radius:7px;margin-top:12px}.list{display:grid;gap:6px}.list button{text-align:left;font-size:11px}.list button[aria-pressed=true]{border-color:#ffcf7b;color:#ffe09a}@media(max-width:960px){.app{grid-template-columns:210px 1fr}.right{grid-column:1/-1;max-height:260px}}@media(max-width:630px){header{padding:12px}.app{height:auto;display:flex;flex-direction:column}.panel{overflow:visible}.palette{grid-template-columns:repeat(4,1fr)}.palette button{font-size:10px;padding:7px}.mapWrap{height:70vw;min-height:310px}}
+</style></head>
+<body><header><div><h1>GAMETESTE · EDITOR DE MAPA</h1><small>Adicione elementos ao cenário 3D • área de 300 × 300 unidades</small></div><div><a href="/" style="color:#f7c76d">← Voltar ao jogo</a></div></header>
+<div class="app">
+<aside class="panel"><h2>1 · ESCOLHA UM OBJETO</h2><div id="palette" class="palette"></div><p class="hint">Clique no mapa para colocar. Selecione um objeto para mover, girar ou remover.</p><h2>2 · CONFIGURAR</h2>
+<div class="field"><label for="scale">Tamanho</label><input id="scale" type="number" step=".1" min=".5" max="3" value="1"></div>
+<div class="field"><label for="rotation">Rotação (graus)</label><input id="rotation" type="number" step="15" min="-180" max="180" value="0"></div>
+<div class="field"><label for="x">X</label><input id="x" type="number" min="-140" max="140" step=".1" value="0"></div>
+<div class="field"><label for="z">Z</label><input id="z" type="number" min="-140" max="140" step=".1" value="0"></div>
+<button id="update">ATUALIZAR SELEÇÃO</button> <button class="danger" id="remove">REMOVER</button><div id="status" class="status" role="status">Editor pronto.</div>
+</aside>
+<main class="main"><div class="toolbar"><button class="primary" id="save">SALVAR NO NAVEGADOR</button><button id="export">EXPORTAR JSON</button><button id="import">IMPORTAR JSON</button><input id="file" type="file" accept=".json,application/json" hidden><button id="undo">DESFAZER</button><button class="danger" id="clear">LIMPAR TUDO</button></div><div class="mapWrap"><canvas id="map" aria-label="Mapa interativo visto de cima"></canvas><span class="info" id="coords">Clique em um ponto do terreno • X: 0, Z: 0</span></div></main>
+<aside class="panel right"><h2>OBJETOS ADICIONADOS <span id="count">0</span></h2><div class="list" id="items"></div><p class="hint">As alterações ficam neste navegador até você exportá-las. Após salvar, reabra o jogo para ver os objetos no cenário 3D.</p></aside></div>
+<script src="/tactical-rules.js?v=2"></script><script src="/map-objects.js?v=1"></script>
+<script>
+(()=>{
+'use strict';
+const store=window.GametesteMapEditor,TYPES={house:['Casa','🏠'],tower:['Prédio','🏢'],tree:['Árvore','🌳'],rock:['Rocha','🪨'],crate:['Caixa','📦'],wall:['Muro','🧱'],road:['Estrada','🛣️']};
+const canvas=document.querySelector('#map'),ctx=canvas.getContext('2d'),palette=document.querySelector('#palette'),list=document.querySelector('#items'),status=document.querySelector('#status');
+let data=store.read(),history=[],selected=null,type='house';
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));const val=id=>Number(document.getElementById(id).value);
+function snapshot(){history.push(JSON.stringify(data));if(history.length>35)history.shift()}
+function message(text){status.textContent=text}
+function syncFields(o){if(!o)return;for(const f of ['x','z','rotation','scale'])document.getElementById(f).value=o[f]}
+function renderPalette(){palette.textContent='';for(const [key,[name,emoji]] of Object.entries(TYPES)){const b=document.createElement('button');b.type='button';b.setAttribute('aria-pressed',String(type===key));b.textContent=emoji+' '+name;b.onclick=()=>{type=key;selected=null;renderPalette();draw();renderList()};palette.append(b)}}
+function renderList(){list.textContent='';document.getElementById('count').textContent=data.length+' / '+store.LIMIT;
+ data.forEach((o,i)=>{const b=document.createElement('button');b.setAttribute('aria-pressed',String(selected===o.id));b.textContent=(i+1)+'. '+TYPES[o.type][1]+' '+TYPES[o.type][0]+' ('+o.x+', '+o.z+')';b.onclick=()=>{selected=o.id;syncFields(o);renderList();draw()};list.append(b)});
+}
+const projection=(x,z,w,h)=>({px:(x+150)/300*w,py:(z+150)/300*h});
+function readPosition(e){const rect=canvas.getBoundingClientRect();return{x:Math.round(((e.clientX-rect.left)/rect.width*300-150)*10)/10,z:Math.round(((e.clientY-rect.top)/rect.height*300-150)*10)/10}}
+function draw(){
+ const rect=canvas.getBoundingClientRect(),dpr=Math.min(devicePixelRatio||1,2),w=Math.max(300,rect.width),h=Math.max(300,rect.height);
+ if(canvas.width!==Math.round(w*dpr)||canvas.height!==Math.round(h*dpr)){canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr)}ctx.setTransform(dpr,0,0,dpr,0,0);
+ ctx.fillStyle='#233d32';ctx.fillRect(0,0,w,h);
+ // Rough terrain tone zones (map preview; no satellite/photo textures).
+ const img=ctx.createLinearGradient(0,0,w,h);img.addColorStop(0,'#304b3b');img.addColorStop(.5,'#43563c');img.addColorStop(1,'#344a38');ctx.fillStyle=img;ctx.fillRect(0,0,w,h);
+ ctx.strokeStyle='#ffffff1c';ctx.lineWidth=1;
+ for(let p=-150;p<=150;p+=25){let x=(p+150)/300*w,y=(p+150)/300*h;ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,h);ctx.moveTo(0,y);ctx.lineTo(w,y);ctx.stroke()}
+ const base=window.TacticalRules?.URBAN_LAYOUT||[];
+ for(const [x,z,bw,bd,bh] of base){const p=projection(x,z,w,h);ctx.fillStyle=bh>11?'#8997a3':'#bdab8f';ctx.fillRect(p.px-bw/300*w/2,p.py-bd/300*h/2,bw/300*w,bd/300*h)}
+ for(const [x,z,bw,bd] of [[0,14,12,8],[-16,-4,9,10],[17,-8,11,9],[0,-22,20,4]]){const p=projection(x,z,w,h);ctx.fillStyle='#b99c79';ctx.fillRect(p.px-bw/300*w/2,p.py-bd/300*h/2,bw/300*w,bd/300*h)}
+ for(const o of data){const p=projection(o.x,o.z,w,h),sz=Math.max(5,o.scale*8);
+ ctx.save();ctx.translate(p.px,p.py);ctx.rotate(o.rotation*Math.PI/180);
+ ctx.fillStyle=selected===o.id?'#ffeaa0':{house:'#deb990',tower:'#b9d4e4',tree:'#75bf75',rock:'#b1b9ae',crate:'#a57d55',wall:'#a2aab5',road:'#515e67'}[o.type];
+ if(['tree','rock'].includes(o.type)){ctx.beginPath();ctx.arc(0,0,sz/1.7,0,Math.PI*2);ctx.fill()}else ctx.fillRect(-sz,-sz/2,sz*2,sz);
+ if(selected===o.id){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.strokeRect(-sz-3,-sz/2-3,sz*2+6,sz+6)}ctx.restore()}
+ ctx.strokeStyle='#f5d68b';ctx.lineWidth=1;const center=projection(0,0,w,h);ctx.beginPath();ctx.arc(center.px,center.py,6,0,Math.PI*2);ctx.stroke();
+ ctx.fillStyle='#fff6';ctx.font='11px system-ui';ctx.fillText('N',w/2-4,14);ctx.fillText('S',w/2-4,h-7);
+}
+function refresh(){renderList();renderPalette();draw()}
+canvas.addEventListener('pointermove',e=>{const p=readPosition(e);document.getElementById('coords').textContent='X '+p.x+' · Z '+p.z+' | Clique para adicionar ou selecionar'});
+canvas.addEventListener('click',e=>{
+ const p=readPosition(e);let nearest=null,dist=Infinity;
+ for(const o of data){const d=Math.hypot(o.x-p.x,o.z-p.z);if(d<dist){dist=d;nearest=o}}
+ if(nearest&&dist<Math.max(3,nearest.scale*4)){selected=nearest.id;syncFields(nearest);message('Objeto selecionado. Edite coordenadas ou remova.');refresh();return}
+ if(data.length>=store.LIMIT){message('Limite de objetos atingido.');return}
+ snapshot();const obj={id:'m'+Date.now().toString(36)+Math.random().toString(36).slice(2,6),type,x:p.x,z:p.z,rotation:clamp(val('rotation')||0,-180,180),scale:clamp(val('scale')||1,.5,3)};
+ data.push(obj);selected=obj.id;syncFields(obj);message('Objeto adicionado. Clique em SALVAR para usar no jogo.');refresh();
+});
+document.querySelector('#update').onclick=()=>{const o=data.find(x=>x.id===selected);if(!o)return message('Selecione um objeto.');snapshot();o.x=clamp(val('x')||0,-140,140);o.z=clamp(val('z')||0,-140,140);o.scale=clamp(val('scale')||1,.5,3);o.rotation=clamp(val('rotation')||0,-180,180);message('Posição e tamanho atualizados.');refresh()};
+document.querySelector('#remove').onclick=()=>{if(!selected)return message('Selecione um objeto.');snapshot();data=data.filter(o=>o.id!==selected);selected=null;message('Objeto removido.');refresh()};
+document.querySelector('#save').onclick=()=>{data=store.save(data);message('Mapa personalizado salvo! Reabra o Gameteste para carregar as mudanças.');refresh()};
+document.querySelector('#undo').onclick=()=>{if(!history.length)return message('Nada para desfazer.');data=JSON.parse(history.pop());selected=null;message('Última alteração desfeita.');refresh()};
+document.querySelector('#clear').onclick=()=>{if(!confirm('Remover todos os objetos personalizados?'))return;snapshot();data=[];selected=null;message('Lista esvaziada. Clique SALVAR para aplicar.');refresh()};
+document.querySelector('#export').onclick=()=>{const blob=new Blob([JSON.stringify({version:1,objects:data},null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='gameteste-mapa.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);message('JSON exportado.')};
+document.querySelector('#import').onclick=()=>document.querySelector('#file').click();
+document.querySelector('#file').onchange=async e=>{const f=e.target.files[0];if(!f)return;try{const raw=JSON.parse(await f.text()),imported=store.validate(Array.isArray(raw)?raw:raw.objects);snapshot();data=imported;selected=null;message(imported.length+' objetos importados. Clique SALVAR para aplicar.');refresh()}catch(error){message('Arquivo inválido: '+error.message)}e.target.value=''};
+window.addEventListener('resize',draw);refresh();
+})();
+</script></body></html>
