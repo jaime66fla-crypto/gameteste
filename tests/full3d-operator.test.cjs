@@ -111,3 +111,25 @@ a.playerLife.update(4.99,true);assert(a.playerLife.dead);assert.equal(a.combatBo
 socket.onmessage({data:JSON.stringify({type:'respawn3d',id:'local-a',x:4,y:0,z:8,health:100})});assert.equal(a.combatBots.health,100);assert.equal(a.player.position.x,4);
 socket.onclose();assert(!net.isStarted());assert(!net.multiplayer.active);assert.equal(net.multiplayerWorld.players.size,0);assert(a.combatBots.bots.filter(b=>b.alive).every(b=>b.group.visible));
 console.log('Multiplayer integration: admission, actual remote rig/raycast, wall occlusion, damage, respawn and disconnect cleanup pass');
+
+// Death transfers carried gear once; respawning must not return lost weapons or jetpack.
+const gear=vm.runInContext('({jetpackSystem})',context);
+a.houseParkour.solidBoxes=[];a.playerLife.reset();a.player.userData.dead=false;a.player.position.set(7,0,9);
+a.weaponLoot.slots=[{id:'pistol',ammo:3},{id:'rifle',ammo:9}];a.weaponLoot.activeSlot=1;a.weaponLoot.reserves={light:17,rifle:29,shells:0};a.weaponLoot.applyActive(true);
+gear.jetpackSystem.pickupNow();gear.jetpackSystem.fuel=42;
+const gearCount=a.weaponLoot.items.length;
+a.playerLife.die(5);
+const deathDrops=a.weaponLoot.items.slice(gearCount);
+assert.equal(deathDrops.filter(i=>i.kind==='weapon').length,2,'Both carried weapons must drop');
+assert.equal(deathDrops.find(i=>i.id==='rifle'&&i.kind==='weapon').ammo,9);
+assert.equal(deathDrops.find(i=>i.id==='pistol'&&i.kind==='weapon').ammo,3);
+assert.equal(deathDrops.find(i=>i.id==='rifle'&&i.kind==='ammo').amount,29);
+assert(a.weaponLoot.slots.every(s=>s===null));assert(!a.pistolWeapon.isEquipped);assert(!a.mainAvatar.gun.visible);
+assert(!gear.jetpackSystem.equipped);assert(gear.jetpackSystem.pickup.visible);assert.equal(gear.jetpackSystem.backpack,null);assert.equal(gear.jetpackSystem.fuel,42);
+assert(gear.jetpackSystem.pickupPosition.distanceTo(a.player.position)<2.2,'Jetpack must fall near death, not return to its original spawn');
+a.playerLife.die(5);assert.equal(a.weaponLoot.items.length,gearCount+deathDrops.length,'Duplicate death signals cannot duplicate loot');
+a.frame();assert(a.playerLife.dead);a.playerLife.update(5,false);
+assert.equal(a.weaponLoot.slots[0].id,'pistol');assert.equal(a.weaponLoot.slots[1],null,'Respawn cannot restore dropped rifle');assert(!gear.jetpackSystem.equipped);
+a.player.position.copy(gear.jetpackSystem.pickupPosition);gear.jetpackSystem.pickupNow();assert.equal(gear.jetpackSystem.fuel,42);assert(gear.jetpackSystem.equipped);
+const rifleDrop=deathDrops.find(i=>i.kind==='weapon'&&i.id==='rifle');a.player.position.copy(rifleDrop.position);assert(a.weaponLoot.pickup(rifleDrop));assert.equal(a.pistolWeapon.ammo,9);assert.equal(rifleDrop.bonusAmmo,0);
+console.log('Death loot: exact magazines/reserves, no duplicates, unequipped corpse, jetpack fuel/location, starter respawn and recovery pass');

@@ -2072,6 +2072,7 @@ class SpecialJetpack {
   });
  }
  pickupNow(){
+  if(this.equipped||this.player.userData.dead)return;
   this.equipped=true;
   this.pickup.visible=false;this.ring.visible=false;this.glow.visible=false;
   this.backpack=this._buildJetpack(true);
@@ -2081,6 +2082,22 @@ class SpecialJetpack {
   this.flames=this.backpack.userData.flames||[];
   const hud=document.getElementById('jetpackHud');if(hud)hud.hidden=false;
   const prompt=document.getElementById('jetpackPrompt');if(prompt)prompt.hidden=true;
+ }
+ dropOnDeath(position){
+  if(!this.equipped)return false;
+  this.equipped=false;
+  if(this.backpack){
+   this.player.remove(this.backpack);
+   this.backpack.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});
+  }
+  this.backpack=null;this.flames=[];
+  this.pickupPosition.copy(position);this.pickupPosition.y+=.48;
+  this.pickup.position.copy(this.pickupPosition);this.ring.position.copy(this.pickupPosition);this.ring.position.y-=.42;
+  this.glow.position.copy(this.pickupPosition);
+  this.pickup.visible=true;this.ring.visible=true;this.glow.visible=true;
+  const hud=document.getElementById('jetpackHud');if(hud)hud.hidden=true;
+  const prompt=document.getElementById('jetpackPrompt');if(prompt)prompt.hidden=true;
+  return true;
  }
  update(dt,controller){
   if(!this.equipped){
@@ -2132,12 +2149,15 @@ const playerLife=new window.PlayerLife({
  },
  onDeath:()=>{
   corpseFallVelocity=Math.min(0,controller.velocity.y);player.userData.dead=true;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.horizontalSpeed=0;
-  pistolWeapon.triggerHeld=false;pistolWeapon.isReloading=false;pistolWeapon.reloadTimer=0;
+  const deathPosition=player.position.clone();
+  weaponLoot.dropOnDeath(deathPosition);
+  const jetpackPosition=weaponLoot.safeDrop(deathPosition)||new THREE.Vector3(deathPosition.x,corpseFloorAt(deathPosition.x,deathPosition.z,deathPosition.y),deathPosition.z);
+  jetpackSystem.dropOnDeath(jetpackPosition);
  },
  onRespawn:()=>{
   player.userData.dead=false;combatBots.health=100;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
   if(!multiplayer.active)player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
-  weaponLoot.refillForTraining();playerDamageFlash=0;
+  weaponLoot.resetAfterDeath();playerDamageFlash=0;
  }
 });
 let lastReceivedDamage=0;

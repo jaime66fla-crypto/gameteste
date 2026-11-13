@@ -75,7 +75,7 @@ class WeaponLootSystem {
   this.applyActive(false);
   if(populate)this.populate();
  }
- get definition(){return DEFINITIONS[this.slots[this.activeSlot].id];}
+ get definition(){return DEFINITIONS[this.slots[this.activeSlot]?.id]||DEFINITIONS.pistol;}
  boxes(){return this.staticBoxes.concat(this.solidBoxes().map(asBox));}
  isSafePoint(p,radius=.65){
   return Number.isFinite(p.x)&&Number.isFinite(p.y)&&Number.isFinite(p.z)&&!this.boxes().some(b=>p.x+radius>b.min.x&&p.x-radius<b.max.x&&p.z+radius>b.min.z&&p.z-radius<b.max.z&&b.max.y>p.y+.08&&b.min.y<p.y+1);
@@ -95,7 +95,7 @@ class WeaponLootSystem {
   return null;
  }
  saveActive(){
-  const slot=this.slots[this.activeSlot];slot.ammo=this.controller.ammo;
+  const slot=this.slots[this.activeSlot];if(!slot)return;slot.ammo=this.controller.ammo;
   this.reserves[DEFINITIONS[slot.id].ammoType]=this.controller.reserveAmmo;
  }
  applyActive(equip){
@@ -172,6 +172,26 @@ class WeaponLootSystem {
    else{const type=types[Math.floor(this.random()*types.length)];this.addAmmo(type,type==='shells'?8:30,p);}
    break;
   }
+ }
+ dropOnDeath(position){
+  this.saveActive();
+  const carried=this.slots.filter(Boolean);
+  for(let n=0;n<carried.length;n++){
+   const slot=carried[n],origin=position.clone();origin.z+=n*.65;
+   const p=this.safeDrop(origin);
+   if(p)this.addWeapon(slot.id,p,{ammo:slot.ammo,bonusAmmo:0,drop:true});
+  }
+  for(const [type,amount]of Object.entries(this.reserves))if(amount>0){
+   const p=this.safeDrop(position);if(p)this.addAmmo(type,amount,p,{drop:true});
+  }
+  this.slots=[null,null];this.reserves={light:0,rifle:0,shells:0};this.activeSlot=0;
+  this.controller.holster();this.controller.ammo=0;this.controller.reserveAmmo=0;
+  this.controller.isReloading=false;this.controller.reloadTimer=0;this.controller.triggerHeld=false;
+  this.avatar.gun.visible=false;this.avatar.flash.visible=false;this.nearest=null;this.messageTime=0;
+ }
+ resetAfterDeath(){
+  this.slots=[{id:'pistol',ammo:12},null];this.reserves={light:60,rifle:0,shells:0};this.activeSlot=0;
+  this.applyActive(false);this.controller.holster();
  }
  dropFromBot(position){
   if(this.random()>.8)return;
