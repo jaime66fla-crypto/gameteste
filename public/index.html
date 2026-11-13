@@ -11,7 +11,7 @@ html,body{margin:0;height:100%;overflow:hidden;background:#0d1117;color:#fff;fon
 #view{width:100%;height:100%;display:block;touch-action:none}
 .hud{position:fixed;left:10px;top:10px;z-index:3;background:#0b1118cf;border:1px solid #ffffff20;border-radius:9px;padding:8px 10px;backdrop-filter:blur(8px);width:244px;max-width:calc(100vw - 40px)}
 .hud b{display:block;font-size:10px;font-weight:700;letter-spacing:.08em;margin-bottom:5px}.hud small{display:block;opacity:.8;line-height:1.55;font-size:10px}.hud details{border-top:1px solid #ffffff18;margin-top:6px;padding-top:4px}.hud summary{cursor:pointer;font-size:10px;color:#b6c9cd;min-height:18px;line-height:18px}.hud summary:focus-visible{outline:2px solid #7ee8ff;outline-offset:2px}.hud details small{margin-top:5px}
-#state{position:fixed;right:16px;top:16px;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
+#state{position:fixed;right:16px;top:14px;width:150px;box-sizing:border-box;background:#0b1118dd;border:1px solid #ffffff20;border-radius:12px;padding:10px 12px;font:600 12px/1.4 system-ui}
 #coverPrompt{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0b1118dd;border:1px solid #ffffff20;border-radius:999px;padding:8px 12px;font-size:11px;opacity:.9;max-width:calc(100vw - 40px);text-align:center}
 
 .aim-dot{position:fixed;left:50%;top:50%;width:3px;height:3px;transform:translate(-50%,-50%);border-radius:50%;background:#fff;pointer-events:none;z-index:10;transition:opacity .12s ease,transform .12s ease}.aim-dot.ads-hidden{opacity:0;transform:translate(-50%,-50%) scale(.5)}
@@ -73,7 +73,7 @@ body.ads-optic .hud,body.ads-optic #state,body.ads-scope .hud,body.ads-scope #st
 #view-multiplayer{box-sizing:border-box;width:min(390px,calc(100vw - 32px));border-radius:16px;padding:24px;gap:15px;background:linear-gradient(145deg,#182237f5,#0c1322f5);border-color:#d4af6e55}
 .multi-heading span{font-size:10px;letter-spacing:.2em;color:#e1c795}.multi-heading h2{font-size:23px;line-height:1.2;font-weight:550;margin:10px 0}.multi-heading p{font-size:12px;line-height:1.6;color:#a5b3c8;margin:0 0 5px}
 #view-multiplayer .menu-btn{font-size:12px;font-weight:650;border-radius:7px;padding:14px 12px;letter-spacing:.1em}#btn-create-room{background:#e1c795;color:#192032}#view-multiplayer .menu-input{border-radius:7px;min-height:44px;border-color:#566277;background:#0a1220}#input-room-code{text-transform:uppercase;letter-spacing:.15em}#view-multiplayer .menu-input:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.menu-btn:disabled{opacity:.5;cursor:wait;transform:none}
-#multi-status-msg{line-height:1.5}#room-hud{position:fixed;top:118px;right:16px;z-index:14;max-width:290px;background:#0b1118ec;border:1px solid #6d968766;border-radius:9px;padding:10px;color:#bfe6d9;font:11px/1.5 system-ui}#room-hud[hidden]{display:none}#btn-leave-room{display:block;margin-top:7px;background:#233b3c;color:white;border:1px solid #ffffff30;border-radius:5px;padding:5px 10px;cursor:pointer}
+#multi-status-msg{line-height:1.5}#room-hud{position:fixed;top:128px;right:16px;z-index:34;width:268px;max-width:calc(100vw - 24px);box-sizing:border-box;background:#0b1118ec;border:1px solid #6d968766;border-radius:9px;padding:10px;color:#bfe6d9;font:11px/1.5 system-ui}#room-hud[hidden]{display:none}#btn-leave-room{display:block;margin-top:7px;background:#233b3c;color:white;border:1px solid #ffffff30;border-radius:5px;padding:5px 10px;cursor:pointer}
 @media(max-height:700px){.menu-title{font-size:2.8rem;margin-bottom:1rem}.menu-content{padding:10px}#view-multiplayer{padding:18px;gap:11px}.multi-heading h2{font-size:20px}}
 #damageFlash{z-index:18;box-shadow:inset 0 0 130px 45px #d71e20aa;background:radial-gradient(ellipse at center,transparent 40%,#a600003d)}
 #vitals{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);z-index:19;width:180px;background:#0b1118e6;padding:10px 12px;border:1px solid #ffffff30;border-radius:9px;font:700 11px system-ui}#vitals span{color:#b9c9c5;letter-spacing:.12em}#vitals b{float:right;color:#f3fff6}.vital-track{height:9px;margin-top:7px;border-radius:5px;background:#552927;overflow:hidden}#vitalFill{display:block;height:100%;width:100%;background:#72d39e;transition:width .18s}
@@ -264,7 +264,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <script src="/rank-system.js?v=4"></script>
 <script src="/first-vehicle.js?v=3"></script>
 <script src="/map-asset-pack.js?v=1"></script>
-<script src="/full3d.js?v=82"></script>
+<script src="/full3d.js?v=83"></script>
 <script src="/weapon-arsenal.js?v=1"></script>
 <script src="/training-ground.js?v=5"></script>
 </body>
