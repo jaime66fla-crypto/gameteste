@@ -1,7 +1,7 @@
 /* Visible remote operators. Shared rig geometry/textures stay owned by OperatorAvatar. */
 (()=>{'use strict';
 class MultiplayerWorld{
- constructor(scene,terrainHeight=()=>0){this.scene=scene;this.terrainHeight=terrainHeight;this.players=new Map();this.effects=[];}
+ constructor(scene,terrainHeight=()=>0,audio=null){this.scene=scene;this.terrainHeight=terrainHeight;this.audio=audio;this.players=new Map();this.effects=[];}
  _buildRemoteJetpack(){
   const g=new THREE.Group();g.name='REMOTE_SPECIAL_JETPACK';
   const dark=new THREE.MeshStandardMaterial({color:0x22282a,metalness:.55,roughness:.42});
@@ -63,13 +63,26 @@ class MultiplayerWorld{
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }
  shot(data){
-  const remote=this.players.get(data.ownerId);if(remote){remote.avatar.setRecoil(.5);remote.avatar.flash.visible=true;remote.flashTime=.06;}
+  const remote=this.players.get(data.ownerId);
+  const attachments=data.attachments&&typeof data.attachments==='object'?data.attachments:(remote?.state?.attachments||{});
+  const suppressed=!!attachments.suppressor;
+  const stock=!!attachments.stock;
+  if(remote){
+   remote.avatar.setRecoil(stock?.36:.5);
+   remote.avatar.flash.visible=!suppressed;
+   remote.flashTime=suppressed?0:.06;
+  }
+  if(this.audio?.playShoot){
+   const distance=remote?.avatar?.group?.position?.distanceTo?.(this.audio.listenerPosition?.()||new THREE.Vector3())??0;
+   const attenuation=Math.max(.18,1/(1+distance*.055));
+   this.audio.playShoot(data.weapon,(suppressed?.26:1)*attenuation);
+  }
   for(const ray of data.rays||[]){
    const start=new THREE.Vector3(data.origin.x,data.origin.y,data.origin.z),direction=new THREE.Vector3(ray.x,ray.y,ray.z);
    const range=window.WeaponLootSystem.DEFINITIONS[data.weapon]?.range||65;
    const caster=new THREE.Raycaster(start,direction,0,range);const hit=window.CombatBotSystem.firstHit(this.scene,caster,remote?.avatar.group);
    const end=hit?.point||start.clone().addScaledVector(direction,range);
-   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffb56a}));line.userData.ignoreCombat=true;this.scene.add(line);this.effects.push({line,life:.07});
+   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:suppressed?0xd8c38a:0xffb56a,transparent:true,opacity:suppressed?.45:1}));line.userData.ignoreCombat=true;this.scene.add(line);this.effects.push({line,life:suppressed?.04:.07});
   }
  }
  remove(id){const remote=this.players.get(id);if(!remote)return;const a=remote.avatar;this.scene.remove(a.group);this.disposeObject(a.gun,true);for(const material of a.body.material)material.dispose();a.hitSurface.material.dispose();a.skeleton.dispose();this.players.delete(id);}
