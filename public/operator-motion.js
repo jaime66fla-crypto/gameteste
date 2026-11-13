@@ -175,6 +175,20 @@ function sampleMotion(state,phase,armed=true,weaponId='rifle'){
    }
   }
 
+ }else if(state==='fall'){
+  // Dedicated freefall silhouette: relaxed knees, slight asymmetric foot drag and balanced arms.
+  // The actual descent speed stays entirely in PlayerController physics.
+  const sway=Math.sin(q*1.3),flutter=Math.sin(q*2.1);
+  r[1][0]=-.05+.018*sway;
+  r[2][0]=-.075+.015*flutter;
+  r[3][0]=-.08;
+  r[5][0]=-.035;
+  r[12][0]=-.36+.07*sway;r[13][0]=.76+.08*flutter;r[14][0]=-.16;
+  r[15][0]=-.16-.06*sway;r[16][0]=.52-.06*flutter;r[17][0]=-.09;
+  r[6][0]=-.43+.05*flutter;r[6][2]=.34;
+  r[9][0]=-.37-.05*flutter;r[9][2]=-.32;
+  r[7][0]=-.73;r[10][0]=-.81;
+  m.root[0]=.012*sway;m.root[2]=.008*flutter;
  }else if(state==='jump'){
   // Percentages of one complete jump: anticipation / takeoff / flight / recovery.
   const key=(values)=>curveMotion(values,p);
