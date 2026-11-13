@@ -55,6 +55,33 @@ function rayBox(origin,direction,box,max=Infinity,padding=0){
 }
 // Conservative body envelope in player-local axes, following stance transitions.
 // The client still reports real skinned-mesh impacts; the server rejects impossible ones.
+
+// Damage zones follow the character's local orientation and stance.
+// The server calculates the region itself; client-supplied hit zones are ignored.
+const DAMAGE_MULTIPLIERS=Object.freeze({head:2.5,chest:1,abdomen:1.2,arms:.65,legs:.75});
+function damageZoneAt(point,target){
+ const crouch=target.grounded===false?0:Number.isFinite(target.crouchBlend)?clamp(target.crouchBlend,0,1):(target.crouching?1:0);
+ const prone=target.grounded===false?0:clamp(Number(target.prone)||0,0,1);
+ const height=1.95-.4*crouch;
+ const effectiveHeight=height*(1-prone)+.78*prone;
+ const relY=(point.y-target.y)/Math.max(.1,effectiveHeight);
+ const angle=Number(target.angle)||0,sin=Math.sin(angle),cos=Math.cos(angle);
+ const dx=point.x-target.x,dz=point.z-target.z;
+ const localX=dx*cos-dz*sin,localZ=dx*sin+dz*cos;
+ // When lying down, the head is forward rather than at the highest point.
+ if(prone>.65){
+  if(localZ>.85)return 'head';
+  if(localZ>.3)return 'chest';
+  if(Math.abs(localX)>.34)return 'arms';
+  return localZ<-.2?'legs':'abdomen';
+ }
+ if(relY>=.79&&Math.abs(localX)<.32)return 'head';
+ if(relY<.40)return 'legs';
+ if(Math.abs(localX)>.34&&relY>.44)return 'arms';
+ if(relY<.59)return 'abdomen';
+ return 'chest';
+}
+function damageForZone(base,zone){return Math.max(0,base)*(DAMAGE_MULTIPLIERS[zone]||1)}
 function bodyHitDistance(origin,direction,target,max=Infinity){
  const prone=target.grounded===false?0:clamp(Number(target.prone)||0,0,1);
  const crouch=target.grounded===false?0:Number.isFinite(target.crouchBlend)?clamp(target.crouchBlend,0,1):(target.crouching?1:0);
@@ -110,5 +137,5 @@ function iceWall(id,ownerId,p,direction,now,boxes=[],players=[],height=terrain){
  }
  return wall;
 }
-globalThis.TacticalRules={CONFIG,URBAN_LAYOUT,ROAD_LAYOUT,MAP_DISTRICTS,terrain,mapBoxes,rayBox,bodyHitDistance,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
+globalThis.TacticalRules={CONFIG,DAMAGE_MULTIPLIERS,damageZoneAt,damageForZone,URBAN_LAYOUT,ROAD_LAYOUT,MAP_DISTRICTS,terrain,mapBoxes,rayBox,bodyHitDistance,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
 })();
