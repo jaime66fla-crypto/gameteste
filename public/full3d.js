@@ -497,13 +497,7 @@ createWalkableStairs(10,26);
 
 /* Migrated urban expansion: standalone 3D houses and tower cover, registered in the
    same collision/cover/loot system as original parkour buildings. */
-const urbanLayout=[
- [-58,-57,10,9,5.5],[-42,-57,12,10,8],[-25,-57,10,10,5.5],
- [27,-57,12,10,10],[49,-57,12,10,16],[68,-57,11,11,6],
- [-61,-31,11,11,6],[-40,-30,13,11,15],[40,-30,13,12,20],[63,-30,12,10,6],
- [-65,33,12,10,5.5],[-43,35,13,11,17],[-24,38,10,11,6],
- [28,37,14,12,19],[51,36,13,10,7]
-];
+const urbanLayout=globalThis.TacticalRules.URBAN_LAYOUT;
 const urbanTowers=[];
 const urbanWindowGeometry=new THREE.PlaneGeometry(1.35,1.35);
 const urbanWindowMaterial=new THREE.MeshStandardMaterial({color:0x456779,emissive:0x13222a,emissiveIntensity:.16,side:THREE.DoubleSide,roughness:.85});
@@ -2781,9 +2775,7 @@ class SpecialJetpack {
   this.equipped=true;
   this.pickup.visible=false;this.ring.visible=false;this.glow.visible=false;
   this.backpack=this._buildJetpack(true);
-  this.backpack.position.set(0,1.28,-.34);
-  this.backpack.rotation.y=0;
-  this.player.add(this.backpack);
+  mainAvatar.mountBackpack(this.backpack);
   this.flames=this.backpack.userData.flames||[];
   const hud=document.getElementById('jetpackHud');if(hud)hud.hidden=false;
   const prompt=document.getElementById('jetpackPrompt');if(prompt)prompt.hidden=true;
@@ -2792,7 +2784,7 @@ class SpecialJetpack {
   if(!this.equipped)return false;
   this.equipped=false;
   if(this.backpack){
-   this.player.remove(this.backpack);
+   this.backpack.parent?.remove(this.backpack);
    this.backpack.traverse(o=>{if(o.isMesh){o.geometry.dispose();o.material.dispose();}});
   }
   this.backpack=null;this.flames=[];
@@ -3280,7 +3272,7 @@ const multiplayer=new window.MultiplayerClient({
   roomHud();
  }
 });
-function sendNetworkState(){const active=weaponLoot.slots[weaponLoot.activeSlot];multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,reload:pistolWeapon.isEquipped&&pistolWeapon.isReloading?pistolWeapon.reloadBlend:0,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none',soldierSkin:window.GameSkins?.getSoldier()||'original',weaponSkin:window.GameSkins?.getWeapon(pistolWeapon.weaponSpec.id)||'original',attachments:pistolWeapon.isEquipped&&active?{...(active.attachments||{})}:{},gear:tacticalGear.active||'none',jetpack:!!jetpackSystem.equipped,jetpackActive:!!(jetpackSystem.equipped&&controller.keys.jetpack&&jetpackSystem.fuel>0&&!controller.cover.active)});}
+function sendNetworkState(){const active=weaponLoot.slots[weaponLoot.activeSlot];multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,crouchBlend:controller.crouchBlend,prone:controller.proneBlend,proneSlope:controller.proneSlope,proneRoll:controller.proneRoll,speed:controller.horizontalSpeed,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,reload:pistolWeapon.isEquipped&&pistolWeapon.isReloading?pistolWeapon.reloadBlend:0,firing:!!(pistolWeapon.isEquipped&&!pistolWeapon.isReloading&&(pistolWeapon.triggerHeld||pistolWeapon.mechanismShot>.1||pistolWeapon.recoil>.18)),weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none',soldierSkin:window.GameSkins?.getSoldier()||'original',weaponSkin:window.GameSkins?.getWeapon(pistolWeapon.weaponSpec.id)||'original',attachments:pistolWeapon.isEquipped&&active?{...(active.attachments||{})}:{},gear:tacticalGear.active||'none',jetpack:!!jetpackSystem.equipped,jetpackActive:!!(jetpackSystem.equipped&&controller.keys.jetpack&&jetpackSystem.fuel>0&&!controller.cover.active)});}
 function leaveRoom(){tacticalGear.clear();tacticalGear.resetInventory();confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);playerLife.reset();player.userData.dead=false;combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
 function enterRoom(action){
  if(multiplayer.pending)return;

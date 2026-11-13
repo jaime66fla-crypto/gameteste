@@ -1,10 +1,10 @@
-// Run with Three.js 0.187 installed, or set THREE_TEST_MODULE to its module path.
+// Legacy 3d.js/FBX tests use their pinned modern Three.js loader. Current full3d tests use vendored r128.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const math=await import(process.env.THREE_TEST_MODULE||'three');
 const {createMultiplayer3D}=await import('../public/multiplayer3d.js');
-class Renderer{constructor(){this.shadowMap={}}setPixelRatio(){}setSize(){}render(){}}
+class Renderer{constructor(){this.shadowMap={};this.capabilities={getMaxAnisotropy:()=>1}}setPixelRatio(){}setSize(){}render(){}}
 const THREE={...math,WebGLRenderer:Renderer};
 const elements=new Map(),globalListeners={};
 function element(){
@@ -14,7 +14,7 @@ function element(){
 const testSockets=[];
 class TestSocket{constructor(url){this.url=url;this.readyState=1;this.sent=[];testSockets.push(this)}send(data){this.sent.push(JSON.parse(data))}receive(message){this.onmessage({data:JSON.stringify(message)})}close(){this.readyState=3;this.onclose?.()}}
 let avatarLoaded;
-const context={THREE,createMultiplayer3D:options=>createMultiplayer3D({...options,Socket:TestSocket}),location:{protocol:"https:",host:"game.test",search:""},URLSearchParams,setTimeout,clearTimeout,FBXLoader:class{load(_url,onLoad){avatarLoaded=onLoad}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:()=>({getContext:()=>({clearRect(){},fillRect(){},strokeRect(){},fillText(){}})}),addEventListener(){}},addEventListener(type,fn){globalListeners[type]=fn},innerWidth:1280,innerHeight:720,devicePixelRatio:1,performance:{now:()=>0},requestAnimationFrame(){},console};
+const context={window:{},THREE,createMultiplayer3D:options=>createMultiplayer3D({...options,Socket:TestSocket}),location:{protocol:"https:",host:"game.test",search:""},URLSearchParams,setTimeout,clearTimeout,FBXLoader:class{load(_url,onLoad){avatarLoaded=onLoad}},document:{getElementById:id=>{if(!elements.has(id))elements.set(id,element());return elements.get(id)},createElement:()=>({getContext:()=>new Proxy({createLinearGradient:()=>({addColorStop(){}}),createRadialGradient:()=>({addColorStop(){}})},{get:(o,k)=>o[k]||(()=>{})})}),addEventListener(){}},addEventListener(type,fn){globalListeners[type]=fn},innerWidth:1280,innerHeight:720,devicePixelRatio:1,performance:{now:()=>0},requestAnimationFrame(){},console};
 vm.createContext(context);
 const source=fs.readFileSync(new URL('../public/3d.js',import.meta.url),'utf8').replace(/^import .*;\n/gm,'');
 vm.runInContext(source+`\nglobalThis.api={traceAimRay,mobileAimDirection,updateAimFromPointer,updateThirdPersonCamera,fire,updateBullets3D,frame,buildings,enemies,bullets,player,camera,pointer,mobileAim,ammoState,get aimPoint(){return aimPoint},setYaw:y=>cameraYaw=y,setPitch:p=>cameraPitch=p,multiplayer,remotePlayers,remoteState,removeRemote,updateMultiplayer,get keys(){return keys},get locomotion(){return locomotion},get ready(){return isWeaponReady()},updateWeaponPose,updateProceduralAvatar,setTime:time=>t=time,resetShot:()=>shotCooldown=0};`,context);
@@ -51,7 +51,7 @@ assert.equal(a.bullets.length,0);
 a.resetShot();a.fire();const blocker=wall(-6);blocker.position.x=.85;
 a.updateBullets3D(.5);assert.equal(gunTarget.userData.hp,2,'A wall must block a fast projectile');
 // UI buttons have no global pointerdown shooting handler; touch canvas cannot fire.
-const before=a.ammoState.pistol.mag;a.resetShot();elements.get('view').listeners.pointerdown({pointerType:'touch',button:0});assert.equal(a.ammoState.pistol.mag,before);
+const before=a.ammoState.pistol.mag;a.resetShot();assert.equal(elements.get('view').listeners.pointerdown,undefined,'Touch canvas has no firing handler');assert.equal(a.ammoState.pistol.mag,before);
 a.mobileAim.active=true;a.mobileAim.x=1;a.mobileAim.y=0;a.updateAimFromPointer();assert(a.aimPoint.x>a.player.position.x);
 // Pulling the mobile stick fires; centering/releasing it stops firing.
 a.enemies.length=0;a.buildings.length=0;
@@ -62,11 +62,11 @@ stick.listeners.pointerup({pointerId:1});assert(!a.mobileAim.firing&&!a.mobileAi
 // A held mouse button must continue firing while WASD moves the player.
 a.mobileAim.active=false;a.resetShot();a.player.position.set(0,0,0);
 a.keys.add('w');const walkingAmmo=a.ammoState.pistol.mag;
-elements.get('view').listeners.pointerdown({pointerType:'mouse',button:0});
+elements.get('view').listeners.mousedown({pointerType:'mouse',button:0,preventDefault(){}});
 for(let i=1;i<=45;i++)a.frame(16+i*16);
 assert(a.player.position.z<-.5,'W must keep moving while firing');
 assert(a.ammoState.pistol.mag<=walkingAmmo-3,'Holding fire must shoot more than once while moving');
-globalListeners.pointerup({button:0});a.keys.clear();const stoppedAmmo=a.ammoState.pistol.mag;
+globalListeners.mouseup({button:0});a.keys.clear();const stoppedAmmo=a.ammoState.pistol.mag;
 for(let i=46;i<=70;i++)a.frame(16+i*16);
 assert.equal(a.ammoState.pistol.mag,stoppedAmmo,'Mouse release must stop firing');
 a.setTime(100);a.updateWeaponPose();assert.equal(a.player.userData.weaponPose,'rest');

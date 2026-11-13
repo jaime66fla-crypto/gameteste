@@ -19,7 +19,7 @@ const blocked=setup([2.5,0,1.2],[wall,{minX:3.01,maxX:5,minY:0,maxY:3,minZ:.51,m
 const away=setup([0,0,1.2]);away.c.toggle();step(away.c,{backward:true},1);assert(!away.c.active);const air=setup([0,0,1.2]);air.c.toggle();step(air.c,{grounded:false},1);assert(!air.c.active);
 console.log('Cover geometry/state: acquisition, wall sides, distance, slide bounds, blocked/low/corner peeks, physical exposure, retraction and exits pass');
 // Verify that exposure also changes real mesh hit detection against the same wall.
-for(const file of ['public/operator-avatar.js','public/combat-bots.js'])vm.runInNewContext(fs.readFileSync(file,'utf8'),context);
+for(const file of ['public/operator-motion.js','public/operator-avatar.js','public/combat-bots.js'])vm.runInNewContext(fs.readFileSync(file,'utf8'),context);
 const arena=new THREE.Scene(),bodyRoot=new THREE.Group(),operator=new context.window.OperatorAvatar();bodyRoot.add(operator.group);arena.add(bodyRoot);
 const wallMesh=new THREE.Mesh(new THREE.BoxGeometry(6,3,1),new THREE.MeshBasicMaterial());wallMesh.position.y=1.5;arena.add(wallMesh);
 const cover=new Cover({player:bodyRoot,boxes:()=>[wall],terrainHeight:()=>0});bodyRoot.position.set(2.5,0,1.2);cover.toggle();

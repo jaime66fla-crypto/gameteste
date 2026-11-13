@@ -1,11 +1,11 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');const THREE=require(process.cwd()+'/public/vendor/three-r128.min.js');
-THREE.WebGLRenderer=class{constructor(){this.shadowMap={}}setPixelRatio(){}setSize(){}render(){}};
+THREE.WebGLRenderer=class{constructor(){this.shadowMap={};this.info={render:{calls:0,triangles:0},memory:{geometries:0,textures:0}}}setPixelRatio(){}setSize(){}render(){}};
 const ctx2d=new Proxy({createLinearGradient:()=>({addColorStop(){}}),createRadialGradient:()=>({addColorStop(){}}),measureText:()=>({width:30})},{get:(o,k)=>o[k]||(()=>{})});
-const els=new Map();function element(){return {style:{},setAttribute(){},classList:{add(){},remove(){},toggle(){},contains(){return false}},addEventListener(){},appendChild(){},replaceChildren(){},getContext:()=>ctx2d,getBoundingClientRect:()=>({left:0,top:0,width:1280,height:720})};}function el(id){if(!els.has(id))els.set(id,element());return els.get(id)}
+const els=new Map();function element(){return {style:{},setAttribute(){},classList:{add(){},remove(){},toggle(){},contains(){return false}},addEventListener(){},appendChild(){},append(){},prepend(){},replaceChildren(){},getContext:()=>ctx2d,getBoundingClientRect:()=>({left:0,top:0,width:1280,height:720})};}function el(id){if(!els.has(id))els.set(id,element());return els.get(id)}
 const inputHandlers={};const emit=(name,event)=>{for(const fn of inputHandlers[name]||[])fn(event);};
 const context={THREE,AbortController,fetch:async()=>({ok:true,json:async()=>({rooms:[]})}),window:{addEventListener(){}},document:{body:el('body'),getElementById:el,createElement:element,addEventListener(){}},addEventListener(name,fn){(inputHandlers[name]??=[]).push(fn);},devicePixelRatio:1,innerWidth:1280,innerHeight:720,requestAnimationFrame(){},console,setTimeout(){},clearTimeout(){},performance:{now:()=>1000},location:{host:'game.test',protocol:'https:'},WebSocket:class{},localStorage:{getItem(){return null},setItem(){}}};
 vm.createContext(context);vm.runInContext(fs.readFileSync('public/operator-motion.js','utf8'),context);vm.runInContext(fs.readFileSync('public/operator-avatar.js','utf8'),context);vm.runInContext(fs.readFileSync('public/combat-bots.js','utf8'),context);vm.runInContext(fs.readFileSync('public/cover-controller.js','utf8'),context);vm.runInContext(fs.readFileSync('public/weapon-loot.js','utf8'),context);vm.runInContext(fs.readFileSync('public/multiplayer-client.js','utf8'),context);vm.runInContext(fs.readFileSync('public/room-browser.js','utf8'),context);vm.runInContext(fs.readFileSync('public/multiplayer-world.js','utf8'),context);vm.runInContext(fs.readFileSync('public/player-life.js','utf8'),context);vm.runInContext(fs.readFileSync('public/tactical-rules.js','utf8'),context);vm.runInContext(fs.readFileSync('public/tactical-gear.js','utf8'),context);vm.runInContext(fs.readFileSync('public/full3d.js','utf8')+'\nglobalThis.testApi={playerLife,mainAvatar,pistolWeapon,scene,player,controller,combatBots,weaponLoot,forestAudio,getStats:()=>({score,hitCount,shots}),houseParkour,thirdPersonCamera,frame:loop,start:()=>gameStarted=true};',context);
-const a=context.testApi;assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('globalThis.TacticalRules.mapBoxes()',context))),JSON.parse(JSON.stringify(a.houseParkour.solidBoxes)),'Shared server cover geometry must match the actual map');assert(a.mainAvatar instanceof context.window.OperatorAvatar);assert.equal(a.pistolWeapon.pistol,a.mainAvatar.gun);assert.equal(a.mainAvatar.gun.visible,false);a.pistolWeapon.equip();assert.equal(a.mainAvatar.gun.visible,true);a.pistolWeapon.update(.016,true);a.mainAvatar.update(.016,{speed:2,armed:true});a.pistolWeapon.holster();assert.equal(a.mainAvatar.gun.visible,false);a.start();a.frame();a.player.updateMatrixWorld(true);console.log('PASS: full game boot, approved avatar mount, equip/holster and gameplay frame');
+const a=context.testApi;assert.deepEqual(JSON.parse(JSON.stringify(vm.runInContext('globalThis.TacticalRules.mapBoxes()',context))),JSON.parse(JSON.stringify(a.houseParkour.solidBoxes)),'Shared server cover geometry must match the actual map');assert(a.mainAvatar instanceof context.window.OperatorAvatar);assert.equal(a.pistolWeapon.pistol,a.mainAvatar.gun);assert.equal(a.mainAvatar.gun.visible,false);a.pistolWeapon.equip();a.pistolWeapon.equipTimer=0;assert.equal(a.mainAvatar.gun.visible,true);a.pistolWeapon.update(.016,true);a.mainAvatar.update(.016,{speed:2,armed:true});a.pistolWeapon.holster();assert.equal(a.mainAvatar.gun.visible,false);a.start();a.frame();a.player.updateMatrixWorld(true);console.log('PASS: full game boot, approved avatar mount, equip/holster and gameplay frame');
 
 a.houseParkour.solidBoxes=[];a.player.position.set(0,0,0);a.controller._onKeyChange('ControlLeft',true);a.controller._onKeyChange('KeyW',true);a.controller._onKeyChange('ShiftLeft',true);
 for(let i=0;i<80;i++)a.controller.update(1/60);
@@ -15,17 +15,17 @@ a.controller._onKeyChange('KeyW',false);a.controller._onKeyChange('ControlLeft',
 const p=a.player.position;
 a.houseParkour.solidBoxes=[{minX:p.x-1,maxX:p.x+1,minZ:p.z-1,maxZ:p.z+1,minY:p.y+1.5,maxY:p.y+2}];
 a.controller.update(1/60);assert(a.controller.isCrouching,'Low ceiling must block standing');
-a.houseParkour.solidBoxes=[];for(let i=0;i<80;i++)a.controller.update(1/60);assert(!a.controller.isCrouching);assert(a.controller.collisionHeight>1.79);
+a.houseParkour.solidBoxes=[];a.controller.clearInput();for(let i=0;i<80;i++)a.controller.update(1/60);assert(!a.controller.isCrouching);assert(a.controller.collisionHeight>1.79);
 a.controller._onKeyChange('ControlRight',true);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller.clearInput();a.controller.update(1/60);assert(!a.controller.isCrouching,'Blur reset must not leave crouch stuck');
 console.log('Crouch controller: speed, stamina, collider, camera, ceiling clearance and input reset pass');
 
-a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',false);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(!a.controller.isCrouching);console.log('Crouch toggle: C persists after release and toggles off');
+a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',false);a.controller.update(1/60);assert(a.controller.isCrouching);a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert.equal(a.controller.posture,2,'Second press lies down');a.controller._onKeyChange('KeyC',false);a.controller._onKeyChange('KeyC',true);a.controller.update(1/60);assert(!a.controller.isCrouching);console.log('Posture cycle: stand, crouch, prone and stand');
 // Reproduce the reported front-facing avatar and centered-camera overlap.
 const cam=a.thirdPersonCamera,view=cam.camera;
 cam._cameraCollision=(focus,desired)=>desired;cam.getGroundHeight=()=>-100;
 a.controller.crouchBlend=0;a.player.position.set(0,0,0);
 for(const yaw of [0,.7,Math.PI/2,Math.PI,-1.4]){
- cam.yaw=yaw;cam.modeIndex=1;cam.pitch=.2;cam.isLookingBack=false;cam.update(1/60);a.player.updateMatrixWorld(true);view.updateMatrixWorld(true);
+ cam.yaw=yaw;cam.modeIndex=1;cam.pitch=.2;cam.isLookingBack=false;for(let i=0;i<120;i++)cam.update(1/60);a.player.updateMatrixWorld(true);view.updateMatrixWorld(true);
  const facing=new THREE.Vector3(0,0,1).applyQuaternion(a.mainAvatar.group.getWorldQuaternion(new THREE.Quaternion()));
  const viewing=view.getWorldDirection(new THREE.Vector3());facing.y=0;viewing.y=0;facing.normalize();viewing.normalize();
  assert(facing.dot(viewing)>.999,'Avatar must face away from camera and toward the crosshair for every yaw');
@@ -40,7 +40,7 @@ a.forestAudio.init=()=>{};a.forestAudio.playShoot=()=>{};a.forestAudio.playHit=(
 const trainingBot=a.combatBots.bots[0];a.combatBots.bots.forEach(b=>b.group.visible=false);
 trainingBot.group.visible=true;trainingBot.alive=true;trainingBot.health=90;trainingBot.group.position.set(0,0,-8);trainingBot.group.rotation.y=0;
 a.player.position.set(0,0,0);a.player.rotation.y=Math.PI;view.position.set(0,1.25,0);view.lookAt(0,1.25,-8);view.updateMatrixWorld(true);a.scene.updateMatrixWorld(true);
-a.pistolWeapon.equip();a.pistolWeapon.spread=0;a.pistolWeapon.fireCooldown=0;const beforeHits=a.getStats().hitCount;
+a.pistolWeapon.equip();a.pistolWeapon.equipTimer=0;a.pistolWeapon.spread=0;a.pistolWeapon.fireCooldown=0;const beforeHits=a.getStats().hitCount;
 a.pistolWeapon.fire();assert.equal(trainingBot.health,60,'Pistol must damage the red bot');assert.equal(a.getStats().hitCount,beforeHits+1);
 const cover=new THREE.Mesh(new THREE.BoxGeometry(5,4,.3),new THREE.MeshBasicMaterial());cover.position.set(0,2,-4);a.scene.add(cover);a.pistolWeapon.fireCooldown=0;a.pistolWeapon.fire();assert.equal(trainingBot.health,60,'Cover must block pistol damage');assert.equal(a.getStats().hitCount,beforeHits+1,'Walls must not count as enemy hits');
 console.log('Pistol integration: red-bot damage, world cover and enemy-only hit counting pass');
@@ -62,10 +62,10 @@ console.log('Cover integration: Q, lateral movement, fire gate, low-cover crouch
 
 // Real inventory, input, automatic fire, reload cancellation and shotgun pellet tests.
 a.controller.cover.exit();a.controller.clearInput();a.houseParkour.solidBoxes=[];
-const takeLoot=id=>{const item=a.weaponLoot.items.find(i=>i.kind==='weapon'&&i.id===id);assert(item,'Starter loot for '+id+' must be available');a.player.position.copy(item.position);assert(a.weaponLoot.pickup(item));};
+const takeLoot=id=>{const item=a.weaponLoot.items.find(i=>i.kind==='weapon'&&i.id===id);assert(item,'Starter loot for '+id+' must be available');a.player.position.copy(item.position);assert(a.weaponLoot.pickup(item));a.pistolWeapon.update(.7,false);};
 takeLoot('smg');emit('keydown',{code:'Digit2',repeat:false});assert.equal(a.pistolWeapon.weaponSpec.id,'smg');
 a.pistolWeapon.fireCooldown=0;const autoAmmo=a.pistolWeapon.ammo;emit('mousedown',{button:0,target:el('view')});for(let i=0;i<60;i++)a.pistolWeapon.update(1/60,false);assert(a.pistolWeapon.ammo<autoAmmo-2,'Holding fire must repeatedly shoot SMG');emit('mouseup',{button:0});const releasedAmmo=a.pistolWeapon.ammo;for(let i=0;i<60;i++)a.pistolWeapon.update(1/60,false);assert.equal(a.pistolWeapon.ammo,releasedAmmo,'Releasing fire must stop automatic shooting');
-a.pistolWeapon.ammo=5;a.pistolWeapon.reload();assert(a.pistolWeapon.isReloading);emit('keydown',{code:'Digit1',repeat:false});assert(!a.pistolWeapon.isReloading);a.pistolWeapon.update(3,false);assert.equal(a.weaponLoot.slots[1].ammo,5,'Swapping during reload must not refill the old gun');emit('keydown',{code:'Digit2',repeat:false});assert.equal(a.pistolWeapon.ammo,5);a.pistolWeapon.reload();a.pistolWeapon.update(2,false);assert.equal(a.pistolWeapon.ammo,24);
+a.pistolWeapon.ammo=5;a.pistolWeapon.reload();assert(a.pistolWeapon.isReloading);emit('keydown',{code:'Digit1',repeat:false});assert(!a.pistolWeapon.isReloading);a.pistolWeapon.update(3,false);assert.equal(a.weaponLoot.slots[1].ammo,5,'Swapping during reload must not refill the old gun');emit('keydown',{code:'Digit2',repeat:false});assert.equal(a.pistolWeapon.ammo,5);a.pistolWeapon.update(.7,false);a.pistolWeapon.reload();a.pistolWeapon.update(2,false);assert.equal(a.pistolWeapon.ammo,24);
 takeLoot('shotgun');assert.equal(a.pistolWeapon.weaponSpec.pellets,6);a.scene.remove(cover);a.player.rotation.y=Math.PI;view.position.set(0,1.25,0);view.lookAt(0,1.25,-8);view.updateMatrixWorld(true);trainingBot.group.visible=true;trainingBot.alive=true;trainingBot.health=90;trainingBot.group.position.set(0,0,-8);
 for(let i=0;i<90;i++){a.mainAvatar.update(1/60,{armed:true});a.weaponLoot.updateHeldPose();}
 a.pistolWeapon.fireCooldown=0;a.pistolWeapon.spread=0;const shotgunAmmo=a.pistolWeapon.ammo,shotgunHits=a.getStats().hitCount;a.pistolWeapon.fire();assert.equal(a.pistolWeapon.ammo,shotgunAmmo-1,'One shotgun blast consumes one shell');assert.equal(a.getStats().hitCount,shotgunHits+1,'Shotgun hit counter must count a blast once');assert.equal(trainingBot.health,24,'Shotgun pellets must aggregate damage');
@@ -91,10 +91,10 @@ context.WebSocket=class{constructor(url){this.url=url;this.readyState=0;this.sen
 a.houseParkour.solidBoxes=[];a.controller.cover.exit();a.controller.clearInput();net.showGameMenu();
 el('input-player-name').value='Teste_A';net.enterRoom('create');const socket=sockets.at(-1);
 assert(!net.isStarted(),'Opening socket must not start game');socket.readyState=1;socket.onopen();assert(!net.isStarted(),'Socket open alone is not admission');
-socket.onmessage({data:JSON.stringify({type:'welcome3d',id:'local-a',players:[]})});assert(net.isStarted());assert(net.multiplayer.active);assert(a.combatBots.bots.every(b=>!b.group.visible));assert(socket.sent.some(m=>m.type==='state3d'&&m.name==='Teste_A'));
+socket.onmessage({data:JSON.stringify({type:'welcome3d',id:'local-a',players:[]})});assert(!net.isStarted(),'Admission waits for the battle start');socket.onmessage({data:JSON.stringify({type:'battle-start',players:[]})});vm.runInContext("deployment.phase='landed';deployment.plane.visible=false;deployment.chute.visible=false",context);assert(net.isStarted());assert(net.multiplayer.active);assert(a.combatBots.bots.every(b=>!b.group.visible));assert(socket.sent.some(m=>m.type==='state3d'&&m.name==='Teste_A'));
 socket.onmessage({data:JSON.stringify({type:'state3d',id:'remote-b',name:'Teste B',x:0,y:0,z:-8,angle:0,weapon:'rifle',moving:true,running:true,grounded:true})});
 const remote=net.multiplayerWorld.players.get('remote-b');assert(remote);for(let i=0;i<100;i++)net.multiplayerWorld.update(1/60);assert.equal(remote.avatar.state,'run');assert.equal(remote.avatar.weaponId,'rifle');assert(remote.avatar.gun.visible);assert.equal(remote.avatar.body.userData.remoteId,'remote-b');
-a.weaponLoot.select(0);a.pistolWeapon.weaponSpec=context.window.WeaponLootSystem.DEFINITIONS.pistol;a.pistolWeapon.spread=0;a.pistolWeapon.ammo=12;a.pistolWeapon.equip();a.pistolWeapon.fireCooldown=0;a.pistolWeapon.isReloading=false;
+a.weaponLoot.select(0);a.pistolWeapon.weaponSpec=context.window.WeaponLootSystem.DEFINITIONS.pistol;a.pistolWeapon.spread=0;a.pistolWeapon.ammo=12;a.pistolWeapon.equip();a.pistolWeapon.equipTimer=0;a.pistolWeapon.fireCooldown=0;a.pistolWeapon.isReloading=false;
 a.player.position.set(0,0,0);a.player.rotation.y=Math.PI;view.position.set(0,1.25,0);view.lookAt(0,1.25,-8);view.updateMatrixWorld(true);a.scene.updateMatrixWorld(true);
 a.pistolWeapon.fire();assert(socket.sent.some(m=>m.type==='shot3d'));assert(socket.sent.some(m=>m.type==='hit3d'&&m.targetId==='remote-b'),'Real remote mesh raycast must produce network hit');
 socket.sent=[];a.scene.add(cover);a.scene.updateMatrixWorld(true);a.pistolWeapon.fireCooldown=0;a.pistolWeapon.fire();assert(socket.sent.some(m=>m.type==='shot3d'));assert(!socket.sent.some(m=>m.type==='hit3d'),'Cover must block remote hits');a.scene.remove(cover);
@@ -105,7 +105,7 @@ socket.onmessage({data:JSON.stringify({type:'hit3d',targetId:'local-a',attackerI
 a.frame();assert.equal(el('vitalFill').style.width,'70%');assert.match(el('receivedDamage').textContent,/30/);assert(Number(el('receivedDamage').style.opacity)>0);
 a.player.position.set(0,5,0);a.houseParkour.solidBoxes=[{minX:-2,maxX:2,minZ:-2,maxZ:2,minY:4.7,maxY:5}];const deathPosition=a.player.position.clone();socket.onmessage({data:JSON.stringify({type:'hit3d',targetId:'local-a',attackerId:'remote-b',health:0,damage:70,killed:true,respawnIn:5})});
 assert(a.playerLife.dead);assert.equal(a.player.position.x,deathPosition.x);assert.equal(a.player.position.z,deathPosition.z);
-a.controller.keys.forward=true;a.controller.keys.aiming=true;a.frame();assert.equal(el('deathOverlay').hidden,false);assert.match(el('deathCountdown').textContent,/5s/);assert.equal(a.player.position.x,deathPosition.x);assert.equal(a.player.position.z,deathPosition.z);assert(a.mainAvatar.group.visible,'Corpse must be visible after ADS death');assert.equal(a.player.position.y,5,'Corpse must remain on the roof');a.controller._onKeyChange('KeyQ',true);assert(!a.controller.cover.active,'Dead controls must not enter cover');
+a.controller.keys.forward=true;a.controller.keys.aiming=true;a.frame();assert.equal(el('deathOverlay').hidden,false);assert.match(el('deathCountdown').textContent,/ELIMINADO/);assert.equal(a.player.position.x,deathPosition.x);assert.equal(a.player.position.z,deathPosition.z);assert(a.mainAvatar.group.visible,'Corpse must be visible after ADS death');assert.equal(a.player.position.y,5,'Corpse must remain on the roof');a.controller._onKeyChange('KeyQ',true);assert(!a.controller.cover.active,'Dead controls must not enter cover');
 const deadShots=socket.sent.length;a.pistolWeapon.fireCooldown=0;a.pistolWeapon.fire();assert.equal(socket.sent.length,deadShots,'Dead player cannot fire');
 a.playerLife.update(4.99,true);assert(a.playerLife.dead);assert.equal(a.combatBots.health,0);assert.equal(a.player.position.z,deathPosition.z);
 socket.onmessage({data:JSON.stringify({type:'respawn3d',id:'local-a',x:4,y:0,z:8,health:100})});assert.equal(a.combatBots.health,100);assert.equal(a.player.position.x,4);
@@ -116,7 +116,7 @@ console.log('Multiplayer integration: admission, actual remote rig/raycast, wall
 const gear=vm.runInContext('({jetpackSystem})',context);
 a.houseParkour.solidBoxes=[];a.playerLife.reset();a.player.userData.dead=false;a.player.position.set(7,0,9);
 a.weaponLoot.slots=[{id:'pistol',ammo:3},{id:'rifle',ammo:9}];a.weaponLoot.activeSlot=1;a.weaponLoot.reserves={light:17,rifle:29,shells:0};a.weaponLoot.applyActive(true);
-gear.jetpackSystem.pickupNow();gear.jetpackSystem.fuel=42;
+gear.jetpackSystem.pickupNow();assert(gear.jetpackSystem.backpack.parent===a.mainAvatar.torso,'Local jetpack follows the spine');gear.jetpackSystem.fuel=42;
 const gearCount=a.weaponLoot.items.length;
 a.playerLife.die(5);
 const deathDrops=a.weaponLoot.items.slice(gearCount);
@@ -135,12 +135,21 @@ const rifleDrop=deathDrops.find(i=>i.kind==='weapon'&&i.id==='rifle');a.player.p
 console.log('Death loot: exact magazines/reserves, no duplicates, unequipped corpse, jetpack fuel/location, starter respawn and recovery pass');
 
 // Number 4 equips a distinct grenade; left release throws it without firing the gun.
-const tactical=vm.runInContext('tacticalGear',context);a.playerLife.reset();a.player.userData.dead=false;a.start();a.houseParkour.solidBoxes=[];a.player.position.set(0,0,0);a.pistolWeapon.equip();
+const tactical=vm.runInContext('tacticalGear',context);a.playerLife.reset();a.player.userData.dead=false;a.start();a.houseParkour.solidBoxes=[];a.player.position.set(0,0,0);a.pistolWeapon.equip();a.pistolWeapon.equipTimer=0;
 emit('keydown',{code:'Digit4',repeat:false});assert.equal(tactical.active,'grenade');assert(!a.pistolWeapon.isEquipped);assert(tactical.held.visible);
 const ammoBeforeGrenade=a.pistolWeapon.ammo;emit('mousedown',{button:0,target:el('view')});assert(tactical.preparing);a.frame();assert(tactical.preview.visible);emit('mouseup',{button:0});assert.equal(tactical.inventory.grenades,2);assert.equal(tactical.grenades.size,1);assert.equal(a.pistolWeapon.ammo,ammoBeforeGrenade,'Grenade input must not also fire gun');
 emit('keydown',{code:'Digit1',repeat:false});assert.equal(tactical.active,null);assert(a.pistolWeapon.isEquipped);
-tactical.cooldown=0;emit('keydown',{code:'KeyV',repeat:false});assert.equal(tactical.walls.size,1);const ice=[...tactical.walls.values()][0];assert(a.houseParkour.solidBoxes.some(b=>b.iceWallId===ice.state.id));tactical.damageWall(ice.state.id,260);assert(!a.houseParkour.solidBoxes.some(b=>b.iceWallId===ice.state.id));
+tactical.cooldown=0;emit('keydown',{code:'KeyF',repeat:false});assert.equal(tactical.walls.size,1);const ice=[...tactical.walls.values()][0];assert(a.houseParkour.solidBoxes.some(b=>b.iceWallId===ice.state.id));tactical.damageWall(ice.state.id,260);assert(!a.houseParkour.solidBoxes.some(b=>b.iceWallId===ice.state.id));
 tactical.clear();tactical.resetInventory();emit('keydown',{code:'Digit4',repeat:false});emit('mousedown',{button:0,target:el('view')});a.playerLife.die(5);assert(!tactical.preparing);emit('mouseup',{button:0});assert.equal(tactical.grenades.size,0);a.playerLife.update(5,false);assert.equal(tactical.inventory.grenades,3);
 console.log('Tactical integration: number-4 equip, visible trajectory, release-only throw, no gun fire, weapon return, ice colliders and death guards pass');
 // Low frame rates cannot lengthen grenade fuses or desynchronize online timing.
 tactical.clear();tactical.resetInventory();a.playerLife.reset();a.player.userData.dead=false;a.start();a.player.position.set(0,0,0);tactical.equipGrenade();tactical.beginThrow();tactical.endThrow();vm.runInContext('clock.getDelta=()=>.1',context);for(let i=0;i<30;i++)a.frame();assert.equal(tactical.grenades.size,0,'At 10 FPS a 2.8s fuse still expires within 3 real seconds');
+
+// Verify that the current game emits all posture/equipment fields through the real transport.
+const originalSend=net.multiplayer.sendState;let outgoing;net.multiplayer.sendState=state=>{outgoing=state;};
+gear.jetpackSystem.equipped=true;a.controller.keys.jetpack=true;
+a.controller.crouchBlend=.8;a.controller.proneBlend=.75;a.controller.proneSlope=.12;a.controller.proneRoll=-.08;a.controller.horizontalSpeed=.6;
+vm.runInContext('sendNetworkState()',context);
+assert.equal(outgoing.crouchBlend,.8);assert.equal(outgoing.prone,.75);assert.equal(outgoing.proneSlope,.12);assert.equal(outgoing.proneRoll,-.08);assert.equal(outgoing.speed,.6);assert.equal(outgoing.jetpack,true);assert.equal(outgoing.jetpackActive,true);
+net.multiplayer.sendState=originalSend;
+console.log('Current game serializes prone blend, terrain tilt, movement speed and jetpack');

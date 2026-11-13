@@ -365,7 +365,9 @@ export class GameRoom {
    if(prev?.dead){this.broadcast3D(prev);return;}
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,firing:!!data.firing,reload:finite(data.reload,0,1)?data.reload:0,inCar:!!data.inCar,
-    grounded:data.grounded!==false,crouching:!!data.crouching,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
+    grounded:data.grounded!==false,crouching:!!data.crouching,crouchBlend:finite(data.crouchBlend,0,1)?data.crouchBlend:(data.crouching?1:0),
+    prone:data.grounded!==false&&finite(data.prone,0,1)?data.prone:0,proneSlope:finite(data.proneSlope,-.25,.25)?data.proneSlope:0,proneRoll:finite(data.proneRoll,-.16,.16)?data.proneRoll:0,
+    speed:finite(data.speed,0,20)?data.speed:0,jetpack:data.jetpack===true,jetpackActive:data.jetpack===true&&data.jetpackActive===true,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
     attachments:(()=>{const src=data.attachments&&typeof data.attachments==='object'?data.attachments:{};const out={};for(const key of ['optic','suppressor','extended','grip','stock'])if(src[key]===true)out[key]=true;return out;})(),
     soldierSkin:['original','arctic','desert','shadow'].includes(data.soldierSkin)?data.soldierSkin:'original',weaponSkin:['original','sand','blue','ember'].includes(data.weaponSkin)?data.weaponSkin:'original',dead:false,deadUntil:0,health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0,grenades:prev?.grenades??3,iceCharges:prev?.iceCharges??3,lastGearAt:prev?.lastGearAt??0,gear:data.gear==='grenade'?'grenade':'none'};
    this.players.set(meta.id,state);this.save3D(meta.id);this.broadcast3D(state);if(!prev)this.broadcastRanking();return;
@@ -394,13 +396,12 @@ export class GameRoom {
    const pellet=data.pellet,target=this.players.get(String(data.targetId));
    if(!shot||!Number.isInteger(pellet)||!shot.rays[pellet]||shot.used[pellet]||!target||target.dead||target.id===meta.id)return;
    const ray=shot.rays[pellet],spec=weapons[shot.weapon];
-   const dx=target.x-shot.origin.x,dy=target.y+1.5-shot.origin.y,dz=target.z-shot.origin.z;
-   const along=dx*ray.x+dy*ray.y+dz*ray.z;
-   if(shot.stops?.[pellet]!=null&&along>shot.stops[pellet]+.05)return;
-   if(along<-.25||along>spec.range+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
+   const distance=globalThis.TacticalRules.bodyHitDistance(shot.origin,ray,target,spec.range);
+   if(distance===null)return;
+   if(shot.stops?.[pellet]!=null&&distance>shot.stops[pellet]+.05)return;
    shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
    const killed=target.health===0;
-   if(killed){shooter.kills++;target.dead=true;target.deadUntil=this.battle.enabled?0:now+5000;target.moving=false;target.running=false;target.aiming=false;}
+   if(killed){shooter.kills++;target.dead=true;target.deadUntil=this.battle.enabled?0:now+5000;target.moving=false;target.running=false;target.aiming=false;target.jetpack=false;target.jetpackActive=false;}
    this.broadcast3D({type:'hit3d',shotId:shot.shotId,attackerId:meta.id,targetId:target.id,health:target.health,damage:spec.damage,killed,respawnIn:killed?(this.battle.enabled?0:5):0,kills:shooter.kills});
    if(killed){
     this.broadcast3D(target);if(this.battle.enabled)this.checkBattleEnd();else this.scheduleRespawns();this.broadcastRanking();
@@ -423,7 +424,7 @@ export class GameRoom {
   }
   if(this.battle.enabled&&this.battle.phase==='running'){this.tickBattleBots(now);this.advanceSafeZone(now);}
   for(const target of this.players.values())if(!this.battle.enabled&&target.dead&&target.deadUntil<=now){
-   Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
+   Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,crouching:false,crouchBlend:0,prone:0,proneSlope:0,proneRoll:0,speed:0,jetpack:false,jetpackActive:false,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
    this.tactical.inventory(target);this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
   }
   this.scheduleRespawns();

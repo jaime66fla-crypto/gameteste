@@ -47,8 +47,8 @@ class MultiplayerWorld{
    remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;remote.attachmentsKey=attachmentsKey;remote.weaponSkin=state.weaponSkin;
   }
   if(!!state.jetpack!==!!remote.jetpack){
-   if(state.jetpack){remote.jetpack=this._buildRemoteJetpack();remote.avatar.group.add(remote.jetpack);}
-   else if(remote.jetpack){remote.avatar.group.remove(remote.jetpack);this.disposeObject(remote.jetpack,true);remote.jetpack=null;}
+   if(state.jetpack){remote.jetpack=this._buildRemoteJetpack();remote.avatar.mountBackpack(remote.jetpack);}
+   else if(remote.jetpack){remote.jetpack.parent?.remove(remote.jetpack);this.disposeObject(remote.jetpack,true);remote.jetpack=null;}
   }
  }
  update(dt){for(const remote of this.players.values()){
@@ -80,7 +80,7 @@ class MultiplayerWorld{
     recoil:a.recoil||0,shot:remote.flashTime>0?1:0
    });
   }
-  a.update(poseDt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,firing:!!s.firing,reload:s.reload||0,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
+  a.update(poseDt,{dead:!!s.dead,speed:Number.isFinite(s.speed)?s.speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,firing:!!s.firing,reload:s.reload||0,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching,prone:s.grounded===false?0:(s.prone||0),proneSlope:s.proneSlope||0,proneRoll:s.proneRoll||0,optic:!!att.optic,stock:!!att.stock,suppressed:!!att.suppressor});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }
@@ -108,7 +108,7 @@ class MultiplayerWorld{
    if(this.effects.length>36){const old=this.effects.shift();this.scene.remove(old.line);old.line.geometry.dispose();old.line.material.dispose();}
   }
  }
- remove(id){const remote=this.players.get(id);if(!remote)return;const a=remote.avatar;this.scene.remove(a.group);this.disposeObject(a.gun,true);for(const material of a.body.material)material.dispose();a.hitSurface.material.dispose();a.skeleton.dispose();this.players.delete(id);}
+ remove(id){const remote=this.players.get(id);if(!remote)return;const a=remote.avatar;if(remote.jetpack)this.disposeObject(remote.jetpack,true);this.scene.remove(a.group);this.disposeObject(a.gun,true);for(const material of a.body.material)material.dispose();a.hitSurface.material.dispose();a.skeleton.dispose();this.players.delete(id);}
  disposeObject(object,geometry){const mats=new Set(),geos=new Set();object.traverse(o=>{if(o.geometry)geos.add(o.geometry);for(const m of (Array.isArray(o.material)?o.material:[o.material]))if(m)mats.add(m)});for(const m of mats)m.dispose();if(geometry)for(const g of geos)g.dispose();}
  clear(){for(const id of [...this.players.keys()])this.remove(id);for(const e of this.effects){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose()}this.effects=[];}
 }

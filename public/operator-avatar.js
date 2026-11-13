@@ -171,6 +171,14 @@ class OperatorAvatar{
   this.weaponSwapTime=0;this.weaponSwapDuration=.4;this.weaponSwapFrom='pistol';
   this.update(0,{armed:false});
  }
+ mountBackpack(object){
+  // Anchor to the chest bind frame so equipment follows crouch, crawl and turns.
+  // Retain the existing standing placement and size despite the avatar's 0.9 scale.
+  const scale=this.group.scale.y;
+  object.position.set(-bind[3][12],1.28/scale-bind[3][13],-.34/scale-bind[3][14]);
+  object.rotation.set(0,0,0);object.scale.multiplyScalar(1/scale);
+  this.torso.add(object);return object;
+ }
  setWeapon(id){
   if(!id||id===this.weaponId)return;
   this.weaponSwapFrom=this.weaponId;

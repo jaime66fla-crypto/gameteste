@@ -43,7 +43,7 @@ class TacticalRoom{
   for(const target of this.room.players.values()){
    if(target.dead)continue;const damage=R.blastDamage(grenade.position,target,blockers);if(!damage)continue;
    target.health=Math.max(0,target.health-damage);const killed=target.health===0;
-   if(killed){Object.assign(target,{dead:true,deadUntil:now+5000,moving:false,running:false,aiming:false,gear:'none'});if(owner&&owner.id!==target.id){owner.kills++;this.room.save3D(owner.id);}}
+   if(killed){Object.assign(target,{dead:true,deadUntil:now+5000,moving:false,running:false,aiming:false,gear:'none',jetpack:false,jetpackActive:false});if(owner&&owner.id!==target.id){owner.kills++;this.room.save3D(owner.id);}}
    this.room.broadcast3D({type:'hit3d',kind:'grenade',shotId:'grenade-'+grenade.id,attackerId:grenade.ownerId,targetId:target.id,health:target.health,damage,killed,respawnIn:killed?5:0,kills:owner?.kills||0});this.room.save3D(target.id);this.room.broadcast3D(target);
   }
   for(const wall of [...this.walls.values()]){const damage=R.blastDamage(grenade.position,wall.position,blockers.filter(b=>b.iceWallId!==wall.id));if(damage)this.damageWall(wall.id,damage*2.5);}

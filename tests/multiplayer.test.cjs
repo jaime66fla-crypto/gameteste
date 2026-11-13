@@ -77,3 +77,30 @@ test('ice is shared with late joiners, stops forged bullet hits, takes damage an
  assert.equal(s.room.players.get(b.meta.id).health,100,'Even the ice-breaking bullet cannot pass through');assert(b.messages.some(m=>m.type==='icewall-remove3d'&&m.destroyed));
  s.advance(500);s.room.webSocketMessage(a,JSON.stringify({type:'gear3d',kind:'ice',direction:{x:0,y:0,z:-1}}));await s.settle();await s.hibernate();s.advance(25001);await s.room.alarm();assert.equal(s.room.tactical.walls.size,0);
 });
+
+test('posture and jetpack survive broadcast, late join and hibernation with bounded inputs',async()=>{
+ const s=server(),a=(await s.connect('create')).ws,b=(await s.connect('join')).ws;
+ const state={type:'state3d',x:0,y:0,z:0,angle:0,weapon:'rifle',grounded:true,crouching:true,crouchBlend:.75,prone:1,proneSlope:.2,proneRoll:-.1,speed:1.15,jetpack:true,jetpackActive:true};
+ s.room.webSocketMessage(a,JSON.stringify(state));
+ const replicated=b.messages.filter(m=>m.id===a.meta.id&&m.type==='state3d').at(-1);
+ for(const key of ['crouchBlend','prone','proneSlope','proneRoll','speed','jetpack','jetpackActive'])assert.equal(replicated[key],state[key],key);
+ await s.settle();await s.hibernate();const late=(await s.connect('join')).ws;
+ assert.equal(late.messages[0].players.find(p=>p.id===a.meta.id).prone,1);
+ assert.equal(s.room.players.get(a.meta.id).jetpack,true);
+ s.room.webSocketMessage(a,JSON.stringify({...state,prone:9,proneSlope:900,proneRoll:-900,speed:999,jetpack:false}));
+ const safe=s.room.players.get(a.meta.id);assert.equal(safe.prone,0);assert.equal(safe.proneSlope,0);assert.equal(safe.proneRoll,0);assert.equal(safe.speed,0);assert.equal(safe.jetpackActive,false);
+});
+
+test('server rejects shots over a prone body and accepts torso hits in every posture',async()=>{
+ const s=server(),a=(await s.connect('create')).ws,b=(await s.connect('join')).ws;
+ const state=(z,extra={})=>({type:'state3d',x:0,y:0,z,angle:0,weapon:'pistol',...extra});
+ s.room.webSocketMessage(a,JSON.stringify(state(0)));let sequence=0;
+ const fire=(height)=>{s.advance(200);const shotId='posture-'+sequence++;s.room.webSocketMessage(a,JSON.stringify({type:'shot3d',weapon:'pistol',shotId,origin:{x:0,y:height,z:0},rays:[{x:0,y:0,z:1}]}));s.room.webSocketMessage(a,JSON.stringify({type:'hit3d',shotId,pellet:0,targetId:b.meta.id}));};
+ for(const [pose,height]of[[{prone:1,crouching:true},.3],[{crouching:true},.85],[{},1.4]]){
+  s.room.webSocketMessage(b,JSON.stringify(state(6,pose)));
+  s.room.players.get(b.meta.id).health=100;
+  if(pose.prone){fire(1.5);assert.equal(s.room.players.get(b.meta.id).health,100,'empty air above crawling target');}
+  if(pose.crouching&&!pose.prone){fire(1.65);assert.equal(s.room.players.get(b.meta.id).health,100,'empty air above crouched target');}
+  fire(height);assert.equal(s.room.players.get(b.meta.id).health,70,'torso must receive actual weapon damage');
+ }
+});

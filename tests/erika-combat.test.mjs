@@ -17,7 +17,7 @@ assert.equal(gun.parent,bones.spine2.bone,'Resting weapon must be mounted on the
 assert(!a.player.userData.avatarMixer,'Static FBX clips must not suppress pose animation');
 for(const yaw of [0,Math.PI/2,Math.PI]){
  a.player.position.set(0,0,0);a.setYaw(yaw);a.setPitch(0);a.resetShot();
- elements.get('view').listeners.pointerdown({pointerType:'mouse',button:0});
+ elements.get('view').listeners.mousedown({pointerType:'mouse',button:0,preventDefault(){}});
  a.updateThirdPersonCamera(1,a.player);a.updateAimFromPointer();a.updateProceduralAvatar(1/30,true);a.updateWeaponPose();
  assert.equal(gun.parent,bones.handR.bone,'Raised weapon must be attached to the right hand');
  const wrist=bones.handR.bone.getWorldPosition(new THREE.Vector3());
@@ -28,7 +28,7 @@ for(const yaw of [0,Math.PI/2,Math.PI]){
  const facing=new THREE.Vector3(0,0,1).applyQuaternion(model.getWorldQuaternion(new THREE.Quaternion()));
  const target=a.aimPoint.clone().sub(a.player.position);target.y=0;target.normalize();
  assert(facing.dot(target)>.999,'Avatar must face the target, rather than the camera');
- globalListeners.pointerup({button:0});
+ globalListeners.mouseup({button:0});
 }
 a.setTime(200);a.updateProceduralAvatar(1,true);a.updateWeaponPose();
 assert.equal(gun.parent,bones.spine2.bone);

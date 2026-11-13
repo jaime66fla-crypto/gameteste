@@ -1,0 +1,9 @@
+{
+  "name": "gameteste",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/*.test.cjs tests/*.test.mjs",
+    "check": "node scripts/check-syntax.cjs"
+  },
+  "devDependencies": { "three": "0.187.0" }
+}

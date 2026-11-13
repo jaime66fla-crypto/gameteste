@@ -3,12 +3,17 @@
 const CONFIG=Object.freeze({fuse:2.8,radius:6,damage:120,gravity:16,speed:15,iceHealth:260,iceSeconds:25,grenades:3,ice:3});
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function terrain(x,z){const d=Math.hypot(x,z);return d<=25?0:(Math.sin(x*.05)*Math.cos(z*.05)*2.5+Math.sin(x*.12+z*.1)*.8)*Math.min((d-25)/40,1);}
+const URBAN_LAYOUT=[[-58,-57,10,9,5.5],[-42,-57,12,10,8],[-25,-57,10,10,5.5],[27,-57,12,10,10],[49,-57,12,10,16],[68,-57,11,11,6],[-61,-31,11,11,6],[-40,-30,13,11,15],[40,-30,13,12,20],[63,-30,12,10,6],[-65,33,12,10,5.5],[-43,35,13,11,17],[-24,38,10,11,6],[28,37,14,12,19],[51,36,13,10,7]];
 function mapBoxes(){
  const boxes=[],add=(x,y,z,w,h,d)=>boxes.push({minX:x-w/2,maxX:x+w/2,minY:y-h/2,maxY:y+h/2,minZ:z-d/2,maxZ:z+d/2});
  for(const [x,z,w,h,d]of[[0,14,12,5,8],[-16,-4,9,7,10],[17,-8,11,4.5,9],[0,-22,20,4.5,5]]){
   const y=terrain(x,z);add(x,y+h/2,z,w,h,d);add(x,y+h+.45,z,w*.85,.9,d*.85);
   for(const [dx,dy,dz,sw,sh,sd]of[[w/2+1.1,.6,d*.25,1.5,1.2,1.5],[w/2+1,1.25,-d*.15,1.5,2.5,1.5],[w/2+.85,3.65,-d*.35,1.7,.35,2],[w*.25,h-.15,-d/2-.75,2.2,.35,1.5]])add(x+dx,y+dy,z+dz,sw,sh,sd);
  }
+ // Match the walkable stairs and urban expansion in the current 3D scene.
+ const stairBase=terrain(10,26);
+ for(let i=0;i<6;i++){const h=(i+1)*.19;add(10,stairBase+h/2,26+(i-3)*.55,2.5,h,.55);}
+ for(const [x,z,w,d,h]of URBAN_LAYOUT)add(x,terrain(x,z)+h/2,z,w,h,d);
  for(const [x,z]of[[-4,-3],[4,-5]])add(x,terrain(x,z)+.65,z,4,1.3,.75);
  return boxes;
 }
@@ -19,6 +24,21 @@ function rayBox(origin,direction,box,max=Infinity,padding=0){
   let a0=(lo-origin[a])/direction[a],a1=(hi-origin[a])/direction[a];if(a0>a1)[a0,a1]=[a1,a0];near=Math.max(near,a0);far=Math.min(far,a1);if(near>far)return null;
  }
  return near;
+}
+// Conservative body envelope in player-local axes, following stance transitions.
+// The client still reports real skinned-mesh impacts; the server rejects impossible ones.
+function bodyHitDistance(origin,direction,target,max=Infinity){
+ const prone=target.grounded===false?0:clamp(Number(target.prone)||0,0,1);
+ const crouch=target.grounded===false?0:Number.isFinite(target.crouchBlend)?clamp(target.crouchBlend,0,1):(target.crouching?1:0);
+ const height=1.95-.4*crouch;
+ const slope=clamp(Math.abs(Number(target.proneSlope)||0),0,.25);
+ const roll=clamp(Math.abs(Number(target.proneRoll)||0),0,.16);
+ // The head sweeps forward before it lowers; a linear box blend clips that arc.
+ const box={minX:-.58,maxX:.58,minY:-.12-.12*prone,maxY:height+(.78+slope+roll-height)*prone+.5*Math.sin(Math.PI*prone),minZ:-.65,maxZ:.65+1.35*Math.sin(Math.PI*.5*prone)};
+ const sin=Math.sin(target.angle||0),cos=Math.cos(target.angle||0);
+ const dx=origin.x-target.x,dz=origin.z-target.z;
+ return rayBox({x:dx*cos-dz*sin,y:origin.y-target.y,z:dx*sin+dz*cos},
+  {x:direction.x*cos-direction.z*sin,y:direction.y,z:direction.x*sin+direction.z*cos},box,max);
 }
 function firstSolid(origin,direction,boxes,max=Infinity,padding=0){let found=null;for(const box of boxes){const distance=rayBox(origin,direction,box,max,padding);if(distance!==null&&(!found||distance<found.distance))found={box,distance};}return found;}
 function blocked(from,to,boxes){const d={x:to.x-from.x,y:to.y-from.y,z:to.z-from.z},length=Math.hypot(d.x,d.y,d.z);if(length<.001)return false;for(const a of ['x','y','z'])d[a]/=length;return !!firstSolid(from,d,boxes,Math.max(0,length-.04));}
@@ -62,5 +82,5 @@ function iceWall(id,ownerId,p,direction,now,boxes=[],players=[],height=terrain){
  }
  return wall;
 }
-globalThis.TacticalRules={CONFIG,terrain,mapBoxes,rayBox,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
+globalThis.TacticalRules={CONFIG,URBAN_LAYOUT,terrain,mapBoxes,rayBox,bodyHitDistance,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
 })();

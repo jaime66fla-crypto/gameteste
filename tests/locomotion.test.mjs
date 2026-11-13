@@ -16,7 +16,7 @@ for(let i=0;i<100;i++){
  assert(foot.y>a.player.position.y-.025,'Feet must stay above the floor');
 }
 assert(maxPlantError<.06,'Support-foot reach must stay within six centimetres');
-assert(Math.abs(a.locomotion.speed-2.6)<.01);assert(maxSlide<.025,`Planted-foot drift per frame is ${maxSlide}`);
+assert(Math.abs(a.locomotion.speed-4.2)<.01);assert(maxSlide<.025,`Planted-foot drift per frame is ${maxSlide}`);
 a.keys.clear();const movingSpeed=a.locomotion.speed;step();assert(a.locomotion.speed>0&&a.locomotion.speed<movingSpeed,'Stopping must decelerate smoothly');
 for(let i=0;i<75;i++)step();assert(a.locomotion.speed<.025&&a.locomotion.blend<.01,'Locomotion must settle to idle');
 // A wall must stop both real motion and the distance-driven gait clock.
@@ -25,13 +25,13 @@ for(let i=0;i<30;i++)step();assert.equal(a.locomotion.speed,0);assert.equal(a.lo
 a.buildings.length=0;
 // Running, walking backward, and strafing must not corrupt the real skeleton or weapon mount.
 for(const key of ['w','s','a','d']){
- a.keys.clear();a.keys.add(key);a.keys.add('shift');elements.get('view').listeners.pointerdown({pointerType:'mouse',button:2,clientX:0,clientY:0});
+ a.keys.clear();a.keys.add(key);a.keys.add('shift');elements.get('view').listeners.mousedown({pointerType:'mouse',button:2,clientX:0,clientY:0,preventDefault(){}});
  for(let i=0;i<50;i++)step();
- assert(a.locomotion.speed>5&&a.locomotion.speed<=5.21);
+ const expectedSpeed=key==='s'?2.34:key==='w'?3:2.7;assert(Math.abs(a.locomotion.speed-expectedSpeed)<.1,'Aimed movement respects directional speed');
  assert.equal(a.player.userData.gun.parent,bones.handR.bone);
  for(const {bone}of Object.values(bones))assert(bone.quaternion.toArray().every(Number.isFinite));
 }
-globalListeners.pointerup({button:2});a.keys.clear();
+globalListeners.mouseup({button:2});a.keys.clear();
 // Exercise the reference-inspired free sprint on the actual FBX, rather than
 // only the aimed stride above: the hands must swing in opposite directions.
 a.setTime(2000);a.keys.add('w');a.keys.add('shift');

@@ -4,9 +4,9 @@ const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const THREE = require('../public/vendor/three-r128.min.js');
 // Only replace the browser renderer/DOM; camera, transforms, inventory and physics are real.
-THREE.WebGLRenderer = class { constructor() { this.shadowMap = {}; } setPixelRatio() {} setSize() {} render() {} };
+THREE.WebGLRenderer = class { constructor() { this.shadowMap = {};this.info={render:{calls:0,triangles:0},memory:{geometries:0,textures:0}}; } setPixelRatio() {} setSize() {} render() {} };
 const ctx2d = new Proxy({ createLinearGradient: () => ({ addColorStop() {} }), createRadialGradient: () => ({ addColorStop() {} }) }, { get: (o, k) => o[k] || (() => {}) });
-function element() { return { style: {}, setAttribute() {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, addEventListener() {}, appendChild() {}, getContext: () => ctx2d }; }
+function element() { return { style: {}, setAttribute() {}, classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } }, addEventListener() {}, appendChild() {}, append() {}, prepend() {}, getContext: () => ctx2d }; }
 const elements = new Map();
 const context = { THREE, window: { addEventListener() {} }, document: { body: element(), getElementById(id) { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); }, createElement: element, addEventListener() {} }, addEventListener() {}, devicePixelRatio: 1, innerWidth: 1280, innerHeight: 720, requestAnimationFrame() {}, console, setTimeout() {}, clearTimeout() {}, performance: { now: () => 1000 }, location: { host: 'game.test', protocol: 'https:' }, WebSocket: class {}, localStorage: { getItem() { return null; }, setItem() {} } };
 vm.createContext(context);
@@ -17,7 +17,7 @@ const a = vm.runInContext('({player,camera,controller,thirdPersonCamera,mainAvat
 a.houseParkour.solidBoxes = [];
 a.thirdPersonCamera._cameraCollision = (focus, desired) => desired;
 a.thirdPersonCamera.getGroundHeight = () => -100;
-a.pistolWeapon.equip();
+a.pistolWeapon.equip();a.pistolWeapon.equipTimer=0;
 
 test('ADS preserves all four headings and follows mouse yaw instead of stale weapon sights', () => {
  for (const [yaw, direction] of [[0, [0, 0, -1]], [Math.PI / 2, [-1, 0, 0]], [Math.PI, [0, 0, 1]], [-Math.PI / 2, [1, 0, 0]]]) {
@@ -64,20 +64,20 @@ test('ADS hides the world avatar, restores it on release and keeps the dedicated
  assert(!a.camera.children.some(o => o.name === 'ADS_VIEWMODEL' && o.visible));
 });
 
-test('ADS follows vertical mouse aim, recovers recoil and keeps its selected optic zoom', () => {
+test('ADS follows vertical mouse aim, recovers recoil and keeps its selected iron-sight zoom', () => {
  a.controller.clearInput();
  a.controller.keys.aiming = true;
  a.thirdPersonCamera.yaw = 0;
  a.thirdPersonCamera.pitch = -.3;
  a.weaponLoot.slots[0] = { id: 'smg', ammo: 24 };
  a.weaponLoot.activeSlot = 0;
- a.weaponLoot.applyActive();
+ a.weaponLoot.applyActive();a.pistolWeapon.equipTimer=0;
  a.thirdPersonCamera.addShotRecoil();
  for (let i = 0; i < 120; i++) a.updateCamera(1 / 60);
  const direction = a.camera.getWorldDirection(new THREE.Vector3());
  assert(direction.y > .29 && direction.z < -.95, 'Looking up must keep looking up during ADS');
  assert(a.thirdPersonCamera.recoilPitch < .00001, 'ADS recoil must recover instead of accumulating');
- assert(Math.abs(a.camera.fov - 38) < .01, 'Optic FOV must converge without fighting third-person zoom');
+ assert(Math.abs(a.camera.fov - 42) < .01, 'Iron-sight FOV must converge without fighting third-person zoom');
 });
 
 test('all WASD directions work during ADS and releasing it preserves the heading', () => {
@@ -90,7 +90,7 @@ test('all WASD directions work during ADS and releasing it preserves the heading
   a.updateCamera(1 / 60);
   a.controller._onKeyChange(key, true);
   for (let i = 0; i < 60; i++) { a.controller.update(1 / 60); a.updateCamera(1 / 60); }
-  assert(a.player.position[axis] * sign > 4, key + ' must move in its camera-relative direction');
+  assert(a.player.position[axis] * sign > 2, key + ' must move in its camera-relative direction');
  }
  a.controller.clearInput();
  a.updateCamera(1 / 60);

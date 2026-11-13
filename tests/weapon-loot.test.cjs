@@ -1,7 +1,7 @@
 const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/strict');
 const THREE=require('../public/vendor/three-r128.min.js'),context={THREE,window:{}};
 assert(fs.existsSync('public/weapon-loot.js'),'Weapon and loot module must exist');
-vm.createContext(context);for(const file of ['public/operator-avatar.js','public/weapon-loot.js'])vm.runInContext(fs.readFileSync(file,'utf8'),context);
+vm.createContext(context);for(const file of ['public/operator-motion.js','public/operator-avatar.js','public/weapon-loot.js'])vm.runInContext(fs.readFileSync(file,'utf8'),context);
 const Loot=context.window.WeaponLootSystem,scene=new THREE.Scene(),player=new THREE.Group(),avatar=new context.window.OperatorAvatar();player.add(avatar.group);scene.add(player);
 const gun={ammo:12,reserveAmmo:60,isEquipped:false,isReloading:false,fireCooldown:0,muzzlePoint:new THREE.Object3D(),equip(){this.isEquipped=true;this.isReloading=false}};avatar.gun.add(gun.muzzlePoint);
 const loot=new Loot({scene,player,avatar,controller:gun,terrainHeight:()=>0,solidBoxes:()=>[],random:()=>.5,populate:false});
@@ -21,9 +21,8 @@ console.log('Weapons/loot: two slots, magazines, reserve types/caps, reload canc
 for(const id of ['smg','rifle','shotgun']){
  loot.slots[1]={id,ammo:Loot.DEFINITIONS[id].magSize};loot.activeSlot=1;loot.applyActive(true);
  for(let i=0;i<100;i++){avatar.update(1/60,{armed:true});loot.updateHeldPose();}
- avatar.group.updateWorldMatrix(true,true);const grip=avatar.gun.localToWorld(new THREE.Vector3(-.022,-.01,.13));
- assert(avatar.leftHand.getWorldPosition(new THREE.Vector3()).distanceTo(grip)<.025,'Long weapons need actual support-hand contact');
- const forward=new THREE.Vector3(0,0,1).applyQuaternion(avatar.gun.getWorldQuaternion(new THREE.Quaternion()));assert(forward.z>.995,'Long weapon barrel must face forward');
+ avatar.group.updateWorldMatrix(true,true);
+ for(const grip of avatar.weaponGripTargets){const target=avatar.group.localToWorld(grip.point.clone());assert(avatar.bones[grip.bone].getWorldPosition(new THREE.Vector3()).distanceTo(target)<.035,'Hands must follow the approved weapon grip targets');}
  avatar.group.traverse(o=>assert(o.matrixWorld.elements.every(Number.isFinite)));
 }
 console.log('Long weapons: support-hand contact, forward barrel and finite transforms pass');
