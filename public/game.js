@@ -411,13 +411,13 @@ function respawnPlayer(){
 
 addEventListener("keydown",e=>{
  const k=e.key.toLowerCase();keys[k]=true;
- if(k==="e")toggleCar();if(k==="p")togglePause();if(k==="r")startReload();if(k==="g")throwGrenade();if(k==="c"&&!e.repeat)selectCover();if(k==="x"&&!e.repeat)selectCover(true);
+ if(k==="e")toggleCar();if(k==="p")togglePause();if(k==="r")startReload();if(k==="g")throwGrenade();if(k==="q"&&!e.repeat)selectCover();if(k==="x"&&!e.repeat)selectCover(true);
  if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k))e.preventDefault()
 },{passive:false});
 addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
 canvas.addEventListener("mousemove",e=>{const r=canvas.getBoundingClientRect();const scale=Math.min(r.width/canvas.width,r.height/canvas.height),ox=(r.width-canvas.width*scale)/2,oy=(r.height-canvas.height*scale)/2;const sx=(e.clientX-r.left-ox)/scale,sy=(e.clientY-r.top-oy)/scale,p=updatePointerAim(sx,sy)});
-canvas.addEventListener("mousedown",e=>{if(e.button===0){mouse.down=true;shoot()}});
-addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false});
+canvas.addEventListener("mousedown",e=>{if(e.button===2){mouse.aiming=true;coverMove(0,0,0,1)}if(e.button===0){mouse.down=true;coverMove(0,0,0,1);shoot()}});
+addEventListener("mouseup",e=>{if(e.button===0)mouse.down=false;if(e.button===2)mouse.aiming=false});
 canvas.addEventListener("contextmenu",e=>e.preventDefault());
 let selectedPlatform=localStorage.getItem("streetPlatform")|| (matchMedia("(pointer:coarse)").matches?"mobile":"desktop");
 function setPlatform(platform){
@@ -430,7 +430,7 @@ function setPlatform(platform){
  const help=document.getElementById("controlHelp");
  if(help)help.textContent=platform==="mobile"
   ?"Analógico esquerdo mover • Analógico direito mirar e atirar • GRANADA lançar • CARRO entrar/sair"
-  :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo • C cobertura • Q espiar • X trocar";
+  :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo • Q cobertura • Mirar/atirar: espiar • X trocar";
  if(platform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
 }
 document.getElementById("desktopPlatformBtn")?.addEventListener("click",()=>setPlatform("desktop"));
@@ -616,7 +616,7 @@ function projectileOutOfWorld(x1,y1,x2,y2){
 }
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=(player.weapon==="shotgun"||player.weapon==="sawedoff")?1.35:player.weapon==="lmg"?1.65:1.05;playSound("reload")}
 
-/* Improvement 10: tactical wall cover (C), peek (Q), change cover (X).
+/* Improvement 10: tactical wall cover (Q), automatic peek on aiming/firing, change cover (X).
    All calculations use world XY, so isometric camera does not change collisions. */
 const coverState={building:-1,side:"",peek:false,offset:0};
 function coverCandidate(b,i,x=player.x,y=player.y){
@@ -651,16 +651,16 @@ function activeCover(){
 }
 function coverMove(dx,dy,dt,run){
  const c=activeCover();if(!c)return false;
- // Move along the wall, not through it. Q exposes the player just beyond the corner.
+ // Move along the wall, not through it. Aim/fire automatically exposes the player.
  const along=dx*c.tx+dy*c.ty,step=player.speed*dt*Math.min(1,run)*along;
  const b=buildings[c.building],margin=player.r+5;
  let nx=player.x+c.tx*step,ny=player.y+c.ty*step;
  if(c.tx)nx=Math.max(b.x-margin,Math.min(b.x+b.w+margin,nx));
  if(c.ty)ny=Math.max(b.y-margin,Math.min(b.y+b.h+margin,ny));
- const peek=keys.q?22:0;
+ const peek=(mouse.aiming||mouse.down||Math.hypot(touchAim.x,touchAim.y)>.12)?22:0;
  nx+=c.nx*(peek-coverState.offset);ny+=c.ny*(peek-coverState.offset);
  if(!collides(nx,ny,player.r)){player.x=nx;player.y=ny;coverState.offset=peek;}
- coverState.peek=!!keys.q;
+ coverState.peek=peek>0;
  return true;
 }
 function drawCoverIndicator(){
@@ -669,12 +669,13 @@ function drawCoverIndicator(){
  ctx.beginPath();ctx.arc(player.x,player.y,player.r+8,Math.PI*.2,Math.PI*.8);ctx.stroke();
  ctx.translate(player.x,player.y-42);undoProjection(ctx);
  ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#e9faff";
- ctx.fillText(coverState.peek?"ESPIANDO":"COBERTURA · Q espiar · X trocar",0,0);
+ ctx.fillText(coverState.peek?"ESPIANDO":"COBERTURA · Q sair · X trocar",0,0);
  ctx.restore();
 }
 
 function shoot(){
  if(!started||paused||player.dead||player.inCar||player.climb||player.reloading||player.shootCd>0)return;
+ coverMove(0,0,0,1);
  if(player.ammo<=0){startReload();return}
  const w=weapons[player.weapon];player.ammo--;player.shootCd=w.fire;playSound(player.weapon);
  const autoWeapon=player.weapon==="smg"||player.weapon==="lmg";
@@ -2324,5 +2325,5 @@ function bindJoystick(id,axis){
  el.addEventListener("lostpointercapture",e=>{if(e.pointerId===active)reset()});
 }
 bindJoystick("moveStick",touchMove);bindJoystick("aimStick",touchAim);
-addEventListener("blur",()=>{touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;mouse.down=false;for(const k of Object.keys(keys))keys[k]=false});
+addEventListener("blur",()=>{touchMove.x=touchMove.y=touchAim.x=touchAim.y=0;mouse.down=false;mouse.aiming=false;for(const k of Object.keys(keys))keys[k]=false});
 document.querySelector('[data-action="reload"]')?.addEventListener("click",startReload);document.querySelector('[data-action="grenade"]')?.addEventListener("click",throwGrenade);
