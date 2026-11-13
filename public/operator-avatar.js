@@ -166,7 +166,7 @@ class OperatorAvatar{
   this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
-  this.footPlant={left:0,right:0};this.stairBlend=0;
+  this.footPlant={left:0,right:0};this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
   this.update(0,{armed:false});
  }
  setWeapon(id){this.weaponId=id;}
@@ -341,6 +341,27 @@ class OperatorAvatar{
    r[14][2]-=t*.10*sharp;
    r[17][2]-=t*.10*sharp;
    pose.root[1]-=.025*pivot;
+  }
+
+  // Short lateral correction steps when changing direction, with shoulders counter-rotating
+  // to keep the sight stable. Does not rotate the player's world-space facing.
+  const wantedPivot=grounded?clamp(turnSharpness,0,1)*clamp(speed/5,0,1):0;
+  this.directionChangeBlend=M.damp(this.directionChangeBlend,wantedPivot,wantedPivot>this.directionChangeBlend?16:9,dt);
+  this.pivotDirection=M.damp(this.pivotDirection,clamp(turn,-1,1),13,dt);
+  if(this.directionChangeBlend>.002){
+   const strength=this.directionChangeBlend,side=this.pivotDirection;
+   const lead=side>=0?15:12,trail=side>=0?12:15;
+   const grip=aiming?0.52:1;
+   r[lead][2]+=.19*side*strength;
+   r[trail][2]-=.14*side*strength;
+   r[lead+1][0]+=.32*strength;
+   r[trail+1][0]+=.13*strength;
+   r[1][1]+=side*.18*strength;
+   r[2][1]-=side*.11*strength*grip;
+   r[3][1]-=side*.12*strength*grip;
+   r[1][2]+=side*.045*strength;
+   r[2][2]-=side*.026*strength;
+   pose.root[1]-=.020*strength;
   }
 
   if(armed&&aimTransition>.001){
