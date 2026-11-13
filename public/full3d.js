@@ -1137,6 +1137,7 @@ class PistolController {
   this.impactEffects=[];
   this.reloadSoundStage=0;
   this.emptyClickCooldown=0;
+  this.mechanismShot=0;
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1579,6 +1580,7 @@ class PistolController {
   const crouchBonus=controller.isCrouching?.82:1;
   const effectiveSpread=spec.spread*(ads?.67:1.35)*movementPenalty*airbornePenalty*crouchBonus;
   this.fireCooldown=spec.fireRate;this.ammo--;
+  this.mechanismShot=1;
   forestAudio.init();forestAudio.playShoot(spec.id);combatBots?.reportSound?.(this.player.position,34,'gunshot');
   this.scene.updateMatrixWorld(true);
   const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
@@ -1630,6 +1632,7 @@ class PistolController {
  update(dt,isMoving){
   this.updateShotEffects(dt);
   this.updateImpactEffects(dt);
+  this.mechanismShot=Math.max(0,this.mechanismShot-dt*16);
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
   this.emptyClickCooldown=Math.max(0,this.emptyClickCooldown-dt);
   this.equipTimer=Math.max(0,this.equipTimer-dt);
@@ -1669,6 +1672,10 @@ class PistolController {
   this.recoil*=Math.exp(-this.recoilPreset.recovery*dt);
   if(this.recoil<.001)this.recoil=0;
 
+  if(this.loot?.heldModels&&window.WeaponLootSystem?.animateMechanics){
+   const model=this.loot.heldModels.get(this.weaponSpec?.id);
+   window.WeaponLootSystem.animateMechanics(model,{reload:this.reloadBlend,reloading:this.isReloading,recoil:this.recoil,shot:this.mechanismShot});
+  }
   if(!this.isEquipped)return;
 
   if(this.avatar.proceduralRig){
