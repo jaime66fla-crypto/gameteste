@@ -2698,10 +2698,10 @@ function pickAction(kind){
  return null;
 }
 function setAction(kind){
- const next=pickAction(kind); if(next===active)return;
+ const next=pickAction(kind); if(next===active){if(active&&['run','walk','idle'].includes(kind)){active.setLoop(THREE.LoopRepeat,Infinity);active.clampWhenFinished=false;}return;}
  if(active)active.fadeOut(.14);
  active=next;
- if(active)active.reset().fadeIn(.14).play();
+ if(active){if(['run','walk','idle'].includes(kind)){active.setLoop(THREE.LoopRepeat,Infinity);active.clampWhenFinished=false;}active.reset().fadeIn(.14).play();}
 }
 
 
@@ -2993,7 +2993,7 @@ addEventListener('resize',resize);resize();
 
 
 /* Current 3D game's aircraft and parachute sequence. No 2D canvas dependencies. */
-const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null,keys:new Set()};
+const deployment={phase:'idle',time:0,height:0,flightZ:0,plane:null,chute:null,button:null,keys:new Set(),fallSpeed:0,glideBlend:0,steerX:0,steerZ:0,openingTime:0};
 function createDeploymentVisuals(){
  if(deployment.plane)return;
  // Original low-poly military transport, using shared materials and simple geometry.
@@ -3039,54 +3039,69 @@ function createDeploymentVisuals(){
   const points=[new THREE.Vector3(dx,3.3,0),new THREE.Vector3(dx*.12,.7,0)];
   canopy.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(points),lineMat));
  }
- player.add(canopy);canopy.visible=false;deployment.chute=canopy;
+ canopy.scale.setScalar(.001);player.add(canopy);canopy.visible=false;deployment.chute=canopy;
  const button=document.createElement('button');button.id='deployAction';button.textContent='PULAR DO AVIÃO';
  button.style.cssText='position:fixed;right:24px;bottom:110px;z-index:30;padding:15px 23px;background:#144f79;color:white;border:2px solid #a8e4fa;border-radius:10px;font:900 14px system-ui;cursor:pointer';
  button.addEventListener('click',deploymentAction);document.body.appendChild(button);deployment.button=button;button.hidden=true;
 }
 function startDeployment(){
- createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=95;deployment.flightZ=0;
+ createDeploymentVisuals();deployment.phase='plane';deployment.time=0;deployment.height=110;deployment.flightZ=0;deployment.fallSpeed=0;deployment.glideBlend=0;deployment.steerX=0;deployment.steerZ=0;deployment.openingTime=0;deployment.chute.scale.setScalar(.001);
  deployment.plane.visible=true;deployment.chute.visible=false;deployment.button.hidden=false;deployment.button.textContent='PULAR DO AVIÃO';
  deployment.keys.clear();player.position.set(-90,deployment.height,0);controller.clearInput();controller.cover.exit();controller.velocity.set(0,0,0);
 }
 function deploymentAction(){
  if(!gameStarted)return;
  if(deployment.phase==='plane'){
-  deployment.phase='freefall';deployment.time=0;deployment.plane.visible=false;deployment.button.textContent='ABRIR PARAQUEDAS';
+  deployment.phase='freefall';deployment.time=0;deployment.fallSpeed=5;deployment.plane.visible=false;deployment.button.textContent='ABRIR PARAQUEDAS';
  }else if(deployment.phase==='freefall')deployParachute();
 }
 function deployParachute(){
  if(deployment.phase!=='freefall')return;
- deployment.phase='glide';deployment.chute.visible=true;deployment.button.hidden=true;
+ deployment.phase='glide';deployment.openingTime=0;deployment.glideBlend=0;deployment.chute.scale.setScalar(.02);deployment.chute.visible=true;deployment.button.hidden=true;
 }
 function updateDeployment(dt){
  const d=deployment;if(d.phase==='idle'||d.phase==='landed')return false;
  d.time+=dt;
  if(d.phase==='plane'){
-  player.position.x=Math.min(90,player.position.x+11*dt);
+  player.position.x=Math.min(90,player.position.x+17*dt);
   player.position.y=d.height;player.position.z=d.flightZ;
   d.plane.position.copy(player.position);d.plane.rotation.y=-Math.PI/2;
   d.plane.rotation.z=Math.sin(d.time*.38)*.018;
   if(player.position.x>=89.5)deploymentAction();
  }else{
-  const keys=d.keys;
-  const held=(...codes)=>codes.some(code=>keys.has(code));
-  const speed=d.phase==='glide'?8:12,down=d.phase==='glide'?8:held('ShiftLeft','ShiftRight')?32:23;
-  player.position.x=THREE.MathUtils.clamp(player.position.x+(Number(held('KeyD','ArrowRight'))-Number(held('KeyA','ArrowLeft')))*speed*dt,-120,120);
-  player.position.z=THREE.MathUtils.clamp(player.position.z+(Number(held('KeyS','ArrowDown'))-Number(held('KeyW','ArrowUp')))*speed*dt,-120,120);
+  const held=(...codes)=>codes.some(code=>d.keys.has(code));
+  const inputX=Number(held('KeyD','ArrowRight'))-Number(held('KeyA','ArrowLeft'));
+  const inputZ=Number(held('KeyS','ArrowDown'))-Number(held('KeyW','ArrowUp'));
+  const magnitude=Math.max(1,Math.hypot(inputX,inputZ));
+  const steerSpeed=d.phase==='glide'?9:13;
+  d.steerX=THREE.MathUtils.lerp(d.steerX,inputX/magnitude*steerSpeed,1-Math.exp(-5*dt));
+  d.steerZ=THREE.MathUtils.lerp(d.steerZ,inputZ/magnitude*steerSpeed,1-Math.exp(-5*dt));
+  if(d.phase==='glide'){
+   d.openingTime+=dt;
+   d.glideBlend=THREE.MathUtils.smoothstep(d.openingTime,0,1.1);
+   const size=THREE.MathUtils.lerp(.02,1,THREE.MathUtils.smoothstep(d.openingTime,0,.85));
+   d.chute.scale.set(size,size*(1+Math.sin(d.time*3)*.015),size);
+   d.chute.rotation.z=THREE.MathUtils.lerp(d.chute.rotation.z,-d.steerX*.018,1-Math.exp(-4*dt));
+   d.chute.rotation.x=THREE.MathUtils.lerp(d.chute.rotation.x,d.steerZ*.012,1-Math.exp(-4*dt));
+  }
+  const targetDown=d.phase==='glide'?THREE.MathUtils.lerp(30,7.5,d.glideBlend):held('ShiftLeft','ShiftRight')?35:26;
+  d.fallSpeed=THREE.MathUtils.lerp(d.fallSpeed,targetDown,1-Math.exp(-3*dt));
+  player.position.x=THREE.MathUtils.clamp(player.position.x+d.steerX*dt,-120,120);
+  player.position.z=THREE.MathUtils.clamp(player.position.z+d.steerZ*dt,-120,120);
   const floor=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
-  player.position.y=Math.max(floor,player.position.y-down*dt);
-  if(d.phase==='freefall'&&player.position.y-floor<12)deployParachute();
+  player.position.y=Math.max(floor,player.position.y-d.fallSpeed*dt);
+  if(d.phase==='freefall'&&player.position.y-floor<26)deployParachute();
+  player.rotation.z=THREE.MathUtils.lerp(player.rotation.z,-d.steerX*.012,1-Math.exp(-3*dt));
   if(player.position.y<=floor+.05){
    player.position.y=floor;d.phase='landed';d.chute.visible=false;d.button.hidden=true;
-   controller.velocity.set(0,0,0);controller.isGrounded=true;d.keys.clear();
+   player.rotation.z=0;controller.velocity.set(0,0,0);controller.moveVelocity.set(0,0,0);controller.isGrounded=true;d.keys.clear();
   }
  }
  if(d.phase==='plane'){
   camera.position.set(player.position.x-27,player.position.y+13,player.position.z+30);
   camera.lookAt(player.position.x+6,player.position.y,player.position.z);
  }else{
-  camera.position.set(player.position.x-15,player.position.y+9,player.position.z+22);
+  camera.position.lerp(new THREE.Vector3(player.position.x-15,player.position.y+9,player.position.z+22),1-Math.exp(-3.5*dt));
   camera.lookAt(player.position.x,player.position.y-2,player.position.z);
  }
  if(camera.far!==350){camera.far=350;camera.updateProjectionMatrix();}
@@ -3335,7 +3350,7 @@ function loop(){
  if(updateDeployment(dt)){
   // Keep the Soldier's rig animated while leaving the aircraft and under the parachute.
   if(deployment.phase==='freefall'||deployment.phase==='glide'){
-   mainAvatar.update(dt,{grounded:false,armed:false,aiming:false,speed:0,verticalVelocity:deployment.phase==='glide'?-8:-23});
+   mainAvatar.update(dt,{grounded:false,armed:false,aiming:false,speed:0,verticalVelocity:-deployment.fallSpeed});
   }
   if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();multiplayerWorld.update(dt);safeZoneVisual.update();}}
   renderer.render(scene,camera);performancePanel.frame(elapsed*1000);return;
