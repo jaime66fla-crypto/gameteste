@@ -57,6 +57,7 @@ class CombatBotSystem {
   const hit=CombatBotSystem.firstHit(this.scene,ray,bot.group,true);
   const end=hit?hit.point:start.clone().addScaledVector(direction,distance);
   this.tracer(start,end);bot.flashTime=.065;
+  if(hit?.object?.userData?.iceWallId)this.onCoverHit?.(hit.object.userData.iceWallId,6);
   if(hit){for(let o=hit.object;o;o=o.parent){if(o===this.player){this.damagePlayer(6);break;}}}
  }
  update(dt){

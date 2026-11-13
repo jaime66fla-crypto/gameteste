@@ -686,6 +686,11 @@ class ForestAudioSystem {
   this._shotNoise(now+.010,.018,spec.crack,2300,7600);
   this._shotTail(now+.035,spec.tail,.055);
  }
+ playTactical(kind,distance=0){
+  if(!this.ctx||!this.enabled)return;const now=this.ctx.currentTime,volume=Math.max(.025,1/(1+distance*.1));
+  if(kind==='explosion'){this._shotNoise(now,.25,.5*volume,80,2200);this._shotTone(now,65,.5,.3*volume,'sine',22);this._shotTail(now+.04,.65,.13*volume);}
+  else{this._shotNoise(now,.18,.18*volume,1800,6500);this._shotTone(now,kind==='icebreak'?410:950,.22,.1*volume,'triangle',kind==='icebreak'?140:250);}
+ }
   playHit(){
   if(!this.ctx||!this.enabled)return;
   const now=this.ctx.currentTime;
@@ -1249,6 +1254,7 @@ class PistolController {
    if(!gameStarted||player.userData.dead||e.repeat)return;
    if(e.code==='Digit1'||e.code==='Numpad1')this.loot?.select(0);
    if(e.code==='Digit2'||e.code==='Numpad2')this.loot?.select(1);
+   if(e.code==='Digit4'||e.code==='Numpad4')tacticalGear.equipGrenade();
    if(e.code==='Digit3'||e.code==='Numpad3'){this.triggerHeld=false;this.toggle();}
    if(e.code==='KeyR'&&this.isEquipped)this.reload();
   });
@@ -1266,7 +1272,7 @@ class PistolController {
  }
 
  equip(){
-
+  if(typeof tacticalGear!=='undefined')tacticalGear.unequip();
   this.isEquipped=true;
   this.isReloading=false;
   this.pistol.visible=true;
@@ -1329,7 +1335,7 @@ class PistolController {
   this.fireCooldown=spec.fireRate;this.ammo--;
   forestAudio.init();forestAudio.playShoot(spec.id);
   this.scene.updateMatrixWorld(true);
-  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),networkRays=[],networkHits=[];
+  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
@@ -1343,6 +1349,7 @@ class PistolController {
     if(obstruction){hit=obstruction;end=obstruction.point;}
    }
    networkRays.push(end.clone().sub(start).normalize());
+   const iceId=hit?.object?.userData?.iceWallId;if(iceId)damageByWall.set(iceId,(damageByWall.get(iceId)||0)+spec.damage);
    if(hit?.object?.userData?.remoteId)networkHits.push({targetId:hit.object.userData.remoteId,pellet});
    const tracer=new THREE.Line(new THREE.BufferGeometry().setFromPoints([start,end]),new THREE.LineBasicMaterial({color:0xffe8a3}));this.scene.add(tracer);
    setTimeout(()=>{this.scene.remove(tracer);tracer.geometry.dispose();tracer.material.dispose();},45);
@@ -1352,6 +1359,7 @@ class PistolController {
     damageByTarget.set(target,(damageByTarget.get(target)||0)+spec.damage*falloff);
    }
   }
+  for(const [id,damage]of damageByWall)tacticalGear.damageWall(id,damage);
   if(multiplayer.active){
    const shotId=Date.now().toString(36)+'-'+(++multiplayerShotSequence).toString(36);
    multiplayer.send({type:'shot3d',shotId,weapon:spec.id,origin:{x:start.x,y:start.y,z:start.z},rays:networkRays.map(r=>({x:r.x,y:r.y,z:r.z}))});
@@ -2150,14 +2158,14 @@ const playerLife=new window.PlayerLife({
  onDeath:()=>{
   corpseFallVelocity=Math.min(0,controller.velocity.y);player.userData.dead=true;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.horizontalSpeed=0;
   const deathPosition=player.position.clone();
-  weaponLoot.dropOnDeath(deathPosition);
+  tacticalGear.unequip();weaponLoot.dropOnDeath(deathPosition);
   const jetpackPosition=weaponLoot.safeDrop(deathPosition)||new THREE.Vector3(deathPosition.x,corpseFloorAt(deathPosition.x,deathPosition.z,deathPosition.y),deathPosition.z);
   jetpackSystem.dropOnDeath(jetpackPosition);
  },
  onRespawn:()=>{
   player.userData.dead=false;combatBots.health=100;controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;controller.stamina=controller.maxStamina;
   if(!multiplayer.active)player.position.set(0,forestEnvironment.getTerrainHeight(0,0),0);
-  weaponLoot.resetAfterDeath();playerDamageFlash=0;
+  weaponLoot.resetAfterDeath();tacticalGear.resetInventory();playerDamageFlash=0;
  }
 });
 let lastReceivedDamage=0;
@@ -2167,6 +2175,30 @@ const combatBots=new window.CombatBotSystem({
  onPlayerHit:health=>playerLife.receiveHealth(health),
  onPlayerDeath:()=>playerLife.die(5)
 });
+
+let tacticalNoticeTime=0;
+const tacticalGear=new window.TacticalGear({
+ scene,player,camera,hand:mainAvatar.rightHand,boxes:()=>houseParkour.solidBoxes,terrainHeight:forestEnvironment.getTerrainHeight,
+ canAct:()=>gameStarted&&!player.userData.dead,online:()=>multiplayer.active,send:message=>multiplayer.send(message),
+ onEquip:()=>{pistolWeapon.holster();pistolWeapon.triggerHeld=false;controller.keys.aiming=false;},
+ targets:()=>[
+  ...(!playerLife.dead?[{id:'self',position:player.position,damage:amount=>combatBots.damagePlayer(amount)}]:[]),
+  ...(multiplayer.active?[...multiplayerWorld.players.values()].filter(p=>!p.state.dead).map(p=>({position:p.avatar.group.position,damage:()=>{}})):combatBots.bots.filter(b=>b.alive).map(b=>({position:b.group.position,damage:amount=>b.takeDamage(amount)})))
+ ],
+ onEffect:(kind,position)=>forestAudio.playTactical(kind,player.position.distanceTo(new THREE.Vector3(position.x,position.y,position.z))),
+ notify:message=>{const notice=document.getElementById('tacticalNotice');if(notice){notice.textContent=message;notice.hidden=false;tacticalNoticeTime=2.5;}}
+});
+combatBots.onCoverHit=(id,damage)=>tacticalGear.damageWall(id,damage);
+addEventListener('keydown',e=>{if(gameStarted&&!player.userData.dead&&!e.repeat&&e.code==='KeyV')tacticalGear.deployIce();});
+addEventListener('mousedown',e=>{if(e.button===0&&e.target===canvas)tacticalGear.beginThrow();});
+addEventListener('mouseup',e=>{if(e.button===0)tacticalGear.endThrow();});
+addEventListener('blur',()=>tacticalGear.cancelThrow());
+document.getElementById('grenadeSlotBtn')?.addEventListener('click',()=>tacticalGear.equipGrenade());
+document.getElementById('iceWallBtn')?.addEventListener('click',()=>tacticalGear.deployIce());
+const grenadeThrowButton=document.getElementById('grenadeThrowBtn');
+grenadeThrowButton?.addEventListener('pointerdown',e=>{e.preventDefault();grenadeThrowButton.setPointerCapture?.(e.pointerId);tacticalGear.beginThrow();});
+grenadeThrowButton?.addEventListener('pointerup',e=>{e.preventDefault();tacticalGear.endThrow();});
+for(const event of ['pointercancel','lostpointercapture'])grenadeThrowButton?.addEventListener(event,()=>tacticalGear.cancelThrow());
 
 function updateCamera(dt){
  if(playerLife.dead){
@@ -2236,6 +2268,7 @@ function hideGameMenu(){
  forestAudio.init();
 }
 function showGameMenu(){
+ tacticalGear.unequip();
  if(multiplayer.active||multiplayer.pending)leaveRoom();
  controller.clearInput();pistolWeapon.triggerHeld=false;
  gameStarted=false;
@@ -2269,15 +2302,16 @@ function setMultiplayerBots(active){for(const bot of combatBots.bots)bot.group.v
 const multiplayer=new window.MultiplayerClient({
  onStatus:message=>roomStatus(message),
  onReady:welcome=>{
-  multiplayerWorld.clear();playerLife.reset();player.userData.dead=false;combatBots.health=100;setMultiplayerBots(false);
+  tacticalGear.snapshot(welcome.tactical);multiplayerWorld.clear();playerLife.reset();player.userData.dead=false;combatBots.health=100;setMultiplayerBots(false);
   controller.cover.exit();controller.clearInput();controller.velocity.set(0,0,0);controller.isGrounded=true;
   const slot=welcome.players.length;player.position.set(-4+(slot%4)*2.5,0,6+Math.floor(slot/4)*3);
   player.position.y=forestEnvironment.getTerrainHeight(player.position.x,player.position.z);
   for(const state of welcome.players)if(state.id!==welcome.id)multiplayerWorld.receive(state);
   networkTick=1;sendNetworkState();roomHud();hideGameMenu();
  },
- onDisconnect:wasActive=>{multiplayerWorld.clear();setMultiplayerBots(true);roomHud();if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
+ onDisconnect:wasActive=>{tacticalGear.clear();tacticalGear.resetInventory();multiplayerWorld.clear();setMultiplayerBots(true);roomHud();if(wasActive){showGameMenu();switchMenuView('view-multiplayer');}},
  onMessage:data=>{
+  if(['grenade3d','icewall3d','icewall-remove3d','explosion3d','inventory3d'].includes(data.type)){tacticalGear.receive(data);return;}
   if(data.type==='state3d'&&data.id!==multiplayer.id)multiplayerWorld.receive(data);
   else if(data.type==='leave')multiplayerWorld.remove(data.id);
   else if(data.type==='shot3d'&&data.ownerId!==multiplayer.id)multiplayerWorld.shot(data);
@@ -2295,8 +2329,8 @@ const multiplayer=new window.MultiplayerClient({
   roomHud();
  }
 });
-function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none'});}
-function leaveRoom(){confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);playerLife.reset();player.userData.dead=false;combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
+function sendNetworkState(){multiplayer.sendState({x:player.position.x,y:player.position.y,z:player.position.z,angle:player.rotation.y,moving:controller.horizontalSpeed>.1,running:controller.keys.sprint&&controller.stamina>0,grounded:controller.isGrounded,crouching:controller.isCrouching,verticalVelocity:controller.velocity.y,aiming:controller.keys.aiming,weapon:pistolWeapon.isEquipped?pistolWeapon.weaponSpec.id:'none',gear:tacticalGear.active||'none'});}
+function leaveRoom(){tacticalGear.clear();tacticalGear.resetInventory();confirmedNetworkShots.clear();multiplayer.disconnect();multiplayerWorld.clear();setMultiplayerBots(true);playerLife.reset();player.userData.dead=false;combatBots.health=100;roomHud();roomStatus('Você saiu da sala.');}
 function enterRoom(action){
  if(multiplayer.pending)return;
  const input=document.getElementById('input-room-code');
@@ -2360,6 +2394,7 @@ function loop(){
  else{controller.clearInput();const floor=corpseFloorAt(player.position.x,player.position.z,player.position.y);corpseFallVelocity-=22*dt;player.position.y=Math.max(floor,player.position.y+corpseFallVelocity*dt);if(player.position.y===floor)corpseFallVelocity=0;}
  player.userData.crouching=controller.isCrouching;
  if(!multiplayer.active)combatBots.update(dt);
+ tacticalGear.update(elapsed);
  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
  const damageText=document.getElementById('receivedDamage');if(damageText){damageText.textContent='−'+Math.round(lastReceivedDamage)+' · ATINGIDO';damageText.style.opacity=String(Math.min(1,playerDamageFlash/.35));}
@@ -2372,7 +2407,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped,aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
@@ -2402,6 +2437,12 @@ function loop(){
  }
  weaponLoot.updateHeldPose();
  pistolWeapon.update(dt,movingNow);
+ if(tacticalGear.active==='grenade')mainAvatar.gun.visible=false;
+ const grenadeCount=document.getElementById('grenadeCount');if(grenadeCount)grenadeCount.textContent=tacticalGear.inventory.grenades+' un';
+ document.getElementById('grenadeSlotBtn')?.setAttribute('aria-pressed',String(tacticalGear.active==='grenade'));
+ const iceCount=document.getElementById('iceCount');if(iceCount)iceCount.textContent=String(tacticalGear.inventory.ice);
+ const throwButton=document.getElementById('grenadeThrowBtn');if(throwButton)throwButton.hidden=tacticalGear.active!=='grenade'||playerLife.dead;
+ tacticalNoticeTime=Math.max(0,tacticalNoticeTime-dt);if(!tacticalNoticeTime){const notice=document.getElementById('tacticalNotice');if(notice)notice.hidden=true;}
  updateAdsViewModel(dt);
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;

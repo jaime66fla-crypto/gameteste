@@ -7,10 +7,11 @@ class MultiplayerWorld{
   let remote=this.players.get(state.id);
   if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
   remote.state=state;
-  if(remote.weapon!==state.weapon){
+  if(remote.weapon!==state.weapon||remote.gear!==state.gear){
    for(const child of [...remote.avatar.gun.children])if(child!==remote.avatar.flash){remote.avatar.gun.remove(child);this.disposeObject(child,true);}
-   if(state.weapon!=='none')remote.avatar.gun.add(window.WeaponLootSystem.createModel(state.weapon));
-   remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;
+   if(state.gear==='grenade')remote.avatar.gun.add(window.TacticalGear.grenadeModel());
+   else if(state.weapon!=='none')remote.avatar.gun.add(window.WeaponLootSystem.createModel(state.weapon));
+   remote.avatar.setWeapon(state.weapon==='none'?'pistol':state.weapon);remote.weapon=state.weapon;remote.gear=state.gear;
   }
  }
  update(dt){for(const remote of this.players.values()){
@@ -20,7 +21,7 @@ class MultiplayerWorld{
   else a.group.position.lerp(new THREE.Vector3(s.x,y,s.z),k);
   a.group.rotation.y+=Math.atan2(Math.sin(s.angle-a.group.rotation.y),Math.cos(s.angle-a.group.rotation.y))*k;
   remote.flashTime=Math.max(0,remote.flashTime-dt);a.flash.visible=remote.flashTime>0;a.setRecoil((a.recoil||0)*Math.exp(-15*dt));
-  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
+  a.update(dt,{dead:!!s.dead,speed:s.moving?(s.running?11:5):0,armed:s.weapon!=='none'||s.gear==='grenade',aiming:s.aiming,sprinting:s.running,grounded:s.grounded,verticalVelocity:s.verticalVelocity,crouching:s.crouching});
  }
  for(let i=this.effects.length-1;i>=0;i--){const e=this.effects[i];e.life-=dt;if(e.life<=0){this.scene.remove(e.line);e.line.geometry.dispose();e.line.material.dispose();this.effects.splice(i,1);}}
  }

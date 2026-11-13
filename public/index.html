@@ -82,6 +82,7 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 #view-multiplayer{width:min(460px,calc(100vw - 24px));max-height:calc(100dvh - 24px);overflow-y:auto;gap:11px;padding:20px}
 #view-multiplayer>*{flex-shrink:0}.menu-content:has(#view-multiplayer:not(.hidden-view)) .menu-title{display:none}
 .public-rooms{border-top:1px solid #d4af6e33;border-bottom:1px solid #d4af6e33;padding:12px 0;text-align:left}.public-rooms-heading{display:flex;align-items:center;justify-content:space-between;gap:10px}.public-rooms h3{margin:0;color:#e1c795;font:700 12px system-ui;letter-spacing:.12em}.public-rooms button{min-height:36px;padding:7px 11px;border:1px solid #80948e66;border-radius:6px;background:#233b3c;color:#d9f6e9;font:700 10px system-ui;cursor:pointer}.public-rooms button:focus-visible{outline:2px solid #e1c795;outline-offset:2px}.public-rooms button:disabled{opacity:.45;cursor:default}#public-room-status{font:12px/1.5 system-ui;color:#aebed1;margin:9px 0 3px}#public-room-list{max-height:160px;overflow-y:auto;display:grid;gap:6px}.public-room-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 10px;background:#0a1220;border:1px solid #ffffff14;border-radius:7px;color:#ecf2fa;font:12px system-ui}.public-room-join{flex-shrink:0}#view-multiplayer .multi-heading h2{font-size:23px;margin:6px 0}#view-multiplayer .multi-heading p{margin:5px 0;font-size:12px}
+#weaponHud{grid-template-columns:repeat(3,1fr);width:280px}#iceWallBtn{position:fixed;right:12px;bottom:12px;z-index:20;min-height:45px;width:88px;border:1px solid #97dcec88;border-radius:8px;background:#153b4ae8;color:#c7f8ff;font:700 11px system-ui;cursor:pointer;touch-action:manipulation}#grenadeThrowBtn{position:fixed;bottom:115px;left:50%;transform:translateX(-50%);z-index:21;min-height:50px;padding:10px 18px;border:1px solid #e8ca8299;border-radius:10px;background:#3a3218ed;color:#ffe6ad;font:700 10px/1.5 system-ui;touch-action:none;user-select:none;cursor:pointer}#grenadeThrowBtn[hidden],#tacticalNotice[hidden]{display:none}#jetpackHud{bottom:70px}#tacticalNotice{position:fixed;bottom:180px;left:50%;transform:translateX(-50%);z-index:22;max-width:calc(100vw - 30px);padding:9px 12px;border:1px solid #b7e8eb77;border-radius:8px;background:#0b1820ed;color:#d9faff;font:12px system-ui;text-align:center}#grenadeSlotBtn[aria-pressed="true"]{border-color:#e6cd85;background:#34311ce8}@media(max-width:600px){#weaponHud{width:calc(100vw - 115px);gap:3px}#weaponHud button{padding-left:19px;font-size:10px}#weaponHud small{font-size:9px}#jetpackHud{bottom:300px;width:120px}#grenadeThrowBtn{bottom:130px}}
 </style>
 </head>
 <body>
@@ -152,23 +153,28 @@ body.low-health #vitalFill{background:#ff665c}body.low-health #vitals{border-col
 <div id="jetpackPrompt" hidden></div>
 <div id="jetpackHud" hidden>JETPACK <span id="jetpackFuelText">100%</span><div class="fuelTrack"><i id="jetpackFuelFill"></i></div></div>
 <div id="lootPrompt" hidden><span id="lootPromptText"></span><button id="pickupBtn" hidden>PEGAR</button></div>
-<div id="weaponHud" aria-label="Armas e munição"><button id="weaponSlot0" aria-pressed="false"><b>1</b><span id="weaponName0">Pistola</span><small id="weaponAmmo0">12 / 60</small></button><button id="weaponSlot1" aria-pressed="false"><b>2</b><span id="weaponName1">Vazio</span><small id="weaponAmmo1">—</small></button></div>
+<div id="weaponHud" aria-label="Armas e munição"><button id="weaponSlot0" aria-pressed="false"><b>1</b><span id="weaponName0">Pistola</span><small id="weaponAmmo0">12 / 60</small></button><button id="weaponSlot1" aria-pressed="false"><b>2</b><span id="weaponName1">Vazio</span><small id="weaponAmmo1">—</small></button><button id="grenadeSlotBtn" aria-pressed="false"><b>4</b><span>Granada</span><small id="grenadeCount">3 un</small></button></div>
 <div id="vitals" aria-label="Vida"><span>VIDA</span><b id="vitalValue">100 / 100</b><div class="vital-track"><i id="vitalFill"></i></div></div>
 <div id="receivedDamage" role="status" aria-live="polite"></div>
 <div id="deathOverlay" hidden><div><span>VOCÊ FOI ABATIDO</span><h2 id="deathCountdown">RENASCENDO EM 5s</h2><p>Aguarde para voltar ao combate.</p></div></div>
+<button id="iceWallBtn" title="V · Criar proteção de gelo">V · GELO <span id="iceCount">3</span></button>
+<button id="grenadeThrowBtn" hidden>SEGURE PARA MIRAR<br>SOLTE PARA LANÇAR</button>
+<div id="tacticalNotice" role="status" aria-live="polite" hidden></div>
 <div id="room-hud" hidden><span id="room-hud-text"></span><button id="btn-leave-room">SAIR DA SALA</button></div>
 <script src="/vendor/three-r128.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="/operator-motion.js?v=1"></script>
 <script src="/operator-avatar.js?v=6"></script>
-<script src="/combat-bots.js?v=3"></script>
+<script src="/combat-bots.js?v=4"></script>
 <script src="/cover-controller.js?v=1"></script>
 <script src="/weapon-loot.js?v=4"></script>
 <script src="/multiplayer-client.js?v=2"></script>
 <script src="/room-browser.js?v=1"></script>
-<script src="/multiplayer-world.js?v=2"></script>
+<script src="/multiplayer-world.js?v=3"></script>
 <script src="/player-life.js?v=1"></script>
-<script src="/full3d.js?v=24"></script>
+<script src="/tactical-rules.js?v=1"></script>
+<script src="/tactical-gear.js?v=1"></script>
+<script src="/full3d.js?v=25"></script>
 </body>
 </html>

@@ -4,7 +4,8 @@ function server(){
  class Socket{send(){}serializeAttachment(meta){this.meta=structuredClone(meta)}deserializeAttachment(){return this.meta}}
  class Reply{constructor(body,opts={}){this.body=body;this.status=opts.status||200;this.headers=new Headers(opts.headers);this.ok=this.status<400}async json(){return JSON.parse(this.body)}}
  const c={URL,Request,Response:Reply,crypto:require('node:crypto').webcrypto,console,Date,TextDecoder,WebSocketPair:class{constructor(){this[0]=new Socket();this[1]=new Socket()}}};vm.createContext(c);
- vm.runInContext(fs.readFileSync('src/worker.js','utf8').replace('export default','const worker =').replace('export class GameRoom','class GameRoom')+'\nglobalThis.api={worker,GameRoom};',c);
+ vm.runInContext(fs.readFileSync('public/tactical-rules.js','utf8'),c);vm.runInContext(fs.readFileSync('src/tactical-room.js','utf8'),c);
+ vm.runInContext(fs.readFileSync('src/worker.js','utf8').replace(/^import .*;\n/gm,'').replace('export default','const worker =').replace('export class GameRoom','class GameRoom')+'\nglobalThis.api={worker,GameRoom};',c);
  const env={ASSETS:{fetch:()=>new Reply('asset',{status:404})},GAME_ROOMS:{idFromName:n=>n,get(id){if(!objects.has(id)){
   const sockets=[],data=new Map(),storage={async get(k){return data.get(k)},async put(k,v){data.set(k,v)},async delete(k){data.delete(k)},async list(options={}){return new Map([...data].filter(([k])=>(!options.prefix||k.startsWith(options.prefix))&&(!options.startAfter||k>options.startAfter)).sort(([a],[b])=>a.localeCompare(b)).slice(0,options.limit||1000))},async transaction(fn){return fn(storage)},async setAlarm(){}};
   const ctx={getWebSockets:()=>sockets,acceptWebSocket:s=>sockets.push(s),waitUntil:p=>pending.push(p),storage};

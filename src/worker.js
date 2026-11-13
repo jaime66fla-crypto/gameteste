@@ -1,3 +1,5 @@
+import '../public/tactical-rules.js';
+import './tactical-room.js';
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
 
 function deepMotionConfig(env){
@@ -90,6 +92,7 @@ export class GameRoom {
    const data = ws.deserializeAttachment();
    if (data?.id){this.sessions.set(data.id,ws);if(data.state)this.players.set(data.id,data.state);for(const shot of data.shots||[])if(Date.now()-shot.at<2000)this.shots3D.set(data.id+":"+shot.shotId,shot)}
   }
+  this.tactical=new globalThis.TacticalRoom(this,ctx);
  }
  async fetch(request) {
   const url=new URL(request.url);
@@ -148,7 +151,7 @@ export class GameRoom {
    const directory=this.env.GAME_ROOMS.get(this.env.GAME_ROOMS.idFromName('public-room-directory'));
    this.ctx.waitUntil(directory.fetch(new Request('https://internal/internal/public-rooms',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({code})})).catch(error=>console.error('Room directory registration failed',error)));
   }
-  server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()]}:{type:"welcome",id}));
+  server.send(JSON.stringify(mode==="3d"?{type:"welcome3d",id,players:[...this.players.values()],tactical:this.tactical.snapshot()}:{type:"welcome",id}));
   return new Response(null, {status:101, webSocket:client});
  }
  webSocketMessage(ws, message) {
@@ -217,15 +220,16 @@ export class GameRoom {
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,inCar:!!data.inCar,
     grounded:data.grounded!==false,crouching:!!data.crouching,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
-    dead:false,deadUntil:0,health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0};
+    dead:false,deadUntil:0,health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0,grenades:prev?.grenades??3,iceCharges:prev?.iceCharges??3,lastGearAt:prev?.lastGearAt??0,gear:data.gear==='grenade'?'grenade':'none'};
    this.players.set(meta.id,state);this.save3D(meta.id);this.broadcast3D(state);if(!prev)this.broadcastRanking();return;
   }
   const shooter=this.players.get(meta.id);if(!shooter||shooter.dead)return;
+  if(data.type==='gear3d'){this.tactical.use(ws,shooter,data);return;}
   if(data.type==='shot3d'){
    const spec=weapons[data.weapon];if(!spec||now-shooter.lastShot<spec.delay*.72)return;
    if(!/^[a-z0-9-]{1,32}$/.test(String(data.shotId||'')))return;
    const origin=data.origin;if(!origin||![origin.x,origin.y,origin.z].every(Number.isFinite))return;
-   if(Math.hypot(origin.x-shooter.x,origin.y-shooter.y-1.3,origin.z-shooter.z)>3)return;
+   if(Math.hypot(origin.x-shooter.x,origin.y-shooter.y-1.3,origin.z-shooter.z)>3||this.tactical.originBlocked(shooter,origin))return;
    if(!Array.isArray(data.rays)||data.rays.length!==spec.pellets)return;
    const rays=[];for(const ray of data.rays){
     if(!ray||![ray.x,ray.y,ray.z].every(Number.isFinite))return;
@@ -235,6 +239,7 @@ export class GameRoom {
    const key=meta.id+':'+data.shotId;if(this.shots3D.has(key))return;
    shooter.lastShot=now;
    const shot={type:'shot3d',ownerId:meta.id,shotId:String(data.shotId),weapon:data.weapon,origin,rays,at:now,used:{}};
+   shot.stops=this.tactical.shoot(shot,spec);
    this.shots3D.set(key,shot);this.save3D(meta.id);this.broadcast3D(shot);return;
   }
   if(data.type==='hit3d'){
@@ -244,6 +249,7 @@ export class GameRoom {
    const ray=shot.rays[pellet],spec=weapons[shot.weapon];
    const dx=target.x-shot.origin.x,dy=target.y+1.5-shot.origin.y,dz=target.z-shot.origin.z;
    const along=dx*ray.x+dy*ray.y+dz*ray.z;
+   if(shot.stops?.[pellet]!=null&&along>shot.stops[pellet]+.05)return;
    if(along<-.25||along>spec.range+2||Math.hypot(dx-along*ray.x,dy-along*ray.y,dz-along*ray.z)>1.6)return;
    shot.used[pellet]=true;target.health=Math.max(0,target.health-spec.damage);
    const killed=target.health===0;
@@ -258,13 +264,14 @@ export class GameRoom {
 
  scheduleRespawns(){
   const deadlines=[...this.players.values()].filter(p=>p.dead).map(p=>p.deadUntil);
+  const tacticalDeadline=this.tactical.nextAlarm(Date.now());if(tacticalDeadline!==null)deadlines.push(tacticalDeadline);
   if(deadlines.length)this.ctx.waitUntil(this.ctx.storage.setAlarm(Math.min(...deadlines)));
  }
  async alarm(){
-  const now=Date.now();
+  const now=Date.now();await this.tactical.tick(now);
   for(const target of this.players.values())if(target.dead&&target.deadUntil<=now){
-   Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0});
-   this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
+   Object.assign(target,{dead:false,deadUntil:0,health:100,x:4,y:0,z:8,moving:false,running:false,aiming:false,grounded:true,verticalVelocity:0,lastShot:0,grenades:3,iceCharges:3,lastGearAt:0,gear:'none'});
+   this.tactical.inventory(target);this.save3D(target.id);this.broadcast3D({type:'respawn3d',id:target.id,x:4,y:0,z:8,health:100,dead:false});this.broadcast3D(target);
   }
   this.scheduleRespawns();
  }
