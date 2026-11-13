@@ -166,7 +166,7 @@ class OperatorAvatar{
   this.phase=0;this.time=0;this.state='idle';this.speed=0;this.aimBlend=0;this.crouchBlend=0;this.coverBlend=0;this.sprintBlend=0;this.prevSprintBlend=0;this.prevCrouchBlend=0;this.prevCoverBlend=0;this.wasGrounded=true;this.airTime=0;this.landingTime=1;
   // Transition snapshot prevents abrupt jumps between locomotion, aiming and airborne poses.
   this.poseTransition=null;this.lastPoseState=null;this.lastDesiredPose=null;
-  this.footPlant={left:0,right:0};this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
+  this.footPlant={left:0,right:0};this.crawlPhase=0;this.crawlBlend=0;this.stairBlend=0;this.directionChangeBlend=0;this.pivotDirection=0;
   this.fireReadyBlend=0;
   this.weaponSwapTime=0;this.weaponSwapDuration=.4;this.weaponSwapFrom='pistol';
   this.update(0,{armed:false});
@@ -791,6 +791,11 @@ class OperatorAvatar{
   // Prone pose: the 18-bone rig folds forward without replacing the
   // Soldier, weapon inventory, hit mesh, or existing walk/crouch animations.
   const proneWeight=clamp(prone,0,1);
+  // Distinct crawl locomotion layer: tied to actual ground speed rather than
+  // input, so stationary prone aiming remains completely still.
+  const crawlTarget=grounded&&proneWeight>.01?clamp((speed-.035)/.42,0,1)*proneWeight:0;
+  this.crawlBlend=M.damp(this.crawlBlend,crawlTarget,crawlTarget>this.crawlBlend?8:10,dt);
+  if(this.crawlBlend>.001)this.crawlPhase+=dt*Math.max(.6,speed)*4.6;
   if(proneWeight>.001&&grounded){
    const flat=Array.from({length:18},()=>[0,0,0]);
    flat[0][0]=Math.PI/2;
@@ -807,6 +812,23 @@ class OperatorAvatar{
    // Straight legs trail behind the pelvis, slightly separated at the boots.
    flat[12]=[-.10,0,-.06];flat[13]=[.16,0,.025];flat[14]=[-.08,0,0];
    flat[15]=[-.11,0,.07];flat[16]=[.18,0,-.025];flat[17]=[-.08,0,0];
+   // Opposing elbow/leg pulls for crawling. Keep hands and weapon in their
+   // IK grip; only tiny upper-arm movement while firing or aiming.
+   const crawl=this.crawlBlend;
+   if(crawl>.001){
+    const wave=Math.sin(this.crawlPhase),opposite=Math.sin(this.crawlPhase+Math.PI);
+    const armFactor=armed?(aiming?.20:.42):1;
+    flat[6][0]+=.16*wave*crawl*armFactor;
+    flat[9][0]+=.16*opposite*crawl*armFactor;
+    flat[6][2]+=.065*wave*crawl*armFactor;
+    flat[9][2]-=.065*opposite*crawl*armFactor;
+    flat[12][0]+=.18*opposite*crawl;
+    flat[15][0]+=.18*wave*crawl;
+    flat[13][0]+=.32*Math.max(0,opposite)*crawl;
+    flat[16][0]+=.32*Math.max(0,wave)*crawl;
+    flat[14][0]-=.14*Math.max(0,opposite)*crawl;
+    flat[17][0]-=.14*Math.max(0,wave)*crawl;
+   }
    for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
     r[bone][axis]=THREE.MathUtils.lerp(r[bone][axis],flat[bone][axis],proneWeight);
    }
