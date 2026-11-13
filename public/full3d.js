@@ -3377,7 +3377,7 @@ function loop(){
  updateCamera(dt);
  const moving=controller.horizontalSpeed>0.01;
  if(moving&&controller.isGrounded)forestAudio.playFootstep();
- const stateLabel=playerLife.dead?'Caído · renascendo':controller.climb?'Escalando':controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
+ const stateLabel=playerLife.dead?'Caído · renascendo':controller.climb?'Escalando':controller.cover.active?(controller.cover.isPeeking?'Exposto':'Em cobertura'):!controller.isGrounded?'Pulando':controller.posture===2?(moving?'Rastejando':'Deitado'):controller.isCrouching?(moving?'Andando agachado':'Agachado'):moving?((controller.keys.sprint&&controller.stamina>0)?'Correndo':'Andando'):'Parado';
  const coverPrompt=document.getElementById('coverPrompt');
  if(coverPrompt){
   const near=controller.cover.active?null:controller.cover.findNearby();
