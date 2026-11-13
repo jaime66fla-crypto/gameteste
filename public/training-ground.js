@@ -39,7 +39,6 @@ function equipTrainingWeapon(id){
  weaponLoot.activeSlot=slotIndex;
  weaponLoot.reserves[defs[id].ammoType]=999;
  weaponLoot.applyActive(true);
- pistolWeapon.equip();
  currentWeapon.textContent=defs[id].name+' equipada · munição de testes';
  for(const b of weaponGrid.querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.weapon===id));
 }
@@ -58,6 +57,7 @@ function restoreLoadout(){
 for(const id of Object.keys(window.WeaponLootSystem.DEFINITIONS)){
  const b=document.createElement('button');
  b.type='button';b.dataset.weapon=id;b.textContent=weaponNames[id]||id.toUpperCase();
+ b.style.cssText='background:#21444d;color:#fff;border:1px solid #6cbdc3;border-radius:5px;padding:7px 4px;cursor:pointer;font:700 10px system-ui';
  b.setAttribute('aria-pressed','false');b.title='Equipar '+window.WeaponLootSystem.DEFINITIONS[id].name;
  b.addEventListener('click',()=>equipTrainingWeapon(id));
  weaponGrid.appendChild(b);
