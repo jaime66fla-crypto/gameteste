@@ -22,16 +22,16 @@ const state={
  weapons:Object.fromEntries(IDS.map(id=>[id,WEAPONS.some(s=>s.id===saved.weapons?.[id])?saved.weapons[id]:'original']))
 };
 function save(){try{localStorage.setItem(STORE,JSON.stringify(state))}catch(_){}}
-function tintAvatar(avatar){
+function tintAvatar(avatar,skinId=state.soldier){
  const mats=avatar?.body?.material;if(!Array.isArray(mats))return;
- const skin=SOLDIERS.find(s=>s.id===state.soldier)||SOLDIERS[0];
+ const skin=SOLDIERS.find(s=>s.id===skinId)||SOLDIERS[0];
  for(const [i,color] of [[0,skin.cloth],[1,skin.vest],[2,skin.trim]]){
   if(mats[i]?.color)mats[i].color.setHex(color);
  }
 }
-function paintWeapon(model,id){
+function paintWeapon(model,id,skinId=state.weapons[id]){
  if(!model?.traverse)return;
- const skin=WEAPONS.find(x=>x.id===state.weapons[id])||WEAPONS[0];
+ const skin=WEAPONS.find(x=>x.id===skinId)||WEAPONS[0];
  model.userData.skinWeaponId=id;
  const visited=new Set();
  model.traverse(o=>{
