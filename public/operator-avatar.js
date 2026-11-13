@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -194,6 +194,39 @@ class OperatorAvatar{
   // PlayerController owns the physical jump. Never add the preview's parabola.
   if(!grounded)pose.root[1]=0;
   const crouch=this.crouchBlend;
+
+  // Directional body response: lean into strafes and absorb hard stops/reversals.
+  if(grounded&&speed>.08){
+   const moveBlend=clamp(speed/6,0,1);
+   const sideLean=clamp(strafe,-1,1)*moveBlend;
+   const forwardLean=clamp(forward,-1,1)*moveBlend;
+   const stopBlend=clamp(braking,0,1);
+
+   r[1][2]+=sideLean*(armed?.08:.11);
+   r[2][2]+=sideLean*(armed?.05:.075);
+   r[3][2]-=sideLean*(armed?.035:.055);
+   r[1][0]+=Math.max(0,forwardLean)*(sprinting?.035:.018);
+   r[2][0]+=Math.max(0,forwardLean)*(sprinting?.045:.022);
+
+   if(Math.abs(sideLean)>.08){
+    const outsideLeg=sideLean>0?12:15;
+    const insideLeg=sideLean>0?15:12;
+    r[outsideLeg][2]+=-Math.sign(sideLean)*.055*moveBlend;
+    r[insideLeg][2]+=Math.sign(sideLean)*.035*moveBlend;
+    r[outsideLeg+1][0]+=.06*moveBlend;
+   }
+
+   if(stopBlend>.01){
+    r[1][0]-=.16*stopBlend;
+    r[2][0]-=.10*stopBlend;
+    r[12][0]-=.08*stopBlend;
+    r[15][0]+=.05*stopBlend;
+    r[13][0]+=.24*stopBlend;
+    r[16][0]+=.18*stopBlend;
+    pose.root[1]-=.035*stopBlend;
+   }
+  }
+
   if(crouch>.001){
    for(const [leg,s] of [[12,0],[15,1]]){const cycle=Math.sin(this.phase*Math.PI*2+s*Math.PI)*Math.min(speed/2,1)*.10;r[leg][0]=THREE.MathUtils.lerp(r[leg][0],-.90+cycle,crouch);r[leg+1][0]=THREE.MathUtils.lerp(r[leg+1][0],1.70-cycle,crouch);r[leg+2][0]=THREE.MathUtils.lerp(r[leg+2][0],-.80,crouch)}
    const support=.22+Math.max(...[12,15].map(i=>.428*Math.cos(r[i][0])+.397*Math.cos(r[i][0]+r[i+1][0])));
