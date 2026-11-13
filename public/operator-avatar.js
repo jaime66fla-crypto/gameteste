@@ -107,8 +107,9 @@ class JaimeSourceAvatar{
       const v=part(new THREE.BoxGeometry(.15,.004,.1),shirt,face,0,.045,.13);v.rotation.x=.18}
     // braços
     const arm=(S,s)=>{
-      const sh=J['s'+S]=grp(spine,s*.207*B,.53,0);
-      part(new THREE.SphereGeometry(.058*B,low?8:20,low?6:14),shirt,sh);
+      const sh=J['s'+S]=grp(spine,s*.178*B,.515,0);
+      // Keep the rounded shoulder seated inside the sleeve and torso seam.
+      part(new THREE.SphereGeometry(.073*B,low?8:20,low?6:14),shirt,sh);
       part(limbGeo(.052*B,.043*B,.3),shirt,sh);
       const el=J['e'+S]=grp(sh,0,-.3,0);
       part(limbGeo(.043*B,.033*B,.27),shirt,el);
