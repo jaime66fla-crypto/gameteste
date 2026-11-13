@@ -3,7 +3,35 @@
 const CONFIG=Object.freeze({fuse:2.8,radius:6,damage:120,gravity:16,speed:15,iceHealth:260,iceSeconds:25,grenades:3,ice:3});
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function terrain(x,z){const d=Math.hypot(x,z);return d<=25?0:(Math.sin(x*.05)*Math.cos(z*.05)*2.5+Math.sin(x*.12+z*.1)*.8)*Math.min((d-25)/40,1);}
-const URBAN_LAYOUT=[[-58,-57,10,9,5.5],[-42,-57,12,10,8],[-25,-57,10,10,5.5],[27,-57,12,10,10],[49,-57,12,10,16],[68,-57,11,11,6],[-61,-31,11,11,6],[-40,-30,13,11,15],[40,-30,13,12,20],[63,-30,12,10,6],[-65,33,12,10,5.5],[-43,35,13,11,17],[-24,38,10,11,6],[28,37,14,12,19],[51,36,13,10,7]];
+// Planned districts: west/east residential blocks, northern depot, southern plaza.
+const URBAN_LAYOUT=[
+ [-58,-57,10,9,5.5],[-42,-57,12,10,8],[-25,-57,10,10,5.5],
+ [27,-57,12,10,10],[49,-57,12,10,16],[68,-57,11,11,6],
+ [-61,-31,11,11,6],[-40,-30,13,11,15],[40,-30,13,12,20],[63,-30,12,10,6],
+ [-65,33,12,10,5.5],[-43,35,13,11,17],[-24,38,10,11,6],
+ [28,37,14,12,19],[51,36,13,10,7],
+ // Bairro oeste — duas quadras residenciais
+ [-124,-115,10,9,6],[-107,-115,11,10,7],[-124,-94,10,9,6],[-105,-94,12,10,9],
+ [-125,94,11,10,6],[-107,95,12,10,7],[-125,116,10,10,6],[-105,116,10,10,8],
+ // Bairro leste — edifícios, depósitos e guaritas
+ [106,-115,12,11,14],[126,-115,11,10,8],[106,-94,12,11,18],[126,-94,10,10,8],
+ [105,94,12,11,16],[125,94,11,10,7],[105,116,12,10,11],[126,116,10,10,6],
+ // Distrito industrial ao norte; praça aberta ao sul
+ [-25,-111,15,12,7],[0,-114,16,12,10],[25,-111,15,12,7],
+ [-33,111,11,9,6],[33,111,11,9,6]
+];
+// Roads are visual surfaces only, aligned to open corridors (x/z,width/depth).
+const ROAD_LAYOUT=[
+ [-82,0,8,275],[82,0,8,275],
+ [0,-72,275,8],[0,72,275,8],
+ [-38,0,9,16],[38,0,9,16],
+ [-113,0,9,122],[113,0,9,122],
+ [0,-91,52,7],[0,91,52,7]
+];
+const MAP_DISTRICTS=[
+ ['BAIRRO OESTE',-113,106],['BAIRRO LESTE',115,106],
+ ['CENTRO TÁTICO',0,0],['DEPÓSITO NORTE',0,-113],['PRAÇA SUL',0,100]
+];
 function mapBoxes(){
  const boxes=[],add=(x,y,z,w,h,d)=>boxes.push({minX:x-w/2,maxX:x+w/2,minY:y-h/2,maxY:y+h/2,minZ:z-d/2,maxZ:z+d/2});
  for(const [x,z,w,h,d]of[[0,14,12,5,8],[-16,-4,9,7,10],[17,-8,11,4.5,9],[0,-22,20,4.5,5]]){
@@ -82,5 +110,5 @@ function iceWall(id,ownerId,p,direction,now,boxes=[],players=[],height=terrain){
  }
  return wall;
 }
-globalThis.TacticalRules={CONFIG,URBAN_LAYOUT,terrain,mapBoxes,rayBox,bodyHitDistance,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
+globalThis.TacticalRules={CONFIG,URBAN_LAYOUT,ROAD_LAYOUT,MAP_DISTRICTS,terrain,mapBoxes,rayBox,bodyHitDistance,firstSolid,blocked,surface,grenade,advance,expired:g=>g.age>=CONFIG.fuse-1e-6,blastDamage,iceWall,overlaps};
 })();
