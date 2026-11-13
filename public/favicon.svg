@@ -1,6 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="14" fill="#080f18"/>
-  <rect x="4" y="4" width="56" height="56" rx="11" fill="none" stroke="#65ff8b" stroke-width="3"/>
-  <path d="M20 17h27v9H35v15c0 10-6 15-15 15-5 0-10-2-13-5l6-8c2 2 4 3 7 3 3 0 5-2 5-5V26h-5z" transform="translate(3 -3)" fill="#65ff8b"/>
-  <path d="M43 36v12m-6-6h12" stroke="#7ee8ff" stroke-width="3" stroke-linecap="square"/>
+<title>Campo de Fogo</title>
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#222638"/><stop offset="1" stop-color="#080c18"/></linearGradient>
+<linearGradient id="flame" x1=".1" y1="1" x2=".9" y2="0"><stop stop-color="#ed3d17"/><stop offset=".47" stop-color="#ff8b1d"/><stop offset="1" stop-color="#fff0a6"/></linearGradient>
+<linearGradient id="core" x1="0" y1="1" x2="1" y2="0"><stop stop-color="#ffbd35"/><stop offset="1" stop-color="#fff8c9"/></linearGradient>
+</defs>
+<rect x="2" y="2" width="60" height="60" rx="15" fill="url(#bg)" stroke="#c16e30" stroke-width="2"/>
+<path d="M33 6 C35 16 27 20 30 29 C23 26 22 20 25 14 C13 27 10 37 16 48 C21 58 30 59 32 59 C45 59 53 51 52 40 C52 33 49 27 43 22 C44 32 39 34 37 36 C36 24 36 18 33 6 Z" fill="url(#flame)"/>
+<path d="M32 32 C32 40 25 43 26 49 C27 55 30 57 34 56 C40 55 44 50 42 44 C41 40 39 38 37 36 C37 44 33 43 32 32 Z" fill="url(#core)"/>
 </svg>
