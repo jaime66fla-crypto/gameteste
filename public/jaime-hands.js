@@ -4,8 +4,8 @@
 (()=>{
 'use strict';
 function attach(THREE,avatar){
- const material=new THREE.MeshStandardMaterial({color:0xc48d6f,roughness:.83,metalness:0});
- const nail=new THREE.MeshStandardMaterial({color:0xdba997,roughness:.66,metalness:0});
+ const material=new THREE.MeshStandardMaterial({color:0xc98f6b,roughness:.88,metalness:0});
+ const nail=new THREE.MeshStandardMaterial({color:0xd3a28c,roughness:.73,metalness:0});
  const crease=new THREE.MeshStandardMaterial({color:0xa97359,roughness:.93,metalness:0});
  const sphere=(parent,rx,ry,rz,x,y,z,mat=material)=>{
   const mesh=new THREE.Mesh(new THREE.SphereGeometry(1,12,9),mat);
@@ -18,10 +18,10 @@ function attach(THREE,avatar){
   const side=handIndex===8?-1:1;
   const palm=new THREE.Group();palm.name=handIndex===8?'JAIME_RIGHT_ARTICULATED_HAND':'JAIME_LEFT_ARTICULATED_HAND';
   bone.add(palm);palm.position.y=-.006;
-  sphere(palm,.044,.047,.026,0,-.044,0);
+  sphere(palm,.043,.043,.025,0,-.043,0);
   // Fingers grow toward -Y (the existing editor wrist local axis).
   const fingersForHand=[];
-  const lengths=[.038,.045,.042,.035];
+  const lengths=[.035,.041,.039,.033];
   for(let i=0;i<4;i++){
    const x=(i-1.5)*.019;
    const base=new THREE.Group();base.position.set(x,-.071,.003);palm.add(base);
