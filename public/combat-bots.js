@@ -9,6 +9,7 @@ const STATES=Object.freeze({
  TAKE_COVER:'TAKE_COVER',
  ATTACK:'ATTACK',
  FLANK:'FLANK',
+ EVADE:'EVADE',
  RETREAT:'RETREAT'
 });
 
@@ -26,6 +27,9 @@ class CombatBotSystem {
   this.squadTick=0;
   this.suppressorId=null;
   this.flankerId=null;
+  this.botGrenades=new Map();
+  this.getGrenades=()=>[];
+  this.getWalls=()=>[];
   this.bots=[[-6,-9],[2,-12],[7,-7]].map(([x,z],index)=>this.createBot(x,z,index));
  }
 
@@ -59,7 +63,8 @@ class CombatBotSystem {
    accuracy:.58-index*.04,burstShots:0,burstGap:0,
    inCover:false,coverAnchor:null,crouching:false,peekSide:index%2===0?1:-1,peekTimer:.7+index*.15,
    flankPoint:null,flankCooldown:2.5+index*.8,
-   squadRole:'support',sharedIntelAge:999
+   squadRole:'support',sharedIntelAge:999,
+   grenades:1,grenadeCooldown:3.5+index*.8,evadePoint:null,evadeTimer:0,blockedWallId:null
   };
 
   bot.takeDamage=amount=>{
@@ -108,6 +113,7 @@ class CombatBotSystem {
   bot.stateTime=0;
   if(state!==STATES.TAKE_COVER&&state!==STATES.RETREAT)bot.coverPoint=null;
   if(state!==STATES.FLANK)bot.flankPoint=null;
+  if(state!==STATES.EVADE)bot.evadePoint=null;
   if(state===STATES.ATTACK)bot.reactionTimer=.16+this.random()*.22;
   if(state===STATES.TAKE_COVER){bot.inCover=false;bot.crouching=false;}
   if(state===STATES.FLANK){bot.inCover=false;bot.crouching=false;}
@@ -160,6 +166,103 @@ class CombatBotSystem {
   if(flanker&&flanker.state!==STATES.RETREAT&&flanker.state!==STATES.TAKE_COVER){
    flanker.lastKnownTarget=this.squadLastKnown.clone();
    this.setState(flanker,STATES.FLANK);
+  }
+ }
+
+ grenadeThreat(bot){
+  let best=null,bestDistance=Infinity;
+  const grenades=[...(this.getGrenades?.()||[]),...[...this.botGrenades.values()].map(entry=>entry.state)];
+  for(const grenade of grenades){
+   if(!grenade?.position)continue;
+   const point=new THREE.Vector3(grenade.position.x,grenade.position.y||0,grenade.position.z);
+   const distance=bot.group.position.distanceTo(point);
+   const remaining=(window.TacticalRules?.CONFIG?.fuse||2.8)-(grenade.age||0);
+   if(distance<7.5&&remaining<2.15&&distance<bestDistance){
+    best={point,distance,remaining};
+    bestDistance=distance;
+   }
+  }
+  return best;
+ }
+
+ evadeGrenade(bot,threat){
+  const away=bot.group.position.clone().sub(threat.point).setY(0);
+  if(away.lengthSq()<.001)away.set(bot.peekSide,0,1);
+  away.normalize();
+  const lateral=new THREE.Vector3(-away.z,0,away.x).multiplyScalar(bot.peekSide*.65);
+  for(const distance of [6.5,5,4]){
+   const point=bot.group.position.clone().add(away.clone().multiplyScalar(distance)).add(lateral.clone().multiplyScalar(distance*.35));
+   point.y=this.terrainHeight(point.x,point.z);
+   if(this.canMove(point.x,point.z)){
+    bot.evadePoint=point;
+    bot.evadeTimer=Math.max(1.2,threat.remaining+.45);
+    bot.inCover=false;
+    bot.crouching=false;
+    this.setState(bot,STATES.EVADE);
+    return true;
+   }
+  }
+  return false;
+ }
+
+ iceBlocker(bot,targetPos=this.player.position){
+  const start=bot.avatar.gun.localToWorld(new THREE.Vector3(0,.035,.2));
+  const target=targetPos.clone().add(new THREE.Vector3(0,this.player.userData.crouching?.9:1.2,0));
+  const direction=target.sub(start),distance=direction.length();
+  if(distance<.01)return null;
+  const ray=new THREE.Raycaster(start,direction.normalize(),0,distance+.25);
+  const hit=CombatBotSystem.firstHit(this.scene,ray,bot.group,true);
+  return hit?.object?.userData?.iceWallId?{id:hit.object.userData.iceWallId,point:hit.point}:null;
+ }
+
+ throwGrenade(bot,targetPos=this.player.position){
+  const R=window.TacticalRules;
+  if(!R||bot.grenades<=0||bot.grenadeCooldown>0)return false;
+  const start=bot.group.position.clone();
+  const target=targetPos.clone();
+  const flat=target.clone().sub(start);
+  const distance=flat.length();
+  if(distance<7||distance>20)return false;
+  flat.y=Math.min(.3,Math.max(.05,distance*.008));
+  flat.normalize();
+  const state=R.grenade('bot-g-'+bot.index+'-'+Math.floor(this.time*1000),'bot-'+bot.index,start,flat,Date.now());
+  if(!state)return false;
+  const mesh=window.TacticalGear?.grenadeModel?window.TacticalGear.grenadeModel():new THREE.Mesh(new THREE.SphereGeometry(.11,8,6),new THREE.MeshStandardMaterial({color:0x454545}));
+  mesh.userData.ignoreCombat=true;
+  mesh.userData.ignoreCamera=true;
+  mesh.position.set(state.position.x,state.position.y,state.position.z);
+  this.scene.add(mesh);
+  this.botGrenades.set(state.id,{state,mesh,owner:bot.index});
+  bot.grenades--;
+  bot.grenadeCooldown=8+this.random()*4;
+  return true;
+ }
+
+ updateBotGrenades(dt){
+  const R=window.TacticalRules;
+  if(!R)return;
+  for(const [id,entry] of [...this.botGrenades]){
+   R.advance(entry.state,dt,this.solidBoxes,this.terrainHeight);
+   entry.mesh.position.set(entry.state.position.x,entry.state.position.y,entry.state.position.z);
+   entry.mesh.rotation.x+=dt*7;
+   entry.mesh.rotation.z+=dt*4;
+   if(!R.expired(entry.state))continue;
+
+   const origin=entry.state.position;
+   const damage=R.blastDamage(origin,this.player.position,this.solidBoxes);
+   if(damage>0)this.damagePlayer(damage);
+
+   for(const wall of this.getWalls?.()||[]){
+    const state=wall.state||wall;
+    if(!state?.position||!state.id)continue;
+    const wallDamage=R.blastDamage(origin,state.position,this.solidBoxes.filter(b=>b.iceWallId!==state.id));
+    if(wallDamage>0)this.onCoverHit?.(state.id,wallDamage*2);
+   }
+
+   this.scene.remove(entry.mesh);
+   entry.mesh.traverse?.(o=>{if(o.geometry)o.geometry.dispose?.();if(o.material)o.material.dispose?.();});
+   this.botGrenades.delete(id);
+   this.reportSound(new THREE.Vector3(origin.x,origin.y,origin.z),34,'explosion');
   }
  }
 
@@ -343,6 +446,9 @@ class CombatBotSystem {
 
  updatePerception(bot,dt){
   const playerPos=this.player.position;
+  bot.grenadeCooldown=Math.max(0,bot.grenadeCooldown-dt);
+  const threat=this.grenadeThreat(bot);
+  if(threat&&bot.state!==STATES.EVADE)this.evadeGrenade(bot,threat);
   const distance=bot.group.position.distanceTo(playerPos);
   const sees=distance<=this.viewDistance&&this.hasLineOfSight(bot,playerPos);
 
@@ -395,6 +501,17 @@ class CombatBotSystem {
   let movementSpeed=0;
 
   switch(bot.state){
+   case STATES.EVADE:{
+    bot.evadeTimer-=dt;
+    movementSpeed=this.moveToward(bot,bot.evadePoint,bot.sprintSpeed*1.12,dt,.45);
+    this.face(bot,bot.evadePoint,dt);
+    if(bot.evadeTimer<=0||!bot.evadePoint||bot.group.position.distanceTo(bot.evadePoint)<.7){
+     bot.peekSide*=-1;
+     if(bot.lastKnownTarget)this.setState(bot,STATES.ATTACK);
+     else this.setState(bot,STATES.PATROL);
+    }
+    break;
+   }
    case STATES.PATROL:{
     bot.patrolAngle+=dt*.22;
     const target=bot.spawn.clone().add(new THREE.Vector3(
@@ -487,10 +604,26 @@ class CombatBotSystem {
     const los=this.hasLineOfSight(bot,playerPos);
 
     if(!los){
+     const ice=this.iceBlocker(bot,playerPos);
+     if(ice){
+      bot.blockedWallId=ice.id;
+      bot.cooldown-=dt;
+      if(bot.squadRole==='suppress'&&bot.cooldown<=0){
+       this.face(bot,ice.point,dt);
+       this.shoot(bot);
+       bot.cooldown=.52+this.random()*.3;
+       break;
+      }
+      if(bot.squadRole!=='suppress'&&bot.flankCooldown<=0){
+       this.setState(bot,STATES.FLANK);
+       break;
+      }
+     }
      if(bot.lastKnownTarget)this.setState(bot,STATES.CHASE);
      else this.setState(bot,STATES.INVESTIGATE);
      break;
     }
+    bot.blockedWallId=null;
 
     if(!bot.inCover){
      if(distance<5){
@@ -507,6 +640,13 @@ class CombatBotSystem {
 
     const suppressing=bot.squadRole==='suppress';
     if(suppressing)bot.cooldown=Math.min(bot.cooldown,.55);
+
+    if(bot.squadRole==='support'&&bot.grenades>0&&bot.grenadeCooldown<=0&&distance>8&&distance<18&&this.random()<dt*.12){
+     if(this.throwGrenade(bot,playerPos)){
+      bot.cooldown=Math.max(bot.cooldown,1);
+      break;
+     }
+    }
     if(bot.reactionTimer<=0&&bot.cooldown<=0&&distance<26){
      if(bot.burstShots<=0)bot.burstShots=2+Math.floor(this.random()*2);
      if(bot.burstGap<=0){
@@ -534,6 +674,7 @@ class CombatBotSystem {
 
  update(dt){
   this.time+=dt;
+  this.updateBotGrenades(dt);
   this.squadMemory=Math.max(0,this.squadMemory-dt);
   this.squadTick-=dt;
   for(const bot of this.bots)bot.sharedIntelAge+=dt;
@@ -578,6 +719,11 @@ class CombatBotSystem {
      bot.crouching=false;
      bot.flankPoint=null;
      bot.flankCooldown=2.5+bot.index*.8;
+     bot.grenades=1;
+     bot.grenadeCooldown=3.5+bot.index*.8;
+     bot.evadePoint=null;
+     bot.evadeTimer=0;
+     bot.blockedWallId=null;
      bot.squadRole='support';
      bot.sharedIntelAge=999;
      bot.lostSightTime=0;
