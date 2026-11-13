@@ -204,14 +204,6 @@ class OperatorAvatar{
    this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:state==='jump'?.16:state==='aim'?.13:.20};
   }
   this.lastPoseState=poseKey;
-  if(this.poseTransition){
-   const transition=this.poseTransition;transition.elapsed+=dt;
-   const t=clamp(transition.elapsed/transition.duration,0,1),smooth=t*t*(3-2*t);
-   for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
-    r[bone][axis]=transition.from[bone][axis]*(1-smooth)+r[bone][axis]*smooth;
-   }
-   if(t>=1)this.poseTransition=null;
-  }
   // PlayerController owns the physical jump. Never add the preview's parabola.
   if(!grounded)pose.root[1]=0;
   const crouch=this.crouchBlend;
@@ -629,6 +621,15 @@ class OperatorAvatar{
    const grips=this.weaponId==='pistol'?M.pistolGrips:M.rifleGrips;M.armedMotion(r,pose.weapon,grips);
    this.gripBindPoints=grips.map(([upper,p])=>({bone:upper+2,point:new THREE.Vector3().fromArray(M.pointArm(pose.weapon,p))}));
    const matrix=new THREE.Matrix4().fromArray(pose.weapon).multiply(new THREE.Matrix4().makeTranslation(.055,1.34,.245));matrix.premultiply(new THREE.Matrix4().makeTranslation(-bind[3][12],-bind[3][13],-bind[3][14]));matrix.decompose(this.gun.position,this.gun.quaternion,this.gun.scale);
+  }
+  // Apply crossfade after procedural reactions and arm IK have been calculated.
+  if(this.poseTransition){
+   const transition=this.poseTransition;transition.elapsed+=dt;
+   const t=clamp(transition.elapsed/transition.duration,0,1),smooth=t*t*(3-2*t);
+   for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
+    r[bone][axis]=transition.from[bone][axis]*(1-smooth)+r[bone][axis]*smooth;
+   }
+   if(t>=1)this.poseTransition=null;
   }
   // Keep the target for a future crossfade, including weapon IK and landing reactions.
   if(!this.lastDesiredPose)this.lastDesiredPose=Array.from({length:18},()=>[0,0,0]);
