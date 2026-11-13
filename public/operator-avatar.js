@@ -107,7 +107,7 @@ class JaimeSourceAvatar{
       const v=part(new THREE.BoxGeometry(.15,.004,.1),shirt,face,0,.045,.13);v.rotation.x=.18}
     // braços
     const arm=(S,s)=>{
-      const sh=J['s'+S]=grp(spine,s*.215*B,.53,0);
+      const sh=J['s'+S]=grp(spine,s*.207*B,.53,0);
       part(new THREE.SphereGeometry(.058*B,low?8:20,low?6:14),shirt,sh);
       part(limbGeo(.052*B,.043*B,.3),shirt,sh);
       const el=J['e'+S]=grp(sh,0,-.3,0);
@@ -127,7 +127,7 @@ class JaimeSourceAvatar{
     }
     // pernas
     const leg=(S,s)=>{
-      const th=J['t'+S]=grp(hips,s*.095*B,-.02,0);
+      const th=J['t'+S]=grp(hips,s*.101*B,-.02,0);
       part(limbGeo(.095*B,.066*B,.46),pants,th);
       const kn=J['k'+S]=grp(th,0,-.46,0);
       part(limbGeo(.066*B,.047*B,.45),pants,kn);
