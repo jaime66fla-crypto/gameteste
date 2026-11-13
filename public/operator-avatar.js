@@ -226,9 +226,10 @@ class OperatorAvatar{
   else if(this.landingTime<.34){state='jump';phase=.72+.28*clamp(this.landingTime/.34,0,1)}
   this.wasGrounded=grounded;this.state=state;
   const pose=M.sampleMotion(state,phase,armed,this.weaponId),r=pose.r;
-  const poseKey=state+'|'+(armed?'armed':'unarmed')+'|'+(aiming?'ads':'hip')+'|'+(crouching?'crouch':'stand');
+  const proneIntent=grounded&&prone>.5;
+  const poseKey=state+'|'+(armed?'armed':'unarmed')+'|'+(aiming?'ads':'hip')+'|'+(proneIntent?'prone':crouching?'crouch':'stand');
   if(this.lastPoseState!==null&&this.lastPoseState!==poseKey){
-   this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:state==='jump'?.16:state==='fall'?.21:state==='aim'?.13:.20};
+   this.poseTransition={from:this.lastDesiredPose?this.lastDesiredPose.map(j=>j.slice()):this.rotations.map(j=>j.slice()),elapsed:0,duration:proneIntent?.40:state==='jump'?.16:state==='fall'?.21:state==='aim'?.13:.25};
   }
   this.lastPoseState=poseKey;
   // PlayerController owns the physical jump. Never add the preview's parabola.
@@ -809,10 +810,12 @@ class OperatorAvatar{
    for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
     r[bone][axis]=THREE.MathUtils.lerp(r[bone][axis],flat[bone][axis],proneWeight);
    }
-   // Root is at ground level; a quarter-turn places the torso along the ground.
-   // Keep shoulders above the surface and counter-rotate the weapon in the
-   // chest's local space so the barrel points forward, not into the terrain.
+   // Keep the belly above ground and avoid root-height pops while going
+   // from crouched to prone. The spine rotates gradually with proneWeight.
    pose.root[1]=THREE.MathUtils.lerp(pose.root[1],.21,proneWeight);
+   // Damp idle rocking while the elbows are braced.
+   pose.root[0]*=1-proneWeight;
+   pose.root[2]*=1-proneWeight;
    if(armed){
     const counter=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2*proneWeight);
     // The weapon mount is freshly solved each frame in the armed branch.
