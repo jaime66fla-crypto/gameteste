@@ -8,6 +8,7 @@ const STATES=Object.freeze({
  CHASE:'CHASE',
  TAKE_COVER:'TAKE_COVER',
  ATTACK:'ATTACK',
+ FLANK:'FLANK',
  RETREAT:'RETREAT'
 });
 
@@ -50,7 +51,9 @@ class CombatBotSystem {
    target:null,lastKnownTarget:null,investigatePoint:null,coverPoint:null,
    lostSightTime:0,reactionTimer:.22+index*.07,
    moveSpeed:2.6,sprintSpeed:4.1,retreatHealth:26,
-   accuracy:.58-index*.04,burstShots:0,burstGap:0
+   accuracy:.58-index*.04,burstShots:0,burstGap:0,
+   inCover:false,coverAnchor:null,crouching:false,peekSide:index%2===0?1:-1,peekTimer:.7+index*.15,
+   flankPoint:null,flankCooldown:2.5+index*.8
   };
 
   bot.takeDamage=amount=>{
@@ -97,8 +100,11 @@ class CombatBotSystem {
   if(bot.state===state)return;
   bot.state=state;
   bot.stateTime=0;
-  if(state!==STATES.TAKE_COVER)bot.coverPoint=null;
+  if(state!==STATES.TAKE_COVER&&state!==STATES.RETREAT)bot.coverPoint=null;
+  if(state!==STATES.FLANK)bot.flankPoint=null;
   if(state===STATES.ATTACK)bot.reactionTimer=.16+this.random()*.22;
+  if(state===STATES.TAKE_COVER){bot.inCover=false;bot.crouching=false;}
+  if(state===STATES.FLANK){bot.inCover=false;bot.crouching=false;}
  }
 
  reportSound(position,radius=this.hearingDistance,type='noise'){
@@ -161,6 +167,36 @@ class CombatBotSystem {
   }
   if(best)best.y=this.terrainHeight(best.x,best.z);
   return best;
+ }
+
+ getPeekPoint(bot,threatPos=this.player.position){
+  const anchor=bot.coverAnchor||bot.group.position;
+  const toThreat=threatPos.clone().sub(anchor).setY(0);
+  if(toThreat.lengthSq()<.001)toThreat.set(0,0,1);
+  toThreat.normalize();
+  const lateral=new THREE.Vector3(-toThreat.z,0,toThreat.x).multiplyScalar(bot.peekSide*.95);
+  const point=anchor.clone().add(lateral);
+  point.y=this.terrainHeight(point.x,point.z);
+  if(this.canMove(point.x,point.z))return point;
+  bot.peekSide*=-1;
+  const other=anchor.clone().add(lateral.multiplyScalar(-1));
+  other.y=this.terrainHeight(other.x,other.z);
+  return this.canMove(other.x,other.z)?other:anchor.clone();
+ }
+
+ findFlankPoint(bot,threatPos=this.player.position){
+  const fromThreat=bot.group.position.clone().sub(threatPos).setY(0);
+  if(fromThreat.lengthSq()<.001)fromThreat.set(0,0,1);
+  fromThreat.normalize();
+  const lateral=new THREE.Vector3(-fromThreat.z,0,fromThreat.x).multiplyScalar(bot.peekSide);
+  for(const radius of [8,6,10,5]){
+   const candidate=threatPos.clone()
+    .add(fromThreat.clone().multiplyScalar(5.5))
+    .add(lateral.clone().multiplyScalar(radius));
+   candidate.y=this.terrainHeight(candidate.x,candidate.z);
+   if(this.canMove(candidate.x,candidate.z))return candidate;
+  }
+  return null;
  }
 
  moveToward(bot,target,speed,dt,stopDistance=.35){
@@ -327,6 +363,10 @@ class CombatBotSystem {
     movementSpeed=this.moveToward(bot,bot.coverPoint,bot.sprintSpeed,dt,.45);
     this.face(bot,playerPos,dt);
     if(bot.group.position.distanceTo(bot.coverPoint)<.65){
+     bot.coverAnchor=bot.coverPoint.clone();
+     bot.inCover=true;
+     bot.crouching=true;
+     bot.peekTimer=.75+this.random()*.65;
      if(bot.health<=bot.retreatHealth)this.setState(bot,STATES.RETREAT);
      else this.setState(bot,STATES.ATTACK);
     }
@@ -347,9 +387,36 @@ class CombatBotSystem {
     if(bot.stateTime>3.2&&bot.health>18)this.setState(bot,STATES.ATTACK);
     break;
    }
+   case STATES.FLANK:{
+    if(!bot.flankPoint)bot.flankPoint=this.findFlankPoint(bot,playerPos);
+    if(!bot.flankPoint){this.setState(bot,STATES.ATTACK);break;}
+    movementSpeed=this.moveToward(bot,bot.flankPoint,bot.sprintSpeed,dt,.8);
+    this.face(bot,playerPos,dt);
+    if(bot.group.position.distanceTo(bot.flankPoint)<1||bot.stateTime>3.8){
+     bot.flankCooldown=4+this.random()*3;
+     bot.peekSide*=-1;
+     this.setState(bot,STATES.ATTACK);
+    }
+    break;
+   }
    case STATES.ATTACK:
    default:{
     this.face(bot,playerPos,dt);
+
+    if(bot.inCover&&bot.coverAnchor){
+     bot.peekTimer-=dt;
+     const peeking=bot.peekTimer<=0;
+     bot.crouching=!peeking;
+     const coverTarget=peeking?this.getPeekPoint(bot,playerPos):bot.coverAnchor;
+     movementSpeed=this.moveToward(bot,coverTarget,bot.moveSpeed*.72,dt,.18);
+     if(peeking&&bot.peekTimer<-.72){
+      bot.peekTimer=.7+this.random()*.8;
+      bot.peekSide*=-1;
+     }
+    }else{
+     bot.crouching=false;
+    }
+
     const los=this.hasLineOfSight(bot,playerPos);
 
     if(!los){
@@ -358,11 +425,13 @@ class CombatBotSystem {
      break;
     }
 
-    if(distance<5){
-     const away=bot.group.position.clone().sub(playerPos).setY(0).normalize().multiplyScalar(4).add(bot.group.position);
-     movementSpeed=this.moveToward(bot,away,bot.moveSpeed,dt,.5);
-    }else if(distance>19){
-     movementSpeed=this.moveToward(bot,playerPos,bot.moveSpeed,dt,13);
+    if(!bot.inCover){
+     if(distance<5){
+      const away=bot.group.position.clone().sub(playerPos).setY(0).normalize().multiplyScalar(4).add(bot.group.position);
+      movementSpeed=this.moveToward(bot,away,bot.moveSpeed,dt,.5);
+     }else if(distance>19){
+      movementSpeed=this.moveToward(bot,playerPos,bot.moveSpeed,dt,13);
+     }
     }
 
     bot.reactionTimer-=dt;
@@ -381,7 +450,12 @@ class CombatBotSystem {
      }
     }
 
-    if(bot.health<55&&this.random()<dt*.16)this.setState(bot,STATES.TAKE_COVER);
+    bot.flankCooldown=Math.max(0,bot.flankCooldown-dt);
+    if(!bot.inCover&&bot.flankCooldown<=0&&distance>7&&distance<24&&this.random()<dt*.22){
+     this.setState(bot,STATES.FLANK);
+     break;
+    }
+    if(!bot.inCover&&bot.health<55&&this.random()<dt*.16)this.setState(bot,STATES.TAKE_COVER);
     break;
    }
   }
@@ -426,6 +500,11 @@ class CombatBotSystem {
      bot.lastKnownTarget=null;
      bot.investigatePoint=null;
      bot.coverPoint=null;
+     bot.coverAnchor=null;
+     bot.inCover=false;
+     bot.crouching=false;
+     bot.flankPoint=null;
+     bot.flankCooldown=2.5+bot.index*.8;
      bot.lostSightTime=0;
     }
     continue;
@@ -439,8 +518,11 @@ class CombatBotSystem {
     speed:movementSpeed,
     grounded:true,
     armed:true,
-    aiming:bot.state===STATES.ATTACK,
-    sprinting:movementSpeed>bot.moveSpeed*1.15
+    aiming:bot.state===STATES.ATTACK&&!bot.crouching,
+    sprinting:movementSpeed>bot.moveSpeed*1.15,
+    crouching:bot.crouching,
+    covering:bot.inCover&&bot.crouching,
+    coverSide:bot.peekSide
    });
 
    bot.hitTime=Math.max(0,bot.hitTime-dt);
