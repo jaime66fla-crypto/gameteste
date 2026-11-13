@@ -87,17 +87,7 @@ function createModel(id){
    box(.023,.023,id==='smg'?.11:.18,steel,0,.035,id==='smg'?.23:.38);
    box(.035,.012,.19,steel,0,.062,.06);box(.014,.025,.02,dark,0,.075,.11);
 
-   // Compact holographic sight physically mounted on SMG/rifle.
-   // The HUD supplies the luminous reticle; this 3D housing makes the sight part of the weapon.
-   const sightMat=new THREE.MeshStandardMaterial({color:0x171c1d,roughness:.42,metalness:.55});
-   const glassMat=new THREE.MeshStandardMaterial({color:0x8fb8ad,transparent:true,opacity:.18,roughness:.08,metalness:.05,side:THREE.DoubleSide});
-   const sy=.135,sz=id==='smg'?.085:.12;
-   box(.065,.012,.055,sightMat,0,sy-.042,sz);
-   box(.012,.085,.018,sightMat,-.033,sy,sz);
-   box(.012,.085,.018,sightMat,.033,sy,sz);
-   box(.065,.012,.018,sightMat,0,sy+.043,sz);
-   const glass=box(.052,.062,.004,glassMat,0,sy,sz+.004);
-   glass.castShadow=false;
+   // Holographic optic removed: retain the standard top rail and iron sight only.
   }
  }
  // Readable mechanical details at third-person distance; preserve original grip coordinates.
