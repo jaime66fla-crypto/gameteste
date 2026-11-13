@@ -220,6 +220,7 @@ export class GameRoom {
    const state={type:'state3d',id:meta.id,name:String(data.name||'Jogador').slice(0,18),x:data.x,y:data.y,z:data.z,angle:data.angle,
     moving:!!data.moving,running:!!data.running,climbing:!!data.climbing,aiming:!!data.aiming,inCar:!!data.inCar,
     grounded:data.grounded!==false,crouching:!!data.crouching,verticalVelocity:finite(data.verticalVelocity,-100,100)?data.verticalVelocity:0,weapon:data.weapon==='none'?'none':weapons[data.weapon]?data.weapon:'pistol',pitch:finite(data.pitch,-1.5,1.5)?data.pitch:0,
+    attachments:(()=>{const src=data.attachments&&typeof data.attachments==='object'?data.attachments:{};const out={};for(const key of ['optic','suppressor','extended','grip','stock'])if(src[key]===true)out[key]=true;return out;})(),
     dead:false,deadUntil:0,health:prev?.health??100,kills:prev?.kills??0,lastShot:prev?.lastShot??0,grenades:prev?.grenades??3,iceCharges:prev?.iceCharges??3,lastGearAt:prev?.lastGearAt??0,gear:data.gear==='grenade'?'grenade':'none'};
    this.players.set(meta.id,state);this.save3D(meta.id);this.broadcast3D(state);if(!prev)this.broadcastRanking();return;
   }
