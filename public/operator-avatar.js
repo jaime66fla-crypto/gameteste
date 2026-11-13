@@ -168,7 +168,7 @@ class OperatorAvatar{
  }
  setWeapon(id){this.weaponId=id;}
  setRecoil(value){this.recoil=value;}
- update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0}={}){
+ update(dt,{dead=false,speed=0,grounded=true,armed=false,aiming=false,sprinting=speed>8,verticalVelocity=0,jumpPreparation=0,jumpForce=8.5,gravity=-22,recoil=this.recoil||0,crouching=false,covering=false,coverSide=1,strafe=0,forward=0,braking=0,turn=0,turnSharpness=0,aimTransition=0,stepBlend=0}={}){
   dt=clamp(Number.isFinite(dt)?dt:0,0,.05);
   if(dead){
    this.state='dead';this.gun.visible=false;this.flash.visible=false;
@@ -191,7 +191,7 @@ class OperatorAvatar{
   let phase=this.phase;
   if(jumpPreparation>0){state='jump';phase=.22*clamp(1-jumpPreparation/.12,0,1)}
   else if(!grounded){state='jump';const flight=Math.max(.25,2*jumpForce/Math.abs(gravity));phase=this.airTime<.10?.22+.13*M.curveMotion([[0,0],[1,1]],this.airTime/.10):.35+.37*clamp((this.airTime-.10)/(flight-.10),0,1)}
-  else if(this.landingTime<.30){state='jump';phase=.72+.28*clamp(this.landingTime/.30,0,1)}
+  else if(this.landingTime<.34){state='jump';phase=.72+.28*clamp(this.landingTime/.34,0,1)}
   this.wasGrounded=grounded;this.state=state;
   const pose=M.sampleMotion(state,phase,armed,this.weaponId),r=pose.r;
   // PlayerController owns the physical jump. Never add the preview's parabola.
@@ -297,6 +297,35 @@ class OperatorAvatar{
      pose.root[2]-=.012*back*move;
     }
    }
+  }
+
+  if(grounded&&this.landingTime<.34){
+   const u=clamp(this.landingTime/.34,0,1);
+   const impact=1-Math.abs(u*2-1);
+   const settle=1-u;
+   r[12][0]-=.12*settle;
+   r[15][0]-=.12*settle;
+   r[13][0]+=.42*impact;
+   r[16][0]+=.42*impact;
+   r[14][0]-=.12*impact;
+   r[17][0]-=.12*impact;
+   r[2][0]+=.12*impact;
+   r[3][0]+=.06*impact;
+   r[5][0]+=.05*impact;
+   pose.root[1]-=.055*impact;
+  }
+
+  if(grounded&&stepBlend>.01){
+   const step=clamp(stepBlend,0,1);
+   const lead=forward>=0?12:15;
+   const trail=lead===12?15:12;
+   r[lead][0]-=.34*step;
+   r[lead+1][0]+=.72*step;
+   r[lead+2][0]-=.34*step;
+   r[trail][0]-=.12*step;
+   r[trail+1][0]+=.22*step;
+   r[2][0]+=.07*step;
+   pose.root[1]-=.025*step;
   }
 
   if(crouch>.001){
