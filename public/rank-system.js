@@ -43,12 +43,12 @@
  const lobbyCard=lobbyRank?.closest('.battle-rank-card');
  if(lobbyRank){
   const badge=document.createElement('span');badge.id='rankLobbyBadge';
-  lobbyRank.before(badge);
-  lobbyRank.parentElement?.classList.add('rank-emblem-line');
+  const row=document.createElement('div');row.className='rank-emblem-line';
+  lobbyRank.before(row);row.append(badge,lobbyRank);
  }
  const rankGallery=document.createElement('details');rankGallery.id='rank-gallery';
  rankGallery.innerHTML='<summary>VER TODAS AS PATENTES</summary><div class="rank-gallery-grid">'+RANKS.map(([name],i)=>'<div class="rank-gallery-entry" data-rank="'+i+'">'+badgeMarkup(i)+'<span>'+name.toUpperCase()+'</span></div>').join('')+'</div>';
- lobbyCard?.insertAdjacentElement('afterend',rankGallery);
+ document.getElementById('battleLobby')?.before(rankGallery);
  let toastUntil=0;
  function update(){
   const state=getState();
