@@ -16,7 +16,7 @@ const performancePanel=(()=>{
  const root=document.createElement('section');
  root.id='gameteste-performance';
  root.setAttribute('aria-label','Monitor de desempenho');
- root.style.cssText='position:fixed;left:12px;bottom:12px;z-index:35;pointer-events:none;min-width:112px;max-width:235px;color:#eaf7ff;font:600 11px/1.5 system-ui,Arial;background:rgba(6,17,24,.84);border:1px solid rgba(133,187,209,.5);border-radius:9px;padding:8px 10px;box-shadow:0 5px 20px #0005;font-variant-numeric:tabular-nums';
+ root.style.cssText='position:fixed;left:12px;bottom:78px;z-index:35;pointer-events:none;min-width:112px;max-width:235px;color:#eaf7ff;font:600 11px/1.5 system-ui,Arial;background:rgba(6,17,24,.84);border:1px solid rgba(133,187,209,.5);border-radius:9px;padding:8px 10px;box-shadow:0 5px 20px #0005;font-variant-numeric:tabular-nums';
  const header=document.createElement('div');header.style.cssText='display:flex;align-items:center;justify-content:space-between;gap:8px';
  const headline=document.createElement('strong');headline.textContent='FPS --';headline.style.cssText='color:#85e8ac;font-size:16px;white-space:nowrap';
  const toggle=document.createElement('button');toggle.type='button';toggle.textContent='DETALHES';toggle.title='Alternar detalhes (F8)';
@@ -3186,7 +3186,7 @@ const safeZoneVisual=(()=>{
  const ring=new THREE.LineLoop(geometry,mat);
  ring.visible=false;ring.frustumCulled=false;ring.userData.ignoreCombat=true;ring.userData.ignoreCamera=true;scene.add(ring);
  const hud=document.createElement('div');hud.id='safeZoneHud';hud.hidden=true;
- hud.style.cssText='position:fixed;top:74px;right:12px;z-index:35;background:#081b27dc;color:#e2faff;border:1px solid #60d5ff;border-radius:8px;padding:8px 12px;font:700 12px system-ui;pointer-events:none';
+ hud.style.cssText='position:fixed;top:62px;right:12px;z-index:35;background:#081b27dc;color:#e2faff;border:1px solid #60d5ff;border-radius:8px;padding:8px 12px;font:700 12px system-ui;pointer-events:none';
  document.body.appendChild(hud);
  let zone=null;
  function update(){
