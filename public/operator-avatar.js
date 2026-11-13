@@ -436,12 +436,31 @@ class OperatorAvatar{
    const e=clamp(equip,0,1);
    const progress=1-e;
    const raise=progress*progress*(3-2*progress);
-   r[2][0]+=THREE.MathUtils.lerp(.18,0,raise);
-   r[3][0]+=THREE.MathUtils.lerp(.12,0,raise);
-   r[3][1]+=THREE.MathUtils.lerp(.10,0,raise);
-   r[6][0]+=THREE.MathUtils.lerp(.22,0,raise);
-   r[9][0]+=THREE.MathUtils.lerp(.16,0,raise);
-   pose.root[1]-=.018*(1-raise);
+   const id=this.weaponId||'pistol';
+
+   const weight=id==='pistol'?.45:id==='smg'?.65:id==='rifle'?.82:id==='shotgun'?.88:1;
+   const bodyDip=THREE.MathUtils.lerp(.10,.24,weight);
+   const chestDip=THREE.MathUtils.lerp(.07,.16,weight);
+   const yawSet=THREE.MathUtils.lerp(.05,.14,weight);
+   const armDrop=THREE.MathUtils.lerp(.12,.28,weight);
+
+   r[2][0]+=THREE.MathUtils.lerp(bodyDip,0,raise);
+   r[3][0]+=THREE.MathUtils.lerp(chestDip,0,raise);
+   r[3][1]+=THREE.MathUtils.lerp(yawSet,0,raise);
+   r[6][0]+=THREE.MathUtils.lerp(armDrop,0,raise);
+   r[9][0]+=THREE.MathUtils.lerp(armDrop*.78,0,raise);
+
+   if(id==='shotgun'||id==='sniper'){
+    r[1][0]+=THREE.MathUtils.lerp(.06,0,raise);
+    r[13][0]+=THREE.MathUtils.lerp(.10,0,raise);
+    r[16][0]+=THREE.MathUtils.lerp(.08,0,raise);
+   }
+   if(id==='sniper'){
+    r[3][2]+=THREE.MathUtils.lerp(.05,0,raise);
+    r[6][1]-=THREE.MathUtils.lerp(.08,0,raise);
+    r[9][1]+=THREE.MathUtils.lerp(.05,0,raise);
+   }
+   pose.root[1]-=THREE.MathUtils.lerp(.010,.032,weight)*(1-raise);
   }
 
   if(this.coverBlend>.001){
@@ -471,10 +490,13 @@ class OperatorAvatar{
     a[2]+=roll*down;
    }
    if(equip>.001){
-    const e=clamp(equip,0,1);
-    a[0]+=.42*e;
-    a[1]+=.12*e;
-    a[2]+=.08*e;
+    const e=clamp(equip,0,1),id=this.weaponId||'pistol';
+    const pitch=id==='pistol'?.28:id==='smg'?.34:id==='rifle'?.44:id==='shotgun'?.48:.58;
+    const yaw=id==='pistol'?.06:id==='smg'?.08:id==='rifle'?.11:id==='shotgun'?.12:.16;
+    const roll=id==='pistol'?.04:id==='smg'?.05:id==='rifle'?.07:id==='shotgun'?.09:.12;
+    a[0]+=pitch*e;
+    a[1]+=yaw*e;
+    a[2]+=roll*e;
    }
    a[0]+=.40*this.coverBlend-recoil*.04;
    a[1]+=coverSide*.12*this.coverBlend;
