@@ -2514,6 +2514,29 @@ camera.add(adsViewModel);
 if(!camera.parent)scene.add(camera);
 let adsViewWeapon=null;
 let adsViewWeaponId=null;
+// Camera-mounted first-person arms are visual only, never physics/hit targets.
+const adsArms=new THREE.Group();
+adsArms.name='ADS_TACTICAL_ARMS';
+adsArms.userData.ignoreCombat=true;
+adsArms.userData.ignoreCamera=true;
+adsViewModel.add(adsArms);
+const adsSleeve=new THREE.MeshStandardMaterial({color:0x252c29,roughness:.91,metalness:.03,depthTest:true});
+const adsGlove=new THREE.MeshStandardMaterial({color:0x161e1d,roughness:.84,depthTest:true});
+function addAdsLimb(from,to,radius,material){
+ const a=new THREE.Vector3(...from),b=new THREE.Vector3(...to),vector=b.clone().sub(a);
+ const mesh=new THREE.Mesh(new THREE.CylinderGeometry(radius*.83,radius,vector.length(),9),material);
+ mesh.position.copy(a).add(b).multiplyScalar(.5);
+ mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),vector.normalize());
+ mesh.frustumCulled=false;mesh.castShadow=false;
+ mesh.userData.ignoreCombat=true;mesh.userData.ignoreCamera=true;
+ adsArms.add(mesh);
+ return mesh;
+}
+// The firing arm is on the right, supporting arm on the left.
+addAdsLimb([.43,-.43,-.29],[.13,-.22,-.57],.095,adsSleeve);
+addAdsLimb([.13,-.22,-.57],[.055,-.18,-.66],.060,adsGlove);
+addAdsLimb([-.42,-.44,-.32],[-.16,-.23,-.67],.088,adsSleeve);
+addAdsLimb([-.16,-.23,-.67],[-.025,-.19,-.78],.058,adsGlove);
 function ensureAdsViewWeapon(id){
  if(adsViewWeaponId===id&&adsViewWeapon)return adsViewWeapon;
  if(adsViewWeapon){
@@ -2532,6 +2555,7 @@ function updateAdsViewModel(dt){
  // of the scope image made its front sight cover the lower half of the lens.
  const scoped=active&&id==='sniper';
  adsViewModel.visible=!!active&&!scoped;
+ adsArms.visible=!!active&&(id==='rifle'||id==='smg');
  if(!active||scoped)return;
  const gun=ensureAdsViewWeapon(id);
  window.WeaponLootSystem?.applyAccessoryVisuals?.(gun,id,weaponLoot?.slots?.[weaponLoot.activeSlot]?.attachments||{});
@@ -2540,8 +2564,8 @@ function updateAdsViewModel(dt){
  const bob=controller.horizontalSpeed>0.1?Math.sin(performance.now()*.009)*.004:0;
  const poses={
   pistol:{p:[.10,-.20,-.50],r:[-.02,Math.PI,0],s:.58},
-  smg:{p:[.025,-.135,-.66],r:[-.012,Math.PI,0],s:.52},
-  rifle:{p:[.018,-.145,-.74],r:[-.01,Math.PI,0],s:.50},
+  smg:{p:[0,-.285,-.48],r:[-.012,Math.PI,0],s:1.05},
+  rifle:{p:[0,-.295,-.49],r:[-.01,Math.PI,0],s:1.12},
   shotgun:{p:[.035,-.15,-.78],r:[-.012,Math.PI,0],s:.48},
   sniper:{p:[.015,-.165,-.90],r:[-.008,Math.PI,0],s:.46}
  };
@@ -2880,8 +2904,8 @@ function updateCamera(dt){
  let mode='iron';
 
  if(weaponId==='smg'||weaponId==='rifle'){
-  // Simple center dot instead of the obstructive square optic.
-  mode='iron';
+  // Tactical ADS: sight housing in the foreground, reticle on the camera axis.
+  mode='optic';
   targetFov=38;
  }else if(weaponId==='sniper'){
   mode='scope';
@@ -2897,8 +2921,8 @@ function updateCamera(dt){
  camera.fov=THREE.MathUtils.lerp(camera.fov,targetFov,1-Math.exp(-dt*(weaponId==='sniper'?10:14)));
  camera.updateProjectionMatrix();
 
- aimDot?.classList.toggle('ads-hidden',mode==='scope');
- optic?.classList.remove('active');
+ aimDot?.classList.toggle('ads-hidden',mode==='scope'||mode==='optic');
+ optic?.classList.toggle('active',mode==='optic');
  scope?.classList.toggle('active',mode==='scope');
  document.body.classList.toggle('ads-optic',mode==='optic');
  document.body.classList.toggle('ads-scope',mode==='scope');
