@@ -1646,7 +1646,7 @@ class PistolController {
    }
   }
  }
- emitShotEffects(start,spec,flashScale=1){
+ emitShotEffects(start,spec,flashScale=1,aimDirection=null){
   const isShotgun=spec.id==='shotgun';
   const casingMaterial=this.casingMaterial[isShotgun?'shotgun':'small'];
   // Cases eject from the right of the receiver, not from the muzzle itself.
@@ -1665,7 +1665,7 @@ class PistolController {
   const burst=new THREE.Group();
   burst.position.copy(start);
   burst.scale.setScalar(Math.max(.02,flashScale));
-  const direction=new THREE.Vector3(0,0,1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
+  const direction=aimDirection?.clone()?.normalize()||new THREE.Vector3(0,0,1).applyQuaternion(this.player.getWorldQuaternion(new THREE.Quaternion()));
   burst.quaternion.setFromUnitVectors(new THREE.Vector3(0,0,1),direction);
   const flame=new THREE.Mesh(new THREE.ConeGeometry(isShotgun?.095:.054,isShotgun?.36:.22,7),new THREE.MeshBasicMaterial({color:0xffe39a,transparent:true,opacity:.9,depthWrite:false}));
   flame.rotation.x=Math.PI/2;flame.position.z=.105;burst.add(flame);
@@ -1755,8 +1755,14 @@ class PistolController {
   this.mechanismShot=1;
   forestAudio.init();forestAudio.playShoot(spec.id,mods.soundMultiplier);combatBots?.reportSound?.(this.player.position,mods.suppressor?18:34,'gunshot');
   this.scene.updateMatrixWorld(true);
-  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3()),damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
-  this.emitShotEffects(start,spec,mods.muzzleFlashMultiplier);
+  // Keep the ballistic ray and network origin on the physical Soldier weapon.
+  // The visible ADS gun is camera-mounted, so use its own barrel for VFX.
+  const start=this.muzzlePoint.getWorldPosition(new THREE.Vector3());
+  const visualStart=typeof getVisibleWeaponMuzzle==='function'
+   ?getVisibleWeaponMuzzle(spec.id,this.attachments):start.clone();
+  const damageByTarget=new Map(),damageByWall=new Map(),networkRays=[],networkHits=[];
+  const flashDirection=this.camera.getWorldDirection(new THREE.Vector3());
+  this.emitShotEffects(visualStart,spec,mods.muzzleFlashMultiplier,flashDirection);
   for(let pellet=0;pellet<spec.pellets;pellet++){
    const centered=spec.pellets>1&&pellet===0;
    const raycaster=new THREE.Raycaster();raycaster.far=spec.range;
@@ -1773,7 +1779,7 @@ class PistolController {
    if(hit&&(spec.pellets===1||pellet<3))this.emitImpact(hit,spec);
    const iceId=hit?.object?.userData?.iceWallId;if(iceId)damageByWall.set(iceId,(damageByWall.get(iceId)||0)+spec.damage);
    if(hit?.object?.userData?.remoteId)networkHits.push({targetId:hit.object.userData.remoteId,pellet});
-   this.emitTracer(start,end);
+   this.emitTracer(visualStart,end);
    const target=hit?.object?.userData?.enemyRef;
    if(target?.alive){
     const falloff=spec.id==='shotgun'?THREE.MathUtils.clamp(1-Math.max(0,start.distanceTo(end)-8)/25,.25,1):1;
@@ -2545,6 +2551,21 @@ function updateAdsViewModel(dt){
  gun.rotation.y=THREE.MathUtils.lerp(gun.rotation.y,pose.r[1],t);
  gun.rotation.z=THREE.MathUtils.lerp(gun.rotation.z,pose.r[2]+bob*.7,t);
  gun.scale.setScalar(pose.s);
+}
+
+// Use the visible gun barrel for local tracers/flash, including the ADS viewmodel.
+// The combat raycast remains camera-aligned and the network payload is unchanged.
+function getVisibleWeaponMuzzle(weaponId,attachments){
+ const barrelZ=(window.WeaponLootSystem.DEFINITIONS[weaponId]?.muzzleZ||.2)
+  +(attachments?.suppressor?.25:0);
+ const point=new THREE.Vector3(0,.035,barrelZ+.022);
+ if(controller?.keys?.aiming&&adsViewModel.visible&&adsViewWeapon){
+  adsViewWeapon.updateWorldMatrix(true,false);
+  return adsViewWeapon.localToWorld(point);
+ }
+ pistolWeapon.muzzlePoint.updateWorldMatrix(true,false);
+ return pistolWeapon.muzzlePoint.getWorldPosition(new THREE.Vector3())
+  .addScaledVector(new THREE.Vector3(0,0,1).transformDirection(pistolWeapon.muzzlePoint.matrixWorld),attachments?.suppressor?.25:0);
 }
 
 // Use the locally bundled, approved operator instead of loading Soldier from a CDN.
