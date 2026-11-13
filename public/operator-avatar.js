@@ -798,18 +798,28 @@ class OperatorAvatar{
    flat[3][0]=-.035;
    flat[4][0]=-.06;
    flat[5][0]=-.10;
-   // Elbows brace on the ground, trigger hand stays close to the receiver.
-   flat[6]=[-.36,-.06,.31];flat[7]=[-.67,.08,.06];flat[8]=[.09,0,0];
-   flat[9]=[-.39,.07,-.34];flat[10]=[-.75,-.04,-.07];flat[11]=[.07,0,0];
+   // Keep weapon-solving IK as the baseline: the wrists must stay on the gun.
+   // Lean the upper arms toward the soil without breaking their hand grips.
+   flat[6]=r[6].slice();flat[7]=r[7].slice();flat[8]=r[8].slice();
+   flat[9]=r[9].slice();flat[10]=r[10].slice();flat[11]=r[11].slice();
+   flat[6][2]+=.13;flat[9][2]-=.13;
    // Straight legs trail behind the pelvis, slightly separated at the boots.
    flat[12]=[-.10,0,-.06];flat[13]=[.16,0,.025];flat[14]=[-.08,0,0];
    flat[15]=[-.11,0,.07];flat[16]=[.18,0,-.025];flat[17]=[-.08,0,0];
    for(let bone=0;bone<18;bone++)for(let axis=0;axis<3;axis++){
     r[bone][axis]=THREE.MathUtils.lerp(r[bone][axis],flat[bone][axis],proneWeight);
    }
-   // Keep the torso just above terrain instead of passing through it.
-   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],.25,proneWeight);
-   this.gun.quaternion.premultiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2*proneWeight));
+   // Root is at ground level; a quarter-turn places the torso along the ground.
+   // Keep shoulders above the surface and counter-rotate the weapon in the
+   // chest's local space so the barrel points forward, not into the terrain.
+   pose.root[1]=THREE.MathUtils.lerp(pose.root[1],.21,proneWeight);
+   if(armed){
+    const counter=new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1,0,0),-Math.PI/2*proneWeight);
+    // The weapon mount is freshly solved each frame in the armed branch.
+    this.gun.quaternion.premultiply(counter);
+    this.gun.position.y+=.09*proneWeight;
+    this.gun.position.z+=.10*proneWeight;
+   }
   }
   // Apply crossfade after procedural reactions and arm IK have been calculated.
   if(this.poseTransition){
