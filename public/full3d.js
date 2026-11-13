@@ -2269,10 +2269,23 @@ const playerLife=new window.PlayerLife({
  }
 });
 let lastReceivedDamage=0;
+let playerHitReaction={strength:0,side:0,front:0};
 const combatBots=new window.CombatBotSystem({
  scene,player,camera,terrainHeight:forestEnvironment.getTerrainHeight,solidBoxes:houseParkour.solidBoxes,
  onKill:bot=>{score+=100;weaponLoot.dropFromBot(bot.group.position);},
- onPlayerHit:health=>playerLife.receiveHealth(health),
+ onPlayerHit:(health,damage,source)=>{
+  if(source){
+   const toSource=new THREE.Vector3(source.x-player.position.x,0,source.z-player.position.z);
+   if(toSource.lengthSq()>.0001){
+    toSource.normalize();
+    const local=toSource.applyAxisAngle(new THREE.Vector3(0,1,0),-player.rotation.y);
+    playerHitReaction.side=THREE.MathUtils.clamp(local.x,-1,1);
+    playerHitReaction.front=THREE.MathUtils.clamp(local.z,-1,1);
+   }
+  }
+  playerHitReaction.strength=Math.max(playerHitReaction.strength,THREE.MathUtils.clamp((damage||6)/18,.25,1));
+  playerLife.receiveHealth(health);
+ },
  onPlayerDeath:()=>playerLife.die(5)
 });
 
@@ -2499,6 +2512,9 @@ function loop(){
  tacticalGear.update(elapsed);
  if(multiplayer.active){networkTick+=dt;if(networkTick>=.10){networkTick=0;sendNetworkState();}multiplayerWorld.update(dt);}
  playerDamageFlash=Math.max(0,playerDamageFlash-dt);
+ playerHitReaction.strength=THREE.MathUtils.lerp(playerHitReaction.strength,0,1-Math.exp(-10*dt));
+ playerHitReaction.side=THREE.MathUtils.lerp(playerHitReaction.side,0,1-Math.exp(-7*dt));
+ playerHitReaction.front=THREE.MathUtils.lerp(playerHitReaction.front,0,1-Math.exp(-7*dt));
  const damageText=document.getElementById('receivedDamage');if(damageText){damageText.textContent='−'+Math.round(lastReceivedDamage)+' · ATINGIDO';damageText.style.opacity=String(Math.min(1,playerDamageFlash/.35));}
  const lifeFill=document.getElementById('vitalFill');if(lifeFill)lifeFill.style.width=combatBots.health+'%';
  const lifeValue=document.getElementById('vitalValue');if(lifeValue)lifeValue.textContent=combatBots.health+' / 100';
@@ -2509,7 +2525,7 @@ function loop(){
  if(healthEl){healthEl.textContent=String(combatBots.health);healthEl.style.color=combatBots.health<35?'#ff8278':'#7ee8ff';}
  const movingNow=controller.horizontalSpeed>0.01;
  if(mainAvatar instanceof window.OperatorAvatar){
-  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend});
+  mainAvatar.update(dt,{dead:playerLife.dead,speed:controller.horizontalSpeed,grounded:controller.isGrounded,armed:pistolWeapon.isEquipped||tacticalGear.active==='grenade',aiming:controller.keys.aiming,sprinting:controller.keys.sprint&&controller.stamina>0&&!controller.keys.aiming,verticalVelocity:controller.velocity.y,jumpPreparation:controller.jumpPreparation,jumpForce:controller.jumpForce,gravity:controller.gravity,recoil:pistolWeapon.recoil*.55,crouching:controller.isCrouching,covering:controller.cover.active&&!controller.cover.isPeeking,coverSide:controller.cover.side,strafe:controller.strafeAmount,forward:controller.forwardAmount,braking:controller.braking,turn:controller.turnAmount,turnSharpness:controller.turnSharpness,aimTransition:controller.aimTransition,stepBlend:controller.stepBlend,landingImpact:controller.landingImpact,hardLanding:controller.hardLanding,recovery:controller.recoveryTimer>0?controller.recoveryStrength:0,reload:pistolWeapon.reloadBlend,equip:pistolWeapon.equipBlend,hitStrength:playerHitReaction.strength,hitSide:playerHitReaction.side,hitFront:playerHitReaction.front});
  }else if(useHumanCharacter&&humanCharacter.model){
   humanCharacter.updateLocomotion(controller.horizontalSpeed,controller.isGrounded);
 
