@@ -698,6 +698,34 @@ class ForestAudioSystem {
   this._shotNoise(now+.010,.018,spec.crack,2300,7600);
   this._shotTail(now+.035,spec.tail,.055);
  }
+ playWeaponMechanic(kind='pistol',action='equip'){
+  if(!this.ctx||!this.enabled||!this.masterGain)return;
+  const profiles={
+   pistol:{pitch:1320,weight:.75},
+   smg:{pitch:1520,weight:.75},
+   rifle:{pitch:1030,weight:1},
+   shotgun:{pitch:650,weight:1.25},
+   sniper:{pitch:780,weight:1.18}
+  };
+  const p=profiles[kind]||profiles.pistol;
+  const event={
+   equip:{duration:.075,volume:.046,factor:.9},
+   holster:{duration:.08,volume:.033,factor:.72},
+   magOut:{duration:.11,volume:.065,factor:.70},
+   magIn:{duration:.09,volume:.09,factor:1.2},
+   bolt:{duration:.13,volume:.105,factor:1.45},
+   shell:{duration:.075,volume:.074,factor:1.05},
+   ready:{duration:.06,volume:.045,factor:1.1},
+   empty:{duration:.045,volume:.058,factor:1.6}
+  }[action];
+  if(!event)return;
+  const t=this.ctx.currentTime+.003;
+  const pitch=p.pitch*event.factor*(.95+Math.random()*.1);
+  this._shotTone(t,pitch,event.duration,event.volume*p.weight,'triangle',pitch*.58);
+  this._shotNoise(t+.002,event.duration*.62,event.volume*.7*p.weight,pitch*.5,pitch*2.6);
+  if(action==='bolt'||action==='magIn'||action==='shell')
+   this._shotTone(t+.035,pitch*.54,.043,event.volume*.45*p.weight,'square',pitch*.32);
+ }
  playMaterialImpact(kind,position,listenerCamera){
   if(!this.ctx||!this.enabled||!this.masterGain||!position||!listenerCamera)return;
   const now=this.ctx.currentTime;
@@ -1107,6 +1135,8 @@ class PistolController {
   this.casings=[];
   this.muzzleBursts=[];
   this.impactEffects=[];
+  this.reloadSoundStage=0;
+  this.emptyClickCooldown=0;
 
   this.pistol=this.createPistolMesh();
   this.soldierAttached=false;
@@ -1351,6 +1381,8 @@ class PistolController {
   this.equipDuration=id==='pistol'?.22:id==='smg'?.28:id==='rifle'?.38:id==='shotgun'?.42:id==='sniper'?.58:.34;
   this.equipTimer=this.equipDuration;
   this.equipBlend=1;
+  this.reloadSoundStage=0;
+  forestAudio.playWeaponMechanic(id,'equip');
   this.pistol.visible=true;
 
   // Right-hand / two-handed TPS posture.
@@ -1365,6 +1397,7 @@ class PistolController {
  }
 
  holster(){
+  if(this.isEquipped)forestAudio.playWeaponMechanic(this.weaponSpec?.id||'pistol','holster');
   this.isEquipped=false;
   this.isReloading=false;
   this.triggerHeld=false;
@@ -1391,7 +1424,9 @@ class PistolController {
   this.isReloading=true;
   this.reloadTimer=0;
   this.reloadBlend=0;
+  this.reloadSoundStage=0;
   this.triggerHeld=false;
+  forestAudio.playWeaponMechanic(this.weaponSpec?.id||'pistol','magOut');
  }
 
  finishReload(){
@@ -1401,6 +1436,8 @@ class PistolController {
   this.reserveAmmo-=loaded;
   this.isReloading=false;
   this.reloadBlend=0;
+  this.reloadSoundStage=0;
+  forestAudio.playWeaponMechanic(this.weaponSpec?.id||'pistol','ready');
   this.loot?.saveActive();
  }
 
@@ -1526,7 +1563,14 @@ class PistolController {
    if(!controller.cover.canFireFrom(this.muzzlePoint.getWorldPosition(new THREE.Vector3())))return;
   }
   if(this.fireCooldown>0)return;
-  if(this.ammo<=0){this.reload();return;}
+  if(this.ammo<=0){
+   if(this.reserveAmmo>0){this.reload();}
+   else if(this.emptyClickCooldown<=0){
+    forestAudio.playWeaponMechanic(this.weaponSpec?.id||'pistol','empty');
+    this.emptyClickCooldown=.27;
+   }
+   return;
+  }
   const spec=this.weaponSpec;
   const ads=controller.keys.aiming&&this.isEquipped;
   const locomotion=THREE.MathUtils.clamp(controller.horizontalSpeed/Math.max(1,controller.sprintSpeed),0,1);
@@ -1587,12 +1631,31 @@ class PistolController {
   this.updateShotEffects(dt);
   this.updateImpactEffects(dt);
   this.fireCooldown=Math.max(0,this.fireCooldown-dt);
+  this.emptyClickCooldown=Math.max(0,this.emptyClickCooldown-dt);
   this.equipTimer=Math.max(0,this.equipTimer-dt);
   this.equipBlend=this.equipTimer>0?THREE.MathUtils.clamp(this.equipTimer/Math.max(.01,this.equipDuration),0,1):0;
 
   if(this.isReloading){
    this.reloadTimer+=dt;
    this.reloadBlend=THREE.MathUtils.clamp(this.reloadTimer/Math.max(.01,this.reloadTime),0,1);
+   const id=this.weaponSpec?.id||'pistol';
+   const shotgun=id==='shotgun',sniper=id==='sniper';
+   // Trigger one mechanical cue per normalized animation phase, independent of FPS.
+   if(shotgun){
+    for(const threshold of [.32,.55,.78]){
+     const stage=Math.round(threshold*100);
+     if(this.reloadBlend>=threshold&&this.reloadSoundStage<stage){
+      forestAudio.playWeaponMechanic(id,'shell');this.reloadSoundStage=stage;
+     }
+    }
+   }else{
+    if(this.reloadBlend>=.47&&this.reloadSoundStage<1){
+     forestAudio.playWeaponMechanic(id,'magIn');this.reloadSoundStage=1;
+    }
+    if(this.reloadBlend>=(sniper?.76:.83)&&this.reloadSoundStage<2){
+     forestAudio.playWeaponMechanic(id,'bolt');this.reloadSoundStage=2;
+    }
+   }
    if(this.reloadTimer>=this.reloadTime){
     this.finishReload();
    }
