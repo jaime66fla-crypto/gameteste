@@ -63,7 +63,7 @@ class CombatBotSystem {
    accuracy:.58-index*.04,burstShots:0,burstGap:0,
    inCover:false,coverAnchor:null,crouching:false,peekSide:index%2===0?1:-1,peekTimer:.7+index*.15,
    flankPoint:null,flankCooldown:2.5+index*.8,
-   squadRole:'support',sharedIntelAge:999,
+   squadRole:'support',sharedIntelAge:999,lastKnownAge:999,
    grenades:1,grenadeCooldown:3.5+index*.8,evadePoint:null,evadeTimer:0,blockedWallId:null,
    preparingGrenade:false,grenadePrepTimer:0,grenadeTarget:null,grenadeDirection:null,heldGrenade:null
   };
@@ -144,6 +144,7 @@ class CombatBotSystem {
    if(!mate.alive||mate===sourceBot)continue;
    mate.lastKnownTarget=this.squadLastKnown.clone();
    mate.sharedIntelAge=0;
+   mate.lastKnownAge=0;
    if(mate.state===STATES.PATROL){
     mate.investigatePoint=this.squadLastKnown.clone();
     this.setState(mate,STATES.INVESTIGATE);
@@ -553,6 +554,7 @@ class CombatBotSystem {
    bot.lastKnownTarget=playerPos.clone();
    bot.lostSightTime=0;
    bot.sharedIntelAge=0;
+   bot.lastKnownAge=0;
    this.shareTarget(playerPos,bot);
 
    if(bot.health<=bot.retreatHealth)this.setState(bot,STATES.RETREAT);
@@ -563,6 +565,7 @@ class CombatBotSystem {
   }
 
   bot.lostSightTime+=dt;
+  bot.lastKnownAge+=dt;
   if(bot.target&&bot.lostSightTime<1.4){
    bot.lastKnownTarget=playerPos.clone();
    return false;
@@ -622,6 +625,16 @@ class CombatBotSystem {
    }
    case STATES.INVESTIGATE:{
     const target=bot.investigatePoint||bot.lastKnownTarget;
+    if(target&&bot.grenades>0&&bot.grenadeCooldown<=0&&bot.lastKnownAge>.55&&bot.lastKnownAge<3.6){
+     const distanceToMemory=bot.group.position.distanceTo(target);
+     const recentEnough=bot.sharedIntelAge<3.8||bot.lastKnownAge<2.6;
+     if(recentEnough&&distanceToMemory>8&&distanceToMemory<18&&this.random()<dt*.28){
+      if(this.throwGrenade(bot,target)){
+       bot.cooldown=Math.max(bot.cooldown,1.1);
+       break;
+      }
+     }
+    }
     movementSpeed=this.moveToward(bot,target,bot.moveSpeed,dt,.8);
     this.face(bot,target,dt);
     if(!target||bot.group.position.distanceTo(target)<1||bot.stateTime>5){
@@ -632,9 +645,19 @@ class CombatBotSystem {
    }
    case STATES.CHASE:{
     const target=bot.lastKnownTarget||playerPos;
+    const seesPlayer=this.hasLineOfSight(bot,playerPos);
+    if(!seesPlayer&&target&&bot.grenades>0&&bot.grenadeCooldown<=0&&bot.lastKnownAge>.45&&bot.lastKnownAge<3.2){
+     const memoryDistance=bot.group.position.distanceTo(target);
+     if(memoryDistance>8&&memoryDistance<19&&this.random()<dt*.18){
+      if(this.throwGrenade(bot,target)){
+       bot.cooldown=Math.max(bot.cooldown,1.05);
+       break;
+      }
+     }
+    }
     movementSpeed=this.moveToward(bot,target,bot.sprintSpeed,dt,7);
     this.face(bot,target,dt);
-    if(distance<22&&this.hasLineOfSight(bot,playerPos))this.setState(bot,STATES.ATTACK);
+    if(distance<22&&seesPlayer)this.setState(bot,STATES.ATTACK);
     else if(bot.lostSightTime>2.4)this.setState(bot,STATES.INVESTIGATE);
     break;
    }
@@ -829,6 +852,7 @@ class CombatBotSystem {
      bot.avatar.gun.visible=true;
      bot.squadRole='support';
      bot.sharedIntelAge=999;
+     bot.lastKnownAge=999;
      bot.lostSightTime=0;
     }
     continue;
