@@ -411,7 +411,7 @@ function respawnPlayer(){
 
 addEventListener("keydown",e=>{
  const k=e.key.toLowerCase();keys[k]=true;
- if(k==="e")toggleCar();if(k==="p")togglePause();if(k==="r")startReload();if(k==="g")throwGrenade();
+ if(k==="e")toggleCar();if(k==="p")togglePause();if(k==="r")startReload();if(k==="g")throwGrenade();if(k==="c"&&!e.repeat)selectCover();if(k==="x"&&!e.repeat)selectCover(true);
  if([" ","arrowup","arrowdown","arrowleft","arrowright"].includes(k))e.preventDefault()
 },{passive:false});
 addEventListener("keyup",e=>keys[e.key.toLowerCase()]=false);
@@ -430,7 +430,7 @@ function setPlatform(platform){
  const help=document.getElementById("controlHelp");
  if(help)help.textContent=platform==="mobile"
   ?"Analógico esquerdo mover • Analógico direito mirar e atirar • GRANADA lançar • CARRO entrar/sair"
-  :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo";
+  :"WASD mover • Mouse mirar • Clique atirar • R recarregar • E veículo • C cobertura • Q espiar • X trocar";
  if(platform==="mobile"&&screen.orientation?.lock)screen.orientation.lock("landscape").catch(()=>{});
 }
 document.getElementById("desktopPlatformBtn")?.addEventListener("click",()=>setPlatform("desktop"));
@@ -615,6 +615,64 @@ function projectileOutOfWorld(x1,y1,x2,y2){
  return x2<0||y2<0||x2>W||y2>H;
 }
 function startReload(){if(player.inCar||player.reloading||player.ammo===player.maxAmmo||player.reserve<=0)return;player.reloading=true;player.reloadT=(player.weapon==="shotgun"||player.weapon==="sawedoff")?1.35:player.weapon==="lmg"?1.65:1.05;playSound("reload")}
+
+/* Improvement 10: tactical wall cover (C), peek (Q), change cover (X).
+   All calculations use world XY, so isometric camera does not change collisions. */
+const coverState={building:-1,side:"",peek:false,offset:0};
+function coverCandidate(b,i,x=player.x,y=player.y){
+ const sides=[
+  {side:"top",x:Math.max(b.x+20,Math.min(b.x+b.w-20,x)),y:b.y-player.r-3,nx:0,ny:-1,tx:1,ty:0},
+  {side:"bottom",x:Math.max(b.x+20,Math.min(b.x+b.w-20,x)),y:b.y+b.h+player.r+3,nx:0,ny:1,tx:1,ty:0},
+  {side:"left",x:b.x-player.r-3,y:Math.max(b.y+20,Math.min(b.y+b.h-20,y)),nx:-1,ny:0,tx:0,ty:1},
+  {side:"right",x:b.x+b.w+player.r+3,y:Math.max(b.y+20,Math.min(b.y+b.h-20,y)),nx:1,ny:0,tx:0,ty:1}
+ ];
+ return sides.map(v=>({...v,building:i,dist:Math.hypot(x-v.x,y-v.y)})).filter(v=>!collides(v.x,v.y,player.r)).sort((a,b)=>a.dist-b.dist)[0];
+}
+function nearbyCovers(){
+ return buildings.map((b,i)=>coverCandidate(b,i)).filter(Boolean).filter(c=>c.dist<110).sort((a,b)=>a.dist-b.dist);
+}
+function clearCover(){coverState.building=-1;coverState.side="";coverState.peek=false;coverState.offset=0;}
+function selectCover(next=false){
+ if(player.dead||player.inCar||player.climb||player.roof!==null){clearCover();return;}
+ const options=nearbyCovers();
+ if(!options.length){clearCover();return;}
+ if(!next&&coverState.building>=0){clearCover();return;}
+ const current=options.findIndex(c=>c.building===coverState.building&&c.side===coverState.side);
+ const target=options[next&&current>=0?(current+1)%options.length:0];
+ coverState.building=target.building;coverState.side=target.side;coverState.peek=false;coverState.offset=0;
+ player.x=target.x;player.y=target.y;
+}
+function activeCover(){
+ if(coverState.building<0||player.inCar||player.dead||player.climb||player.roof!==null)return null;
+ const b=buildings[coverState.building];if(!b){clearCover();return null;}
+ const c=coverCandidate(b,coverState.building);
+ if(!c||c.side!==coverState.side||Math.hypot(c.x-player.x,c.y-player.y)>80){clearCover();return null;}
+ return c;
+}
+function coverMove(dx,dy,dt,run){
+ const c=activeCover();if(!c)return false;
+ // Move along the wall, not through it. Q exposes the player just beyond the corner.
+ const along=dx*c.tx+dy*c.ty,step=player.speed*dt*Math.min(1,run)*along;
+ const b=buildings[c.building],margin=player.r+5;
+ let nx=player.x+c.tx*step,ny=player.y+c.ty*step;
+ if(c.tx)nx=Math.max(b.x-margin,Math.min(b.x+b.w+margin,nx));
+ if(c.ty)ny=Math.max(b.y-margin,Math.min(b.y+b.h+margin,ny));
+ const peek=keys.q?22:0;
+ nx+=c.nx*(peek-coverState.offset);ny+=c.ny*(peek-coverState.offset);
+ if(!collides(nx,ny,player.r)){player.x=nx;player.y=ny;coverState.offset=peek;}
+ coverState.peek=!!keys.q;
+ return true;
+}
+function drawCoverIndicator(){
+ const c=activeCover();if(!c)return;
+ ctx.save();ctx.strokeStyle=coverState.peek?"#ffdf80":"#67dfff";ctx.lineWidth=3;
+ ctx.beginPath();ctx.arc(player.x,player.y,player.r+8,Math.PI*.2,Math.PI*.8);ctx.stroke();
+ ctx.translate(player.x,player.y-42);undoProjection(ctx);
+ ctx.font="700 11px system-ui";ctx.textAlign="center";ctx.fillStyle="#e9faff";
+ ctx.fillText(coverState.peek?"ESPIANDO":"COBERTURA · Q espiar · X trocar",0,0);
+ ctx.restore();
+}
+
 function shoot(){
  if(!started||paused||player.dead||player.inCar||player.climb||player.reloading||player.shootCd>0)return;
  if(player.ammo<=0){startReload();return}
@@ -1365,7 +1423,7 @@ function update(dt){
  }else{
   const dx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0)+touchMove.x,dy=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0)+touchMove.y;
   const moving=dx!==0||dy!==0,m=Math.hypot(dx,dy)||1,run=keys.shift?1.55:1;
-  const move=screenAlignedInput(dx,dy);tryRoofMovement(move.x,move.y,dt,run);
+  const move=screenAlignedInput(dx,dy);if(!coverMove(move.x,move.y,dt,run))tryRoofMovement(move.x,move.y,dt,run);
   if(moving)player.walk+=dt*(run>1?13:9);updateFootsteps(moving,run,dt);
   if(Math.hypot(touchAim.x,touchAim.y)>.12){const aim=unprojectVector(touchAim.x,touchAim.y),wx=aim.x,wy=aim.y;player.angle=Math.atan2(wy,wx);mouse.x=player.x+wx*200;mouse.y=player.y+wy*200;mouse.layer=player.roof;}
   else if(!matchMedia("(pointer:coarse)").matches)player.angle=Math.atan2(mouse.y-player.y,mouse.x-player.x);
@@ -1917,6 +1975,7 @@ function drawTopDownCharacter(opts){
 }
 function drawPlayer(){
  if(player.inCar||player.dead)return;
+ drawCoverIndicator();
  const climbPos=playerClimbVisual();
  const climbing=!!player.climb;
  const moving=keys.w||keys.a||keys.s||keys.d||keys.arrowup||keys.arrowdown||keys.arrowleft||keys.arrowright||Math.hypot(touchMove.x,touchMove.y)>.1;
