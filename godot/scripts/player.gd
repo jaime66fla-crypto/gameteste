@@ -5,6 +5,7 @@ const RUN_SPEED := 8.7
 const CROUCH_SPEED := 2.7
 const JUMP_VELOCITY := 8.5
 const MOUSE_SENSITIVITY := 0.0025
+const WeaponData = preload("res://scripts/weapon_data.gd")
 const MAG_SIZE := 15
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 
@@ -26,6 +27,10 @@ var cam_distance := 3.6
 var sound_fx: Node
 var muzzle_flare: MeshInstance3D
 var gun_kick := 0.0
+var current_weapon := "pistol"
+var reserve_ammo := {"pistol": 90, "smg": 150, "rifle": 150, "shotgun": 36, "sniper": 25}
+var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 5}
+var weapon_model: Node3D
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -84,12 +89,14 @@ func _make_avatar() -> void:
     gun = Node3D.new()
     avatar.add_child(gun)
     gun.position = Vector3(0.33,1.28,-0.48)
-    _part(gun,"PistolBody",Vector3(0,0,-0.22),Vector3(0.16,0.20,0.52),Color(0.08,0.09,0.10))
-    _part(gun,"Grip",Vector3(0,-0.16,-0.08),Vector3(0.13,0.30,0.13),Color(0.11,0.11,0.12))
-    _part(gun,"Slide",Vector3(0,0.105,-0.27),Vector3(0.18,0.10,0.46),Color("#34393e"))
-    _part(gun,"SightRear",Vector3(0,0.18,-0.07),Vector3(0.11,0.05,0.06),Color("#141719"))
-    _part(gun,"SightFront",Vector3(0,0.18,-0.48),Vector3(0.08,0.05,0.05),Color("#141719"))
-    _part(gun,"Barrel",Vector3(0,0,-0.53),Vector3(0.10,0.10,0.20),Color("#262a30"))
+    weapon_model = Node3D.new()
+    gun.add_child(weapon_model)
+    _part(weapon_model,"PistolBody",Vector3(0,0,-0.22),Vector3(0.16,0.20,0.52),Color(0.08,0.09,0.10))
+    _part(weapon_model,"Grip",Vector3(0,-0.16,-0.08),Vector3(0.13,0.30,0.13),Color(0.11,0.11,0.12))
+    _part(weapon_model,"Slide",Vector3(0,0.105,-0.27),Vector3(0.18,0.10,0.46),Color("#34393e"))
+    _part(weapon_model,"SightRear",Vector3(0,0.18,-0.07),Vector3(0.11,0.05,0.06),Color("#141719"))
+    _part(weapon_model,"SightFront",Vector3(0,0.18,-0.48),Vector3(0.08,0.05,0.05),Color("#141719"))
+    _part(weapon_model,"Barrel",Vector3(0,0,-0.53),Vector3(0.10,0.10,0.20),Color("#262a30"))
     muzzle_flare = MeshInstance3D.new()
     var flash_mesh := SphereMesh.new()
     flash_mesh.radius = 0.15
@@ -107,8 +114,13 @@ func _make_avatar() -> void:
     gun_flash.light_color = Color(1,0.65,0.25)
     gun_flash.light_energy = 0
     gun.add_child(gun_flash)
+    _rebuild_weapon_model()
 
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventKey and event.pressed and not event.echo:
+        var key_slots := {KEY_1: "pistol", KEY_2: "smg", KEY_3: "rifle", KEY_4: "shotgun", KEY_5: "sniper"}
+        if key_slots.has(event.physical_keycode):
+            _equip_weapon(key_slots[event.physical_keycode])
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
     if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
@@ -149,9 +161,14 @@ func _physics_process(delta: float) -> void:
     if reloading:
         reload_timer -= delta
         if reload_timer <= 0:
-            ammo = MAG_SIZE
+            var stats: Dictionary = WeaponData.stats(current_weapon)
+            var missing: int = int(stats["mag"]) - ammo
+            var supplied: int = mini(missing, int(reserve_ammo[current_weapon]))
+            ammo += supplied
+            reserve_ammo[current_weapon] -= supplied
+            magazines[current_weapon] = ammo
             reloading = false
-    if Input.is_action_just_pressed("reload") and ammo < MAG_SIZE and not reloading:
+    if Input.is_action_just_pressed("reload") and ammo < int(WeaponData.stats(current_weapon)["mag"]) and not reloading and int(reserve_ammo[current_weapon]) > 0:
         _reload()
     if Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading:
         _shoot()
@@ -160,21 +177,31 @@ func _shoot() -> void:
     if ammo <= 0:
         _reload()
         return
+    var stats: Dictionary = WeaponData.stats(current_weapon)
     ammo -= 1
+    magazines[current_weapon] = ammo
     shots += 1
-    fire_delay = 0.22
+    fire_delay = float(stats["interval"])
     gun_flash.light_energy = 2.8
-    gun_kick = 0.11
+    gun_kick = float(stats["kick"])
     sound_fx.shot()
     var origin := camera.global_position
-    var target := origin - camera.global_transform.basis.z * 250.0
-    var query := PhysicsRayQueryParameters3D.create(origin,target)
-    query.exclude = [get_rid()]
-    var hit := get_world_3d().direct_space_state.intersect_ray(query)
-    var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
-    _shot_tracer(gun_flash.global_position, endpoint)
-    if not hit.is_empty():
-        _impact_mark(endpoint)
+    var forward := -camera.global_transform.basis.z
+    var spread := float(stats["spread"]) * (0.4 if aiming else 1.0)
+    for pellet in range(int(stats["pellets"])):
+        var direction := (forward + camera.global_transform.basis.x * randf_range(-spread, spread) + camera.global_transform.basis.y * randf_range(-spread, spread)).normalized()
+        var target := origin + direction * float(stats["range"])
+        var query := PhysicsRayQueryParameters3D.create(origin, target)
+        query.exclude = [get_rid()]
+        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
+        if pellet == 0:
+            _shot_tracer(gun_flash.global_position, endpoint)
+        if not hit.is_empty():
+            var target_node: Object = hit["collider"]
+            if target_node != null and target_node.has_method("take_damage"):
+                target_node.call("take_damage", float(stats["damage"]))
+            _impact_mark(endpoint)
 
 func _shot_tracer(from: Vector3, to: Vector3) -> void:
     var delta_pos := to - from
@@ -212,15 +239,61 @@ func _impact_mark(point: Vector3) -> void:
     tween.tween_property(impact, "scale", Vector3.ZERO, 0.23)
     tween.tween_callback(impact.queue_free)
 
+
+func _equip_weapon(weapon_id: String) -> void:
+    if current_weapon == weapon_id:
+        return
+    magazines[current_weapon] = ammo
+    current_weapon = weapon_id
+    ammo = int(magazines[current_weapon])
+    reloading = false
+    reload_timer = 0.0
+    fire_delay = 0.12
+    gun_kick = 0.0
+    _rebuild_weapon_model()
+
+func _rebuild_weapon_model() -> void:
+    for child in weapon_model.get_children():
+        child.queue_free()
+    var dark := Color("#22272d")
+    var steel := Color("#59616a")
+    var wood := Color("#765b43")
+    var length := 0.54
+    if current_weapon == "pistol":
+        _part(weapon_model, "Slide", Vector3(0, 0.075, -0.27), Vector3(0.16, 0.16, 0.50), steel)
+        _part(weapon_model, "Grip", Vector3(0, -0.15, -0.08), Vector3(0.13, 0.29, 0.14), dark)
+    else:
+        if current_weapon == "smg":
+            length = 0.82
+        elif current_weapon == "rifle":
+            length = 1.18
+        elif current_weapon == "shotgun":
+            length = 1.27
+        else:
+            length = 1.55
+        _part(weapon_model, "Receiver", Vector3(0, 0, -length * 0.35), Vector3(0.19, 0.23, length * 0.52), steel)
+        _part(weapon_model, "Barrel", Vector3(0, 0.03, -length * 0.76), Vector3(0.09, 0.09, length * 0.45), dark)
+        _part(weapon_model, "Stock", Vector3(0, -0.035, 0.15), Vector3(0.15, 0.16, 0.38), wood if current_weapon == "shotgun" else dark)
+        _part(weapon_model, "Grip", Vector3(0, -0.18, -0.21), Vector3(0.12, 0.29, 0.15), dark)
+        if current_weapon != "shotgun":
+            _part(weapon_model, "Magazine", Vector3(0, -0.23, -length * 0.39), Vector3(0.13, 0.38, 0.16), dark)
+        if current_weapon == "sniper":
+            _part(weapon_model, "Scope", Vector3(0, 0.20, -0.34), Vector3(0.14, 0.14, 0.44), dark)
+    gun_flash.position.z = -length - 0.08
+    muzzle_flare.position.z = -length - 0.16
+
 func _reload() -> void:
     if reloading:
         return
     reloading = true
-    reload_timer = 1.3
+    if int(reserve_ammo[current_weapon]) <= 0 or ammo >= int(WeaponData.stats(current_weapon)["mag"]):
+        return
+    reload_timer = float(WeaponData.stats(current_weapon)["reload"])
     sound_fx.reload()
 
 func status_text() -> String:
     var state := "MIRANDO" if aiming else "LIVRE"
     if crouching:
         state += " / AGACHADO"
-    return "ARMA: PISTOLA  %s/%s  |  TIROS: %s  |  %s" % [ammo, MAG_SIZE, shots, "RECARREGANDO" if reloading else state]
+    var stats: Dictionary = WeaponData.stats(current_weapon)
+    return "ARMA: %s  %s/%s +%s  |  TIROS: %s  |  %s" % [stats["name"], ammo, stats["mag"], reserve_ammo[current_weapon], shots, "RECARREGANDO" if reloading else state]
