@@ -1,6 +1,7 @@
 extends Node3D
 
 const PlayerScript = preload("res://scripts/player.gd")
+const WorldPolishScript = preload("res://scripts/world_polish.gd")
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Label
@@ -8,6 +9,10 @@ var crosshair: Label
 func _ready() -> void:
     _register_inputs()
     _build_world()
+    var world_polish := Node3D.new()
+    world_polish.name = "WorldPolish"
+    world_polish.set_script(WorldPolishScript)
+    add_child(world_polish)
     player = CharacterBody3D.new()
     player.name = "Jaime"
     player.set_script(PlayerScript)
