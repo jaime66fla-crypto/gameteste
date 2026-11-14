@@ -29,7 +29,17 @@ func _run_smoke() -> void:
     _check(world != null, "Visual environment exists")
     _check(environment_sound != null, "Outdoor sound exists")
     if player != null:
-        _check(player.get_node_or_null("SoundFX") == null, "Audio kept in gun subtree, not duplicated on root")
+        var gun: Node = player.get("gun")
+        _check(gun != null, "Equipped gun exists")
+        if gun != null:
+            var fx: Node = gun.get_node_or_null("SoundFX")
+            _check(fx != null, "Sound FX belongs to gun")
+            if fx != null:
+                _check(fx.has_method("shot"), "Shot sound method exists")
+                fx.call("shot", "rifle")
+                fx.call("shot", "shotgun")
+        var model: Node = player.get("weapon_model")
+        _check(model != null, "Weapon model exists")
         _check(player.get("ammo") == 15, "Pistol magazine starts at 15")
         var order := ["smg", "rifle", "shotgun", "sniper", "pistol"]
         var expected_mags := [30, 30, 6, 5, 15]
@@ -37,11 +47,20 @@ func _run_smoke() -> void:
             player.call("_equip_weapon", order[i])
             _check(player.get("current_weapon") == order[i], "Equip " + order[i])
             _check(player.get("ammo") == expected_mags[i], "Magazine size for " + order[i])
+            if model != null:
+                _check(model.get_child_count() >= 2, "Weapon geometry for " + order[i])
         player.set("ammo", 0)
         var reserves: Dictionary = player.get("reserve_ammo")
         reserves["pistol"] = 0
         player.call("_reload")
         _check(not player.get("reloading"), "Empty reserve must not lock reload")
+        reserves["pistol"] = 7
+        player.call("_reload")
+        _check(player.get("reloading"), "Reload starts when reserve exists")
+        player.set("reload_timer", 0.001)
+        await physics_frame
+        _check(player.get("ammo") == 7, "Reload transfers only available ammo")
+        _check(int(reserves["pistol"]) == 0, "Reserve ammo gets consumed")
     if world != null:
         _check(world.get_child_count() > 20, "World details spawned")
     if failures.is_empty():
