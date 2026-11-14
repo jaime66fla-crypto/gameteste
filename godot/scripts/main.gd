@@ -21,7 +21,7 @@ func _ready() -> void:
     player = CharacterBody3D.new()
     player.name = "Jaime"
     player.set_script(PlayerScript)
-    player.position = Vector3(0, 2, -6) # Clear spawn away from central cover
+    player.position = Vector3(12, 0.1, -10) # Clear pedestrian plaza beside the avenues
     add_child(player)
     _build_ui()
 
@@ -51,6 +51,7 @@ func _register_inputs() -> void:
 
 func _build_world() -> void:
     var world_environment := WorldEnvironment.new()
+    world_environment.name = "WorldEnvironment"
     var env := Environment.new()
     env.background_mode = Environment.BG_COLOR
     env.background_color = Color(0.55, 0.72, 0.85)
@@ -65,16 +66,6 @@ func _build_world() -> void:
     sun.shadow_enabled = true
     add_child(sun)
     _block(Vector3(0,-0.5,0), Vector3(120,1,120), Color(0.28,0.39,0.26), true)
-    for i in range(24):
-        var x := float((i * 37) % 98 - 49)
-        var z := float((i * 61) % 98 - 49)
-        if absf(x) < 9 and absf(z) < 9:
-            continue
-        _block(Vector3(x, 0.35, z), Vector3(2.8, 0.7, 2.8), Color(0.38,0.42,0.38), true)
-        _block(Vector3(x, 2.0, z), Vector3(0.75, 2.9, 0.75), Color(0.33,0.29,0.22), false)
-        _block(Vector3(x, 3.9, z), Vector3(3.4, 2.5, 3.4), Color(0.16,0.35,0.19), false)
-    for i in range(9):
-        _block(Vector3(-15 + i * 4, 1, -18), Vector3(2.4, 2, 2.4), Color(0.39,0.37,0.30), true)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()
