@@ -145,12 +145,15 @@ func _first_animation_player(node: Node) -> AnimationPlayer:
 
 func _load_jaime_avatar() -> void:
     # Use either the saved inherited scene or the original imported GLB.
+    var model_path := "res://assets/jaime/jaime.glb"
+    if not ResourceLoader.exists(model_path):
+        return
     var path := "res://scenes/jaime personagem.tscn"
     if not ResourceLoader.exists(path):
-        path = "res://assets/jaime/jaime.glb"
-    if not ResourceLoader.exists(path):
-        return
+        path = model_path
     var packed := load(path) as PackedScene
+    if packed == null:
+        packed = load(model_path) as PackedScene
     if packed == null:
         return
     var instance := packed.instantiate() as Node3D
