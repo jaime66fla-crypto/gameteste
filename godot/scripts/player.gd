@@ -249,9 +249,9 @@ func _physics_process(delta: float) -> void:
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
-    var speed := CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed)
-    velocity.x = movement.x * speed
-    velocity.z = movement.z * speed
+    var current_speed: float = CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed)
+    velocity.x = movement.x * current_speed
+    velocity.z = movement.z * current_speed
     if not is_on_floor():
         velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
     elif Input.is_action_just_pressed("jump") and not crouching:
