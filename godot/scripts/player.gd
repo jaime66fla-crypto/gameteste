@@ -1,10 +1,14 @@
 extends CharacterBody3D
 
-const WALK_SPEED := 5.0
-const RUN_SPEED := 8.7
+# Ghost-style configurable character dimensions and movement (Godot 4).
+@export_category("Atributos do Soldado")
+@export_range(1.5, 2.1, 0.01) var height: float = 1.80
+@export_range(2.0, 10.0, 0.1) var speed: float = 5.0
+@export_range(1.0, 2.5, 0.05) var sprint_multiplier: float = 1.6
+@export_range(2.0, 12.0, 0.1) var jump_velocity: float = 8.5
+@export_range(0.0005, 0.01, 0.0001) var mouse_sensitivity: float = 0.0025
+@export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
 const CROUCH_SPEED := 2.7
-const JUMP_VELOCITY := 8.5
-const MOUSE_SENSITIVITY := 0.0025
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const MAG_SIZE := 15
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
@@ -45,10 +49,10 @@ var humanoid_avatar: Node3D
 func _ready() -> void:
     var collision := CollisionShape3D.new()
     var capsule := CapsuleShape3D.new()
-    capsule.radius = 0.34
-    capsule.height = 1.8
+    capsule.radius = minf(collision_radius, height * 0.3)
+    capsule.height = height
     collision.shape = capsule
-    collision.position.y = 0.9
+    collision.position.y = height * 0.5
     add_child(collision)
     avatar = Node3D.new()
     add_child(avatar)
@@ -59,7 +63,7 @@ func _ready() -> void:
     sound_fx.set_script(SoundFXScript)
     gun.add_child(sound_fx)
     arm_pivot = Node3D.new()
-    arm_pivot.position = Vector3(0, 1.55, 0)
+    arm_pivot.position = Vector3(0, height * 0.86, 0)
     add_child(arm_pivot)
     var spring := SpringArm3D.new()
     spring.spring_length = cam_distance
@@ -228,8 +232,8 @@ func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
         Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-        yaw -= event.relative.x * MOUSE_SENSITIVITY
-        pitch = clampf(pitch - event.relative.y * MOUSE_SENSITIVITY, -1.15, 0.95)
+        yaw -= event.relative.x * mouse_sensitivity
+        pitch = clampf(pitch - event.relative.y * mouse_sensitivity, -1.15, 0.95)
 
 func _physics_process(delta: float) -> void:
     aiming = Input.is_action_pressed("aim")
@@ -240,18 +244,18 @@ func _physics_process(delta: float) -> void:
     camera.fov = lerpf(camera.fov, desired_fov, minf(1,delta * 10))
     var spring: SpringArm3D = camera.get_parent()
     spring.spring_length = lerpf(spring.spring_length, 2.15 if aiming else cam_distance, minf(1,delta * 9))
-    arm_pivot.position.y = lerpf(arm_pivot.position.y, 1.05 if crouching else 1.55, minf(1,delta * 10))
+    arm_pivot.position.y = lerpf(arm_pivot.position.y, height * 0.59 if crouching else height * 0.86, minf(1,delta * 10))
     var crouch_offset := -0.13 if humanoid_avatar != null else -0.36
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
-    var speed := CROUCH_SPEED if crouching else (RUN_SPEED if Input.is_action_pressed("sprint") and not aiming else WALK_SPEED)
+    var speed := CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed)
     velocity.x = movement.x * speed
     velocity.z = movement.z * speed
     if not is_on_floor():
-        velocity.y -= 22.0 * delta
+        velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
     elif Input.is_action_just_pressed("jump") and not crouching:
-        velocity.y = JUMP_VELOCITY
+        velocity.y = jump_velocity
     else:
         velocity.y = -0.1
     move_and_slide()
