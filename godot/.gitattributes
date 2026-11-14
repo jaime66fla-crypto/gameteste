@@ -1,0 +1,19 @@
+# Godot source files use LF consistently on Windows and Linux.
+*.gd text eol=lf
+*.gdshader text eol=lf
+*.tscn text eol=lf
+*.tres text eol=lf
+*.godot text eol=lf
+*.md text eol=lf
+*.uid text eol=lf
+
+# Imported visual assets are binary; do not normalize their content.
+*.glb binary
+*.gltf text eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ogg binary
+*.wav binary
+*.mp3 binary
