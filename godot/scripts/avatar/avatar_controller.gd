@@ -10,6 +10,8 @@ var left_arm: Node3D
 var right_arm: Node3D
 var head: Node3D
 var locomotion_time := 0.0
+var pose_time := 0.0
+var locomotion_direction := Vector3.FORWARD
 var smoothed_move := 0.0
 var long_weapon := false
 var right_grip := Vector3(0, -0.15, -0.08)
@@ -172,10 +174,18 @@ func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -
     hips.add_child(pivot)
     _capsule(pivot, "Thigh", 0.108, 0.48, Vector3(0, -0.22, 0), pants)
     _box(pivot, "CargoPocket", Vector3(0.055, 0.18, 0.15), Vector3(-0.12 if x < 0 else 0.12, -0.20, 0.015), pants)
-    _box(pivot, "KneePad", Vector3(0.16, 0.16, 0.055), Vector3(0, -0.45, -0.085), boots)
-    _capsule(pivot, "Shin", 0.085, 0.43, Vector3(0, -0.63, 0), pants)
-    _box(pivot, "Boot", Vector3(0.18, 0.17, 0.29), Vector3(0, -0.79, -0.055), boots)
-    _box(pivot, "BootSole", Vector3(0.19, 0.035, 0.30), Vector3(0, -0.865, -0.055), boots)
+    var knee := Node3D.new()
+    knee.name = "Knee"
+    knee.position.y = -0.43
+    pivot.add_child(knee)
+    _capsule(knee, "Shin", 0.085, 0.37, Vector3(0, -0.185, 0), pants)
+    _box(knee, "KneePad", Vector3(0.16, 0.16, 0.055), Vector3(0, 0, -0.085), boots)
+    var ankle := Node3D.new()
+    ankle.name = "Ankle"
+    ankle.position.y = -0.37
+    knee.add_child(ankle)
+    _box(ankle, "Boot", Vector3(0.18, 0.17, 0.29), Vector3(0, 0, -0.055), boots)
+    _box(ankle, "BootSole", Vector3(0.19, 0.035, 0.30), Vector3(0, -0.075, -0.055), boots)
     return pivot
 
 func _build_arm(part_name: String, x: float, cloth: Material, skin: Material) -> Node3D:
@@ -202,15 +212,52 @@ func _build_arm(part_name: String, x: float, cloth: Material, skin: Material) ->
     _sphere(hand, "Thumb", 0.021, Vector3(-0.043 if x > 0 else 0.043, 0.008, -0.025), skin, Vector3(0.8, 1.35, 0.9))
     return pivot
 
-func animate(delta: float, move_amount: float, running: bool, crouched: bool, aiming: bool, airborne: bool, reloading: bool) -> void:
-    var blend := minf(1.0, delta * 10.0)
+func animate(delta: float, move_amount: float, running: bool, crouched: bool, aiming: bool, airborne: bool, reloading: bool, movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
+    var blend := 1.0 - exp(-delta * 10.0)
+    pose_time += delta
     smoothed_move = lerpf(smoothed_move, clampf(move_amount, 0.0, 1.0), blend)
+    var local_speed := Vector2(planar_velocity.x, planar_velocity.z).length()
+    var fast_gait := not crouched and (running or local_speed > 4.0)
+    var desired_direction := Vector3(planar_velocity.x, 0, planar_velocity.z) if local_speed > 0.001 else Vector3(movement_direction.x, 0, movement_direction.y)
+    if desired_direction.length_squared() > 0.001:
+        locomotion_direction = locomotion_direction.lerp(desired_direction.normalized(), blend).normalized()
+    var direction := locomotion_direction
+    var step_length := (0.42 if fast_gait else (0.29 if crouched else 0.28)) * smoothed_move
+    if absf(direction.x) > 0.001:
+        step_length = minf(step_length, 0.12 / absf(direction.x))
+    var stance_fraction := 0.30 if fast_gait else 0.50
     if smoothed_move > 0.06 and not airborne:
-        locomotion_time += delta * (12.0 if running else (5.4 if crouched else 7.9))
+        if local_speed > 0.001:
+            # During stance, foot travel cancels actual body displacement.
+            locomotion_time += TAU * local_speed * stance_fraction / maxf(2.0 * step_length, 0.10) * delta
+        else:
+            locomotion_time += delta * (12.0 if running else (6.0 if crouched else 9.0))
     var stride := sin(locomotion_time) * smoothed_move
-    var amplitude := 0.51 if running else (0.24 if crouched else 0.36)
-    left_leg.rotation.x = lerpf(left_leg.rotation.x, stride * amplitude if not airborne else -0.19, blend)
-    right_leg.rotation.x = lerpf(right_leg.rotation.x, -stride * amplitude if not airborne else 0.24, blend)
+    var moving_drop := (0.12 if fast_gait else (0.045 if crouched else 0.06)) * smoothed_move
+    var bob := cos(locomotion_time * 2.0) * (0.012 if fast_gait else 0.006) * smoothed_move
+    hips.position.y = lerpf(hips.position.y, (0.70 if crouched else 0.96) - moving_drop + bob, blend)
+    hips.position.z = lerpf(hips.position.z, 0.10 if crouched else 0.0, blend)
+    hips.position.x = lerpf(hips.position.x, stride * 0.012, blend)
+    hips.rotation.y = lerpf(hips.rotation.y, stride * 0.025, blend)
+    torso.position.y = 0.18 + sin(pose_time * 2.1) * 0.003
+    torso.rotation.y = lerpf(torso.rotation.y, -stride * 0.035, blend)
+    for entry in [[left_leg, 0.0], [right_leg, PI]]:
+        var leg: Node3D = entry[0]
+        var phase := fposmod(locomotion_time / TAU + float(entry[1]) / TAU, 1.0)
+        var swing := 0.0
+        var travel_position := 0.0
+        if phase < stance_fraction:
+            travel_position = lerpf(-step_length, step_length, phase / stance_fraction)
+        else:
+            var progress := (phase - stance_fraction) / (1.0 - stance_fraction)
+            travel_position = lerpf(step_length, -step_length, smoothstep(0.0, 1.0, progress))
+            swing = sin(progress * PI) * smoothed_move
+        var foot_target := Vector3(leg.position.x, 0.095, 0)
+        foot_target -= direction * travel_position
+        foot_target.y += swing * (0.18 if fast_gait else (0.075 if crouched else 0.12))
+        if airborne:
+            foot_target = Vector3(leg.position.x, hips.position.y - 0.68, -0.10 if leg == left_leg else 0.10)
+        _solve_leg(leg, foot_target)
     if reloading:
         left_arm.quaternion = left_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.54, 0, 0.28)), blend)
         right_arm.quaternion = right_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.99, 0, -0.09)), blend)
@@ -219,16 +266,34 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
         left_elbow.quaternion = left_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.18, 0, 0)), blend)
         right_elbow.quaternion = right_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.12, 0, 0)), blend)
     torso.rotation.z = lerpf(torso.rotation.z, 0.035 * stride, blend)
-    torso.rotation.x = lerpf(torso.rotation.x, 0.08 if running else (0.045 if aiming else 0.0), blend)
-    hips.position.y = lerpf(hips.position.y, 0.70 if crouched else 0.96, blend)
-    head.rotation.x = lerpf(head.rotation.x, -0.06 if aiming else 0.0, blend)
+    torso.rotation.x = lerpf(torso.rotation.x, -0.18 if crouched else (-0.12 if fast_gait else (-0.035 if aiming else 0.0)), blend)
+    head.rotation.x = lerpf(head.rotation.x, 0.10 if crouched else (0.04 if fast_gait else (-0.03 if aiming else 0.0)), blend)
     var hold_height := (1.54 if aiming else 1.50) if long_weapon else (1.48 if aiming else 1.44)
-    weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.26 if crouched else 0.0), blend)
+    weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.96 - hips.position.y), blend)
     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
     # Solve after torso, crouch and mount changes so the hands follow the gun.
     if not reloading:
         _align_hand(right_arm, right_grip, 1.0, blend)
         _align_hand(left_arm, left_grip, -1.0, blend)
+
+func _solve_leg(leg: Node3D, foot_target: Vector3) -> void:
+    var knee := leg.get_node("Knee") as Node3D
+    var ankle := knee.get_node("Ankle") as Node3D
+    var target := hips.to_local(to_global(foot_target))
+    var offset := target - leg.position
+    var upper_length := knee.position.length()
+    var lower_length := ankle.position.length()
+    var distance := clampf(offset.length(), 0.001, upper_length + lower_length - 0.001)
+    var direction := offset.normalized()
+    var pole := hips.basis.inverse() * Vector3.FORWARD
+    var bend := (pole - direction * pole.dot(direction)).normalized()
+    var along := (upper_length * upper_length - lower_length * lower_length + distance * distance) / (2.0 * distance)
+    var outward := sqrt(maxf(0.0, upper_length * upper_length - along * along))
+    leg.quaternion = Quaternion(Vector3.DOWN, (direction * along + bend * outward).normalized())
+    var shin_direction := (leg.to_local(to_global(foot_target)) - knee.position).normalized()
+    knee.quaternion = Quaternion(Vector3.DOWN, shin_direction)
+    # Feet remain flat; lowering the pelvis bends the joints instead of burying boots.
+    ankle.quaternion = (hips.quaternion * leg.quaternion * knee.quaternion).inverse()
 
 func _align_hand(shoulder: Node3D, grip: Vector3, side: float, blend: float) -> void:
     var elbow := shoulder.get_node("Elbow") as Node3D

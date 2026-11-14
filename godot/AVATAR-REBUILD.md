@@ -30,3 +30,10 @@ Teste de encaixe da pistola: `godot --headless --path godot --script res://tests
 - Os apoios das armas e os pivôs de animação continuam ativos. Altura visual acompanha a cápsula configurada (1,80 m por padrão).
 - Continua sendo um personagem estilizado procedural, sem modelo humano fotorealista.
 - Verificações: `avatar_geometry.gd`, `avatar_grip.gd`, `pistol_visibility.gd`, `weapon_slots.gd` e `polish_smoke.gd`. Geometria também inspecionada em vistas frontal, lateral e traseira por renderização auxiliar; a apresentação final no jogo ainda requer conferência visual no Godot.
+
+## Agachamento e movimento
+O avatar deixou de receber deslocamento global para baixo ao agachar. Quadril, joelhos e tornozelos agora formam uma cadeia articulada; os pés têm fase de apoio e fase de avanço. A pose recebe pequenas rotações opostas de quadril e ombros, inclinação do tronco e respiração, com transições graduais. A solução mantém o apoio no plano local do personagem, adequado ao mapa plano atual; não é adaptação dos pés a escadas ou terreno irregular.
+
+Teste de regressão: `godot --headless --path godot --script res://tests/crouch_motion.gd`. Verifica altura das botas durante agachamento, caminhada agachada e retorno à posição em pé, além da dobra dos joelhos.
+
+A cadência dos passos recebe a velocidade real após colisões, convertida para a escala do avatar. Na fase de apoio, o pé recua em relação ao corpo para manter sua posição no mundo; na fase de avanço, retorna com elevação suave. O teste `gait_contact.gd` mede o deslocamento mundial dos pés durante o apoio.

@@ -248,7 +248,7 @@ func _physics_process(delta: float) -> void:
     var spring: SpringArm3D = camera.get_parent()
     spring.spring_length = lerpf(spring.spring_length, 2.15 if aiming else cam_distance, minf(1,delta * 9))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, height * 0.59 if crouching else height * 0.86, minf(1,delta * 10))
-    var crouch_offset := -0.13 if humanoid_avatar != null else -0.36
+    var crouch_offset := 0.0 if humanoid_avatar != null else -0.36
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
@@ -262,7 +262,9 @@ func _physics_process(delta: float) -> void:
     else:
         velocity.y = -0.1
     move_and_slide()
-    _animate_avatar(delta, input_vec.length(), is_on_floor())
+    var actual_velocity := get_real_velocity()
+    var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
+    _animate_avatar(delta, actual_move, is_on_floor())
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
     muzzle_flare.visible = gun_flash.light_energy > 0.05
@@ -367,7 +369,7 @@ func _impact_mark(point: Vector3) -> void:
 func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
     if humanoid_avatar != null:
         var running := Input.is_action_pressed("sprint") and not aiming and not crouching
-        humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading)
+        humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
         return
     if jaime_model != null and jaime_animation != null:
         var moving := input_amount > 0.1 and grounded
