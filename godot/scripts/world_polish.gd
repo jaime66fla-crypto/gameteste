@@ -83,11 +83,14 @@ func _roads() -> void:
     var asphalt := _mat("#414950")
     var line := _mat("#dfc58a")
     # Slight elevation separation avoids z-fighting / stripe artifacts.
-    _box(Vector3(0, 0.035, 18), Vector3(110, 0.055, 7), asphalt)
-    _box(Vector3(18, 0.038, 0), Vector3(7, 0.055, 110), asphalt)
+    # Horizontal road ends flush with its crossing; vertical road is a single higher surface.
+    _box(Vector3(0, 0.04, 18), Vector3(110, 0.08, 7), asphalt)
+    _box(Vector3(18, 0.09, 0), Vector3(7, 0.08, 110), asphalt)
     for i in range(-10, 11):
-        _box(Vector3(i * 5.0, 0.075, 18), Vector3(2.1, 0.015, 0.12), line)
-        _box(Vector3(18, 0.077, i * 5.0), Vector3(0.12, 0.015, 2.1), line)
+        if absf(i * 5.0 - 18.0) > 5.0:
+            _box(Vector3(i * 5.0, 0.10, 18), Vector3(2.1, 0.018, 0.12), line)
+        if absf(i * 5.0 - 18.0) > 5.0:
+            _box(Vector3(18, 0.15, i * 5.0), Vector3(0.12, 0.018, 2.1), line)
 
 func _landmarks() -> void:
     # A few recognizable zones, leaving the spawn and main crossing unobstructed.
@@ -96,7 +99,7 @@ func _landmarks() -> void:
         var x := -42.0 + float(i % 4) * 8.0
         var z := -42.0 + float(i / 4) * 9.0
         var height := rng.randf_range(3.2, 7.0)
-        var root := _box(Vector3(x, height / 2.0, z), Vector3(5.0, height, 5.2), _mat(walls[i % walls.size()]), true)
+        _box(Vector3(x, height / 2.0, z), Vector3(5.0, height, 5.2), _mat(walls[i % walls.size()]), true)
         _box(Vector3(x, height + 0.2, z), Vector3(5.5, 0.3, 5.7), _mat("#4a4a49"))
         for floor_index in range(1, 3):
             if height > float(floor_index) * 2.1 + 0.6:
