@@ -48,6 +48,17 @@ func _run_smoke() -> void:
             _check(humanoid.get_node_or_null("Hips") != null, "Humanoid hips created")
             _check(humanoid.get_node_or_null("WeaponMount") != null, "Weapon mount created")
             _check(humanoid.has_method("animate"), "Avatar pose blending available")
+        _check(absf(float(player.get("height")) - 1.8) < 0.001, "Ghost proportions: 1.80 m configured")
+        var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D
+        # Current player creates its collision child without a fixed name; inspect children.
+        if collision_shape == null:
+            for child in player.get_children():
+                if child is CollisionShape3D:
+                    collision_shape = child
+                    break
+        _check(collision_shape != null, "Player capsule exists")
+        if collision_shape != null and collision_shape.shape is CapsuleShape3D:
+            _check(absf((collision_shape.shape as CapsuleShape3D).height - 1.8) < 0.001, "Capsule height configured")
         _check(player.get("ammo") == 15, "Pistol magazine starts at 15")
         var order := ["smg", "rifle", "shotgun", "sniper", "pistol"]
         var expected_mags := [30, 30, 6, 5, 15]
