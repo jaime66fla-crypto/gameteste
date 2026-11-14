@@ -111,4 +111,4 @@ func _build_ui() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
-        hud.text = "CAMPO DE FOGO | JAIME | GODOT\nWASD mover  SHIFT correr  ESPACO pular  CTRL agachar\nDIREITO mirar  ESQUERDO atirar  R recarregar  ESC mouse\n" + player.status_text()
+        hud.text = "CAMPO DE FOGO | JAIME | GODOT\nWASD mover  SHIFT correr  ESPACO pular  CTRL agachar\n1 Pistola  2 SMG  3 Fuzil  4 Escopeta  5 Sniper\nDIREITO mirar  ESQUERDO atirar  R recarregar  ESC mouse\n" + player.status_text()
