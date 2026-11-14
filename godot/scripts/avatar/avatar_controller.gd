@@ -90,9 +90,11 @@ func _assemble() -> void:
     right_leg = _build_leg("RightLeg", 0.16, pants, boots)
     left_arm = _build_arm("LeftArm", -0.37, cloth, skin)
     right_arm = _build_arm("RightArm", 0.37, cloth, skin)
+    # The support shoulder reaches forward in a two-handed pistol stance.
+    left_arm.position = Vector3(-0.31, 0.45, -0.10)
     weapon_mount = Node3D.new()
     weapon_mount.name = "WeaponMount"
-    weapon_mount.position = Vector3(0.18, 1.36, -0.20)
+    weapon_mount.position = Vector3(0.18, 1.44, -0.42)
     add_child(weapon_mount)
 
 func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -> Node3D:
@@ -139,7 +141,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
     torso.rotation.x = lerpf(torso.rotation.x, 0.08 if running else (0.045 if aiming else 0.0), blend)
     hips.position.y = lerpf(hips.position.y, 0.70 if crouched else 0.96, blend)
     head.rotation.x = lerpf(head.rotation.x, -0.06 if aiming else 0.0, blend)
-    weapon_mount.position.y = lerpf(weapon_mount.position.y, 1.12 if crouched else 1.38, blend)
+    var hold_height := 1.48 if aiming else 1.44
+    weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.26 if crouched else 0.0), blend)
     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
     # Solve after torso, crouch and mount changes so the hands follow the gun.
     if not reloading:
