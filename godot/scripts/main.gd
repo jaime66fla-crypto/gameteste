@@ -1,5 +1,6 @@
 extends Node3D
 
+const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
 const ScopeScript = preload("res://scripts/sniper_scope.gd")
@@ -63,6 +64,7 @@ func _build_world() -> void:
     world_environment.environment = env
     add_child(world_environment)
     var sun := DirectionalLight3D.new()
+    sun.name = "Sun"
     sun.rotation_degrees = Vector3(-45, -30, 0)
     sun.light_energy = 1.3
     sun.shadow_enabled = true
@@ -77,9 +79,7 @@ func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var cube := BoxMesh.new()
     cube.size = size
     mesh.mesh = cube
-    var mat := StandardMaterial3D.new()
-    mat.albedo_color = color
-    mesh.material_override = mat
+    mesh.material_override = SurfaceMaterials.make("grass", color)
     root.add_child(mesh)
     if solid:
         var collider := CollisionShape3D.new()

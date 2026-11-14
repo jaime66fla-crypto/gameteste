@@ -8,6 +8,7 @@ extends CharacterBody3D
 @export_range(2.0, 12.0, 0.1) var jump_velocity: float = 8.5
 @export_range(0.0005, 0.01, 0.0001) var mouse_sensitivity: float = 0.0025
 @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
+const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CROUCH_SPEED := 2.7
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const MAG_SIZE := 15
@@ -97,10 +98,8 @@ func _install_humanoid_avatar() -> void:
     humanoid_avatar.configure_weapon(current_weapon, weapon_model.scale.x)
 
 func _material(c: Color) -> StandardMaterial3D:
-    var m := StandardMaterial3D.new()
-    m.albedo_color = c
-    m.metallic = 0.08
-    return m
+    var kind := "wood" if c.to_html(false) == "765b43" else "metal"
+    return SurfaceMaterials.make(kind, c, false)
 
 func _part(parent: Node3D, name: String, pos: Vector3, size: Vector3, color: Color) -> MeshInstance3D:
     var part := MeshInstance3D.new()

@@ -1,5 +1,6 @@
 extends Node3D
 ## One authored 120 m neighborhood. Roads, plots and entrances share one layout.
+const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 var mat_cache: Dictionary = {}
 
 func _ready() -> void:
@@ -12,12 +13,27 @@ func _ready() -> void:
     _perimeter()
 
 func _mat(hex_color: String) -> StandardMaterial3D:
-    if not mat_cache.has(hex_color):
-        var material := StandardMaterial3D.new()
+    if mat_cache.has(hex_color):
+        return mat_cache[hex_color]
+    var kinds := {
+        "#414950": "asphalt", "#495057": "asphalt", "#6f7472": "asphalt",
+        "#a9aaa1": "concrete", "#bcb8a5": "concrete", "#a99f88": "concrete",
+        "#b4ae9c": "concrete", "#a49e8c": "concrete", "#719168": "grass",
+        "#535b5b": "roof", "#68503c": "bark", "#487347": "leaf",
+        "#7e684b": "wood", "#7c6c54": "wood", "#8b765b": "wood",
+        "#58646a": "metal", "#3b4949": "metal", "#344747": "metal",
+        "#dbcb96": "paint", "#dfdfd4": "paint", "#ded8bd": "paint", "#d4d0bd": "paint"
+    }
+    var material: StandardMaterial3D
+    if hex_color == "#587985":
+        material = StandardMaterial3D.new()
         material.albedo_color = Color(hex_color)
-        material.roughness = 0.92
-        mat_cache[hex_color] = material
-    return mat_cache[hex_color]
+        material.roughness = 0.25
+        material.metallic = 0.15
+    else:
+        material = SurfaceMaterials.make(kinds.get(hex_color, "plaster"), Color(hex_color))
+    mat_cache[hex_color] = material
+    return material
 
 func _box(pos: Vector3, size: Vector3, color: String, solid: bool = false, parent: Node3D = null) -> Node3D:
     var body: Node3D = StaticBody3D.new() if solid else Node3D.new()
@@ -43,15 +59,31 @@ func _surface(center: Vector2, size: Vector2, color: String, top: float = 0.025)
 func _tune_environment() -> void:
     var existing := get_parent().get_node("WorldEnvironment") as WorldEnvironment
     var env := existing.environment
-    env.background_mode = Environment.BG_COLOR
-    env.background_color = Color("#89b6d1")
+    var sky_material := ProceduralSkyMaterial.new()
+    sky_material.sky_top_color = Color("#326787")
+    sky_material.sky_horizon_color = Color("#9aafb0")
+    sky_material.ground_bottom_color = Color("#354537")
+    sky_material.ground_horizon_color = Color("#929e94")
+    sky_material.sky_energy_multiplier = 0.75
+    sky_material.ground_energy_multiplier = 0.55
+    sky_material.sun_angle_max = 2.0
+    var sky := Sky.new()
+    sky.sky_material = sky_material
+    sky.radiance_size = Sky.RADIANCE_SIZE_128
+    env.sky = sky
+    env.background_mode = Environment.BG_SKY
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color("#b9c5c0")
-    env.ambient_light_energy = 0.65
-    env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+    env.ambient_light_color = Color("#a6b4bd")
+    env.ambient_light_energy = 0.30
+    env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+    env.tonemap_exposure = 0.95
     env.fog_enabled = true
-    env.fog_light_color = Color("#a7bdc1")
-    env.fog_density = 0.004
+    env.fog_light_color = Color("#879d9e")
+    env.fog_density = 0.0015
+    var sun := get_parent().get_node("Sun") as DirectionalLight3D
+    sun.light_energy = 0.85
+    sun.light_color = Color("#fff1dc")
+    sun.directional_shadow_max_distance = 90.0
 
 func _streets() -> void:
     # Ring and central cross use adjacent tiles, never coplanar overlapping slabs.

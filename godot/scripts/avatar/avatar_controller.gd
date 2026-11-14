@@ -1,6 +1,7 @@
 extends Node3D
 ## Campo de Fogo: self-contained stylized humanoid rig for Godot 4.
 ## Mesh primitives are cosmetic only: physics remains in Player CharacterBody3D.
+const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 var weapon_mount: Node3D
 var hips: Node3D
 var torso: Node3D
@@ -21,6 +22,8 @@ func _ready() -> void:
     _assemble()
 
 func _mat(color: Color, metallic: float = 0.0, roughness: float = 0.84) -> StandardMaterial3D:
+    if color.to_html(false) in ["394748", "414b43", "293638", "697264", "252d2c", "202526"]:
+        return SurfaceMaterials.make("fabric", color, false)
     var m := StandardMaterial3D.new()
     m.albedo_color = color
     m.metallic = metallic
