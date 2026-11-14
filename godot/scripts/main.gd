@@ -21,7 +21,7 @@ func _ready() -> void:
     player = CharacterBody3D.new()
     player.name = "Jaime"
     player.set_script(PlayerScript)
-    player.position = Vector3(0, 2, 0)
+    player.position = Vector3(0, 2, -6) # Clear spawn away from central cover
     add_child(player)
     _build_ui()
 
@@ -99,8 +99,11 @@ func _build_ui() -> void:
     var layer := CanvasLayer.new()
     add_child(layer)
     hud = Label.new()
-    hud.position = Vector2(22, 16)
-    hud.add_theme_font_size_override("font_size", 18)
+    hud.position = Vector2(18, 16)
+    hud.add_theme_font_size_override("font_size", 15)
+    hud.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+    hud.add_theme_constant_override("shadow_offset_x", 1)
+    hud.add_theme_constant_override("shadow_offset_y", 2)
     layer.add_child(hud)
     crosshair = Label.new()
     crosshair.text = "+"
@@ -111,4 +114,4 @@ func _build_ui() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
-        hud.text = "CAMPO DE FOGO | JAIME | GODOT\nWASD mover  SHIFT correr  ESPACO pular  CTRL agachar\n1 Pistola  2 SMG  3 Fuzil  4 Escopeta  5 Sniper\nDIREITO mirar  ESQUERDO atirar  R recarregar  ESC mouse\n" + player.status_text()
+        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1-5 armas  R recarregar  Direito mirar  Esquerdo atirar"
