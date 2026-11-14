@@ -40,3 +40,10 @@ O teste inicializa a cena, verifica o avatar, os módulos de cenário e som, alt
 ## Atualização de cenário
 - Barreiras de concreto com colisão, caixas industriais e elementos para orientar deslocamento.
 - Essa decoração foi criada apenas na branch experimental. Avaliar se sobrepõe construções e caminhos antes do merge.
+
+## Polimento de armas e testes adicionais
+- Adicionado movimento visual suave de arma ao andar e transição de posição ao mirar.
+- Cinco armas agora variam a tonalidade/altura dos sons sintéticos de disparo.
+- HUD mostra teclas 1 a 5 para equipar as armas.
+- Smoke test ampliado: geometria de todas as armas, conexão de SFX, recarga com reserva limitada e recarga vazia.
+- **A validação de execução ainda está pendente:** alterações do código não significam que o Godot compilou ou que foi feita publicação.
