@@ -92,7 +92,7 @@ func _assemble() -> void:
     right_arm = _build_arm("RightArm", 0.37, cloth, skin)
     weapon_mount = Node3D.new()
     weapon_mount.name = "WeaponMount"
-    weapon_mount.position = Vector3(0.19, 1.36, -0.52)
+    weapon_mount.position = Vector3(0.08, 1.36, -0.32)
     add_child(weapon_mount)
 
 func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -> Node3D:
@@ -128,29 +128,38 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
     var amplitude := 0.51 if running else (0.24 if crouched else 0.36)
     left_leg.rotation.x = lerpf(left_leg.rotation.x, stride * amplitude if not airborne else -0.19, blend)
     right_leg.rotation.x = lerpf(right_leg.rotation.x, -stride * amplitude if not airborne else 0.24, blend)
-    # Positive X tilt brings hands forward (negative Z in Godot).
-    # Both shoulders pitch forward while elbows fold to support the weapon.
-    var arm_pitch := 1.05 if aiming else (0.73 if smoothed_move < 0.12 else 0.58)
-    var arm_swing := stride * (0.06 if aiming else 0.18)
-    var right_target := arm_pitch + arm_swing
-    var left_target := arm_pitch - arm_swing
     if reloading:
-        left_target = 0.54
-        right_target = 0.99
-    left_arm.rotation.x = lerpf(left_arm.rotation.x, left_target, blend)
-    right_arm.rotation.x = lerpf(right_arm.rotation.x, right_target, blend)
-    # Negative Z for the left arm crosses the centerline; right stays near grip.
-    left_arm.rotation.z = lerpf(left_arm.rotation.z, 0.44 if aiming else 0.28, blend)
-    right_arm.rotation.z = lerpf(right_arm.rotation.z, -0.17 if aiming else -0.09, blend)
-    var left_elbow := left_arm.get_node_or_null("Elbow") as Node3D
-    var right_elbow := right_arm.get_node_or_null("Elbow") as Node3D
-    if left_elbow != null:
-        left_elbow.rotation.x = lerpf(left_elbow.rotation.x, -0.26 if aiming else -0.18, blend)
-    if right_elbow != null:
-        right_elbow.rotation.x = lerpf(right_elbow.rotation.x, -0.20 if aiming else -0.12, blend)
+        left_arm.quaternion = left_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.54, 0, 0.28)), blend)
+        right_arm.quaternion = right_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.99, 0, -0.09)), blend)
+        var left_elbow := left_arm.get_node("Elbow") as Node3D
+        var right_elbow := right_arm.get_node("Elbow") as Node3D
+        left_elbow.quaternion = left_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.18, 0, 0)), blend)
+        right_elbow.quaternion = right_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.12, 0, 0)), blend)
     torso.rotation.z = lerpf(torso.rotation.z, 0.035 * stride, blend)
     torso.rotation.x = lerpf(torso.rotation.x, 0.08 if running else (0.045 if aiming else 0.0), blend)
     hips.position.y = lerpf(hips.position.y, 0.70 if crouched else 0.96, blend)
     head.rotation.x = lerpf(head.rotation.x, -0.06 if aiming else 0.0, blend)
     weapon_mount.position.y = lerpf(weapon_mount.position.y, 1.12 if crouched else 1.38, blend)
     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
+    # Solve after torso, crouch and mount changes so the hands follow the gun.
+    if not reloading:
+        _align_hand(right_arm, Vector3(0, -0.15, -0.08), 1.0, blend)
+        _align_hand(left_arm, Vector3(-0.065, -0.14, -0.09), -1.0, blend)
+
+func _align_hand(shoulder: Node3D, grip: Vector3, side: float, blend: float) -> void:
+    var elbow := shoulder.get_node("Elbow") as Node3D
+    var target := torso.to_local(weapon_mount.to_global(grip))
+    var offset := target - shoulder.position
+    var upper_length := elbow.position.length()
+    var lower_length := 0.34
+    var distance := clampf(offset.length(), 0.001, upper_length + lower_length - 0.001)
+    var direction := offset.normalized()
+    # Bend outwards and down, keeping a stable elbow plane across locomotion.
+    var pole := Vector3(side * 0.6, -1.0, 0.15)
+    var bend := (pole - direction * pole.dot(direction)).normalized()
+    var along := (upper_length * upper_length - lower_length * lower_length + distance * distance) / (2.0 * distance)
+    var outward := sqrt(maxf(0.0, upper_length * upper_length - along * along))
+    var upper_direction := (direction * along + bend * outward).normalized()
+    shoulder.quaternion = shoulder.quaternion.slerp(Quaternion(Vector3.DOWN, upper_direction), blend)
+    var forearm_direction := (shoulder.to_local(torso.to_global(target)) - elbow.position).normalized()
+    elbow.quaternion = elbow.quaternion.slerp(Quaternion(Vector3.DOWN, forearm_direction), blend)
