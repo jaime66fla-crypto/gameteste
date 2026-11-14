@@ -31,6 +31,8 @@ var current_weapon := "pistol"
 var reserve_ammo := {"pistol": 90, "smg": 150, "rifle": 150, "shotgun": 36, "sniper": 25}
 var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 5}
 var weapon_model: Node3D
+var locomotion_clock := 0.0
+var presentation_offset := Vector3.ZERO
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -156,7 +158,15 @@ func _physics_process(delta: float) -> void:
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
     muzzle_flare.visible = gun_flash.light_energy > 0.05
     gun_kick = move_toward(gun_kick, 0.0, delta * 5.0)
-    gun.position.z = -0.48 + gun_kick
+    # Presentation-only animation: never changes projectile aim or character movement.
+    var movement_weight := clampf(input_vec.length(), 0.0, 1.0)
+    if is_on_floor() and movement_weight > 0.1:
+        locomotion_clock += delta * (13.0 if Input.is_action_pressed("sprint") else 8.5)
+    var bob := sin(locomotion_clock) * 0.018 * movement_weight if is_on_floor() else 0.0
+    var desired_offset := Vector3(-0.045, 0.025, 0.07) if aiming else Vector3.ZERO
+    presentation_offset = presentation_offset.lerp(desired_offset, minf(delta * 12.0, 1.0))
+    gun.position = Vector3(0.33, 1.28 + bob, -0.48 + gun_kick) + presentation_offset
+    gun.rotation.x = lerpf(gun.rotation.x, -0.065 if aiming else 0.0, minf(delta * 10.0, 1.0))
     sound_fx.update_steps(delta, is_on_floor(), input_vec.length() > 0.12, Input.is_action_pressed("sprint"), crouching)
     if reloading:
         reload_timer -= delta
@@ -184,7 +194,7 @@ func _shoot() -> void:
     fire_delay = float(stats["interval"])
     gun_flash.light_energy = 2.8
     gun_kick = float(stats["kick"])
-    sound_fx.shot()
+    sound_fx.shot(current_weapon)
     var origin := camera.global_position
     var forward := -camera.global_transform.basis.z
     var spread := float(stats["spread"]) * (0.4 if aiming else 1.0)
