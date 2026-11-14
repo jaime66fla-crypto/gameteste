@@ -237,22 +237,28 @@ export class GameRoom {
   for(let n=0;n<missing;n++){
    const id='bot-'+n,angle=2*Math.PI*n/Math.max(1,missing);
    const bot={type:'state3d',id,name:'BOT '+String(n+1).padStart(2,'0'),bot:true,
-    x:Math.cos(angle)*(24+n*3),y:0,z:Math.sin(angle)*(24+n*3),angle:angle+Math.PI,
+    x:-90,y:110,z:0,angle:Math.PI/2,
     health:100,dead:false,deadUntil:0,kills:0,weapon:'rifle',attachments:{},gear:'none',
-    moving:false,running:false,grounded:true,aiming:false,lastShot:0,lastBotAttack:0};
+    moving:false,running:false,grounded:false,aiming:false,lastShot:0,lastBotAttack:0,
+    dropPhase:'plane',dropAt:Date.now()+4000+n*2700,landingX:Math.cos(angle)*(25+n*5),landingZ:Math.sin(angle)*(25+n*5),jumpX:0,jumpAt:0};
    this.players.set(id,bot);this.battle.roster.push(id);this.battle.bots.push({...bot});
   }
   this.battle.phase='running';
-  const now=Date.now();
+  const now=Date.now();this.battle.startedAt=now;
   this.battle.zone={phase:0,centerX:0,centerZ:0,radius:115,fromX:0,fromZ:0,fromRadius:115,
-   toX:0,toZ:0,toRadius:115,stage:'waiting',stageStarted:now,stageEnds:now+30000,lastDamageAt:now};
+   toX:0,toZ:0,toRadius:115,stage:'hidden',stageStarted:now,stageEnds:now+60000,lastDamageAt:now};
   this.syncBattleAttachments();
   this.broadcast3D({type:'battle-start',total:8,alive:8,bots:this.battle.bots,players:[...this.players.values()]});
-  this.broadcastBattleStatus();this.broadcastZone();this.scheduleRespawns();
+  this.broadcastBattleStatus();this.scheduleRespawns();
  }
  advanceSafeZone(now){
   const zone=this.battle.zone;
   if(!zone||this.battle.phase!=='running')return;
+  if(zone.stage==='hidden'){
+   if(now<zone.stageEnds)return;
+   zone.stage='waiting';zone.stageStarted=now;zone.stageEnds=now+30000;zone.lastDamageAt=now;
+   this.broadcastZone();return;
+  }
   if(zone.stage==='waiting'&&now>=zone.stageEnds){
    const radii=[72,42,22,10,5],target=radii[Math.min(zone.phase,radii.length-1)];
    const theta=Math.random()*Math.PI*2;
@@ -289,7 +295,7 @@ export class GameRoom {
   this.broadcastZone();
  }
  broadcastZone(){
-  const z=this.battle.zone;if(!z||this.battle.phase!=='running')return;
+  const z=this.battle.zone;if(!z||this.battle.phase!=='running'||z.stage==='hidden')return;
   this.broadcast3D({type:'safezone3d',x:z.centerX,z:z.centerZ,radius:z.radius,
    phase:z.phase+1,stage:z.stage,seconds:Math.max(0,Math.ceil((z.stageEnds-Date.now())/1000)),
    damagePerSecond:Math.min(24,6+z.phase*3)});
@@ -298,12 +304,31 @@ export class GameRoom {
   if(!this.battle.enabled||this.battle.phase!=='running')return;
   for(const id of this.battle.roster){
    const bot=this.players.get(id);if(!bot?.bot||bot.dead)continue;
+   // Server-controlled flight, staggered jumps, parachutes and individual landing points.
+   if(bot.dropPhase&&bot.dropPhase!=='landed'){
+    if(bot.dropPhase==='plane'){
+     bot.x=Math.min(90,-90+17*(now-(this.battle.startedAt||now))/1000);
+     bot.y=110;bot.z=0;bot.grounded=false;bot.moving=false;
+     if(now>=bot.dropAt){bot.dropPhase='freefall';bot.jumpAt=now;bot.jumpX=bot.x;}
+    }else{
+     const seconds=(now-bot.jumpAt)/1000;
+     if(seconds>=3.5&&bot.dropPhase==='freefall')bot.dropPhase='glide';
+     const fraction=Math.min(1,seconds/11);
+     bot.y=Math.max(0,bot.dropPhase==='freefall'?110-23*seconds:29-(seconds-3.5)*3.9);
+     bot.x=bot.jumpX+(bot.landingX-bot.jumpX)*fraction;
+     bot.z=bot.landingZ*fraction;
+     bot.angle=Math.atan2(bot.landingX-bot.x,bot.landingZ-bot.z);
+     bot.grounded=false;bot.moving=true;
+     if(bot.y<=0){bot.y=0;bot.x=bot.landingX;bot.z=bot.landingZ;bot.dropPhase='landed';bot.grounded=true;bot.moving=false;}
+    }
+    this.broadcast3D(bot);continue;
+   }
    const candidates=this.battle.roster.map(pid=>this.players.get(pid)).filter(p=>p&&!p.dead&&p.id!==id&&p.y<12);
    if(!candidates.length)continue;
    candidates.sort((a,b)=>Math.hypot(a.x-bot.x,a.z-bot.z)-Math.hypot(b.x-bot.x,b.z-bot.z));
    const target=candidates[0],dx=target.x-bot.x,dz=target.z-bot.z,dist=Math.hypot(dx,dz);
    const zone=this.battle.zone;
-   const outside=zone&&Math.hypot(bot.x-zone.centerX,bot.z-zone.centerZ)>Math.max(3,zone.radius-4);
+   const outside=zone&&zone.stage!=='hidden'&&Math.hypot(bot.x-zone.centerX,bot.z-zone.centerZ)>Math.max(3,zone.radius-4);
    const mx=outside?zone.centerX-bot.x:dx,mz=outside?zone.centerZ-bot.z:dz,md=Math.hypot(mx,mz)||1;
    bot.angle=Math.atan2(mx,mz);bot.moving=outside||dist>7;
    if(outside||(dist>7&&dist<90)){
