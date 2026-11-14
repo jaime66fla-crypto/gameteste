@@ -33,6 +33,8 @@ var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 
 var weapon_model: Node3D
 var locomotion_clock := 0.0
 var presentation_offset := Vector3.ZERO
+var avatar_anim_time := 0.0
+var equipped_external_model := false
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -154,6 +156,7 @@ func _physics_process(delta: float) -> void:
     else:
         velocity.y = -0.1
     move_and_slide()
+    _animate_avatar(delta, input_vec.length(), is_on_floor())
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
     muzzle_flare.visible = gun_flash.light_energy > 0.05
@@ -250,6 +253,34 @@ func _impact_mark(point: Vector3) -> void:
     tween.tween_callback(impact.queue_free)
 
 
+
+func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
+    # Compact procedural animation for the prototype mesh; animation resources can replace it later.
+    var running := Input.is_action_pressed("sprint") and not aiming and not crouching
+    var moving := input_amount > 0.1 and grounded
+    var pace := 11.0 if running else (5.5 if crouching else 7.5)
+    if moving:
+        avatar_anim_time += delta * pace
+    var stride := sin(avatar_anim_time) * (0.54 if running else (0.20 if crouching else 0.37)) if moving else 0.0
+    var blend := minf(delta * 11.0, 1.0)
+    var left_leg := avatar.get_node_or_null("LeftLeg") as Node3D
+    var right_leg := avatar.get_node_or_null("RightLeg") as Node3D
+    var left_arm := avatar.get_node_or_null("LeftArm") as Node3D
+    var right_arm := avatar.get_node_or_null("RightArm") as Node3D
+    if left_leg != null:
+        left_leg.rotation.x = lerpf(left_leg.rotation.x, stride, blend)
+    if right_leg != null:
+        right_leg.rotation.x = lerpf(right_leg.rotation.x, -stride, blend)
+    if left_arm != null:
+        var hold_left := -0.42 if aiming else -0.22
+        left_arm.rotation.x = lerpf(left_arm.rotation.x, hold_left - stride * 0.12, blend)
+    if right_arm != null:
+        var hold_right := -0.45 if aiming else -0.22
+        right_arm.rotation.x = lerpf(right_arm.rotation.x, hold_right + stride * 0.12, blend)
+    var torso := avatar.get_node_or_null("Torso") as Node3D
+    if torso != null:
+        torso.rotation.z = lerpf(torso.rotation.z, -0.04 * stride, blend)
+
 func _equip_weapon(weapon_id: String) -> void:
     if current_weapon == weapon_id:
         return
@@ -263,9 +294,33 @@ func _equip_weapon(weapon_id: String) -> void:
     _rebuild_weapon_model()
 
 func _rebuild_weapon_model() -> void:
+    equipped_external_model = false
     for child in weapon_model.get_children():
         weapon_model.remove_child(child)
         child.queue_free()
+    # Optional imported .glb files live in res://assets/weapons/.
+    # If none is supplied, the procedural weapon remains fully playable.
+    var external_path := "res://assets/weapons/%s.glb" % current_weapon
+    if ResourceLoader.exists(external_path):
+        var packed := load(external_path) as PackedScene
+        if packed != null:
+            var imported := packed.instantiate() as Node3D
+            if imported != null:
+                imported.name = "ImportedWeapon"
+                imported.position = Vector3.ZERO
+                imported.rotation_degrees = Vector3(0, 180, 0)
+                weapon_model.add_child(imported)
+                equipped_external_model = true
+    if equipped_external_model:
+        var length_override := 0.54
+        match current_weapon:
+            "smg": length_override = 0.82
+            "rifle": length_override = 1.18
+            "shotgun": length_override = 1.27
+            "sniper": length_override = 1.55
+        gun_flash.position.z = -0.58 if current_weapon == "pistol" else -length_override * 0.99
+        muzzle_flare.position.z = gun_flash.position.z - 0.035
+        return
     var dark := Color("#22272d")
     var steel := Color("#59616a")
     var wood := Color("#765b43")
