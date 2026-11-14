@@ -254,14 +254,20 @@ func _equip_weapon(weapon_id: String) -> void:
 
 func _rebuild_weapon_model() -> void:
     for child in weapon_model.get_children():
+        weapon_model.remove_child(child)
         child.queue_free()
     var dark := Color("#22272d")
     var steel := Color("#59616a")
     var wood := Color("#765b43")
+    var polymer := Color("#343a35")
+    var accent := Color("#ab9360")
     var length := 0.54
     if current_weapon == "pistol":
         _part(weapon_model, "Slide", Vector3(0, 0.075, -0.27), Vector3(0.16, 0.16, 0.50), steel)
         _part(weapon_model, "Grip", Vector3(0, -0.15, -0.08), Vector3(0.13, 0.29, 0.14), dark)
+        _part(weapon_model, "TriggerGuard", Vector3(0, -0.13, -0.29), Vector3(0.12, 0.045, 0.18), dark)
+        _part(weapon_model, "FrontSight", Vector3(0, 0.19, -0.47), Vector3(0.08, 0.055, 0.06), accent)
+        _part(weapon_model, "RearSight", Vector3(0, 0.19, -0.08), Vector3(0.12, 0.055, 0.06), dark)
     else:
         if current_weapon == "smg":
             length = 0.82
@@ -275,19 +281,34 @@ func _rebuild_weapon_model() -> void:
         _part(weapon_model, "Barrel", Vector3(0, 0.03, -length * 0.76), Vector3(0.09, 0.09, length * 0.45), dark)
         _part(weapon_model, "Stock", Vector3(0, -0.035, 0.15), Vector3(0.15, 0.16, 0.38), wood if current_weapon == "shotgun" else dark)
         _part(weapon_model, "Grip", Vector3(0, -0.18, -0.21), Vector3(0.12, 0.29, 0.15), dark)
+        _part(weapon_model, "Handguard", Vector3(0, -0.035, -length * 0.56), Vector3(0.22, 0.18, length * 0.30), polymer)
+        _part(weapon_model, "Rail", Vector3(0, 0.145, -length * 0.36), Vector3(0.17, 0.045, length * 0.42), dark)
+        _part(weapon_model, "TriggerGuard", Vector3(0, -0.145, -0.33), Vector3(0.12, 0.045, 0.17), dark)
         if current_weapon != "shotgun":
             _part(weapon_model, "Magazine", Vector3(0, -0.23, -length * 0.39), Vector3(0.13, 0.38, 0.16), dark)
-        if current_weapon == "sniper":
-            _part(weapon_model, "Scope", Vector3(0, 0.20, -0.34), Vector3(0.14, 0.14, 0.44), dark)
-    gun_flash.position.z = -length - 0.08
-    muzzle_flare.position.z = -length - 0.16
+        if current_weapon == "shotgun":
+            _part(weapon_model, "Pump", Vector3(0, -0.065, -0.72), Vector3(0.24, 0.15, 0.31), wood)
+            _part(weapon_model, "Tube", Vector3(0, -0.12, -0.90), Vector3(0.08, 0.08, 0.45), steel)
+        elif current_weapon == "sniper":
+            _part(weapon_model, "Scope", Vector3(0, 0.23, -0.34), Vector3(0.15, 0.15, 0.48), dark)
+            _part(weapon_model, "Lens", Vector3(0, 0.23, -0.59), Vector3(0.115, 0.115, 0.018), Color("#345d6a"))
+            _part(weapon_model, "BipodLeft", Vector3(-0.12, -0.23, -1.04), Vector3(0.045, 0.32, 0.045), dark)
+            _part(weapon_model, "BipodRight", Vector3(0.12, -0.23, -1.04), Vector3(0.045, 0.32, 0.045), dark)
+        else:
+            _part(weapon_model, "FrontSight", Vector3(0, 0.18, -length * 0.91), Vector3(0.085, 0.10, 0.065), dark)
+            if current_weapon == "rifle":
+                _part(weapon_model, "Optic", Vector3(0, 0.25, -0.34), Vector3(0.15, 0.16, 0.19), dark)
+                _part(weapon_model, "OpticLens", Vector3(0, 0.25, -0.44), Vector3(0.105, 0.10, 0.015), Color("#3c6673"))
+    var muzzle_z := -0.58 if current_weapon == "pistol" else -length * 0.99
+    gun_flash.position.z = muzzle_z
+    muzzle_flare.position.z = muzzle_z - 0.035
 
 func _reload() -> void:
     if reloading:
         return
-    reloading = true
     if int(reserve_ammo[current_weapon]) <= 0 or ammo >= int(WeaponData.stats(current_weapon)["mag"]):
         return
+    reloading = true
     reload_timer = float(WeaponData.stats(current_weapon)["reload"])
     sound_fx.reload()
 
