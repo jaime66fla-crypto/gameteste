@@ -47,3 +47,10 @@ O teste inicializa a cena, verifica o avatar, os módulos de cenário e som, alt
 - HUD mostra teclas 1 a 5 para equipar as armas.
 - Smoke test ampliado: geometria de todas as armas, conexão de SFX, recarga com reserva limitada e recarga vazia.
 - **A validação de execução ainda está pendente:** alterações do código não significam que o Godot compilou ou que foi feita publicação.
+
+## Jaime e suporte a modelos externos
+- Movimento procedural simples dos braços, pernas e tronco durante a caminhada e corrida, com postura diferente ao mirar.
+- O sistema aceita arquivos GLB opcionais em `assets/weapons/`, um para cada arma, e mantém o modelo procedural quando o GLB não estiver presente.
+- Consulte `assets/weapons/README.md` para nomes, orientação, escala, desempenho e pontos que devem ser calibrados.
+- O movimento procedural **não é uma animação esquelética realista**, e não substitui as animações finais do avatar.
+- Smoke test atualizado para verificar presença de animação e fallback; **a execução real permanece pendente**.
