@@ -8,6 +8,7 @@ const MOUSE_SENSITIVITY := 0.0025
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const MAG_SIZE := 15
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
+const HumanoidAvatarScript = preload("res://scripts/avatar/avatar_controller.gd")
 
 var yaw := 0.0
 var pitch := -0.14
@@ -39,6 +40,7 @@ var jaime_model: Node3D
 var jaime_animation: AnimationPlayer
 var jaime_animation_name := ""
 var gun_uses_model_mount := false
+var humanoid_avatar: Node3D
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -51,7 +53,7 @@ func _ready() -> void:
     avatar = Node3D.new()
     add_child(avatar)
     _make_avatar()
-    _load_jaime_avatar()
+    _install_humanoid_avatar()
     sound_fx = Node.new()
     sound_fx.name = "SoundFX"
     sound_fx.set_script(SoundFXScript)
@@ -69,6 +71,21 @@ func _ready() -> void:
     camera.fov = 72
     spring.add_child(camera)
     Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _install_humanoid_avatar() -> void:
+    humanoid_avatar = HumanoidAvatarScript.new()
+    humanoid_avatar.name = "HumanoidAvatar"
+    avatar.add_child(humanoid_avatar)
+    for old_part in ["Torso", "Head", "LeftLeg", "RightLeg", "LeftArm", "RightArm"]:
+        var node := avatar.get_node_or_null(old_part) as Node3D
+        if node != null:
+            node.visible = false
+    var mount := humanoid_avatar.get_node_or_null("WeaponMount") as Node3D
+    if mount != null:
+        gun.reparent(mount, false)
+        gun.position = Vector3.ZERO
+        gun.rotation = Vector3.ZERO
+        gun_uses_model_mount = true
 
 func _material(c: Color) -> StandardMaterial3D:
     var m := StandardMaterial3D.new()
@@ -224,7 +241,8 @@ func _physics_process(delta: float) -> void:
     var spring: SpringArm3D = camera.get_parent()
     spring.spring_length = lerpf(spring.spring_length, 2.15 if aiming else cam_distance, minf(1,delta * 9))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, 1.05 if crouching else 1.55, minf(1,delta * 10))
-    avatar.position.y = lerpf(avatar.position.y, -0.36 if crouching else 0.0, minf(1,delta * 10))
+    var crouch_offset := -0.13 if humanoid_avatar != null else -0.36
+    avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
     var speed := CROUCH_SPEED if crouching else (RUN_SPEED if Input.is_action_pressed("sprint") and not aiming else WALK_SPEED)
@@ -340,6 +358,10 @@ func _impact_mark(point: Vector3) -> void:
 
 
 func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
+    if humanoid_avatar != null:
+        var running := Input.is_action_pressed("sprint") and not aiming and not crouching
+        humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading)
+        return
     if jaime_model != null and jaime_animation != null:
         var moving := input_amount > 0.1 and grounded
         var next_clip := "idle"
