@@ -32,8 +32,18 @@ func _ready() -> void:
     step_player.max_distance = 24.0
     add_child(step_player)
 
-func shot() -> void:
-    shot_player.pitch_scale = randf_range(0.94, 1.06)
+func shot(weapon_id: String = "pistol") -> void:
+    # Synthetic placeholders: vary timbre without requiring external assets.
+    var pitch_ranges := {
+        "pistol": Vector2(0.94, 1.06),
+        "smg": Vector2(1.25, 1.42),
+        "rifle": Vector2(0.76, 0.89),
+        "shotgun": Vector2(0.48, 0.61),
+        "sniper": Vector2(0.58, 0.70)
+    }
+    var range_value: Vector2 = pitch_ranges.get(weapon_id, Vector2(0.94, 1.06))
+    shot_player.pitch_scale = randf_range(range_value.x, range_value.y)
+    shot_player.volume_db = 0.0 if weapon_id == "shotgun" or weapon_id == "sniper" else -4.0
     shot_player.play()
 
 func reload() -> void:
