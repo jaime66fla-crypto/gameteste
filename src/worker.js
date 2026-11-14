@@ -95,7 +95,7 @@ export class GameRoom {
   // Battle Royale state is copied into WebSocket attachments for hibernation recovery.
   const previous=[...this.sessions.values()][0]?.deserializeAttachment()?.battle;
   this.battle=previous?{...previous,roster:[...previous.roster]}:{enabled:false,phase:'waiting',roster:[],winnerId:null,deadline:0,bots:[]};
-  for(const bot of this.battle.bots||[])this.players.set(bot.id,{...bot,type:'state3d',weapon:'rifle',attachments:{},gear:'none',grounded:true,moving:false,running:false,lastShot:0});
+  for(const bot of this.battle.bots||[])this.players.set(bot.id,{...bot,type:'state3d',weapon:'rifle',attachments:{},gear:'none',grounded:bot.grounded!==false,moving:!!bot.moving,running:false,lastShot:0});
   this.tactical=new globalThis.TacticalRoom(this,ctx);
  }
  async fetch(request) {
@@ -319,7 +319,7 @@ export class GameRoom {
      bot.z=bot.landingZ*fraction;
      bot.angle=Math.atan2(bot.landingX-bot.x,bot.landingZ-bot.z);
      bot.grounded=false;bot.moving=true;
-     if(bot.y<=0){bot.y=0;bot.x=bot.landingX;bot.z=bot.landingZ;bot.dropPhase='landed';bot.grounded=true;bot.moving=false;}
+     if(bot.y<=0){bot.y=globalThis.TacticalRules.terrain(bot.landingX,bot.landingZ);bot.x=bot.landingX;bot.z=bot.landingZ;bot.dropPhase='landed';bot.grounded=true;bot.moving=false;}
     }
     this.broadcast3D(bot);continue;
    }
@@ -360,7 +360,7 @@ export class GameRoom {
    const attachment=peer.deserializeAttachment();
    if(attachment?.mode==='3d'){
     const bots=(this.battle.bots||[]).map(b=>({id:b.id,name:b.name,x:b.x,y:b.y,z:b.z,angle:b.angle,health:b.health,dead:b.dead,kills:b.kills,lastBotAttack:b.lastBotAttack,bot:true,weapon:'rifle'}));
-    peer.serializeAttachment({...attachment,battle:{enabled:this.battle.enabled,phase:this.battle.phase,roster:[...this.battle.roster],winnerId:this.battle.winnerId,deadline:this.battle.deadline,zone:this.battle.zone,bots}});
+    peer.serializeAttachment({...attachment,battle:{enabled:this.battle.enabled,phase:this.battle.phase,roster:[...this.battle.roster],winnerId:this.battle.winnerId,deadline:this.battle.deadline,startedAt:this.battle.startedAt,zone:this.battle.zone,bots}});
    }
   }
  }
