@@ -42,6 +42,12 @@ func _run_smoke() -> void:
         _check(player.has_method("_animate_avatar"), "Avatar procedural animation present")
         _check(player.has_method("_rebuild_weapon_model"), "Weapon model fallback present")
         _check(model != null, "Weapon model exists")
+        var humanoid: Node = player.get("humanoid_avatar")
+        _check(humanoid != null, "New humanoid avatar initialized")
+        if humanoid != null:
+            _check(humanoid.get_node_or_null("Hips") != null, "Humanoid hips created")
+            _check(humanoid.get_node_or_null("WeaponMount") != null, "Weapon mount created")
+            _check(humanoid.has_method("animate"), "Avatar pose blending available")
         _check(player.get("ammo") == 15, "Pistol magazine starts at 15")
         var order := ["smg", "rifle", "shotgun", "sniper", "pistol"]
         var expected_mags := [30, 30, 6, 5, 15]
