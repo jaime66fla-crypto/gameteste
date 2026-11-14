@@ -92,7 +92,7 @@ func _assemble() -> void:
     right_arm = _build_arm("RightArm", 0.37, cloth, skin)
     weapon_mount = Node3D.new()
     weapon_mount.name = "WeaponMount"
-    weapon_mount.position = Vector3(0.22, 1.38, -0.40)
+    weapon_mount.position = Vector3(0.19, 1.36, -0.52)
     add_child(weapon_mount)
 
 func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -> Node3D:
@@ -110,9 +110,13 @@ func _build_arm(part_name: String, x: float, cloth: Material, skin: Material) ->
     pivot.name = part_name
     pivot.position = Vector3(x, 0.45, 0)
     torso.add_child(pivot)
-    _capsule(pivot, "UpperArm", 0.11, 0.36, Vector3(0, -0.17, 0), cloth)
-    _capsule(pivot, "Forearm", 0.087, 0.33, Vector3(0, -0.45, -0.07), cloth)
-    _sphere(pivot, "Hand", 0.086, Vector3(0, -0.63, -0.09), skin)
+    _capsule(pivot, "UpperArm", 0.108, 0.36, Vector3(0, -0.17, 0), cloth)
+    var elbow := Node3D.new()
+    elbow.name = "Elbow"
+    elbow.position = Vector3(0, -0.34, 0)
+    pivot.add_child(elbow)
+    _capsule(elbow, "Forearm", 0.083, 0.34, Vector3(0, -0.16, 0), cloth)
+    _sphere(elbow, "Hand", 0.075, Vector3(0, -0.34, 0), skin, Vector3(0.95, 1.35, 0.86))
     return pivot
 
 func animate(delta: float, move_amount: float, running: bool, crouched: bool, aiming: bool, airborne: bool, reloading: bool) -> void:
@@ -124,15 +128,26 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
     var amplitude := 0.51 if running else (0.24 if crouched else 0.36)
     left_leg.rotation.x = lerpf(left_leg.rotation.x, stride * amplitude if not airborne else -0.19, blend)
     right_leg.rotation.x = lerpf(right_leg.rotation.x, -stride * amplitude if not airborne else 0.24, blend)
-    var left_arm_target := (-0.65 if aiming else -0.30) - stride * (0.05 if aiming else 0.23)
-    var right_arm_target := (-0.71 if aiming else -0.29) + stride * (0.05 if aiming else 0.23)
+    # Positive X tilt brings hands forward (negative Z in Godot).
+    # Both shoulders pitch forward while elbows fold to support the weapon.
+    var arm_pitch := 1.05 if aiming else (0.73 if smoothed_move < 0.12 else 0.58)
+    var arm_swing := stride * (0.06 if aiming else 0.18)
+    var right_target := arm_pitch + arm_swing
+    var left_target := arm_pitch - arm_swing
     if reloading:
-        left_arm_target = -0.96
-        right_arm_target = -0.48
-    left_arm.rotation.x = lerpf(left_arm.rotation.x, left_arm_target, blend)
-    right_arm.rotation.x = lerpf(right_arm.rotation.x, right_arm_target, blend)
-    left_arm.rotation.z = lerpf(left_arm.rotation.z, -0.15 if aiming else 0.07, blend)
-    right_arm.rotation.z = lerpf(right_arm.rotation.z, 0.15 if aiming else -0.07, blend)
+        left_target = 0.54
+        right_target = 0.99
+    left_arm.rotation.x = lerpf(left_arm.rotation.x, left_target, blend)
+    right_arm.rotation.x = lerpf(right_arm.rotation.x, right_target, blend)
+    # Negative Z for the left arm crosses the centerline; right stays near grip.
+    left_arm.rotation.z = lerpf(left_arm.rotation.z, 0.44 if aiming else 0.28, blend)
+    right_arm.rotation.z = lerpf(right_arm.rotation.z, -0.17 if aiming else -0.09, blend)
+    var left_elbow := left_arm.get_node_or_null("Elbow") as Node3D
+    var right_elbow := right_arm.get_node_or_null("Elbow") as Node3D
+    if left_elbow != null:
+        left_elbow.rotation.x = lerpf(left_elbow.rotation.x, -0.26 if aiming else -0.18, blend)
+    if right_elbow != null:
+        right_elbow.rotation.x = lerpf(right_elbow.rotation.x, -0.20 if aiming else -0.12, blend)
     torso.rotation.z = lerpf(torso.rotation.z, 0.035 * stride, blend)
     torso.rotation.x = lerpf(torso.rotation.x, 0.08 if running else (0.045 if aiming else 0.0), blend)
     hips.position.y = lerpf(hips.position.y, 0.70 if crouched else 0.96, blend)
