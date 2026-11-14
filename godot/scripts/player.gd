@@ -35,6 +35,10 @@ var locomotion_clock := 0.0
 var presentation_offset := Vector3.ZERO
 var avatar_anim_time := 0.0
 var equipped_external_model := false
+var jaime_model: Node3D
+var jaime_animation: AnimationPlayer
+var jaime_animation_name := ""
+var gun_uses_model_mount := false
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -47,6 +51,7 @@ func _ready() -> void:
     avatar = Node3D.new()
     add_child(avatar)
     _make_avatar()
+    _load_jaime_avatar()
     sound_fx = Node.new()
     sound_fx.name = "SoundFX"
     sound_fx.set_script(SoundFXScript)
@@ -120,6 +125,79 @@ func _make_avatar() -> void:
     gun.add_child(gun_flash)
     _rebuild_weapon_model()
 
+func _find_descendant(node: Node, name_query: String) -> Node:
+    if node.name == name_query:
+        return node
+    for child in node.get_children():
+        var match_node := _find_descendant(child, name_query)
+        if match_node != null:
+            return match_node
+    return null
+
+func _first_animation_player(node: Node) -> AnimationPlayer:
+    if node is AnimationPlayer:
+        return node as AnimationPlayer
+    for child in node.get_children():
+        var found := _first_animation_player(child)
+        if found != null:
+            return found
+    return null
+
+func _load_jaime_avatar() -> void:
+    # Use either the saved inherited scene or the original imported GLB.
+    var path := "res://scenes/jaime personagem.tscn"
+    if not ResourceLoader.exists(path):
+        path = "res://assets/jaime/jaime.glb"
+    if not ResourceLoader.exists(path):
+        return
+    var packed := load(path) as PackedScene
+    if packed == null:
+        return
+    var instance := packed.instantiate() as Node3D
+    if instance == null:
+        return
+    jaime_model = instance
+    jaime_model.name = "JaimeOriginal"
+    avatar.add_child(jaime_model)
+    # Rotate the mesh only, never the player controller or camera.
+    jaime_model.rotation.y = PI
+    jaime_animation = _first_animation_player(jaime_model)
+    var embedded_weapon := _find_descendant(jaime_model, "Weapon_pistol") as Node3D
+    if embedded_weapon != null:
+        embedded_weapon.visible = false
+    var weapon_mount := _find_descendant(jaime_model, "OperatorWeaponMount") as Node3D
+    if weapon_mount != null:
+        gun.reparent(weapon_mount, false)
+        gun.position = Vector3.ZERO
+        gun.rotation = Vector3.ZERO
+        gun_uses_model_mount = true
+    for part_name in ["Torso", "Head", "LeftLeg", "RightLeg", "LeftArm", "RightArm"]:
+        var primitive := avatar.get_node_or_null(part_name) as Node3D
+        if primitive != null:
+            primitive.visible = false
+    _play_jaime_animation("idle")
+
+func _play_jaime_animation(clip_name: String) -> void:
+    if jaime_animation == null:
+        return
+    var chosen := ""
+    for animation_name in jaime_animation.get_animation_list():
+        if String(animation_name).to_lower().get_slice("/", String(animation_name).get_slice_count("/") - 1) == clip_name:
+            chosen = String(animation_name)
+            break
+    if chosen == "":
+        for library_name in jaime_animation.get_animation_library_list():
+            var library := jaime_animation.get_animation_library(library_name)
+            for animation_name in library.get_animation_list():
+                if String(animation_name).to_lower() == clip_name:
+                    chosen = String(library_name) + "/" + String(animation_name) if String(library_name) != "" else String(animation_name)
+                    break
+            if chosen != "":
+                break
+    if chosen != "" and chosen != jaime_animation_name:
+        jaime_animation_name = chosen
+        jaime_animation.play(chosen, 0.16)
+
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
         var key_slots := {KEY_1: "pistol", KEY_2: "smg", KEY_3: "rifle", KEY_4: "shotgun", KEY_5: "sniper"}
@@ -168,8 +246,12 @@ func _physics_process(delta: float) -> void:
     var bob := sin(locomotion_clock) * 0.018 * movement_weight if is_on_floor() else 0.0
     var desired_offset := Vector3(-0.045, 0.025, 0.07) if aiming else Vector3.ZERO
     presentation_offset = presentation_offset.lerp(desired_offset, minf(delta * 12.0, 1.0))
-    gun.position = Vector3(0.33, 1.28 + bob, -0.48 + gun_kick) + presentation_offset
-    gun.rotation.x = lerpf(gun.rotation.x, -0.065 if aiming else 0.0, minf(delta * 10.0, 1.0))
+    if gun_uses_model_mount:
+        gun.position = Vector3(0.0, 0.0, gun_kick * 0.3)
+        gun.rotation.x = 0.0
+    else:
+        gun.position = Vector3(0.33, 1.28 + bob, -0.48 + gun_kick) + presentation_offset
+        gun.rotation.x = lerpf(gun.rotation.x, -0.065 if aiming else 0.0, minf(delta * 10.0, 1.0))
     sound_fx.update_steps(delta, is_on_floor(), input_vec.length() > 0.12, Input.is_action_pressed("sprint"), crouching)
     if reloading:
         reload_timer -= delta
@@ -255,6 +337,21 @@ func _impact_mark(point: Vector3) -> void:
 
 
 func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
+    if jaime_model != null and jaime_animation != null:
+        var moving := input_amount > 0.1 and grounded
+        var next_clip := "idle"
+        if not grounded:
+            next_clip = "jump" if velocity.y > 0.0 else "fall"
+        elif reloading:
+            next_clip = "reload_walk" if moving else "reload"
+        elif crouching:
+            next_clip = "crouch_aim_walk" if aiming and moving else ("crouch_aim" if aiming else ("crouch_walk" if moving else "crouch"))
+        elif aiming:
+            next_clip = "aim_walk" if moving else "aim"
+        elif moving:
+            next_clip = "run" if Input.is_action_pressed("sprint") else "walk"
+        _play_jaime_animation(next_clip)
+        return
     # Compact procedural animation for the prototype mesh; animation resources can replace it later.
     var running := Input.is_action_pressed("sprint") and not aiming and not crouching
     var moving := input_amount > 0.1 and grounded
