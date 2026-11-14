@@ -6,6 +6,7 @@ const CROUCH_SPEED := 2.7
 const JUMP_VELOCITY := 8.5
 const MOUSE_SENSITIVITY := 0.0025
 const MAG_SIZE := 15
+const SoundFXScript = preload("res://scripts/sound_fx.gd")
 
 var yaw := 0.0
 var pitch := -0.14
@@ -22,6 +23,9 @@ var avatar: Node3D
 var gun: Node3D
 var gun_flash: OmniLight3D
 var cam_distance := 3.6
+var sound_fx: Node
+var muzzle_flare: MeshInstance3D
+var gun_kick := 0.0
 
 func _ready() -> void:
     var collision := CollisionShape3D.new()
@@ -34,6 +38,10 @@ func _ready() -> void:
     avatar = Node3D.new()
     add_child(avatar)
     _make_avatar()
+    sound_fx = Node.new()
+    sound_fx.name = "SoundFX"
+    sound_fx.set_script(SoundFXScript)
+    gun.add_child(sound_fx)
     arm_pivot = Node3D.new()
     arm_pivot.position = Vector3(0, 1.55, 0)
     add_child(arm_pivot)
@@ -78,6 +86,22 @@ func _make_avatar() -> void:
     gun.position = Vector3(0.33,1.28,-0.48)
     _part(gun,"PistolBody",Vector3(0,0,-0.22),Vector3(0.16,0.20,0.52),Color(0.08,0.09,0.10))
     _part(gun,"Grip",Vector3(0,-0.16,-0.08),Vector3(0.13,0.30,0.13),Color(0.11,0.11,0.12))
+    _part(gun,"Slide",Vector3(0,0.105,-0.27),Vector3(0.18,0.10,0.46),Color("#34393e"))
+    _part(gun,"SightRear",Vector3(0,0.18,-0.07),Vector3(0.11,0.05,0.06),Color("#141719"))
+    _part(gun,"SightFront",Vector3(0,0.18,-0.48),Vector3(0.08,0.05,0.05),Color("#141719"))
+    _part(gun,"Barrel",Vector3(0,0,-0.53),Vector3(0.10,0.10,0.20),Color("#262a30"))
+    muzzle_flare = MeshInstance3D.new()
+    var flash_mesh := SphereMesh.new()
+    flash_mesh.radius = 0.15
+    flash_mesh.height = 0.32
+    muzzle_flare.mesh = flash_mesh
+    var glow := StandardMaterial3D.new()
+    glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    glow.albedo_color = Color("#ffc267")
+    muzzle_flare.material_override = glow
+    muzzle_flare.position = Vector3(0,0,-0.69)
+    muzzle_flare.visible = false
+    gun.add_child(muzzle_flare)
     gun_flash = OmniLight3D.new()
     gun_flash.position = Vector3(0,0,-0.57)
     gun_flash.light_color = Color(1,0.65,0.25)
@@ -117,7 +141,11 @@ func _physics_process(delta: float) -> void:
         velocity.y = -0.1
     move_and_slide()
     fire_delay = maxf(0, fire_delay - delta)
-    gun_flash.light_energy = move_toward(gun_flash.light_energy, 0, delta * 55)
+    gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
+    muzzle_flare.visible = gun_flash.light_energy > 0.05
+    gun_kick = move_toward(gun_kick, 0.0, delta * 5.0)
+    gun.position.z = -0.48 + gun_kick
+    sound_fx.update_steps(delta, is_on_floor(), input_vec.length() > 0.12, Input.is_action_pressed("sprint"), crouching)
     if reloading:
         reload_timer -= delta
         if reload_timer <= 0:
@@ -136,19 +164,60 @@ func _shoot() -> void:
     shots += 1
     fire_delay = 0.22
     gun_flash.light_energy = 2.8
+    gun_kick = 0.11
+    sound_fx.shot()
     var origin := camera.global_position
     var target := origin - camera.global_transform.basis.z * 250.0
     var query := PhysicsRayQueryParameters3D.create(origin,target)
     query.exclude = [get_rid()]
     var hit := get_world_3d().direct_space_state.intersect_ray(query)
+    var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
+    _shot_tracer(gun_flash.global_position, endpoint)
     if not hit.is_empty():
-        print("Acerto: ", hit["position"])
+        _impact_mark(endpoint)
+
+func _shot_tracer(from: Vector3, to: Vector3) -> void:
+    var delta_pos := to - from
+    var length := minf(delta_pos.length(), 45.0)
+    if length < 0.1:
+        return
+    var tracer := MeshInstance3D.new()
+    var cylinder := CylinderMesh.new()
+    cylinder.top_radius = 0.011
+    cylinder.bottom_radius = 0.011
+    cylinder.height = length
+    cylinder.radial_segments = 5
+    tracer.mesh = cylinder
+    var glow := StandardMaterial3D.new()
+    glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    glow.albedo_color = Color("#ffd08c")
+    tracer.material_override = glow
+    tracer.position = from + delta_pos.normalized() * length * 0.5
+    tracer.quaternion = Quaternion(Vector3.UP, delta_pos.normalized())
+    get_tree().current_scene.add_child(tracer)
+    var tween := tracer.create_tween()
+    tween.tween_property(tracer, "transparency", 1.0, 0.075)
+    tween.tween_callback(tracer.queue_free)
+
+func _impact_mark(point: Vector3) -> void:
+    var impact := MeshInstance3D.new()
+    var sphere := SphereMesh.new()
+    sphere.radius = 0.085
+    sphere.height = 0.17
+    impact.mesh = sphere
+    impact.material_override = _material(Color("#eacb91"))
+    impact.global_position = point
+    get_tree().current_scene.add_child(impact)
+    var tween := impact.create_tween()
+    tween.tween_property(impact, "scale", Vector3.ZERO, 0.23)
+    tween.tween_callback(impact.queue_free)
 
 func _reload() -> void:
     if reloading:
         return
     reloading = true
     reload_timer = 1.3
+    sound_fx.reload()
 
 func status_text() -> String:
     var state := "MIRANDO" if aiming else "LIVRE"
