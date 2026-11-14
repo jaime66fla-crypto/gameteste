@@ -79,6 +79,8 @@ func _ready() -> void:
 func _install_humanoid_avatar() -> void:
     humanoid_avatar = HumanoidAvatarScript.new()
     humanoid_avatar.name = "HumanoidAvatar"
+    # Match the visible character to the configured collision height.
+    humanoid_avatar.scale = Vector3.ONE * (height / 2.09)
     avatar.add_child(humanoid_avatar)
     for old_part in ["Torso", "Head", "LeftLeg", "RightLeg", "LeftArm", "RightArm"]:
         var node := avatar.get_node_or_null(old_part) as Node3D

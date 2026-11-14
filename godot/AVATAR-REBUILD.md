@@ -23,3 +23,10 @@ Esta primeira etapa inclui um avatar **procedural estilizado** construído em GD
 A versão principal e a branch anterior não foram alteradas.
 
 Teste de encaixe da pistola: `godot --headless --path godot --script res://tests/avatar_grip.gd`.
+
+## Redesenho tático
+- Tronco e pelve com contornos afunilados, colete frontal/traseiro, tiras e bolsos.
+- Rosto com mandíbula, nariz, olhos, sobrancelhas e cabelo curto; braços e pernas mais finos, luvas, joelheiras e botas.
+- Os apoios das armas e os pivôs de animação continuam ativos. Altura visual acompanha a cápsula configurada (1,80 m por padrão).
+- Continua sendo um personagem estilizado procedural, sem modelo humano fotorealista.
+- Verificações: `avatar_geometry.gd`, `avatar_grip.gd`, `pistol_visibility.gd`, `weapon_slots.gd` e `polish_smoke.gd`. Geometria também inspecionada em vistas frontal, lateral e traseira por renderização auxiliar; a apresentação final no jogo ainda requer conferência visual no Godot.

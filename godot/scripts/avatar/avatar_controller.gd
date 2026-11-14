@@ -62,38 +62,88 @@ func _box(parent: Node3D, part_name: String, size: Vector3, position: Vector3, m
     instance.material_override = mat
     parent.add_child(instance)
 
+func _loft(parent: Node3D, part_name: String, rings: Array, mat: Material) -> void:
+    # Elliptical cross-sections give the chest, waist and face their silhouette.
+    var surface := SurfaceTool.new()
+    surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+    const SIDES := 16
+    for layer in range(rings.size() - 1):
+        var lower: Vector3 = rings[layer]
+        var upper: Vector3 = rings[layer + 1]
+        for side in range(SIDES):
+            var angle := TAU * side / SIDES
+            var next_angle := TAU * (side + 1) / SIDES
+            var a := Vector3(cos(angle) * lower.y, lower.x, sin(angle) * lower.z)
+            var b := Vector3(cos(angle) * upper.y, upper.x, sin(angle) * upper.z)
+            var c := Vector3(cos(next_angle) * upper.y, upper.x, sin(next_angle) * upper.z)
+            var d := Vector3(cos(next_angle) * lower.y, lower.x, sin(next_angle) * lower.z)
+            for vertex in [a, c, b, a, d, c]:
+                surface.add_vertex(vertex)
+    for end in [0, rings.size() - 1]:
+        var ring: Vector3 = rings[end]
+        for side in range(SIDES):
+            var angle := TAU * side / SIDES
+            var next_angle := TAU * (side + 1) / SIDES
+            var a := Vector3(cos(angle) * ring.y, ring.x, sin(angle) * ring.z)
+            var b := Vector3(cos(next_angle) * ring.y, ring.x, sin(next_angle) * ring.z)
+            for vertex in [Vector3(0, ring.x, 0), b if end == 0 else a, a if end == 0 else b]:
+                surface.add_vertex(vertex)
+    surface.generate_normals()
+    var instance := MeshInstance3D.new()
+    instance.name = part_name
+    instance.mesh = surface.commit()
+    instance.material_override = mat
+    parent.add_child(instance)
+
 func _assemble() -> void:
-    var cloth := _mat(Color("#323f44"))
-    var pants := _mat(Color("#414744"))
+    var cloth := _mat(Color("#394748"))
+    var pants := _mat(Color("#414b43"))
     var skin := _mat(Color("#b98b6c"))
-    var hair := _mat(Color("#25211f"))
-    var boots := _mat(Color("#222628"))
-    var highlights := _mat(Color("#69766b"))
+    var hair := _mat(Color("#282522"))
+    var boots := _mat(Color("#202526"))
+    var armor := _mat(Color("#293638"))
+    var webbing := _mat(Color("#697264"))
+    var eyes := _mat(Color("#202625"))
+    var whites := _mat(Color("#c4bcb0"))
     hips = Node3D.new()
     hips.name = "Hips"
     hips.position.y = 0.96
     add_child(hips)
-    _capsule(hips, "Pelvis", 0.25, 0.38, Vector3(0, 0, 0), pants)
+    _loft(hips, "Pelvis", [Vector3(-0.12, 0.19, 0.12), Vector3(0.01, 0.245, 0.145), Vector3(0.14, 0.205, 0.125)], pants)
+    _box(hips, "Belt", Vector3(0.45, 0.065, 0.29), Vector3(0, 0.10, 0), boots)
+    _box(hips, "Buckle", Vector3(0.065, 0.055, 0.023), Vector3(0, 0.10, -0.158), webbing)
     torso = Node3D.new()
     torso.name = "Torso"
     torso.position = Vector3(0, 0.18, 0)
     hips.add_child(torso)
-    _capsule(torso, "Chest", 0.32, 0.65, Vector3(0, 0.20, 0), cloth)
-    _box(torso, "FrontHarness", Vector3(0.52, 0.11, 0.035), Vector3(0, 0.11, -0.29), highlights)
-    _capsule(torso, "Neck", 0.09, 0.18, Vector3(0, 0.58, 0), skin)
+    _loft(torso, "Chest", [Vector3(-0.09, 0.19, 0.12), Vector3(0.10, 0.225, 0.14), Vector3(0.34, 0.285, 0.15), Vector3(0.47, 0.27, 0.135), Vector3(0.53, 0.15, 0.105)], cloth)
+    _box(torso, "FrontPlate", Vector3(0.39, 0.34, 0.065), Vector3(0, 0.27, -0.153), armor)
+    _box(torso, "BackPlate", Vector3(0.39, 0.37, 0.055), Vector3(0, 0.28, 0.15), armor)
+    for side in [-1.0, 1.0]:
+        _box(torso, "ShoulderStrap", Vector3(0.065, 0.17, 0.32), Vector3(side * 0.17, 0.47, 0), webbing)
+        _box(torso, "SideStrap", Vector3(0.055, 0.065, 0.29), Vector3(side * 0.23, 0.10, 0), webbing)
+    for slot in range(3):
+        _box(torso, "MagazinePouch", Vector3(0.105, 0.16, 0.075), Vector3((slot - 1) * 0.125, 0.075, -0.20), webbing)
+        _box(torso, "PouchFlap", Vector3(0.108, 0.035, 0.016), Vector3((slot - 1) * 0.125, 0.14, -0.245), armor)
+    _box(torso, "BackSeam", Vector3(0.025, 0.26, 0.01), Vector3(0, 0.28, 0.183), webbing)
+    _capsule(torso, "Neck", 0.078, 0.16, Vector3(0, 0.59, 0), skin)
     head = Node3D.new()
     head.name = "Head"
     head.position = Vector3(0, 0.76, 0)
     torso.add_child(head)
-    _sphere(head, "Face", 0.18, Vector3.ZERO, skin, Vector3(0.87, 1.08, 0.87))
-    _sphere(head, "Hair", 0.18, Vector3(0, 0.105, 0.02), hair, Vector3(0.94, 0.52, 0.90))
+    _loft(head, "Face", [Vector3(-0.16, 0.065, 0.075), Vector3(-0.10, 0.115, 0.115), Vector3(0.0, 0.145, 0.137), Vector3(0.115, 0.14, 0.13), Vector3(0.17, 0.09, 0.085)], skin)
+    _loft(head, "Hair", [Vector3(0.08, 0.147, 0.139), Vector3(0.13, 0.145, 0.135), Vector3(0.19, 0.07, 0.07)], hair)
+    _sphere(head, "Nose", 0.028, Vector3(0, -0.015, -0.143), skin, Vector3(0.70, 1.30, 1.35))
+    _box(head, "Mouth", Vector3(0.057, 0.009, 0.009), Vector3(0, -0.095, -0.123), _mat(Color("#79554a")))
     for side in [-1.0, 1.0]:
-        _sphere(head, "Ear", 0.047, Vector3(side * 0.165, -0.015, 0), skin)
-    left_leg = _build_leg("LeftLeg", -0.16, pants, boots)
-    right_leg = _build_leg("RightLeg", 0.16, pants, boots)
+        _sphere(head, "Ear", 0.033, Vector3(side * 0.145, -0.02, 0.01), skin, Vector3(0.58, 1.20, 0.72))
+        _box(head, "Eye", Vector3(0.045, 0.018, 0.012), Vector3(side * 0.06, 0.025, -0.128), whites)
+        _box(head, "Pupil", Vector3(0.014, 0.018, 0.006), Vector3(side * 0.06, 0.025, -0.136), eyes)
+        _box(head, "Brow", Vector3(0.055, 0.013, 0.013), Vector3(side * 0.06, 0.054, -0.128), hair)
+    left_leg = _build_leg("LeftLeg", -0.145, pants, boots)
+    right_leg = _build_leg("RightLeg", 0.145, pants, boots)
     left_arm = _build_arm("LeftArm", -0.37, cloth, skin)
     right_arm = _build_arm("RightArm", 0.37, cloth, skin)
-    # The support shoulder reaches forward in a two-handed pistol stance.
     left_arm.position = Vector3(-0.31, 0.45, -0.10)
     weapon_mount = Node3D.new()
     weapon_mount.name = "WeaponMount"
@@ -120,9 +170,12 @@ func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -
     pivot.name = part_name
     pivot.position = Vector3(x, -0.08, 0)
     hips.add_child(pivot)
-    _capsule(pivot, "Thigh", 0.126, 0.48, Vector3(0, -0.22, 0), pants)
-    _capsule(pivot, "Shin", 0.103, 0.43, Vector3(0, -0.63, 0), pants)
-    _box(pivot, "Boot", Vector3(0.22, 0.19, 0.32), Vector3(0, -0.86, -0.075), boots)
+    _capsule(pivot, "Thigh", 0.108, 0.48, Vector3(0, -0.22, 0), pants)
+    _box(pivot, "CargoPocket", Vector3(0.055, 0.18, 0.15), Vector3(-0.12 if x < 0 else 0.12, -0.20, 0.015), pants)
+    _box(pivot, "KneePad", Vector3(0.16, 0.16, 0.055), Vector3(0, -0.45, -0.085), boots)
+    _capsule(pivot, "Shin", 0.085, 0.43, Vector3(0, -0.63, 0), pants)
+    _box(pivot, "Boot", Vector3(0.18, 0.17, 0.29), Vector3(0, -0.79, -0.055), boots)
+    _box(pivot, "BootSole", Vector3(0.19, 0.035, 0.30), Vector3(0, -0.865, -0.055), boots)
     return pivot
 
 func _build_arm(part_name: String, x: float, cloth: Material, skin: Material) -> Node3D:
@@ -130,13 +183,23 @@ func _build_arm(part_name: String, x: float, cloth: Material, skin: Material) ->
     pivot.name = part_name
     pivot.position = Vector3(x, 0.45, 0)
     torso.add_child(pivot)
-    _capsule(pivot, "UpperArm", 0.108, 0.36, Vector3(0, -0.17, 0), cloth)
+    _capsule(pivot, "UpperArm", 0.085, 0.36, Vector3(0, -0.17, 0), cloth)
+    _sphere(pivot, "ShoulderSleeve", 0.10, Vector3(0, -0.025, 0), cloth, Vector3(1.0, 0.85, 0.90))
     var elbow := Node3D.new()
     elbow.name = "Elbow"
     elbow.position = Vector3(0, -0.34, 0)
     pivot.add_child(elbow)
-    _capsule(elbow, "Forearm", 0.083, 0.34, Vector3(0, -0.16, 0), cloth)
-    _sphere(elbow, "Hand", 0.075, Vector3(0, -0.34, 0), skin, Vector3(0.95, 1.35, 0.86))
+    _capsule(elbow, "Forearm", 0.068, 0.34, Vector3(0, -0.16, 0), cloth)
+    var glove := _mat(Color("#252d2c"))
+    _box(elbow, "ElbowPad", Vector3(0.13, 0.10, 0.045), Vector3(0, 0.0, 0.055), glove)
+    # Keep the wrist anchor fixed: weapon IK targets this node's origin.
+    var hand := Node3D.new()
+    hand.name = "Hand"
+    hand.position = Vector3(0, -0.34, 0)
+    elbow.add_child(hand)
+    _box(hand, "GlovePalm", Vector3(0.085, 0.105, 0.055), Vector3(0, -0.01, 0), glove)
+    _box(hand, "Knuckles", Vector3(0.088, 0.035, 0.025), Vector3(0, -0.04, -0.035), glove)
+    _sphere(hand, "Thumb", 0.021, Vector3(-0.043 if x > 0 else 0.043, 0.008, -0.025), skin, Vector3(0.8, 1.35, 0.9))
     return pivot
 
 func animate(delta: float, move_amount: float, running: bool, crouched: bool, aiming: bool, airborne: bool, reloading: bool) -> void:
