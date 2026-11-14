@@ -92,7 +92,7 @@ func _assemble() -> void:
     right_arm = _build_arm("RightArm", 0.37, cloth, skin)
     weapon_mount = Node3D.new()
     weapon_mount.name = "WeaponMount"
-    weapon_mount.position = Vector3(0.08, 1.36, -0.32)
+    weapon_mount.position = Vector3(0.18, 1.36, -0.20)
     add_child(weapon_mount)
 
 func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -> Node3D:

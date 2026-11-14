@@ -68,7 +68,7 @@ func _ready() -> void:
     var spring := SpringArm3D.new()
     spring.spring_length = cam_distance
     spring.margin = 0.15
-    spring.position.x = 0.6
+    spring.position.x = 1.0
     arm_pivot.add_child(spring)
     camera = Camera3D.new()
     camera.current = true
