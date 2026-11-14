@@ -12,6 +12,7 @@ func _ready() -> void:
     _landmarks()
     _vegetation()
     _rocks()
+    _cover_details()
 
 func _tune_environment() -> void:
     var existing := get_parent().get_node_or_null("WorldEnvironment")
@@ -144,3 +145,34 @@ func _rocks() -> void:
             continue
         var scale_factor := rng.randf_range(0.35, 1.15)
         _box(Vector3(x, scale_factor * 0.25, z), Vector3(scale_factor, scale_factor * 0.5, scale_factor * 0.8), _mat("#777d76"))
+
+func _cover_details() -> void:
+    # Fixed landmarks. Cover is near roads but not across the road corridors.
+    var metal := _mat("#52616a")
+    var rust := _mat("#8a5b43")
+    var trim := _mat("#c3ad72")
+    var concrete := _mat("#898b83")
+    var positions := [
+        Vector3(-9, 0, 10), Vector3(-22, 0, 26),
+        Vector3(9, 0, 29), Vector3(28, 0, 8),
+        Vector3(29, 0, -9), Vector3(-6, 0, -12)
+    ]
+    for i in range(positions.size()):
+        var p: Vector3 = positions[i]
+        var body := _box(p + Vector3(0, 0.68, 0), Vector3(2.4, 1.36, 0.7), concrete, true)
+        body.name = "ConcreteCover_%02d" % i
+        # Yellow strip is deliberately offset from the wall face.
+        _box(p + Vector3(0, 1.08, 0.38), Vector3(2.15, 0.12, 0.045), trim)
+    var crates := [
+        Vector3(-13, 0, 28), Vector3(9, 0, -15),
+        Vector3(29, 0, 32), Vector3(43, 0, 5)
+    ]
+    for i in range(crates.size()):
+        var p: Vector3 = crates[i]
+        _box(p + Vector3(0, 0.56, 0), Vector3(1.1, 1.12, 1.1), rust, true)
+        _box(p + Vector3(0, 1.14, 0), Vector3(1.16, 0.08, 1.16), metal)
+        for side in [-1.0, 1.0]:
+            _box(p + Vector3(0, 0.56, side * 0.577), Vector3(0.12, 0.92, 0.035), metal)
+    # Landmark signs improve wayfinding without lights or transparent materials.
+    _box(Vector3(-35, 6.2, -12), Vector3(4.8, 0.65, 0.12), metal)
+    _box(Vector3(-35, 6.2, -11.91), Vector3(3.9, 0.10, 0.025), trim)
