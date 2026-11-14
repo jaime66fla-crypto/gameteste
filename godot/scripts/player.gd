@@ -90,6 +90,7 @@ func _install_humanoid_avatar() -> void:
         gun.position = Vector3.ZERO
         gun.rotation = Vector3.ZERO
         gun_uses_model_mount = true
+    humanoid_avatar.configure_weapon(current_weapon, weapon_model.scale.x)
 
 func _material(c: Color) -> StandardMaterial3D:
     var m := StandardMaterial3D.new()
@@ -224,7 +225,7 @@ func _play_jaime_animation(clip_name: String) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventKey and event.pressed and not event.echo:
-        var key_slots := {KEY_1: "pistol", KEY_2: "smg", KEY_3: "rifle", KEY_4: "shotgun", KEY_5: "sniper"}
+        var key_slots := {KEY_1: "rifle", KEY_2: "sniper", KEY_3: "pistol", KEY_4: "shotgun", KEY_5: "smg"}
         if key_slots.has(event.physical_keycode):
             _equip_weapon(key_slots[event.physical_keycode])
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -418,9 +419,12 @@ func _equip_weapon(weapon_id: String) -> void:
     fire_delay = 0.12
     gun_kick = 0.0
     _rebuild_weapon_model()
+    if humanoid_avatar != null:
+        humanoid_avatar.configure_weapon(current_weapon, weapon_model.scale.x)
 
 func _rebuild_weapon_model() -> void:
     equipped_external_model = false
+    weapon_model.scale = Vector3.ONE
     for child in weapon_model.get_children():
         weapon_model.remove_child(child)
         child.queue_free()
@@ -447,6 +451,8 @@ func _rebuild_weapon_model() -> void:
         gun_flash.position.z = -0.58 if current_weapon == "pistol" else -length_override * 0.99
         muzzle_flare.position.z = gun_flash.position.z - 0.035
         return
+    if current_weapon in ["rifle", "sniper"]:
+        weapon_model.scale = Vector3.ONE * 0.7
     var dark := Color("#22272d")
     var steel := Color("#59616a")
     var wood := Color("#765b43")
@@ -488,11 +494,19 @@ func _rebuild_weapon_model() -> void:
         else:
             _part(weapon_model, "FrontSight", Vector3(0, 0.18, -length * 0.91), Vector3(0.085, 0.10, 0.065), dark)
             if current_weapon == "rifle":
-                _part(weapon_model, "Optic", Vector3(0, 0.25, -0.34), Vector3(0.15, 0.16, 0.19), dark)
-                _part(weapon_model, "OpticLens", Vector3(0, 0.25, -0.44), Vector3(0.105, 0.10, 0.015), Color("#3c6673"))
+                # M4-style silhouette from the supplied reference: rail, holo and foregrip.
+                _part(weapon_model, "BufferTube", Vector3(0, 0.015, 0.12), Vector3(0.08, 0.08, 0.38), dark)
+                _part(weapon_model, "StockPad", Vector3(0, -0.045, 0.35), Vector3(0.17, 0.28, 0.055), dark)
+                _part(weapon_model, "Foregrip", Vector3(0, -0.21, -0.68), Vector3(0.11, 0.28, 0.13), polymer)
+                _part(weapon_model, "HoloBase", Vector3(0, 0.205, -0.34), Vector3(0.20, 0.07, 0.23), dark)
+                _part(weapon_model, "HoloLeft", Vector3(-0.085, 0.315, -0.34), Vector3(0.035, 0.19, 0.07), dark)
+                _part(weapon_model, "HoloRight", Vector3(0.085, 0.315, -0.34), Vector3(0.035, 0.19, 0.07), dark)
+                _part(weapon_model, "HoloTop", Vector3(0, 0.405, -0.34), Vector3(0.20, 0.035, 0.07), dark)
+                for rib in range(7):
+                    _part(weapon_model, "RailRib", Vector3(0, 0.015, -0.55 - rib * 0.045), Vector3(0.245, 0.20, 0.018), dark)
     var muzzle_z := -0.58 if current_weapon == "pistol" else -length * 0.99
-    gun_flash.position.z = muzzle_z
-    muzzle_flare.position.z = muzzle_z - 0.035
+    gun_flash.position.z = muzzle_z * weapon_model.scale.z
+    muzzle_flare.position.z = gun_flash.position.z - 0.035
 
 func _reload() -> void:
     if reloading:

@@ -114,4 +114,4 @@ func _build_ui() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
-        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1-5 armas  R recarregar  Direito mirar  Esquerdo atirar"
+        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar"

@@ -11,6 +11,9 @@ var right_arm: Node3D
 var head: Node3D
 var locomotion_time := 0.0
 var smoothed_move := 0.0
+var long_weapon := false
+var right_grip := Vector3(0, -0.15, -0.08)
+var left_grip := Vector3(-0.065, -0.14, -0.09)
 
 func _ready() -> void:
     _assemble()
@@ -97,6 +100,21 @@ func _assemble() -> void:
     weapon_mount.position = Vector3(0.18, 1.44, -0.42)
     add_child(weapon_mount)
 
+func configure_weapon(weapon_id: String, model_scale: float = 1.0) -> void:
+    long_weapon = weapon_id in ["rifle", "sniper"]
+    if long_weapon:
+        weapon_mount.position.x = 0.28
+        weapon_mount.position.z = -0.16
+        left_arm.position = Vector3(-0.24, 0.45, -0.20)
+        right_grip = Vector3(0, -0.18, -0.21) * model_scale
+        left_grip = (Vector3(-0.05, -0.035, -0.6355) if weapon_id == "sniper" else Vector3(-0.05, -0.14, -0.68)) * model_scale
+    else:
+        weapon_mount.position.x = 0.18
+        weapon_mount.position.z = -0.42
+        left_arm.position = Vector3(-0.31, 0.45, -0.10)
+        right_grip = Vector3(0, -0.15, -0.08)
+        left_grip = Vector3(-0.065, -0.14, -0.09)
+
 func _build_leg(part_name: String, x: float, pants: Material, boots: Material) -> Node3D:
     var pivot := Node3D.new()
     pivot.name = part_name
@@ -141,13 +159,13 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
     torso.rotation.x = lerpf(torso.rotation.x, 0.08 if running else (0.045 if aiming else 0.0), blend)
     hips.position.y = lerpf(hips.position.y, 0.70 if crouched else 0.96, blend)
     head.rotation.x = lerpf(head.rotation.x, -0.06 if aiming else 0.0, blend)
-    var hold_height := 1.48 if aiming else 1.44
+    var hold_height := (1.54 if aiming else 1.50) if long_weapon else (1.48 if aiming else 1.44)
     weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.26 if crouched else 0.0), blend)
     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
     # Solve after torso, crouch and mount changes so the hands follow the gun.
     if not reloading:
-        _align_hand(right_arm, Vector3(0, -0.15, -0.08), 1.0, blend)
-        _align_hand(left_arm, Vector3(-0.065, -0.14, -0.09), -1.0, blend)
+        _align_hand(right_arm, right_grip, 1.0, blend)
+        _align_hand(left_arm, left_grip, -1.0, blend)
 
 func _align_hand(shoulder: Node3D, grip: Vector3, side: float, blend: float) -> void:
     var elbow := shoulder.get_node("Elbow") as Node3D

@@ -1,6 +1,6 @@
 extends RefCounted
-## Weapon balance table. IDs map to keyboard slots 1-4.
-const ORDER := ["pistol", "smg", "rifle", "shotgun", "sniper"]
+## Weapon balance table. IDs follow keyboard slots 1-5.
+const ORDER := ["rifle", "sniper", "pistol", "shotgun", "smg"]
 const DATA := {
     "pistol": {"name": "PISTOLA", "mag": 15, "interval": 0.22, "reload": 1.3, "damage": 22.0, "range": 110.0, "spread": 0.012, "pellets": 1, "kick": 0.10},
     "smg": {"name": "SMG", "mag": 30, "interval": 0.085, "reload": 1.9, "damage": 12.0, "range": 85.0, "spread": 0.029, "pellets": 1, "kick": 0.055},
