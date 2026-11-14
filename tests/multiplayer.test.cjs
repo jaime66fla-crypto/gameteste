@@ -96,11 +96,11 @@ test('server rejects shots over a prone body and accepts torso hits in every pos
  const state=(z,extra={})=>({type:'state3d',x:0,y:0,z,angle:0,weapon:'pistol',...extra});
  s.room.webSocketMessage(a,JSON.stringify(state(0)));let sequence=0;
  const fire=(height)=>{s.advance(200);const shotId='posture-'+sequence++;s.room.webSocketMessage(a,JSON.stringify({type:'shot3d',weapon:'pistol',shotId,origin:{x:0,y:height,z:0},rays:[{x:0,y:0,z:1}]}));s.room.webSocketMessage(a,JSON.stringify({type:'hit3d',shotId,pellet:0,targetId:b.meta.id}));};
- for(const [pose,height]of[[{prone:1,crouching:true},.3],[{crouching:true},.85],[{},1.4]]){
+ for(const [pose,height,expectedHealth]of[[{prone:1,crouching:true},.3,77],[{crouching:true},.85,64],[{},1.4,70]]){
   s.room.webSocketMessage(b,JSON.stringify(state(6,pose)));
   s.room.players.get(b.meta.id).health=100;
   if(pose.prone){fire(1.5);assert.equal(s.room.players.get(b.meta.id).health,100,'empty air above crawling target');}
   if(pose.crouching&&!pose.prone){fire(1.65);assert.equal(s.room.players.get(b.meta.id).health,100,'empty air above crouched target');}
-  fire(height);assert.equal(s.room.players.get(b.meta.id).health,70,'torso must receive actual weapon damage');
+  fire(height);assert.equal(s.room.players.get(b.meta.id).health,expectedHealth,'damage must reflect the struck body zone and posture');
  }
 });
