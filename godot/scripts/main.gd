@@ -2,6 +2,7 @@ extends Node3D
 
 const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
+const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Label
@@ -13,6 +14,10 @@ func _ready() -> void:
     world_polish.name = "WorldPolish"
     world_polish.set_script(WorldPolishScript)
     add_child(world_polish)
+    var ambient := Node3D.new()
+    ambient.name = "EnvironmentAudio"
+    ambient.set_script(AmbientAudioScript)
+    add_child(ambient)
     player = CharacterBody3D.new()
     player.name = "Jaime"
     player.set_script(PlayerScript)
