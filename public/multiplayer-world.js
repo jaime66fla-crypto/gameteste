@@ -21,11 +21,26 @@ class MultiplayerWorld{
   g.scale.setScalar(.72);g.position.set(0,1.28,-.34);
   return g;
  }
+ _buildBotParachute(){
+  const canopy=new THREE.Group();canopy.name='REMOTE_BOT_PARACHUTE';
+  const cloth=new THREE.Mesh(new THREE.SphereGeometry(2.5,16,8,0,Math.PI,0,Math.PI/2),new THREE.MeshStandardMaterial({color:0xf28d47,side:THREE.DoubleSide,roughness:.9}));
+  cloth.rotation.x=Math.PI;cloth.position.y=3.25;canopy.add(cloth);
+  const lineMaterial=new THREE.LineBasicMaterial({color:0xe1f2f7});
+  for(const x of [-2,-1,0,1,2]){
+   const geometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(x,3.25,0),new THREE.Vector3(x*.1,.6,0)]);
+   canopy.add(new THREE.Line(geometry,lineMaterial));
+  }
+  canopy.userData.ignoreCombat=true;
+  return canopy;
+ }
  receive(state){
   if(!state?.id||![state.x,state.y,state.z,state.angle].every(Number.isFinite))return;
   let remote=this.players.get(state.id);
   if(!remote){const avatar=new window.OperatorAvatar({team:'red'});remote={avatar,state,weapon:null,gear:null,attachmentsKey:'',jetpack:null,flashTime:0};avatar.group.position.set(state.x,state.y,state.z);avatar.group.rotation.y=state.angle;avatar.body.userData.remoteId=state.id;this.scene.add(avatar.group);this.players.set(state.id,remote);}
   remote.state=state;
+  if(state.bot&&!remote.parachute){remote.parachute=this._buildBotParachute();remote.avatar.group.add(remote.parachute);}
+  if(remote.parachute)remote.parachute.visible=state.dropPhase==='glide'&&!state.dead;
+  remote.avatar.group.visible=state.dropPhase!=='plane';
   const soldierSkin=state.soldierSkin||'original';
   if(remote.soldierSkin!==soldierSkin){
    window.GameSkins?.tintAvatar(remote.avatar,soldierSkin);
@@ -53,6 +68,8 @@ class MultiplayerWorld{
  }
  update(dt){for(const remote of this.players.values()){
   const a=remote.avatar,s=remote.state,k=1-Math.exp(-16*dt);
+  a.group.visible=s.dropPhase!=='plane';
+  if(remote.parachute)remote.parachute.visible=s.dropPhase==='glide'&&!s.dead;
   const y=s.dead?this.terrainHeight(s.x,s.z,s.y):s.y;
   this._position.set(s.x,y,s.z);
   if(a.group.position.distanceToSquared(this._position)>64)a.group.position.copy(this._position);
