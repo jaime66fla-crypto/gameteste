@@ -22,3 +22,10 @@ Teste da luneta: `godot --headless --path godot --script res://tests/sniper_scop
 Texturas procedurais pequenas de asfalto, concreto, grama, reboco, casca, madeira, metal, tecido e cobertura metálica são geradas uma vez por padrão e compartilhadas. Incluem mapas de cor, normal e rugosidade, com mipmaps e filtragem anisotrópica. O cenário usa escala de textura em metros por projeção triplanar; roupa e armas usam coordenadas locais para o detalhe acompanhar a peça.
 
 Céu com gradiente de horizonte, luz solar e ambiente equilibradas, névoa mais leve e MSAA 2× no renderizador de compatibilidade. Não foram adicionados efeitos de pós-processamento que dependam de Forward+. Verificação de recursos: `godot --headless --path godot --script res://tests/graphics_materials.gd`. A aparência e o desempenho na GPU ainda precisam de teste no jogo.
+
+## Menu principal
+F5 abre o menu com **Iniciar partida teste**, **Multiplayer**, **Configurações** e **Sair**. A primeira opção carrega o mapa jogável; Multiplayer informa que a conexão ainda está em preparação nesta versão Godot.
+
+Configurações permitem salvar sensibilidade do mouse, volume, suavização de bordas (desligada/2×/4×) e tela cheia no armazenamento local do jogo. Durante a partida, pressione Esc para liberar o cursor e clique em **Menu principal** no canto superior direito. Ao iniciar uma partida nova, o clique do menu não dispara a arma.
+
+Na luneta da sniper, o rastro visual parte do eixo do retículo e mantém espessura discreta conforme o zoom; a verificação de acerto continua no mesmo eixo da câmera. Testes adicionais: `menu_flow.gd` e `game_settings.gd`.
