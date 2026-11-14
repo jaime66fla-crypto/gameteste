@@ -39,6 +39,8 @@ func _run_smoke() -> void:
                 fx.call("shot", "rifle")
                 fx.call("shot", "shotgun")
         var model: Node = player.get("weapon_model")
+        _check(player.has_method("_animate_avatar"), "Avatar procedural animation present")
+        _check(player.has_method("_rebuild_weapon_model"), "Weapon model fallback present")
         _check(model != null, "Weapon model exists")
         _check(player.get("ammo") == 15, "Pistol magazine starts at 15")
         var order := ["smg", "rifle", "shotgun", "sniper", "pistol"]
@@ -48,7 +50,10 @@ func _run_smoke() -> void:
             _check(player.get("current_weapon") == order[i], "Equip " + order[i])
             _check(player.get("ammo") == expected_mags[i], "Magazine size for " + order[i])
             if model != null:
-                _check(model.get_child_count() >= 2, "Weapon geometry for " + order[i])
+                _check(model.get_child_count() >= 1, "Weapon geometry for " + order[i])
+                var external_model: bool = bool(player.get("equipped_external_model"))
+                if not external_model:
+                    _check(model.get_child_count() >= 2, "Procedural weapon fallback for " + order[i])
         player.set("ammo", 0)
         var reserves: Dictionary = player.get("reserve_ammo")
         reserves["pistol"] = 0
