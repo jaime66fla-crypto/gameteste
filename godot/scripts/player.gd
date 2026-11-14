@@ -17,6 +17,8 @@ const HumanoidAvatarScript = preload("res://scripts/avatar/avatar_controller.gd"
 var yaw := 0.0
 var pitch := -0.14
 var aiming := false
+var scope_zoom := 4.0
+var scope_was_active := false
 var crouching := false
 var ammo := MAG_SIZE
 var reloading := false
@@ -225,26 +227,48 @@ func _play_jaime_animation(clip_name: String) -> void:
         jaime_animation_name = chosen
         jaime_animation.play(chosen, 0.16)
 
+func is_scope_active() -> bool:
+    return current_weapon == "sniper" and aiming and not reloading
+
 func _unhandled_input(event: InputEvent) -> void:
+    if event is InputEventMouseButton and event.pressed and is_scope_active():
+        if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+            scope_zoom = clampf(scope_zoom + 1.0, 4.0, 8.0)
+            return
+        if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+            scope_zoom = clampf(scope_zoom - 1.0, 4.0, 8.0)
+            return
     if event is InputEventKey and event.pressed and not event.echo:
         var key_slots := {KEY_1: "rifle", KEY_2: "sniper", KEY_3: "pistol", KEY_4: "shotgun", KEY_5: "smg"}
         if key_slots.has(event.physical_keycode):
             _equip_weapon(key_slots[event.physical_keycode])
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+        Input.action_release("aim")
+        aiming = false
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
     if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
         Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-        yaw -= event.relative.x * mouse_sensitivity
-        pitch = clampf(pitch - event.relative.y * mouse_sensitivity, -1.15, 0.95)
+        _apply_mouse_look(event.relative)
+
+func _apply_mouse_look(relative: Vector2) -> void:
+    var sensitivity := mouse_sensitivity / scope_zoom if is_scope_active() else mouse_sensitivity
+    yaw -= relative.x * sensitivity
+    pitch = clampf(pitch - relative.y * sensitivity, -1.15, 0.95)
 
 func _physics_process(delta: float) -> void:
     aiming = Input.is_action_pressed("aim")
     crouching = Input.is_action_pressed("crouch")
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
+    var scoped := is_scope_active()
     var desired_fov := 52.0 if aiming else 72.0
-    camera.fov = lerpf(camera.fov, desired_fov, minf(1,delta * 10))
+    if scoped:
+        desired_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(72.0) * 0.5) / scope_zoom))
+    # Closing the optic restores the shoulder frame before showing the body.
+    camera.fov = desired_fov if scope_was_active and not scoped else lerpf(camera.fov, desired_fov, 1.0 - exp(-delta * 14.0))
+    avatar.visible = not scoped
+    scope_was_active = scoped
     var spring: SpringArm3D = camera.get_parent()
     spring.spring_length = lerpf(spring.spring_length, 2.15 if aiming else cam_distance, minf(1,delta * 9))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, height * 0.59 if crouching else height * 0.86, minf(1,delta * 10))
@@ -358,8 +382,8 @@ func _impact_mark(point: Vector3) -> void:
     sphere.height = 0.17
     impact.mesh = sphere
     impact.material_override = _material(Color("#eacb91"))
-    impact.global_position = point
     get_tree().current_scene.add_child(impact)
+    impact.global_position = point
     var tween := impact.create_tween()
     tween.tween_property(impact, "scale", Vector3.ZERO, 0.23)
     tween.tween_callback(impact.queue_free)
@@ -526,4 +550,6 @@ func status_text() -> String:
     if crouching:
         state += " / AGACHADO"
     var stats: Dictionary = WeaponData.stats(current_weapon)
+    if is_scope_active():
+        state = "LUNETA %.0f× | RODA: 4–8×" % scope_zoom
     return "ARMA: %s  %s/%s +%s  |  TIROS: %s  |  %s" % [stats["name"], ammo, stats["mag"], reserve_ammo[current_weapon], shots, "RECARREGANDO" if reloading else state]

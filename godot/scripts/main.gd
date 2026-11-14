@@ -2,10 +2,12 @@ extends Node3D
 
 const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
+const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Label
+var scope_overlay: Control
 
 func _ready() -> void:
     _register_inputs()
@@ -89,6 +91,12 @@ func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
 func _build_ui() -> void:
     var layer := CanvasLayer.new()
     add_child(layer)
+    scope_overlay = Control.new()
+    scope_overlay.name = "SniperScope"
+    scope_overlay.set_script(ScopeScript)
+    layer.add_child(scope_overlay)
+    scope_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    scope_overlay.visible = false
     hud = Label.new()
     hud.position = Vector2(18, 16)
     hud.add_theme_font_size_override("font_size", 15)
@@ -105,4 +113,9 @@ func _build_ui() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
+        var scoped: bool = player.is_scope_active()
+        scope_overlay.visible = scoped
+        crosshair.visible = not scoped
+        if scoped:
+            scope_overlay.set_magnification(player.scope_zoom)
         hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar"
