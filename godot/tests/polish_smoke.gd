@@ -47,6 +47,8 @@ func _run_smoke() -> void:
         if humanoid != null:
             _check(humanoid.get_node_or_null("Hips") != null, "Humanoid hips created")
             _check(humanoid.get_node_or_null("WeaponMount") != null, "Weapon mount created")
+            _check(humanoid.get_node_or_null("Hips/Torso/LeftArm/Elbow") != null, "Left elbow joint created")
+            _check(humanoid.get_node_or_null("Hips/Torso/RightArm/Elbow") != null, "Right elbow joint created")
             _check(humanoid.has_method("animate"), "Avatar pose blending available")
         _check(absf(float(player.get("height")) - 1.8) < 0.001, "Ghost proportions: 1.80 m configured")
         var collision_shape := player.get_node_or_null("CollisionShape3D") as CollisionShape3D
