@@ -27,3 +27,16 @@ Versão experimental baseada na branch `godot-migracao`. Não substitui o ZIP ma
 - Dano é aplicado somente a objetos que implementem `take_damage(amount)`; ainda não foram integrados alvos inteligentes nessa branch.
 - Código integrado no GitHub, mas execução no editor Godot e exportação Web ainda não validadas neste ambiente.
 - O projeto Godot nesta branch é um protótipo menor; o ZIP local pode conter mecânicas mais recentes.
+
+## Teste automatizado de inicialização
+Após instalar Godot 4, abra um terminal na raiz do repositório e execute:
+
+```sh
+godot --headless --path godot --script res://tests/polish_smoke.gd
+```
+
+O teste inicializa a cena, verifica o avatar, os módulos de cenário e som, alterna entre cinco armas, verifica os carregadores e testa a recarga sem munição reserva. Um retorno diferente de zero significa falha. **Ainda não foi executado aqui**, pois a engine Godot não está instalada neste ambiente.
+
+## Atualização de cenário
+- Barreiras de concreto com colisão, caixas industriais e elementos para orientar deslocamento.
+- Essa decoração foi criada apenas na branch experimental. Avaliar se sobrepõe construções e caminhos antes do merge.
