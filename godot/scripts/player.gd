@@ -344,7 +344,11 @@ func _shoot() -> void:
         var hit := get_world_3d().direct_space_state.intersect_ray(query)
         var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
         if pellet == 0:
-            _shot_tracer(gun_flash.global_position, endpoint)
+            var tracer_origin := gun_flash.global_position
+            if is_scope_active():
+                var offset := clampf(origin.distance_to(endpoint) * 0.5, camera.near * 2.0, 2.0)
+                tracer_origin = origin + forward * offset
+            _shot_tracer(tracer_origin, endpoint)
         if not hit.is_empty():
             var target_node: Object = hit["collider"]
             if target_node != null and target_node.has_method("take_damage"):
@@ -357,9 +361,15 @@ func _shot_tracer(from: Vector3, to: Vector3) -> void:
     if length < 0.1:
         return
     var tracer := MeshInstance3D.new()
+    tracer.name = "ShotTracer"
     var cylinder := CylinderMesh.new()
-    cylinder.top_radius = 0.011
-    cylinder.bottom_radius = 0.011
+    var radius := 0.011
+    if is_scope_active():
+        # Keep the scoped trail near one pixel wide even at maximum magnification.
+        var viewport_height := maxf(camera.get_viewport().get_visible_rect().size.y,1.0)
+        radius = 2.0 * camera.global_position.distance_to(from) * tan(deg_to_rad(camera.fov) * 0.5) / viewport_height
+    cylinder.top_radius = radius
+    cylinder.bottom_radius = radius
     cylinder.height = length
     cylinder.radial_segments = 5
     tracer.mesh = cylinder

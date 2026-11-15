@@ -78,6 +78,19 @@ func _run() -> void:
         await _frames(2)
         # Exercise the production shot path; cursor capture is unavailable in headless display.
         player.call("_shoot")
+        var tracer: MeshInstance3D = null
+        for child in scene.get_children():
+            if child is MeshInstance3D and child.mesh is CylinderMesh:
+                tracer = child
+                break
+        _check(tracer != null, "Scoped shot produces a tracer")
+        if tracer != null:
+            var start_point: Vector3 = tracer.global_position - tracer.global_basis.y * tracer.mesh.height * 0.5
+            var in_camera := camera.to_local(start_point)
+            _check(Vector2(in_camera.x, in_camera.y).length() < 0.001, "Scoped tracer must originate on the reticle axis")
+            _check(in_camera.z < -camera.near, "Scoped tracer starts beyond the near clip plane")
+            var radius_pixels: float = tracer.mesh.top_radius * float(root.size.y) * 0.5 / (-in_camera.z * tan(deg_to_rad(camera.fov) * 0.5))
+            _check(radius_pixels < 3.0, "8x tracer must not become a large flash across the reticle")
         await _frames(2)
         _check(target.damage > 0, "Scoped shot hits the target under the center reticle")
         _check(int(player.get("ammo")) == 4, "Scoped fire consumes one sniper round")

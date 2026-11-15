@@ -15,7 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Campo de Fogo - Prototipo Godot"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [display]
@@ -23,6 +23,10 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 window/size/viewport_width=1280
 window/size/viewport_height=720
 window/stretch/mode="canvas_items"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/ai_mcp_bridge/plugin.cfg")
 
 [physics]
 

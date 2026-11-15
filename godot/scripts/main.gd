@@ -1,5 +1,6 @@
 extends Node3D
 
+const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
@@ -9,9 +10,14 @@ var player: CharacterBody3D
 var hud: Label
 var crosshair: Label
 var scope_overlay: Control
+var menu_button: Button
 
 func _ready() -> void:
     _register_inputs()
+    Input.action_release("fire")
+    Input.action_release("aim")
+    var settings := GameSettings.load_settings()
+    GameSettings.apply(settings,get_viewport())
     _build_world()
     var world_polish := Node3D.new()
     world_polish.name = "WorldPolish"
@@ -26,6 +32,7 @@ func _ready() -> void:
     player.set_script(PlayerScript)
     player.position = Vector3(12, 0.1, -10) # Clear pedestrian plaza beside the avenues
     add_child(player)
+    player.mouse_sensitivity *= float(settings["sensitivity"])
     _build_ui()
 
 func _register_inputs() -> void:
@@ -110,12 +117,30 @@ func _build_ui() -> void:
     crosshair.set_anchors_preset(Control.PRESET_CENTER)
     crosshair.position = Vector2(-8,-15)
     layer.add_child(crosshair)
+    menu_button = Button.new()
+    menu_button.name = "ReturnToMenuButton"
+    menu_button.text = "Menu principal"
+    menu_button.custom_minimum_size = Vector2(150,40)
+    layer.add_child(menu_button)
+    menu_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+    menu_button.offset_left = -170
+    menu_button.offset_right = -20
+    menu_button.offset_top = 16
+    menu_button.offset_bottom = 56
+    menu_button.pressed.connect(return_to_menu)
+
+func return_to_menu() -> void:
+    Input.action_release("fire")
+    Input.action_release("aim")
+    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 func _process(_delta: float) -> void:
     if player and hud:
+        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
         crosshair.visible = not scoped
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)
-        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar"
+        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"
