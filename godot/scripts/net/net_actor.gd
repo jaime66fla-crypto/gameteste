@@ -43,6 +43,7 @@ const ROAD_LINES := [-48.0, 0.0, 48.0]
 
 var actor_id := ""
 var display_name := ""
+var tag_subtitle := "" # rank for players, "BOT" for bots
 var is_bot := false
 var controlled := false # true when this client simulates the bot
 var hp := 100.0
@@ -109,7 +110,7 @@ func _ready() -> void:
 	sound_fx.position.y = 1.4
 	add_child(sound_fx)
 	name_tag = Label3D.new()
-	name_tag.text = display_name
+	name_tag.text = display_name if tag_subtitle.is_empty() else "%s\n[%s]" % [display_name, tag_subtitle]
 	name_tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	name_tag.font_size = 44
 	name_tag.outline_size = 10

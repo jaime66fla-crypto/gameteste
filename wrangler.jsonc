@@ -4,10 +4,9 @@
   "main": "src/index.js",
   "compatibility_date": "2026-11-10",
   // Godot online: minimum client build (0.1.0 = 100) and where to download updates.
-  // 200 = 0.2.0: loot crates changed the protocol (weapons must be picked up
-  // before they deal damage), so older builds are told to update.
+  // 300 = 0.3.0: online play needs an account (login + XP); older builds are told to update.
   "vars": {
-    "GODOT_MIN_BUILD": "200",
+    "GODOT_MIN_BUILD": "300",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {
@@ -17,11 +16,13 @@
   "durable_objects": {
     "bindings": [
       { "name": "GAME_ROOMS", "class_name": "GameRoom" },
-      { "name": "GODOT_MATCHES", "class_name": "GodotMatch" }
+      { "name": "GODOT_MATCHES", "class_name": "GodotMatch" },
+      { "name": "GODOT_ACCOUNTS", "class_name": "GodotAccounts" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
-    { "tag": "v2", "new_sqlite_classes": ["GodotMatch"] }
+    { "tag": "v2", "new_sqlite_classes": ["GodotMatch"] },
+    { "tag": "v3", "new_sqlite_classes": ["GodotAccounts"] }
   ]
 }

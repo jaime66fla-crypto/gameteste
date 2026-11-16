@@ -1,6 +1,7 @@
 import '../public/tactical-rules.js';
 import './tactical-room.js';
 import { handleGodotSocket } from './godot-match.js';
+import { handleGodotAccount } from './godot-accounts.js';
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
 
 function deepMotionConfig(env){
@@ -74,6 +75,8 @@ export default {
   }
   // Godot build (itch.io): quick-match 8-player elimination rooms.
   if (url.pathname === "/godot/ws") return handleGodotSocket(request, env, url);
+  // Godot accounts: register, login and profile (XP / rank).
+  if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me") return handleGodotAccount(request, env, url);
   if (url.pathname === "/ws") {
    const room = (url.searchParams.get("room") || "cidade-1").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cidade-1";
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);

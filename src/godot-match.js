@@ -8,6 +8,7 @@
 
 // Spawns (one per building) and loot spots, shared with the Godot client.
 import layout from '../godot/data/match_layout.json' with { type: 'json' };
+import { resolveSession, rankFor, XP_REWARDS } from './godot-accounts.js';
 
 const CAPACITY = 8;
 // Loot: everyone starts unarmed; crates hold one weapon plus reserve ammo.
@@ -74,18 +75,21 @@ function cleanState(d) {
  * The socket is accepted only to deliver the message, then closed.
  */
 function outdatedSocket(env, build) {
+	return noticeSocket({
+		t: 'outdated',
+		build,
+		min: Number(env.GODOT_MIN_BUILD) || 0,
+		url: String(env.GODOT_DOWNLOAD_URL || ''),
+		message: 'Há uma nova versão do Campo de Fogo. Atualize para jogar online.',
+	});
+}
+
+/** Accept a socket only to deliver one message (update needed, login needed), then close. */
+function noticeSocket(message) {
 	const pair = new WebSocketPair();
 	const [client, server] = [pair[0], pair[1]];
 	server.accept();
-	server.send(
-		JSON.stringify({
-			t: 'outdated',
-			build,
-			min: Number(env.GODOT_MIN_BUILD) || 0,
-			url: String(env.GODOT_DOWNLOAD_URL || ''),
-			message: 'Há uma nova versão do Campo de Fogo. Atualize para jogar online.',
-		}),
-	);
+	server.send(JSON.stringify(message));
 	// Godot drops packets that arrive together with the close frame, so give the
 	// client time to read the message (it closes on its own after reading).
 	setTimeout(() => {
@@ -101,14 +105,21 @@ export async function handleGodotSocket(request, env, url) {
 	if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket required', { status: 426 });
 	const build = Number.parseInt(url.searchParams.get('v') || '0', 10) || 0;
 	if (build < (Number(env.GODOT_MIN_BUILD) || 0)) return outdatedSocket(env, build);
+	// Online play needs an account: the name and XP come from the session.
+	const header = request.headers.get('Authorization') || '';
+	const token = header.startsWith('Bearer ') ? header.slice(7).trim() : url.searchParams.get('token') || '';
+	const session = await resolveSession(env, token);
+	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
 	const matchmaker = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('godot-matchmaker'));
-	const name = (url.searchParams.get('name') || 'Operador').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 16) || 'Operador';
+	const name = session.name;
 	let full = '';
 	for (let attempt = 0; attempt < 3; attempt++) {
 		const assigned = await matchmaker.fetch('https://internal/assign' + (full ? '?full=' + encodeURIComponent(full) : ''));
 		const { room } = await assigned.json();
 		const stub = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('match:' + room));
-		const target = 'https://internal/join?room=' + encodeURIComponent(room) + '&name=' + encodeURIComponent(name);
+		const target =
+			'https://internal/join?room=' + encodeURIComponent(room) + '&name=' + encodeURIComponent(name) +
+			'&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
 		const response = await stub.fetch(new Request(target, request));
 		if (response.status === 101) return response;
 		full = room; // started or full in the meantime: ask for a fresh room
@@ -173,6 +184,8 @@ export class GodotMatch {
 		const m = this.match;
 		if (m.phase !== 'waiting') return new Response('Partida em andamento', { status: 409 });
 		if (this.sessions.size >= CAPACITY) return new Response('Sala cheia', { status: 409 });
+		const account = url.searchParams.get('account') || '';
+		if (account && Object.values(m.players).some((p) => p.account === account)) return new Response('Conta já está nesta sala', { status: 409 });
 		if (!m.room) m.room = url.searchParams.get('room') || '';
 
 		const pair = new WebSocketPair();
@@ -183,7 +196,11 @@ export class GodotMatch {
 		this.sessions.set(id, server);
 		const now = Date.now();
 		if (!m.deadline) m.deadline = now + LOBBY_MS;
-		m.players[id] = { id, name: url.searchParams.get('name') || 'Operador', bot: false, hp: 100, dead: false, kills: 0, spawn: 0 };
+		const totalXp = Math.max(0, Number(url.searchParams.get('xp')) || 0);
+		m.players[id] = {
+			id, name: url.searchParams.get('name') || 'Operador', bot: false, hp: 100, dead: false, kills: 0, spawn: 0,
+			account, totalXp, rank: rankFor(totalXp).rank, xpGain: 0, playerKills: 0, botKills: 0, flushed: false,
+		};
 		this.save();
 		this.send(server, { t: 'welcome', id, room: m.room, capacity: CAPACITY, seconds: Math.ceil((m.deadline - now) / 1000) });
 		if (this.sessions.size >= CAPACITY) this.start();
@@ -216,6 +233,7 @@ export class GodotMatch {
 			capacity: CAPACITY,
 			seconds: Math.max(0, Math.ceil((m.deadline - Date.now()) / 1000)),
 			names: this.humans().map((p) => p.name),
+			players: this.humans().map((p) => ({ name: p.name, rank: p.rank })),
 		});
 	}
 
@@ -252,7 +270,7 @@ export class GodotMatch {
 			t: 'start',
 			host: m.host,
 			alive: m.order.length,
-			roster: m.order.map((id) => ({ id, name: m.players[id].name, bot: m.players[id].bot, spawn: m.players[id].spawn })),
+			roster: m.order.map((id) => ({ id, name: m.players[id].name, bot: m.players[id].bot, spawn: m.players[id].spawn, rank: m.players[id].rank || '' })),
 			crates: Object.values(m.crates),
 		});
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS));
@@ -356,9 +374,49 @@ export class GodotMatch {
 		this.save();
 		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length });
 		if (killed) {
+			// XP: a real player is worth much more than a bot.
+			if (!attacker.bot) {
+				if (target.bot) {
+					attacker.botKills++;
+					this.credit(attacker, XP_REWARDS.kill_bot, 'kill_bot', target.name);
+				} else {
+					attacker.playerKills++;
+					this.credit(attacker, XP_REWARDS.kill_player, 'kill_player', target.name);
+				}
+				if (zone === 'head') this.credit(attacker, XP_REWARDS.headshot_bonus, 'headshot', target.name);
+			}
 			this.dropCrate(target);
 			this.checkEnd();
 		}
+	}
+
+	/** Add XP earned in this match and tell the player right away. */
+	credit(player, amount, reason, victim = '') {
+		if (!player || player.bot || !player.account || player.flushed) return;
+		player.xpGain = (player.xpGain || 0) + amount;
+		const ws = this.sessions.get(player.id);
+		if (ws) this.send(ws, { t: 'xp', amount, reason, victim, total: player.xpGain });
+	}
+
+	/** Save a player's match XP and stats to their account (once). */
+	async flush(player, win = false) {
+		if (!player || player.bot || !player.account || player.flushed) return;
+		player.flushed = true;
+		this.save();
+		try {
+			const accounts = this.env.GODOT_ACCOUNTS.get(this.env.GODOT_ACCOUNTS.idFromName('godot-accounts'));
+			const response = await accounts.fetch(
+				new Request('https://internal/internal/xp', {
+					method: 'POST',
+					headers: { 'content-type': 'application/json' },
+					body: JSON.stringify({ account: player.account, xp: player.xpGain || 0, kills: player.playerKills || 0, botKills: player.botKills || 0, win }),
+				}),
+			);
+			if (!response.ok) return;
+			const result = await response.json();
+			const ws = this.sessions.get(player.id);
+			if (ws) this.send(ws, { t: 'profile', gained: player.xpGain || 0, profile: result.profile, rankUp: !!result.rankUp });
+		} catch {}
 	}
 
 	/** A dead player's weapons stay where they fell, in a crate anyone can open. */
@@ -387,13 +445,23 @@ export class GodotMatch {
 		m.winner = alive[0] || null;
 		this.save();
 		const winner = m.winner ? m.players[m.winner] : null;
+		// Everyone who played to the end earns match XP; the winner a bonus.
+		for (const id of m.order) {
+			const player = m.players[id];
+			if (player.bot || player.flushed) continue;
+			this.credit(player, XP_REWARDS.match, 'match');
+			if (id === m.winner) this.credit(player, XP_REWARDS.win, 'win');
+		}
 		this.broadcast({
 			t: 'end',
 			winner: m.winner,
 			name: winner ? winner.name : 'Ninguém',
 			reason: force ? 'tempo' : 'eliminacao',
-			board: m.order.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, bot: m.players[id].bot })).sort((a, b) => b.kills - a.kills),
+			board: m.order
+				.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, bot: m.players[id].bot, rank: m.players[id].rank || '', xp: m.players[id].xpGain || 0 }))
+				.sort((a, b) => b.kills - a.kills),
 		});
+		this.ctx.waitUntil(Promise.all(m.order.map((id) => this.flush(m.players[id], id === m.winner))));
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
 	}
 
@@ -441,7 +509,11 @@ export class GodotMatch {
 		this.sessions.delete(meta.id);
 		const m = this.match;
 		const player = m.players[meta.id];
-		if (!this.sessions.size) return this.reset();
+		if (!this.sessions.size) {
+			// Last one out: still save the XP this player earned, then close the room.
+			if (m.phase === 'running' && player) this.ctx.waitUntil(this.flush(player, false));
+			return this.reset();
+		}
 		if (m.phase === 'waiting') {
 			delete m.players[meta.id];
 			this.save();
@@ -450,6 +522,8 @@ export class GodotMatch {
 		}
 		this.broadcast({ t: 'leave', id: meta.id });
 		if (m.phase !== 'running' || !player) return;
+		// Leaving keeps the XP already earned (no match/win bonus).
+		this.ctx.waitUntil(this.flush(player, false));
 		if (m.host === meta.id) {
 			// Hand bot simulation to the next connected human.
 			m.host = m.order.find((id) => this.sessions.has(id)) || null;

@@ -29,7 +29,14 @@ var _state_timer := 0.0
 var _bot_timer := 0.0
 # Spectator camera after death.
 var spectate_camera: Camera3D
-var spectate_index := 0
+var spectate_id := "" # who the eliminated player is watching (starts with the killer)
+var bots: Dictionary = {} # id -> true for bots
+var ranks: Dictionary = {} # id -> rank name (players)
+var match_xp := 0
+var killer_panel: PanelContainer
+var killer_title: Label
+var killer_subtitle: Label
+var xp_feed: VBoxContainer
 # UI
 var ui: CanvasLayer
 var status_label: Label
@@ -58,6 +65,8 @@ func _ready() -> void:
 	for entry in info.get("roster", []):
 		var id := str(entry["id"])
 		names[id] = str(entry["name"])
+		bots[id] = bool(entry.get("bot", false))
+		ranks[id] = str(entry.get("rank", ""))
 		# Everyone starts inside a building, facing its door (+Z).
 		var spawn: Vector3 = MatchLayout.spawn_point(int(entry.get("spawn", 0)))
 		var facing := PI
@@ -68,6 +77,7 @@ func _ready() -> void:
 			continue
 		var actor: CharacterBody3D = NetActorScript.new()
 		actor.call("setup", id, str(entry["name"]), bool(entry.get("bot", false)))
+		actor.set("tag_subtitle", "BOT" if bots[id] else ranks[id])
 		actor.position = spawn + Vector3(0, 0.1, 0)
 		actor.rotation.y = facing
 		actor.set("combatants", _combatants)
@@ -168,6 +178,10 @@ func _on_message(data: Dictionary) -> void:
 			_on_end(data)
 		"looted":
 			_on_looted(data)
+		"xp":
+			_on_xp(data)
+		"profile":
+			_on_profile(data)
 		"crate":
 			_add_crate(data.get("crate", {}))
 			var crate_data: Dictionary = data.get("crate", {})
@@ -277,6 +291,8 @@ func _on_health(data: Dictionary) -> void:
 			_on_local_death(by)
 	elif actors.has(id):
 		actors[id].call("set_hp", hp, killed)
+		if killed:
+			_on_watched_killed(id, by)
 	if by == my_id and killed and id != my_id:
 		my_kills = int(data.get("kills", my_kills + 1))
 		combat_feedback.call("show_hit", false, true)
@@ -370,6 +386,20 @@ func _damage_number(point: Vector3, damage: float, headshot: bool) -> void:
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.25)
 	tween.chain().tween_callback(label.queue_free)
 
+func _xp_toast(text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	label.add_theme_font_size_override("font_size", 20)
+	label.add_theme_color_override("font_color", Color("#ffd24a"))
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+	label.add_theme_constant_override("shadow_offset_y", 2)
+	xp_feed.add_child(label)
+	var tween := label.create_tween()
+	tween.tween_interval(2.2)
+	tween.tween_property(label, "modulate:a", 0.0, 0.6)
+	tween.tween_callback(label.queue_free)
+
 func _toast(text: String) -> void:
 	var label := Label.new()
 	label.text = text
@@ -409,6 +439,13 @@ func _on_connection_lost(reason: String) -> void:
 
 # ------------------------------------------------------- death / ending ---
 
+## "jogador • Cabo" or "bot", for the killer banner and spectator label.
+func _describe(id: String) -> String:
+	if bots.get(id, false):
+		return "bot"
+	var rank: String = ranks.get(id, "")
+	return "jogador" + ("  •  " + rank if not rank.is_empty() else "")
+
 func _on_local_death(killer_id: String) -> void:
 	if local_dead:
 		return
@@ -426,8 +463,33 @@ func _on_local_death(killer_id: String) -> void:
 	spectate_camera.fov = 72
 	add_child(spectate_camera)
 	spectate_camera.current = true
-	var killer: String = names.get(killer_id, "alguém")
-	_feed("Você foi eliminado por %s. Clique para trocar de câmera." % killer)
+	# Watch whoever eliminated us, if they are still standing.
+	spectate_id = killer_id if actors.has(killer_id) and not actors[killer_id].dead else ""
+	if killer_id == "saiu" or not names.has(killer_id):
+		_killer_banner("VOCÊ FOI ELIMINADO", "")
+	else:
+		_killer_banner("ELIMINADO POR %s" % str(names[killer_id]).to_upper(), _describe(killer_id))
+	_feed("Assistindo quem te eliminou. Clique para trocar de câmera.")
+
+func _killer_banner(title: String, subtitle: String) -> void:
+	killer_title.text = title
+	killer_subtitle.text = subtitle
+	killer_panel.visible = true
+	killer_panel.modulate.a = 1.0
+	var tween := killer_panel.create_tween()
+	tween.tween_interval(4.0)
+	tween.tween_property(killer_panel, "modulate:a", 0.0, 0.8)
+	tween.tween_callback(func(): killer_panel.visible = false)
+
+## When the player we watch is eliminated, follow their killer (or anyone alive).
+func _on_watched_killed(victim_id: String, killer_id: String) -> void:
+	if not local_dead or victim_id != spectate_id:
+		return
+	if actors.has(killer_id) and not actors[killer_id].dead:
+		spectate_id = killer_id
+		_feed("%s foi eliminado. Assistindo %s (%s)." % [names.get(victim_id, "?"), names.get(killer_id, "?"), _describe(killer_id)])
+	else:
+		spectate_id = ""
 
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 1.2)
@@ -437,9 +499,13 @@ func _process(delta: float) -> void:
 		status_label.text = ""
 	elif local_dead:
 		var target := _spectate_target()
-		status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, names.get(target.get("actor_id"), "—") if target else "—"]
+		var watched := "—"
+		if target != null:
+			var id: String = target.get("actor_id")
+			watched = "%s (%s)" % [names.get(id, "?"), _describe(id)]
+		status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, watched]
 	else:
-		status_label.text = "%s  |  VIVOS: %d  |  ABATES: %d" % [my_name, alive_count, my_kills]
+		status_label.text = "%s  |  VIVOS: %d  |  ABATES: %d  |  +%d XP" % [my_name, alive_count, my_kills, match_xp]
 	health_bar.value = my_hp
 	health_bar.visible = not local_dead and not finished
 	if local_dead and spectate_camera != null:
@@ -450,21 +516,52 @@ func _process(delta: float) -> void:
 			spectate_camera.global_position = spectate_camera.global_position.lerp(goal, minf(1.0, delta * 5.0))
 			spectate_camera.look_at(target.global_position + Vector3(0, 1.4, 0))
 
+func _living_ids() -> Array:
+	var ids: Array = []
+	for id in actors:
+		if not actors[id].dead:
+			ids.append(id)
+	ids.sort()
+	return ids
+
 func _spectate_target() -> Node3D:
-	var living: Array = []
-	for actor in actors.values():
-		if not actor.dead:
-			living.append(actor)
-	if living.is_empty():
+	if actors.has(spectate_id) and not actors[spectate_id].dead:
+		return actors[spectate_id]
+	var ids := _living_ids()
+	if ids.is_empty():
 		return null
-	return living[spectate_index % living.size()]
+	spectate_id = ids[0]
+	return actors[spectate_id]
 
 func _unhandled_input(event: InputEvent) -> void:
 	if local_dead and not finished and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		spectate_index += 1
+		var ids := _living_ids()
+		if not ids.is_empty():
+			spectate_id = ids[(ids.find(spectate_id) + 1) % ids.size()]
+
+func _on_xp(data: Dictionary) -> void:
+	var amount := int(data.get("amount", 0))
+	match_xp = int(data.get("total", match_xp + amount))
+	var reasons := {"kill_player": "abate de jogador", "kill_bot": "abate de bot", "headshot": "na cabeça", "win": "vitória", "match": "partida"}
+	var text := "+%d XP  %s" % [amount, reasons.get(str(data.get("reason", "")), "")]
+	var victim := str(data.get("victim", ""))
+	if not victim.is_empty() and str(data.get("reason", "")) != "headshot":
+		text += " (%s)" % victim
+	_xp_toast(text)
+
+func _on_profile(data: Dictionary) -> void:
+	var profile: Dictionary = data.get("profile", {})
+	var lines := "\nXP da partida: +%d   •   Total: %d XP\nPatente: %s" % [int(data.get("gained", 0)), int(profile.get("xp", 0)), profile.get("rank", "")]
+	if profile.get("nextRankXp") != null:
+		lines += "   (faltam %d XP para %s)" % [int(profile["nextRankXp"]) - int(profile.get("xp", 0)), profile.get("nextRank", "")]
+	if bool(data.get("rankUp", false)):
+		lines += "\nPROMOVIDO A %s!" % str(profile.get("rank", "")).to_upper()
+		player.get("sound_fx").call("kill_confirm")
+	center_body.text += lines
 
 func _on_end(data: Dictionary) -> void:
 	finished = true
+	killer_panel.visible = false
 	Input.action_release("fire")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.process_mode = Node.PROCESS_MODE_DISABLED
@@ -472,11 +569,14 @@ func _on_end(data: Dictionary) -> void:
 	var lines: Array[String] = []
 	if str(data.get("reason", "")) == "tempo":
 		lines.append("Tempo esgotado: venceu quem tinha mais abates.")
-	var rank := 1
+	var position_number := 1
 	for row in data.get("board", []):
-		lines.append("%d. %s — %d abate(s)%s" % [rank, row["name"], int(row["kills"]), "  (bot)" if row.get("bot", false) else ""])
-		rank += 1
+		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
+		var xp_text := "  +%d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
+		lines.append("%d. %s (%s) — %d abate(s)%s" % [position_number, row["name"], who, int(row["kills"]), xp_text])
+		position_number += 1
 	_show_center("VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper(), "\n".join(lines))
+
 
 # -------------------------------------------------------------------- UI ---
 
@@ -520,6 +620,42 @@ func _build_ui() -> void:
 	health_bar.offset_right = 130
 	health_bar.offset_top = -46
 	health_bar.offset_bottom = -28
+	# "ELIMINADO POR ..." banner shown when the local player dies.
+	killer_panel = PanelContainer.new()
+	killer_panel.visible = false
+	killer_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var killer_box := StyleBoxFlat.new()
+	killer_box.bg_color = Color(0.35, 0.04, 0.03, 0.82)
+	killer_box.set_corner_radius_all(10)
+	killer_box.content_margin_left = 28
+	killer_box.content_margin_right = 28
+	killer_box.content_margin_top = 12
+	killer_box.content_margin_bottom = 12
+	killer_panel.add_theme_stylebox_override("panel", killer_box)
+	ui.add_child(killer_panel)
+	killer_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
+	killer_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	killer_panel.offset_top = 70
+	var killer_column := VBoxContainer.new()
+	killer_panel.add_child(killer_column)
+	killer_title = Label.new()
+	killer_title.add_theme_font_size_override("font_size", 30)
+	killer_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	killer_column.add_child(killer_title)
+	killer_subtitle = Label.new()
+	killer_subtitle.add_theme_font_size_override("font_size", 17)
+	killer_subtitle.add_theme_color_override("font_color", Color("#ffd0c4"))
+	killer_subtitle.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	killer_column.add_child(killer_subtitle)
+	# XP gains stack on the right side.
+	xp_feed = VBoxContainer.new()
+	xp_feed.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(xp_feed)
+	xp_feed.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
+	xp_feed.offset_left = -560
+	xp_feed.offset_right = -40
+	xp_feed.offset_top = -60
+	xp_feed.offset_bottom = 120
 	loot_prompt = Label.new()
 	loot_prompt.visible = false
 	loot_prompt.add_theme_font_size_override("font_size", 19)
