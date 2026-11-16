@@ -1,5 +1,6 @@
 import '../public/tactical-rules.js';
 import './tactical-room.js';
+import { handleGodotSocket } from './godot-match.js';
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
 
 function deepMotionConfig(env){
@@ -71,6 +72,8 @@ export default {
     return await directory.fetch(new Request('https://internal/internal/public-rooms'+url.search));
    }catch{return json({error:'Não foi possível carregar as salas. Tente atualizar.'},503);}
   }
+  // Godot build (itch.io): quick-match 8-player elimination rooms.
+  if (url.pathname === "/godot/ws") return handleGodotSocket(request, env, url);
   if (url.pathname === "/ws") {
    const room = (url.searchParams.get("room") || "cidade-1").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cidade-1";
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);

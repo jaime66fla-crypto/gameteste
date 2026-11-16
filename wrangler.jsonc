@@ -1,7 +1,7 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "floral-haze-1c57",
-  "main": "src/worker.js",
+  "main": "src/index.js",
   "compatibility_date": "2026-11-10",
   "assets": {
     "directory": "./public",
@@ -9,10 +9,12 @@
   },
   "durable_objects": {
     "bindings": [
-      { "name": "GAME_ROOMS", "class_name": "GameRoom" }
+      { "name": "GAME_ROOMS", "class_name": "GameRoom" },
+      { "name": "GODOT_MATCHES", "class_name": "GodotMatch" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] }
+    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["GodotMatch"] }
   ]
 }
