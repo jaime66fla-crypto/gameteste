@@ -3,6 +3,13 @@
   "name": "floral-haze-1c57",
   "main": "src/index.js",
   "compatibility_date": "2026-11-10",
+  // Godot online: minimum client build (0.1.0 = 100) and where to download updates.
+  // 0 = accept every build, including the first upload made by hand (no version
+  // number). Raise to 100 once 0.1.0 is live on itch via butler.
+  "vars": {
+    "GODOT_MIN_BUILD": "0",
+    "GODOT_DOWNLOAD_URL": ""
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"

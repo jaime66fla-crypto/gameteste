@@ -48,9 +48,39 @@ function cleanState(d) {
 	};
 }
 
+/**
+ * Client builds below GODOT_MIN_BUILD (wrangler.jsonc vars) are told to update.
+ * Build numbers come from the game version: 0.1.0 -> 100, 1.2.3 -> 10203.
+ * The socket is accepted only to deliver the message, then closed.
+ */
+function outdatedSocket(env, build) {
+	const pair = new WebSocketPair();
+	const [client, server] = [pair[0], pair[1]];
+	server.accept();
+	server.send(
+		JSON.stringify({
+			t: 'outdated',
+			build,
+			min: Number(env.GODOT_MIN_BUILD) || 0,
+			url: String(env.GODOT_DOWNLOAD_URL || ''),
+			message: 'Há uma nova versão do Campo de Fogo. Atualize para jogar online.',
+		}),
+	);
+	// Godot drops packets that arrive together with the close frame, so give the
+	// client time to read the message (it closes on its own after reading).
+	setTimeout(() => {
+		try {
+			server.close(4000, 'outdated');
+		} catch {}
+	}, 2000);
+	return new Response(null, { status: 101, webSocket: client });
+}
+
 /** Route used by the public Worker: /godot/ws → matchmaker → match room. */
 export async function handleGodotSocket(request, env, url) {
 	if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket required', { status: 426 });
+	const build = Number.parseInt(url.searchParams.get('v') || '0', 10) || 0;
+	if (build < (Number(env.GODOT_MIN_BUILD) || 0)) return outdatedSocket(env, build);
 	const matchmaker = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('godot-matchmaker'));
 	const name = (url.searchParams.get('name') || 'Operador').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 16) || 'Operador';
 	let full = '';
