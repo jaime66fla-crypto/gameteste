@@ -1,0 +1,257 @@
+﻿diff --git a/godot/scripts/avatar/avatar_controller.gd b/godot/scripts/avatar/avatar_controller.gd
+index edb2db6..720ecc5 100644
+--- a/godot/scripts/avatar/avatar_controller.gd
++++ b/godot/scripts/avatar/avatar_controller.gd
+@@ -14,6 +14,8 @@ var locomotion_time := 0.0
+ var pose_time := 0.0
+ var locomotion_direction := Vector3.FORWARD
+ var smoothed_move := 0.0
++var run_blend := 0.0
++var pelvis_ground_offset := 0.0
+ var long_weapon := false
+ var right_grip := Vector3(0, -0.15, -0.08)
+ var left_grip := Vector3(-0.065, -0.14, -0.09)
+@@ -220,15 +222,16 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
+     pose_time += delta
+     smoothed_move = lerpf(smoothed_move, clampf(move_amount, 0.0, 1.0), blend)
+     var local_speed := Vector2(planar_velocity.x, planar_velocity.z).length()
+-    var fast_gait := not crouched and (running or local_speed > 4.0)
++    # Velocity is expressed in rig units; it must never decide whether Shift is held.
++    run_blend = lerpf(run_blend, 1.0 if running and not crouched else 0.0, blend)
+     var desired_direction := Vector3(planar_velocity.x, 0, planar_velocity.z) if local_speed > 0.001 else Vector3(movement_direction.x, 0, movement_direction.y)
+     if desired_direction.length_squared() > 0.001:
+         locomotion_direction = locomotion_direction.lerp(desired_direction.normalized(), blend).normalized()
+     var direction := locomotion_direction
+-    var step_length := (0.42 if fast_gait else (0.29 if crouched else 0.28)) * smoothed_move
++    var step_length := (0.29 if crouched else lerpf(0.28, 0.42, run_blend)) * smoothed_move
+     if absf(direction.x) > 0.001:
+         step_length = minf(step_length, 0.12 / absf(direction.x))
+-    var stance_fraction := 0.30 if fast_gait else 0.50
++    var stance_fraction := 0.50 if crouched else lerpf(0.50, 0.30, run_blend)
+     if smoothed_move > 0.06 and not airborne:
+         if local_speed > 0.001:
+             # During stance, foot travel cancels actual body displacement.
+@@ -236,9 +239,17 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
+         else:
+             locomotion_time += delta * (12.0 if running else (6.0 if crouched else 9.0))
+     var stride := sin(locomotion_time) * smoothed_move
+-    var moving_drop := (0.12 if fast_gait else (0.045 if crouched else 0.06)) * smoothed_move
+-    var bob := cos(locomotion_time * 2.0) * (0.012 if fast_gait else 0.006) * smoothed_move
+-    hips.position.y = lerpf(hips.position.y, (0.70 if crouched else 0.96) - moving_drop + bob, blend)
++    var moving_drop := (0.045 if crouched else lerpf(0.06, 0.12, run_blend)) * smoothed_move
++    var bob := cos(locomotion_time * 2.0) * lerpf(0.006, 0.012, run_blend) * smoothed_move
++    # Lower the pelvis over descending ground to keep the leg targets reachable.
++    var ground_offset := 0.0
++    if not airborne:
++        for leg in [left_leg, right_leg]:
++            var support := _foot_support(Vector3(leg.position.x, 0.095, 0))
++            if not support.is_empty():
++                ground_offset = minf(ground_offset, float(support["target"].y) - 0.095)
++    pelvis_ground_offset = lerpf(pelvis_ground_offset, clampf(ground_offset, -0.18, 0.0), blend)
++    hips.position.y = lerpf(hips.position.y, (0.66 if crouched else 0.96) - moving_drop + bob + pelvis_ground_offset, blend)
+     hips.position.z = lerpf(hips.position.z, 0.10 if crouched else 0.0, blend)
+     hips.position.x = lerpf(hips.position.x, stride * 0.012, blend)
+     hips.rotation.y = lerpf(hips.rotation.y, stride * 0.025, blend)
+@@ -257,10 +268,16 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
+             swing = sin(progress * PI) * smoothed_move
+         var foot_target := Vector3(leg.position.x, 0.095, 0)
+         foot_target -= direction * travel_position
+-        foot_target.y += swing * (0.18 if fast_gait else (0.075 if crouched else 0.12))
++        var foot_normal := Vector3.UP
+         if airborne:
+             foot_target = Vector3(leg.position.x, hips.position.y - 0.68, -0.10 if leg == left_leg else 0.10)
+-        _solve_leg(leg, foot_target)
++        else:
++            var support := _foot_support(foot_target)
++            if not support.is_empty():
++                foot_target = support["target"]
++                foot_normal = support["normal"]
++            foot_target.y += swing * (0.075 if crouched else lerpf(0.12, 0.18, run_blend))
++        _solve_leg(leg, foot_target, foot_normal)
+     if reloading:
+         left_arm.quaternion = left_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.54, 0, 0.28)), blend)
+         right_arm.quaternion = right_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.99, 0, -0.09)), blend)
+@@ -269,8 +286,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
+         left_elbow.quaternion = left_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.18, 0, 0)), blend)
+         right_elbow.quaternion = right_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.12, 0, 0)), blend)
+     torso.rotation.z = lerpf(torso.rotation.z, 0.035 * stride, blend)
+-    torso.rotation.x = lerpf(torso.rotation.x, -0.18 if crouched else (-0.12 if fast_gait else (-0.035 if aiming else 0.0)), blend)
+-    head.rotation.x = lerpf(head.rotation.x, 0.10 if crouched else (0.04 if fast_gait else (-0.03 if aiming else 0.0)), blend)
++    torso.rotation.x = lerpf(torso.rotation.x, -0.18 if crouched else lerpf(-0.035 if aiming else 0.0, -0.12, run_blend), blend)
++    head.rotation.x = lerpf(head.rotation.x, 0.10 if crouched else lerpf(-0.03 if aiming else 0.0, 0.04, run_blend), blend)
+     var hold_height := (1.54 if aiming else 1.50) if long_weapon else (1.48 if aiming else 1.44)
+     weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.96 - hips.position.y), blend)
+     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
+@@ -279,7 +296,31 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
+         _align_hand(right_arm, right_grip, 1.0, blend)
+         _align_hand(left_arm, left_grip, -1.0, blend)
+ 
+-func _solve_leg(leg: Node3D, foot_target: Vector3) -> void:
++func _foot_support(foot_target: Vector3) -> Dictionary:
++    var body := get_parent()
++    while body != null and not body is CharacterBody3D:
++        body = body.get_parent()
++    var rig_scale := global_basis.get_scale().y
++    # The sole center lies ahead of the ankle. Sample there so rotated soles
++    # rest on slopes without burying the toe or heel.
++    var sample_point := to_global(foot_target + Vector3(0, 0, -0.055))
++    var query := PhysicsRayQueryParameters3D.create(sample_point + Vector3.UP * 0.45, sample_point - Vector3.UP * 0.55)
++    if body is CharacterBody3D:
++        query.exclude = [body.get_rid()]
++        query.collision_mask = body.collision_mask
++    var hit := get_world_3d().direct_space_state.intersect_ray(query)
++    if hit.is_empty() or hit["normal"].dot(Vector3.UP) < 0.7:
++        return {}
++    var normal := (global_basis.inverse() * (hit["normal"] as Vector3)).normalized()
++    var foot_rotation := Quaternion(Vector3.UP, normal)
++    var sole_center := to_local(hit["position"])
++    var target := sole_center + normal * 0.095 - foot_rotation * Vector3(0, 0, -0.055)
++    # Constrain support corrections; don't pull feet toward distant floors.
++    if absf(target.y - foot_target.y) > 0.30 / maxf(rig_scale, 0.001):
++        return {}
++    return {"target": target, "normal": normal}
++
++func _solve_leg(leg: Node3D, foot_target: Vector3, foot_normal: Vector3 = Vector3.UP) -> void:
+     var knee := leg.get_node("Knee") as Node3D
+     var ankle := knee.get_node("Ankle") as Node3D
+     var target := hips.to_local(to_global(foot_target))
+@@ -293,10 +334,11 @@ func _solve_leg(leg: Node3D, foot_target: Vector3) -> void:
+     var along := (upper_length * upper_length - lower_length * lower_length + distance * distance) / (2.0 * distance)
+     var outward := sqrt(maxf(0.0, upper_length * upper_length - along * along))
+     leg.quaternion = Quaternion(Vector3.DOWN, (direction * along + bend * outward).normalized())
+-    var shin_direction := (leg.to_local(to_global(foot_target)) - knee.position).normalized()
++    var reachable_target := hips.to_global(leg.position + direction * distance)
++    var shin_direction := (leg.to_local(reachable_target) - knee.position).normalized()
+     knee.quaternion = Quaternion(Vector3.DOWN, shin_direction)
+     # Feet remain flat; lowering the pelvis bends the joints instead of burying boots.
+-    ankle.quaternion = (hips.quaternion * leg.quaternion * knee.quaternion).inverse()
++    ankle.quaternion = (hips.quaternion * leg.quaternion * knee.quaternion).inverse() * Quaternion(Vector3.UP, foot_normal)
+ 
+ func _align_hand(shoulder: Node3D, grip: Vector3, side: float, blend: float) -> void:
+     var elbow := shoulder.get_node("Elbow") as Node3D
+diff --git a/godot/scripts/player.gd b/godot/scripts/player.gd
+index 473aacd..b5c562b 100644
+--- a/godot/scripts/player.gd
++++ b/godot/scripts/player.gd
+@@ -10,6 +10,12 @@ extends CharacterBody3D
+ @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
+ const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+ const CROUCH_SPEED := 2.7
++@export_range(1.0, 60.0, 0.5) var acceleration := 24.0
++@export_range(1.0, 60.0, 0.5) var deceleration := 30.0
++var body_collision: CollisionShape3D
++var body_capsule: CapsuleShape3D
++var standing_probe: CapsuleShape3D
++var sprinting := false
+ const WeaponData = preload("res://scripts/weapon_data.gd")
+ const MAG_SIZE := 15
+ const SoundFXScript = preload("res://scripts/sound_fx.gd")
+@@ -57,6 +63,11 @@ func _ready() -> void:
+     collision.shape = capsule
+     collision.position.y = height * 0.5
+     add_child(collision)
++    body_collision = collision
++    body_capsule = capsule
++    standing_probe = CapsuleShape3D.new()
++    standing_probe.radius = capsule.radius
++    standing_probe.height = height
+     avatar = Node3D.new()
+     add_child(avatar)
+     _make_avatar()
+@@ -255,9 +266,27 @@ func _apply_mouse_look(relative: Vector2) -> void:
+     yaw -= relative.x * sensitivity
+     pitch = clampf(pitch - relative.y * sensitivity, -1.15, 0.95)
+ 
++func _can_stand() -> bool:
++    var query := PhysicsShapeQueryParameters3D.new()
++    query.shape = standing_probe
++    query.collision_mask = collision_mask
++    query.exclude = [get_rid()]
++    # Lift the probe just above floor contact, retaining conservative head clearance.
++    query.transform = global_transform
++    query.transform.origin += global_basis.y * (height * 0.5 + 0.005)
++    return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
++
++func _update_crouch(delta: float) -> void:
++    var requested := Input.is_action_pressed("crouch")
++    crouching = requested or (body_capsule.height < height - 0.001 and not _can_stand())
++    var target_height := maxf(body_capsule.radius * 2.0, height * 0.86) if crouching else height
++    body_capsule.height = move_toward(body_capsule.height, target_height, delta * 3.0)
++    # Preserve the foot origin through every intermediate capsule size.
++    body_collision.position.y = body_capsule.height * 0.5
++
+ func _physics_process(delta: float) -> void:
+     aiming = Input.is_action_pressed("aim")
+-    crouching = Input.is_action_pressed("crouch")
++    _update_crouch(delta)
+     rotation.y = yaw
+     arm_pivot.rotation.x = pitch
+     var scoped := is_scope_active()
+@@ -271,13 +300,17 @@ func _physics_process(delta: float) -> void:
+     var spring: SpringArm3D = camera.get_parent()
+     spring.spring_length = lerpf(spring.spring_length, 2.15 if aiming else cam_distance, minf(1,delta * 9))
+     arm_pivot.position.y = lerpf(arm_pivot.position.y, height * 0.59 if crouching else height * 0.86, minf(1,delta * 10))
+-    var crouch_offset := 0.0 if humanoid_avatar != null else -0.36
++    var crouch_offset := 0.0 # Feet stay anchored; crouch belongs to the rig and capsule.
+     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
+     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
+     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
+     var current_speed: float = CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed)
+-    velocity.x = movement.x * current_speed
+-    velocity.z = movement.z * current_speed
++    var horizontal := Vector2(velocity.x, velocity.z)
++    var desired_velocity := Vector2(movement.x, movement.z) * current_speed
++    var rate := deceleration if desired_velocity.length_squared() < horizontal.length_squared() or horizontal.dot(desired_velocity) < 0.0 else acceleration
++    horizontal = horizontal.move_toward(desired_velocity, rate * delta)
++    velocity.x = horizontal.x
++    velocity.z = horizontal.y
+     if not is_on_floor():
+         velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
+     elif Input.is_action_just_pressed("jump") and not crouching:
+@@ -287,6 +320,7 @@ func _physics_process(delta: float) -> void:
+     move_and_slide()
+     var actual_velocity := get_real_velocity()
+     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
++    sprinting = Input.is_action_pressed("sprint") and not aiming and not crouching and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
+     _animate_avatar(delta, actual_move, is_on_floor())
+     fire_delay = maxf(0, fire_delay - delta)
+     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
+@@ -401,7 +435,7 @@ func _impact_mark(point: Vector3) -> void:
+ 
+ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
+     if humanoid_avatar != null:
+-        var running := Input.is_action_pressed("sprint") and not aiming and not crouching
++        var running := sprinting
+         humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
+         return
+     if jaime_model != null and jaime_animation != null:
+@@ -416,11 +450,11 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
+         elif aiming:
+             next_clip = "aim_walk" if moving else "aim"
+         elif moving:
+-            next_clip = "run" if Input.is_action_pressed("sprint") else "walk"
++            next_clip = "run" if sprinting else "walk"
+         _play_jaime_animation(next_clip)
+         return
+     # Compact procedural animation for the prototype mesh; animation resources can replace it later.
+-    var running := Input.is_action_pressed("sprint") and not aiming and not crouching
++    var running := sprinting
+     var moving := input_amount > 0.1 and grounded
+     var pace := 11.0 if running else (5.5 if crouching else 7.5)
+     if moving:
+diff --git a/godot/scripts/world_polish.gd b/godot/scripts/world_polish.gd
+index 0346120..97be365 100644
+--- a/godot/scripts/world_polish.gd
++++ b/godot/scripts/world_polish.gd
+@@ -54,7 +54,10 @@ func _box(pos: Vector3, size: Vector3, color: String, solid: bool = false, paren
+     return body
+ 
+ func _surface(center: Vector2, size: Vector2, color: String, top: float = 0.025) -> void:
+-    _box(Vector3(center.x, top - 0.01, center.y), Vector3(size.x, 0.02, size.y), color)
++    # Pavement and grass must support the player at their visible height.
++    # Road markings remain cosmetic overlays, without redundant colliders.
++    var solid := color not in ["#dbcb96", "#dfdfd4", "#ded8bd"]
++    _box(Vector3(center.x, top - 0.01, center.y), Vector3(size.x, 0.02, size.y), color, solid)
+ 
+ func _tune_environment() -> void:
+     var existing := get_parent().get_node("WorldEnvironment") as WorldEnvironment

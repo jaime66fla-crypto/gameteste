@@ -1,5 +1,6 @@
 extends SceneTree
 var failures: Array[String] = []
+var swat_test_path := ""
 
 class Target extends StaticBody3D:
     var damage := 0.0
@@ -19,6 +20,11 @@ func _frames(count: int) -> void:
         await process_frame
 
 func _run() -> void:
+    if "--swat" in OS.get_cmdline_user_args():
+        var registry = load("res://scripts/characters/character_registry.gd")
+        swat_test_path = "user://sniper_swat_%s.cfg" % OS.get_process_id()
+        registry.storage_path = swat_test_path
+        registry.select_character("jaime_swat")
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene
@@ -105,11 +111,16 @@ func _run() -> void:
         player.call("_equip_weapon", "rifle")
         await _frames(45)
         _check(not overlay.visible, "Switching to rifle removes sniper mask")
-        _check((player.get("avatar") as Node3D).visible, "Avatar returns for shoulder aim")
-        _check(absf(camera.fov - 52.0) < 0.1, "Rifle retains normal shoulder zoom")
+        # Rifle aim switches to CS-style first person instead of the scope.
+        _check(player.get("first_person_view"), "Rifle aim enters first-person view")
+        _check(not (player.get("avatar") as Node3D).visible, "Body hidden in first-person view")
+        _check((player.get("viewmodel") as Node3D).visible, "First-person viewmodel shown")
+        _check((scene.get("crosshair") as Control).visible, "Crosshair shown in first-person view")
+        _check(absf(camera.fov - 68.0) < 0.1, "First-person FOV")
         Input.action_release("aim")
         await _frames(45)
         _check(absf(camera.fov - 72.0) < 0.1, "Releasing aim restores normal FOV")
+        _check((player.get("avatar") as Node3D).visible and not (player.get("viewmodel") as Node3D).visible, "Releasing aim returns to third person")
         player.call("_equip_weapon", "sniper")
         Input.action_press("aim")
         await _frames(5)
@@ -124,6 +135,8 @@ func _run() -> void:
     Input.action_release("move_forward")
     scene.queue_free()
     await process_frame
+    if not swat_test_path.is_empty():
+        DirAccess.remove_absolute(ProjectSettings.globalize_path(swat_test_path))
     for failure in failures:
         printerr(failure)
     print("SNIPER SCOPE: ", "PASS" if failures.is_empty() else "FAIL")

@@ -6,11 +6,13 @@ const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
 const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
+const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Label
 var scope_overlay: Control
 var menu_button: Button
+var match_controller: Node3D # online matches only
 
 func _ready() -> void:
     _register_inputs()
@@ -34,6 +36,11 @@ func _ready() -> void:
     add_child(player)
     player.mouse_sensitivity *= float(settings["sensitivity"])
     _build_ui()
+    if Net.in_match:
+        match_controller = Node3D.new()
+        match_controller.set_script(MatchControllerScript)
+        match_controller.call("setup", self, player)
+        add_child(match_controller)
 
 func _register_inputs() -> void:
     var keys := {
@@ -133,6 +140,7 @@ func return_to_menu() -> void:
     Input.action_release("fire")
     Input.action_release("aim")
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    Net.leave() # leaving an online match counts as elimination on the server
     get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 func _process(_delta: float) -> void:
@@ -143,4 +151,9 @@ func _process(_delta: float) -> void:
         crosshair.visible = not scoped
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)
-        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() + "\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"
+        if match_controller != null:
+            var out: bool = match_controller.get("local_dead") or match_controller.get("finished")
+            crosshair.visible = crosshair.visible and not out
+            hud.text = "" if out else player.status_text() + "\n1-5 armas  R recarregar  Direito mirar  |  ESC: cursor"
+            return
+        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() +"\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\nQ soco  E cotovelada\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"

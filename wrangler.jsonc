@@ -1,18 +1,27 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "floral-haze-1c57",
-  "main": "src/worker.js",
+  "main": "src/index.js",
   "compatibility_date": "2026-11-10",
+  // Godot online: minimum client build (0.1.0 = 100) and where to download updates.
+  // 0 = accept every build, including the first upload made by hand (no version
+  // number). Raise to 100 once 0.1.0 is live on itch via butler.
+  "vars": {
+    "GODOT_MIN_BUILD": "0",
+    "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
+  },
   "assets": {
     "directory": "./public",
     "binding": "ASSETS"
   },
   "durable_objects": {
     "bindings": [
-      { "name": "GAME_ROOMS", "class_name": "GameRoom" }
+      { "name": "GAME_ROOMS", "class_name": "GameRoom" },
+      { "name": "GODOT_MATCHES", "class_name": "GodotMatch" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] }
+    { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
+    { "tag": "v2", "new_sqlite_classes": ["GodotMatch"] }
   ]
 }

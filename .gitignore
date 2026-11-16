@@ -1,1 +1,5 @@
 node_modules/
+
+# Local project backups
+godot-backup-*/
+.wrangler/

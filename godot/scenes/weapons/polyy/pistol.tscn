@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/polyy/models/compact_polymer_pistol.glb" id="1"]
+
+[node name="WeaponAsset" type="Node3D"]
+metadata/weapon_id = "pistol"
+
+[node name="Source" parent="." instance=ExtResource("1")]
+

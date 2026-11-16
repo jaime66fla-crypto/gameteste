@@ -1,0 +1,11 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "avatar_ch31"
+display_name = "Avatar CH31"
+description = "Novo personagem importado, com rig de 65 ossos e animação de corrida."
+visual_scene = "res://scenes/characters/avatar.tscn"
+required_resources = PackedStringArray("res://assets/personagens/downloaded/avatar.fbx")

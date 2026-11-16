@@ -1,0 +1,165 @@
+[gd_scene load_steps=3 format=3 uid="uid://dma1q8o2by3nq"]
+
+[ext_resource type="Script" uid="uid://cbx0b4e6oj440" path="res://addons/agent/ui/role/role_option_window.gd" id="1_script"]
+[ext_resource type="Theme" uid="uid://dwqhs78076qut" path="res://addons/agent/ui/resource/AgentTheme.tres" id="1_theme"]
+
+[node name="RoleOptionWindow" type="Window"]
+oversampling_override = 1.0
+title = "角色管理"
+position = Vector2i(0, 24)
+size = Vector2i(800, 600)
+theme = ExtResource("1_theme")
+script = ExtResource("1_script")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="HSplitContainer" type="HSplitContainer" parent="MarginContainer"]
+layout_mode = 2
+
+[node name="RoleListPanel" type="VBoxContainer" parent="MarginContainer/HSplitContainer"]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+
+[node name="ScrollContainer" type="ScrollContainer" parent="MarginContainer/HSplitContainer/RoleListPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="RoleButtonList" type="VBoxContainer" parent="MarginContainer/HSplitContainer/RoleListPanel/ScrollContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="HSeparator" type="HSeparator" parent="MarginContainer/HSplitContainer/RoleListPanel"]
+layout_mode = 2
+
+[node name="AddRoleButton" type="Button" parent="MarginContainer/HSplitContainer/RoleListPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "新增角色"
+mouse_default_cursor_shape = 2
+theme_type_variation = &"PrimaryButton"
+text = "新增角色"
+
+[node name="AddDefaultRolesButton" type="Button" parent="MarginContainer/HSplitContainer/RoleListPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "创建系统默认角色"
+theme_type_variation = &"SecondaryButton"
+text = "创建默认角色"
+
+[node name="EditPanel" type="ScrollContainer" parent="MarginContainer/HSplitContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="PlaceholderLabel" type="Label" parent="MarginContainer/HSplitContainer/EditPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 4
+text = "请从左侧选择角色查看详情或编辑"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="FormContainer" type="VBoxContainer" parent="MarginContainer/HSplitContainer/EditPanel"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+
+[node name="ButtonsContainer" type="HBoxContainer" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer"]
+layout_mode = 2
+alignment = 2
+
+[node name="CancelButton" type="Button" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/ButtonsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "关闭窗口"
+theme_type_variation = &"SecondaryButton"
+text = "关闭"
+
+[node name="DeleteButton" type="Button" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/ButtonsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "删除当前角色"
+theme_type_variation = &"DangerButton"
+text = "删除"
+
+[node name="EditButton" type="Button" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/ButtonsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "编辑当前角色"
+theme_type_variation = &"PrimaryButton"
+text = "编辑"
+
+[node name="CreateButton" type="Button" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/ButtonsContainer"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "创建新角色"
+theme_type_variation = &"PrimaryButton"
+text = "确认创建"
+
+[node name="UpdateButton" type="Button" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/ButtonsContainer"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+tooltip_text = "更新当前角色"
+theme_type_variation = &"PrimaryButton"
+text = "确认编辑"
+
+[node name="FormFields" type="VBoxContainer" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="Label" type="Label" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+layout_mode = 2
+text = "角色名称"
+
+[node name="RoleNameEdit" type="LineEdit" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+editable = false
+
+[node name="RoleNameLabel" type="Label" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="Label2" type="Label" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+layout_mode = 2
+text = "角色提示词"
+
+[node name="PromptEdit" type="TextEdit" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+placeholder_text = "请输入自定义的角色提示词"
+editable = false
+
+[node name="PromptLabel" type="RichTextLabel" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 100)
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+
+[node name="Label3" type="Label" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+layout_mode = 2
+text = "可使用的工具列表"
+
+[node name="EditFunctionContainer" type="VBoxContainer" parent="MarginContainer/HSplitContainer/EditPanel/FormContainer/FormFields"]
+unique_name_in_owner = true
+layout_mode = 2

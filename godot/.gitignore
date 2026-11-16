@@ -1,3 +1,18 @@
 .godot/
 *.tmp
 *.log
+.env
+itch/
+
+# Old export outputs (current exports go to itch/)
+/Campo de Fogo - Prototipo Godot.*
+/aplicativo/
+/WEB/
+
+# Large source animations not used by the game (the game uses the .tres
+# conversions). Kept on the local machine only.
+/assets/personagens/jaime/animacoes/Downloads/
+/assets/personagens/downloaded/movements/*.fbx
+/assets/personagens/downloaded/movements/*.fbx.import
+/assets/personagens/downloaded/movements/*.png
+/assets/personagens/downloaded/movements/*.png.import

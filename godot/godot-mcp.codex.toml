@@ -1,0 +1,5 @@
+[mcp_servers.godotMCP]
+command = "node"
+args = [ "C:/Users/jaime/Documents/GitHub/gameteste/godot/tools/mcp-godot/src/server.mjs", "--project-root", "C:/Users/jaime/Documents/GitHub/gameteste/godot" ]
+startup_timeout_sec = 20
+env = { GODOT_PROJECT_ROOT = "C:/Users/jaime/Documents/GitHub/gameteste/godot", GODOT_MCP_PORT = "8765" }

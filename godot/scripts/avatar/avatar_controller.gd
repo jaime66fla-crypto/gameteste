@@ -14,6 +14,8 @@ var locomotion_time := 0.0
 var pose_time := 0.0
 var locomotion_direction := Vector3.FORWARD
 var smoothed_move := 0.0
+var run_blend := 0.0
+var pelvis_ground_offset := 0.0
 var long_weapon := false
 var right_grip := Vector3(0, -0.15, -0.08)
 var left_grip := Vector3(-0.065, -0.14, -0.09)
@@ -220,15 +222,16 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
     pose_time += delta
     smoothed_move = lerpf(smoothed_move, clampf(move_amount, 0.0, 1.0), blend)
     var local_speed := Vector2(planar_velocity.x, planar_velocity.z).length()
-    var fast_gait := not crouched and (running or local_speed > 4.0)
+    # Velocity is expressed in rig units; it must never decide whether Shift is held.
+    run_blend = lerpf(run_blend, 1.0 if running and not crouched else 0.0, blend)
     var desired_direction := Vector3(planar_velocity.x, 0, planar_velocity.z) if local_speed > 0.001 else Vector3(movement_direction.x, 0, movement_direction.y)
     if desired_direction.length_squared() > 0.001:
         locomotion_direction = locomotion_direction.lerp(desired_direction.normalized(), blend).normalized()
     var direction := locomotion_direction
-    var step_length := (0.42 if fast_gait else (0.29 if crouched else 0.28)) * smoothed_move
+    var step_length := (0.29 if crouched else lerpf(0.28, 0.42, run_blend)) * smoothed_move
     if absf(direction.x) > 0.001:
         step_length = minf(step_length, 0.12 / absf(direction.x))
-    var stance_fraction := 0.30 if fast_gait else 0.50
+    var stance_fraction := 0.50 if crouched else lerpf(0.50, 0.30, run_blend)
     if smoothed_move > 0.06 and not airborne:
         if local_speed > 0.001:
             # During stance, foot travel cancels actual body displacement.
@@ -236,9 +239,17 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
         else:
             locomotion_time += delta * (12.0 if running else (6.0 if crouched else 9.0))
     var stride := sin(locomotion_time) * smoothed_move
-    var moving_drop := (0.12 if fast_gait else (0.045 if crouched else 0.06)) * smoothed_move
-    var bob := cos(locomotion_time * 2.0) * (0.012 if fast_gait else 0.006) * smoothed_move
-    hips.position.y = lerpf(hips.position.y, (0.70 if crouched else 0.96) - moving_drop + bob, blend)
+    var moving_drop := (0.045 if crouched else lerpf(0.06, 0.12, run_blend)) * smoothed_move
+    var bob := cos(locomotion_time * 2.0) * lerpf(0.006, 0.012, run_blend) * smoothed_move
+    # Lower the pelvis over descending ground to keep the leg targets reachable.
+    var ground_offset := 0.0
+    if not airborne:
+        for leg in [left_leg, right_leg]:
+            var support := _foot_support(Vector3(leg.position.x, 0.095, 0))
+            if not support.is_empty():
+                ground_offset = minf(ground_offset, float(support["target"].y) - 0.095)
+    pelvis_ground_offset = lerpf(pelvis_ground_offset, clampf(ground_offset, -0.18, 0.0), blend)
+    hips.position.y = lerpf(hips.position.y, (0.66 if crouched else 0.96) - moving_drop + bob + pelvis_ground_offset, blend)
     hips.position.z = lerpf(hips.position.z, 0.10 if crouched else 0.0, blend)
     hips.position.x = lerpf(hips.position.x, stride * 0.012, blend)
     hips.rotation.y = lerpf(hips.rotation.y, stride * 0.025, blend)
@@ -257,10 +268,16 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
             swing = sin(progress * PI) * smoothed_move
         var foot_target := Vector3(leg.position.x, 0.095, 0)
         foot_target -= direction * travel_position
-        foot_target.y += swing * (0.18 if fast_gait else (0.075 if crouched else 0.12))
+        var foot_normal := Vector3.UP
         if airborne:
             foot_target = Vector3(leg.position.x, hips.position.y - 0.68, -0.10 if leg == left_leg else 0.10)
-        _solve_leg(leg, foot_target)
+        else:
+            var support := _foot_support(foot_target)
+            if not support.is_empty():
+                foot_target = support["target"]
+                foot_normal = support["normal"]
+            foot_target.y += swing * (0.075 if crouched else lerpf(0.12, 0.18, run_blend))
+        _solve_leg(leg, foot_target, foot_normal)
     if reloading:
         left_arm.quaternion = left_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.54, 0, 0.28)), blend)
         right_arm.quaternion = right_arm.quaternion.slerp(Quaternion.from_euler(Vector3(0.99, 0, -0.09)), blend)
@@ -269,8 +286,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
         left_elbow.quaternion = left_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.18, 0, 0)), blend)
         right_elbow.quaternion = right_elbow.quaternion.slerp(Quaternion.from_euler(Vector3(-0.12, 0, 0)), blend)
     torso.rotation.z = lerpf(torso.rotation.z, 0.035 * stride, blend)
-    torso.rotation.x = lerpf(torso.rotation.x, -0.18 if crouched else (-0.12 if fast_gait else (-0.035 if aiming else 0.0)), blend)
-    head.rotation.x = lerpf(head.rotation.x, 0.10 if crouched else (0.04 if fast_gait else (-0.03 if aiming else 0.0)), blend)
+    torso.rotation.x = lerpf(torso.rotation.x, -0.18 if crouched else lerpf(-0.035 if aiming else 0.0, -0.12, run_blend), blend)
+    head.rotation.x = lerpf(head.rotation.x, 0.10 if crouched else lerpf(-0.03 if aiming else 0.0, 0.04, run_blend), blend)
     var hold_height := (1.54 if aiming else 1.50) if long_weapon else (1.48 if aiming else 1.44)
     weapon_mount.position.y = lerpf(weapon_mount.position.y, hold_height - (0.96 - hips.position.y), blend)
     weapon_mount.rotation.x = lerpf(weapon_mount.rotation.x, -0.08 if aiming else 0.0, blend)
@@ -279,7 +296,31 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, ai
         _align_hand(right_arm, right_grip, 1.0, blend)
         _align_hand(left_arm, left_grip, -1.0, blend)
 
-func _solve_leg(leg: Node3D, foot_target: Vector3) -> void:
+func _foot_support(foot_target: Vector3) -> Dictionary:
+    var body := get_parent()
+    while body != null and not body is CharacterBody3D:
+        body = body.get_parent()
+    var rig_scale := global_basis.get_scale().y
+    # The sole center lies ahead of the ankle. Sample there so rotated soles
+    # rest on slopes without burying the toe or heel.
+    var sample_point := to_global(foot_target + Vector3(0, 0, -0.055))
+    var query := PhysicsRayQueryParameters3D.create(sample_point + Vector3.UP * 0.45, sample_point - Vector3.UP * 0.55)
+    if body is CharacterBody3D:
+        query.exclude = [body.get_rid()]
+        query.collision_mask = body.collision_mask
+    var hit := get_world_3d().direct_space_state.intersect_ray(query)
+    if hit.is_empty() or hit["normal"].dot(Vector3.UP) < 0.7:
+        return {}
+    var normal := (global_basis.inverse() * (hit["normal"] as Vector3)).normalized()
+    var foot_rotation := Quaternion(Vector3.UP, normal)
+    var sole_center := to_local(hit["position"])
+    var target := sole_center + normal * 0.095 - foot_rotation * Vector3(0, 0, -0.055)
+    # Constrain support corrections; don't pull feet toward distant floors.
+    if absf(target.y - foot_target.y) > 0.30 / maxf(rig_scale, 0.001):
+        return {}
+    return {"target": target, "normal": normal}
+
+func _solve_leg(leg: Node3D, foot_target: Vector3, foot_normal: Vector3 = Vector3.UP) -> void:
     var knee := leg.get_node("Knee") as Node3D
     var ankle := knee.get_node("Ankle") as Node3D
     var target := hips.to_local(to_global(foot_target))
@@ -293,10 +334,11 @@ func _solve_leg(leg: Node3D, foot_target: Vector3) -> void:
     var along := (upper_length * upper_length - lower_length * lower_length + distance * distance) / (2.0 * distance)
     var outward := sqrt(maxf(0.0, upper_length * upper_length - along * along))
     leg.quaternion = Quaternion(Vector3.DOWN, (direction * along + bend * outward).normalized())
-    var shin_direction := (leg.to_local(to_global(foot_target)) - knee.position).normalized()
+    var reachable_target := hips.to_global(leg.position + direction * distance)
+    var shin_direction := (leg.to_local(reachable_target) - knee.position).normalized()
     knee.quaternion = Quaternion(Vector3.DOWN, shin_direction)
     # Feet remain flat; lowering the pelvis bends the joints instead of burying boots.
-    ankle.quaternion = (hips.quaternion * leg.quaternion * knee.quaternion).inverse()
+    ankle.quaternion = (hips.quaternion * leg.quaternion * knee.quaternion).inverse() * Quaternion(Vector3.UP, foot_normal)
 
 func _align_hand(shoulder: Node3D, grip: Vector3, side: float, blend: float) -> void:
     var elbow := shoulder.get_node("Elbow") as Node3D

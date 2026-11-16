@@ -1,0 +1,15 @@
+{
+  "id": "2026-11-15T00-27-04-517Z-7e16b5f7",
+  "kind": "models",
+  "provider": "meshy",
+  "prompt": "A tiny smoke-test generated model",
+  "targetPath": "res://assets/generated/models/missing-meshy.glb",
+  "options": {
+    "name": "missing-meshy",
+    "quality": "preview",
+    "reason": "missing MESHY_API_KEY"
+  },
+  "status": "queued",
+  "createdAt": "2026-11-15T00:27:04.517Z",
+  "note": "Provider adapter is not available or not configured; this job keeps the request safe for later processing."
+}

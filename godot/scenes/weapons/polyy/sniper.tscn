@@ -1,0 +1,9 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/weapons/polyy/models/bolt_action_sniper_rifle.glb" id="1"]
+
+[node name="WeaponAsset" type="Node3D"]
+metadata/weapon_id = "sniper"
+
+[node name="Source" parent="." instance=ExtResource("1")]
+

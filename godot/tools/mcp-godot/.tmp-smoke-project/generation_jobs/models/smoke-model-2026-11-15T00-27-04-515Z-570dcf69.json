@@ -1,0 +1,14 @@
+{
+  "id": "2026-11-15T00-27-04-515Z-570dcf69",
+  "kind": "models",
+  "provider": "none",
+  "prompt": "A tiny smoke-test cube",
+  "targetPath": "res://assets/generated/models/smoke.glb",
+  "options": {
+    "name": "smoke-model",
+    "quality": "preview"
+  },
+  "status": "queued",
+  "createdAt": "2026-11-15T00:27:04.515Z",
+  "note": "Provider is none, so this job records the prompt without generating an asset."
+}

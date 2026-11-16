@@ -1,0 +1,879 @@
+@tool
+class_name AgentInputContainer
+extends MarginContainer
+
+@onready var user_input: TextEdit = %UserInput
+@onready var send_button: Button = %SendButton
+@onready var clear_button: Button = %ClearButton
+@onready var usage_label: Label = %UsageLabel
+@onready var balance_label: Label = %BalanceLabel
+@onready var reference_list: HFlowContainer = %ReferenceList
+@onready var input_menu_list: ItemList = %InputMenuList
+@onready var use_thinking: CheckButton = %UseThinking
+@onready var stop_button: Button = %StopButton
+@onready var model_button: OptionButton = %ModelButton
+@onready var custom_dropdown: CustomDropdown = %CustomDropdown
+@onready var config_model_button: Button = %ConfigModelButton
+@onready var config_model_tip: VBoxContainer = %ConfigModelTip
+@onready var input_box: VBoxContainer = %InputBox
+@onready var role_button: OptionButton = %RoleButton
+@onready var image_button: Button = %ImageButton
+@onready var image_file_dialog: FileDialog = %ImageFileDialog
+@onready var aspect_ratio_option: OptionButton = %AspectRatioOption
+@onready var style_option: OptionButton = %StyleOption
+
+const REFERENCE_ITEM = preload("uid://bewckbivwp036")
+
+const IMAGE_VIEWER = preload("res://addons/agent/ui/chat/image_viewer.tscn")
+
+signal send_message(message: Dictionary, message_content: String)
+signal stop_chat
+signal show_help
+signal show_setting
+signal show_memory
+signal model_changed(supplier_id: String, model_id: String)
+
+enum MenuListType {
+	None,
+	Command,
+	Skill,
+	File
+}
+
+var menu_list_type: MenuListType = MenuListType.None
+
+var _cached_file_list: Array = []         # 文件列表缓存
+var _cached_file_list_valid: bool = false # 缓存是否有效
+
+var _clamp_scheduled: bool = false          # 延迟合并高度重算
+var _last_menu_search: String = ""          # 上次菜单搜索词，避免重复过滤
+
+var command_list = [
+	{
+		"command": "/memory",
+		"description": "管理记忆"
+	},
+	{
+		"command": "/help",
+		"description": "帮助"
+	},
+	{
+		"command": "/setting",
+		"description": "显示设置"
+	}
+]
+
+var disable: bool = false:
+	set(value):
+		disable = value
+		user_input.editable = not value
+		clear_button.disabled = value
+		send_button.disabled = value
+
+var menu_list = []
+
+var model_id_list = {}
+var role_id_list = {}
+
+func _ready() -> void:
+	clear_usage_label()
+	#update_user_input_placeholder()
+
+	send_button.pressed.connect(on_click_send_message)
+	clear_button.pressed.connect(on_click_clear_button)
+	stop_button.pressed.connect(on_click_stop_button)
+
+	user_input.text_changed.connect(on_user_input_text_changed)
+	input_menu_list.item_selected.connect(on_input_menu_list_item_selected)
+	#custom_dropdown.is_action_mode.connect(update_user_input_placeholder)
+	config_model_button.pressed.connect(show_setting.emit)
+
+	# 初始化模型选择器
+	if model_button:
+		model_button.item_selected.connect(_on_model_selected)
+
+	if role_button:
+		role_button.item_selected.connect(_on_role_selected)
+
+	user_input.set_drag_forwarding(
+		Callable(),
+		user_input_can_drop,
+		user_input_drop_data
+	)
+
+# 更新模型选择器
+func update_model_selector(suppliers: Array, current_model_id: String, current_model_name: String):
+	if not model_button:
+		return
+
+	model_button.clear()
+	model_id_list = {}
+	use_thinking.visible = false
+	use_thinking.button_pressed = false
+
+	var current_idx = 0
+	var first_model_idx = -1
+	var idx = 0
+
+	for supplier in suppliers:
+		var models = supplier.models.filter(func(m): return m.active)
+		if models.size() == 0:
+			continue
+		# 添加分隔符根据供应商分组
+		model_button.add_separator(supplier.name)
+		idx += 1
+		# 添加模型
+		for model in models:
+			model_button.add_item(model.name)
+			if first_model_idx == -1:
+				first_model_idx = idx
+			if model.id == current_model_id:
+				current_idx = idx
+				var supports_thinking: bool = model.supports_thinking
+				use_thinking.visible = supports_thinking
+				use_thinking.button_pressed = supports_thinking
+				image_button.visible = model.supports_vision or model.supports_image_generation
+			model_id_list[idx] = model.id
+			idx += 1
+
+	if model_button.item_count == 0:
+		config_model_tip.show()
+		input_box.hide()
+	else:
+		input_box.show()
+		config_model_tip.hide()
+
+		# 设置当前选中的模型
+		if not model_id_list.has(current_idx):
+			current_idx = first_model_idx
+		model_button.set_block_signals(true)
+		model_button.selected = current_idx
+		model_button.set_block_signals(false)
+		if current_idx != -1:
+			_on_model_selected(current_idx)
+
+# 模型选择回调
+func _on_model_selected(idx: int):
+	var model_manager = AlphaAgentPlugin.global_setting.model_manager
+	if not model_manager:
+		return
+	if not model_id_list.has(idx):
+		use_thinking.visible = false
+		use_thinking.button_pressed = false
+		return
+
+	var model_id = model_id_list[idx]
+	var model := model_manager.get_model_by_id(model_id)
+	if model:
+		var supplier_id = model.supplier_id
+		var supports_thinking: bool = model.supports_thinking
+		use_thinking.visible = supports_thinking
+		use_thinking.button_pressed = supports_thinking
+		image_button.visible = model.supports_vision or model.supports_image_generation
+		# 生图模型显示比例/画风下拉框
+		var is_image_gen = model.supports_image_generation
+		aspect_ratio_option.visible = is_image_gen
+		# 画风仅 image-01-live 生效
+		style_option.visible = is_image_gen and model.model_name == "image-01-live"
+		# 动态填充比例选项（21:9 仅 image-01 可用，不支持的不展示）
+		if is_image_gen:
+			aspect_ratio_option.clear()
+			var ratios = ["1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16"]
+			if model.model_name == "image-01":
+				ratios.append("21:9")
+			for r in ratios:
+				aspect_ratio_option.add_item(r)
+			aspect_ratio_option.select(0)
+		model_changed.emit(supplier_id, model_id)
+	else:
+		use_thinking.visible = false
+		use_thinking.button_pressed = false
+		image_button.visible = false
+		aspect_ratio_option.visible = false
+		style_option.visible = false
+
+func update_role_selector(roles: Array, current_role_id: String):
+	if not role_button:
+		return
+	role_button.clear()
+	var idx = 0
+	for role in roles:
+		role_button.add_item(role.name)
+		role_id_list[idx] = role.id
+		if role.id == current_role_id:
+			role_button.select(idx)
+		idx += 1
+
+func _on_role_selected(idx: int):
+	var role_manager = AlphaAgentPlugin.global_setting.role_manager
+	if not role_manager:
+		return
+	var role_id = role_id_list[idx]
+	role_manager.set_current_role(role_id)
+
+## 是否可以将数据拖放到输入框
+func user_input_can_drop (at_position: Vector2, data: Variant):
+	var allow_types = ['files', "files_and_dirs", 'nodes', 'script_list_element', 'shader_list_element']
+	return allow_types.find(data.type) != -1
+
+func _insert_text_at_current_caret(insert_text: String) -> bool:
+	if insert_text.is_empty():
+		return false
+
+	var start_line := user_input.get_caret_line()
+	var start_column := user_input.get_caret_column()
+	user_input.insert_text_at_caret(insert_text)
+
+	# 拖拽流程中显式设置光标，确保始终落在新增文本末尾
+	var lines := insert_text.split("\n", true)
+	if lines.size() == 1:
+		user_input.set_caret_line(start_line)
+		user_input.set_caret_column(start_column + lines[0].length())
+	else:
+		user_input.set_caret_line(start_line + lines.size() - 1)
+		user_input.set_caret_column(lines[-1].length())
+	return true
+
+## 将数据拖放到输入框后处理数据
+func user_input_drop_data(at_position: Vector2, data: Variant):
+	var info_list = reference_list.get_children().map(func(node): return node.info)
+	var has_inserted_text := false
+	match data.type:
+		"files":
+			var file_info_list = info_list.filter(func(info): return info.type == "file")
+			for file: String in data.files:
+				if file_info_list.find_custom(func(info): return info.path == file) != -1:
+					continue
+				var reference_item = REFERENCE_ITEM.instantiate()
+				reference_item.info = {
+					"type": "file",
+					"path": file
+				}
+				reference_list.add_child(reference_item)
+				reference_item.set_label(file.get_file())
+				reference_item.set_tooltip(file)
+				if AlphaAgentPlugin.global_setting.auto_add_file_ref:
+					has_inserted_text = _insert_text_at_current_caret(file.get_file() + " ") or has_inserted_text
+		"files_and_dirs":
+			var file_info_list = info_list.filter(func(info): return info.type == "file")
+			for file: String in data.files:
+				if file_info_list.find_custom(func(info): return info.path == file) != -1:
+					continue
+				var reference_item = REFERENCE_ITEM.instantiate()
+				reference_item.info = {
+					"type": "file",
+					"path": file
+				}
+				reference_list.add_child(reference_item)
+				reference_item.set_label(file if file.ends_with("/") else file.get_file())
+				reference_item.set_tooltip(file)
+				if AlphaAgentPlugin.global_setting.auto_add_file_ref:
+					has_inserted_text = _insert_text_at_current_caret(file if file.ends_with("/") else file.get_file() + " ") or has_inserted_text
+		"nodes":
+			var node_info_list = info_list.filter(func(info): return info.type == "node")
+			var root_node = EditorInterface.get_edited_scene_root()
+			var current_scene = root_node.scene_file_path
+			var root_node_name = root_node.name
+
+			var nodes = data.nodes
+			for node_path: String in nodes:
+				var splite_array = node_path.split("/", false, 20)
+				var path = splite_array[-1]
+
+				if node_info_list.find_custom(func(info): return info.path == path and info.scene == current_scene) != -1:
+					user_input.grab_focus()
+					return
+				var reference_item = REFERENCE_ITEM.instantiate()
+				reference_item.info = {
+					"type": "file",
+					"node_path": path,
+					"scene": current_scene
+				}
+				reference_list.add_child(reference_item)
+				reference_item.set_label(current_scene.get_file() + "/" + path.split('/')[-1])
+
+				reference_item.set_tooltip(current_scene + "/" + path)
+				if AlphaAgentPlugin.global_setting.auto_add_file_ref:
+					has_inserted_text = _insert_text_at_current_caret(current_scene.get_file() + "/" + path.split('/')[-1] + " ") or has_inserted_text
+			pass
+		"script_list_element":
+			var script = EditorInterface.get_script_editor().get_current_script()
+			var file = ""
+			if script != null:
+				file = script.resource_path
+			else:
+				var script_editor := EditorInterface.get_script_editor()
+				var editor_file_list: ItemList = script_editor.get_child(0).get_child(1).get_child(0).get_child(0).get_child(1)
+				var selected := editor_file_list.get_selected_items()
+				if not selected:
+					user_input.grab_focus()
+					return
+				var index := selected[0]
+				file = editor_file_list.get_item_tooltip(index)
+			var file_info_list = info_list.filter(func(info): return info.type == "file")
+
+			if file_info_list.find_custom(func(info): return info.path == file) != -1:
+				user_input.grab_focus()
+				return
+			var reference_item = REFERENCE_ITEM.instantiate()
+			reference_item.info = {
+				"type": "file",
+				"path": file
+			}
+			reference_list.add_child(reference_item)
+			reference_item.set_label(file.get_file())
+			reference_item.set_tooltip(file)
+
+			if AlphaAgentPlugin.global_setting.auto_add_file_ref:
+				has_inserted_text = _insert_text_at_current_caret(file.get_file() + " ") or has_inserted_text
+		"shader_list_element":
+			print("暂时不支持拖拽shader，请从文件系统中拖入。")
+			pass
+
+	user_input.grab_focus()
+
+# 完全初始化输入框
+func init():
+	user_input.text = ""
+	clear_usage_label()
+	clear_reference_list()
+	#set_input_mode_disable(false)
+	switch_button_to("Send")
+	input_menu_list.hide()
+	role_button.disabled = false
+
+## 清空引用列表
+func clear_reference_list():
+	var ref_count = reference_list.get_child_count()
+	for i in ref_count:
+		reference_list.get_child(ref_count - i - 1).queue_free()
+
+## 仅用于插件布局重载，保留草稿及附件，不发送请求。
+func capture_draft() -> Dictionary:
+	var refs: Array = []
+	for node in reference_list.get_children():
+		if not node.is_queued_for_deletion():
+			refs.append({"info": node.info.duplicate(true), "label": node.label.text, "tooltip": node.tooltip_text})
+	return {
+		"text": user_input.text, "line": user_input.get_caret_line(), "column": user_input.get_caret_column(),
+		"references": refs, "thinking": use_thinking.button_pressed,
+		"aspect": aspect_ratio_option.selected, "style": style_option.selected
+	}
+
+func restore_draft(draft: Dictionary) -> void:
+	for node in reference_list.get_children():
+		reference_list.remove_child(node)
+		node.queue_free()
+	user_input.text = draft.get("text", "")
+	user_input.set_caret_line(draft.get("line", 0))
+	user_input.set_caret_column(draft.get("column", 0))
+	for reference in draft.get("references", []):
+		var node = REFERENCE_ITEM.instantiate()
+		node.info = reference.info.duplicate(true)
+		reference_list.add_child(node)
+		node.set_label(reference.label)
+		node.set_tooltip(reference.tooltip)
+		if node.info.get("type") == "image" and FileAccess.file_exists(node.info.get("path", "")):
+			node.set_image(node.info.path)
+			node.image_clicked.connect(_on_reference_image_clicked)
+	use_thinking.button_pressed = draft.get("thinking", false)
+	if draft.get("aspect", -1) >= 0:
+		aspect_ratio_option.select(draft.aspect)
+	if draft.get("style", -1) >= 0:
+		style_option.select(draft.style)
+	# 用量不是草稿内容；旧快照中的百分比缺少容量和来源，不能恢复为当前统计。
+	clear_usage_label()
+
+## 清空内容
+func on_click_clear_button():
+	user_input.text = ""
+	clear_reference_list()
+	_cached_file_list_valid = false
+
+## 点击上传图片按钮
+func _on_image_button_pressed():
+	image_file_dialog.popup_centered_clamped(Vector2i(800, 600))
+
+## 选择图片文件后添加图片引用项
+func _on_image_file_selected(path: String):
+	if not FileAccess.file_exists(path):
+		push_warning("图片文件不存在: " + path)
+		return
+	var ext = path.get_extension().to_lower()
+	if not ["png", "jpg", "jpeg", "gif", "webp"].has(ext):
+		push_warning("不支持的图片格式: " + ext)
+		return
+	var reference_item = REFERENCE_ITEM.instantiate()
+	reference_item.info = {
+		"type": "image",
+		"path": path
+	}
+	reference_list.add_child(reference_item)
+	reference_item.set_image(path)
+	reference_item.set_label(path.get_file())
+	reference_item.set_tooltip(path)
+	reference_item.image_clicked.connect(_on_reference_image_clicked)
+
+## 点击引用图片预览，打开查看器
+func _on_reference_image_clicked(path: String):
+	var viewer = IMAGE_VIEWER.instantiate()
+	add_child(viewer)
+	viewer.show_image_from_file(path)
+	viewer.popup_centered()
+
+## 发送信息
+func on_click_send_message():
+	var message_text = user_input.text.strip_edges(true, true)
+	# 允许只发图片不输入文字
+	var has_image = false
+	for child in reference_list.get_children():
+		if child.info and child.info.get("type", "") == "image":
+			has_image = true
+			break
+	if message_text.is_empty() and not has_image:
+		return
+
+	# 检查是否为命令
+	if message_text.begins_with("/"):
+		var command_parts = message_text.split(" ", false, 2)
+		var command = command_parts[0]
+		var args = command_parts.slice(1) if command_parts.size() > 1 else []
+
+		# 处理命令逻辑
+		handle_command(command, args)
+		return
+
+	if AlphaAgentPlugin.global_setting.auto_clear:
+		init()
+
+	# 正常消息处理
+	self.disable = true
+	role_button.disabled = true
+
+	switch_button_to("Stop")
+	#set_input_mode_disable(true)
+	var info_list = reference_list.get_children().map(func(node):
+		var info = node.info.duplicate()
+		if info.has("path"):
+			info["path"] = ProjectSettings.localize_path(info["path"])
+		return info
+	)
+	var info_list_string = JSON.stringify(info_list)
+	var image_refs = info_list.filter(func(i): return i.get("type", "") == "image")
+
+	var content
+	if image_refs.is_empty():
+		# 无图片：保持 String 格式（兼容现状）
+		content = "用户输入的内容：" + message_text + "\n引用的内容信息：" + info_list_string
+	else:
+		# 有图片：构造 content 数组（OpenAI vision 格式）
+		var parts: Array = [{
+			"type": "text",
+			"text": "用户输入的内容：" + message_text + "\n引用的内容信息：" + info_list_string
+		}]
+		for img in image_refs:
+			if not FileAccess.file_exists(img.path):
+				push_warning("图片文件不存在: " + img.path)
+				continue
+			var f = FileAccess.open(img.path, FileAccess.READ)
+			if f == null:
+				push_warning("无法读取图片: " + img.path)
+				continue
+			var bytes: PackedByteArray = f.get_buffer(f.get_length())
+			f.close()
+			var b64: String = Marshalls.raw_to_base64(bytes)
+			var img_ext = img.path.get_extension().to_lower().replace("jpg", "jpeg")
+			parts.append({
+				"type": "image_url",
+				"image_url": {"url": "data:image/%s;base64,%s" % [img_ext, b64]}
+			})
+		content = parts
+
+	send_message.emit({
+		"role": "user",
+		"content": content
+	}, message_text)
+
+
+## 处理命令
+func handle_command(command: String, args: PackedStringArray):
+	#print("执行命令: ", command, " 参数: ", args)
+	match command:
+		"/memory":
+			if args.size() == 0:
+				# 执行默认memory操作
+				show_memory.emit()
+				init()
+			elif args[0] == "project":
+				# 执行memory project操作
+				if args.size() == 2:
+					#print("执行memory project命令")
+					var CONFIG : AgentConfig = load("uid://b4bcww0bmnxt0")
+					CONFIG.memory.push_back(args[1])
+					ResourceSaver.save(CONFIG, "uid://b4bcww0bmnxt0")
+				else:
+					show_memory.emit()
+					init()
+			elif args[0] == "global":
+				if args.size() == 2:
+					var CONFIG : AgentConfig = load("uid://b4bcww0bmnxt0")
+					var memory_file = AlphaAgentPlugin.global_setting.setting_dir + "memory.{version}.json".format({"version": CONFIG.alpha_version})
+					AlphaAgentPlugin.global_memory.push_back(args[1])
+
+					var file = FileAccess.open(memory_file, FileAccess.WRITE)
+					file.store_string(JSON.stringify(AlphaAgentPlugin.global_memory))
+					file.close()
+					init()
+				else:
+					show_memory.emit()
+					init()
+			else:
+				show_memory.emit()
+				init()
+		"/help":
+			show_help.emit()
+			init()
+		"/setting":
+			show_setting.emit()
+			init()
+		_:
+			print("未知命令: ", command)
+
+func clear_usage_label(reason: String = "暂无当前上下文的用量统计，等待下一次请求返回。") -> void:
+	usage_label.text = "—"
+	usage_label.tooltip_text = reason
+	usage_label.remove_theme_color_override("font_color")
+
+## 参数统一使用 token 数，不把最大输出长度当成上下文容量。
+func set_usage_label(total_tokens: float, context_length: float, threshold_ratio: float = 0.8):
+	if not is_finite(total_tokens) or total_tokens <= 0:
+		clear_usage_label()
+		return
+	if not is_finite(context_length) or context_length <= 0:
+		clear_usage_label("本轮报告用量：%s tokens。\n模型未设置上下文窗口，无法计算占比；请在模型配置中填写实际窗口大小。" % _format_tokens(total_tokens))
+		return
+	var ratio: float = total_tokens / context_length
+	usage_label.text = "100.0%+" if ratio > 1.0 else "%.1f%%" % (ratio * 100)
+	usage_label.tooltip_text = "本轮报告用量：%s / %s tokens（%.1f%%）" % [_format_tokens(total_tokens), _format_tokens(context_length), ratio * 100]
+	if ratio > 1.0:
+		usage_label.tooltip_text += "\n报告用量已超过配置的上下文窗口，请核对模型窗口设置。"
+	if ratio >= threshold_ratio:
+		usage_label.add_theme_color_override("font_color", Color(0.9, 0.6, 0.2))
+	else:
+		usage_label.remove_theme_color_override("font_color")
+
+## 设置供应商余额显示
+func set_balance(text: String):
+	if balance_label:
+		balance_label.text = text
+		balance_label.visible = not text.is_empty()
+
+## 格式化 token 数：<1k 显示原数，1k-1M 显示 Xk，≥1M 显示 XM
+func _format_tokens(tokens: float) -> String:
+	if tokens < 1024:
+		return str(int(tokens))
+	elif tokens < 1048576:
+		return "%.1fk" % (tokens / 1024.0)
+	else:
+		return "%.1fM" % (tokens / 1048576.0)
+
+func check_disallowed_char(text: String) -> bool:
+	var disallowed_char = [" ", ",", ".", "，", "。"]
+	for char in disallowed_char:
+		if text.contains(char):
+			return false
+	return true
+
+func on_user_input_text_changed():
+	var text = user_input.text
+	_schedule_clamp()
+
+	# 提取搜索前缀，避免每次按键都重新过滤
+	var search_prefix = ""
+	if "@" in text:
+		var at_idx = text.rfind("@")
+		var space_after_at = text.find(" ", at_idx)
+		if space_after_at < 0:
+			space_after_at = text.length()
+		search_prefix = text.substr(at_idx, space_after_at - at_idx)
+	elif text.begins_with("/") and check_disallowed_char(text):
+		search_prefix = text
+
+	# 搜索词未变则跳过，减少不必要的 UI 刷新
+	if search_prefix == _last_menu_search:
+		return
+	_last_menu_search = search_prefix
+
+	# 检测 @ 触发文件列表
+	if "@" in text:
+		# 缓存文件列表，避免每次按键都遍历文件系统
+		if not _cached_file_list_valid:
+			_cached_file_list = get_project_file_list()
+			_cached_file_list_valid = true
+
+		input_menu_list.show()
+		input_menu_list.clear()
+		menu_list = get_filtered_file_list(text)
+		for file_item in menu_list:
+			input_menu_list.add_item(file_item.path)
+		menu_list_type = MenuListType.File
+
+	# 检测 / 触发命令或 skill
+	elif text.begins_with("/") and check_disallowed_char(text):
+		input_menu_list.show()
+		input_menu_list.clear()
+
+		# 过滤命令（只有 / 时显示所有命令）
+		var filtered_commands = command_list
+		if text.length() > 1:
+			filtered_commands = command_list.filter(func (command): return command.command.contains(text))
+		# 过滤 skill（只有 / 时显示所有 skill）
+		var filtered_skills = get_filtered_skill_list(text if text.length() > 1 else "")
+
+		# 先显示命令（优先级高）
+		for cmd in filtered_commands:
+			input_menu_list.add_item(cmd.command + " " + cmd.description)
+		# 再显示 skill，显示格式：/skill_name [描述]
+		for skill_name in filtered_skills:
+			var skill_desc = get_skill_description(skill_name)
+			var display_text = "/" + skill_name
+			if not skill_desc.is_empty():
+				display_text += " [" + skill_desc + "]"
+			input_menu_list.add_item(display_text)
+
+		if filtered_commands.size() > 0:
+			menu_list_type = MenuListType.Command
+		elif filtered_skills.size() > 0:
+			menu_list_type = MenuListType.Skill
+		else:
+			menu_list_type = MenuListType.Command  # / 后面没有匹配时仍显示菜单
+
+		menu_list = filtered_commands + filtered_skills
+
+	else:
+		menu_list_type = MenuListType.None
+		input_menu_list.hide()
+		input_menu_list.clear()
+## 限制输入框最大高度，超出后内部滚动
+func _schedule_clamp():
+	if not _clamp_scheduled:
+		_clamp_scheduled = true
+		call_deferred("_do_clamp_input_height")
+
+func _do_clamp_input_height():
+	_clamp_scheduled = false
+	const MAX_HEIGHT := 200.0
+	const MIN_HEIGHT := 60.0
+
+	var wrapped_lines := 0
+	for i in range(user_input.get_line_count()):
+		wrapped_lines += user_input.get_line_wrap_count(i)
+
+	var font_size := user_input.get_theme_font_size(&"font_size")
+	var line_height := font_size * 1.5
+	var content_h := wrapped_lines * line_height + 16.0
+
+	if content_h > MAX_HEIGHT:
+		user_input.scroll_fit_content_height = false
+		user_input.custom_minimum_size.y = MAX_HEIGHT
+	else:
+		user_input.scroll_fit_content_height = true
+		user_input.custom_minimum_size.y = max(MIN_HEIGHT, content_h)
+
+func on_input_menu_list_item_selected(index: int):
+		var text = user_input.text
+		match menu_list_type:
+			MenuListType.Command:
+				var item = menu_list[index]
+				var cmd_text = item.command + " " if item is Dictionary else "/" + str(item) + " "
+				var slash_pos = text.find("/")
+				if slash_pos >= 0:
+					user_input.text = text.substr(0, slash_pos) + cmd_text
+				else:
+					user_input.text = cmd_text
+				input_menu_list.hide()
+				input_menu_list.clear()
+				user_input.grab_focus()
+				user_input.set_caret_column(user_input.text.length())
+
+			MenuListType.Skill:
+				var skill_text = "/" + str(menu_list[index]) + " "
+				var slash_pos = text.find("/")
+				if slash_pos >= 0:
+					user_input.text = text.substr(0, slash_pos) + skill_text
+				else:
+					user_input.text = skill_text
+				input_menu_list.hide()
+				input_menu_list.clear()
+				user_input.grab_focus()
+				user_input.set_caret_column(user_input.text.length())
+
+			MenuListType.File:
+				var at_pos = text.rfind("@")
+				# 只替换 @ 到第一个空格之间的部分，保留后面的内容
+				var after_at = text.substr(at_pos + 1) if at_pos >= 0 else ""
+				var space_pos = after_at.find(" ")
+				var file_text = menu_list[index].path + " "
+				var suffix = ""
+				if at_pos >= 0:
+					if space_pos >= 0:
+						suffix = after_at.substr(space_pos)
+					user_input.text = text.substr(0, at_pos) + file_text + suffix
+				else:
+					user_input.text = file_text
+				input_menu_list.hide()
+				input_menu_list.clear()
+				user_input.grab_focus()
+				user_input.set_caret_column(user_input.text.length())
+
+func _on_user_input_gui_input(event: InputEvent) -> void:
+	if disable:
+		return
+	var send_shortcut = AlphaAgentPlugin.global_setting.send_shortcut
+	if event is InputEventKey:
+		var is_enter_key = event.keycode == KEY_ENTER or event.keycode == KEY_KP_ENTER
+		# 普通enter键
+		if is_enter_key and \
+			not event.alt_pressed and \
+			not event.shift_pressed and \
+			not event.ctrl_pressed and \
+			not event.meta_pressed and \
+		event.pressed:
+
+			if send_shortcut == AlphaAgentPlugin.SendShotcut.None:
+				return
+			elif send_shortcut == AlphaAgentPlugin.SendShotcut.Enter:
+				on_click_send_message()
+				accept_event()
+
+			elif send_shortcut == AlphaAgentPlugin.SendShotcut.CtrlEnter:
+				user_input.insert_text_at_caret("\n")
+				accept_event()
+
+		# ctrl+enter键 发送消息
+		if event.is_command_or_control_pressed() and \
+			not event.alt_pressed and \
+			not event.shift_pressed and \
+			is_enter_key and \
+			event.pressed:
+
+			if send_shortcut == AlphaAgentPlugin.SendShotcut.None:
+				return
+			elif send_shortcut == AlphaAgentPlugin.SendShotcut.Enter:
+				return
+			elif send_shortcut == AlphaAgentPlugin.SendShotcut.CtrlEnter:
+				on_click_send_message()
+				accept_event()
+
+func switch_button_to(button_name: String):
+	if button_name == "Send":
+		send_button.show()
+		stop_button.hide()
+	else:
+		send_button.hide()
+		stop_button.show()
+
+func on_click_stop_button():
+	stop_chat.emit()
+
+func get_use_thinking() -> bool:
+	return use_thinking.button_pressed
+
+## 获取生图参数（比例、画风）
+func get_image_params() -> Dictionary:
+	if not aspect_ratio_option.visible:
+		return {}
+	var params: Dictionary = {"aspect_ratio": aspect_ratio_option.get_item_text(aspect_ratio_option.selected)}
+	# 画风（仅 image-01-live）
+	if style_option.visible and style_option.selected > 0:
+		params["style_type"] = style_option.get_item_text(style_option.selected)
+	return params
+
+## 获取过滤后的 skill 列表
+func get_filtered_skill_list(prefix: String) -> Array:
+	var skill_manager = AlphaAgentPlugin.global_setting.skill_manager
+	if skill_manager == null:
+		return []
+	var all_skills = skill_manager.get_skill_names()
+	var search_term = prefix.substr(1) if prefix.begins_with("/") else prefix
+	# 空搜索词返回所有 skill
+	if search_term.is_empty():
+		return all_skills
+	var filtered = all_skills.filter(func(name): return name.contains(search_term))
+	return filtered
+
+## 获取 skill 的描述
+func get_skill_description(skill_name: String) -> String:
+	var skill_manager = AlphaAgentPlugin.global_setting.skill_manager
+	if skill_manager == null:
+		return ""
+	var skill = skill_manager.get_skill(skill_name)
+	if skill == null:
+		return ""
+	return skill.skill_description if skill.skill_description else ""
+
+## 获取过滤后的文件列表
+func get_filtered_file_list(text: String) -> Array:
+	var at_index = text.find("@")
+	if at_index < 0:
+		return []
+	var prefix = text.substr(at_index + 1)
+	# 只取 @ 到第一个空格之间的内容作为搜索条件
+	var space_pos = prefix.find(" ")
+	if space_pos >= 0:
+		prefix = prefix.substr(0, space_pos)
+	var filtered: Array
+	if prefix.is_empty():
+		# 只有 @ 时显示根目录下文件（限制20条）
+		filtered = get_project_file_list("res://", 1).slice(0, 20)
+	else:
+		filtered = _cached_file_list.filter(func(f): return f.path.contains(prefix))
+	return filtered.slice(0, 20) if filtered.size() > 20 else filtered
+
+## 获取项目文件列表
+func get_project_file_list(start_path: String = "res://", interation: int = -1) -> Array:
+	var ignore_patterns = [".alpha", ".godot", "*.uid", "addons", "*.import"]
+	var queue = [{"path": start_path, "interation": interation}]
+	var file_list = []
+
+	while queue.size():
+		var current_item = queue.pop_front()
+		var current_interation = current_item.interation
+		var current_dir = current_item.path
+		# interation < 0 表示无深度限制
+		if current_interation == 0:
+			continue
+		var dir = DirAccess.open(current_dir)
+		if dir:
+			dir.list_dir_begin()
+			var file_name = dir.get_next()
+			while file_name != "":
+				var match_result = true
+				for pattern in ignore_patterns:
+					if file_name.match(pattern):
+						match_result = false
+						break
+				if match_result:
+					var full_path = current_dir + file_name
+					if dir.current_is_dir():
+						file_list.push_back({
+							"path": full_path,
+							"type": "directory"
+						})
+						if current_interation > 0:
+							queue.push_back({
+								"path": full_path + "/",
+								"interation": current_interation - 1
+							})
+						else:
+							queue.push_back({
+								"path": full_path + "/",
+								"interation": current_interation
+							})
+					else:
+						file_list.push_back({
+							"path": full_path,
+							"type": "file"
+						})
+				file_name = dir.get_next()
+	return file_list

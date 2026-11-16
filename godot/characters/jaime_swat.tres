@@ -1,0 +1,9 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = "jaime_swat"
+display_name = "Jaime SWAT"
+description = "Sua versão tática: equipamento SWAT, postura de prontidão e mira de fuzil."
+visual_scene = "res://scenes/characters/jaime_swat.tscn"
+required_resources = PackedStringArray("res://assets/personagens/jaime/[FREE] Rigged Stylized SWAT Soldier.glb", "res://assets/personagens/jaime/retargeted/normal.tres", "res://assets/personagens/jaime/retargeted/aim.tres", "res://assets/personagens/jaime/retargeted/fire.tres")

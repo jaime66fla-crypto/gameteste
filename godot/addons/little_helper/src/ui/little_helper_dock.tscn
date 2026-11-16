@@ -1,0 +1,422 @@
+[gd_scene format=3 uid="uid://dsp30xxbrea5d"]
+
+[ext_resource type="Script" uid="uid://djgtpybxrvrgq" path="res://addons/little_helper/src/ui/little_helper_dock.gd" id="1_dnknk"]
+
+[sub_resource type="Image" id="Image_dnknk"]
+data = {
+"data": PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 28, 255, 255, 255, 71, 255, 255, 255, 71, 255, 255, 255, 28, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 61, 255, 255, 255, 248, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 247, 255, 255, 255, 57, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 2, 255, 255, 255, 49, 255, 255, 255, 16, 255, 255, 255, 160, 255, 255, 255, 184, 255, 255, 255, 2, 255, 255, 255, 3, 255, 255, 255, 189, 255, 255, 255, 154, 255, 255, 255, 17, 255, 255, 255, 48, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 2, 255, 255, 255, 185, 255, 255, 255, 255, 255, 255, 255, 249, 255, 255, 255, 252, 255, 255, 255, 92, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 98, 255, 255, 255, 252, 255, 255, 255, 249, 255, 255, 255, 255, 255, 255, 255, 181, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 111, 255, 255, 255, 245, 255, 255, 255, 52, 255, 255, 255, 76, 255, 255, 255, 64, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 67, 255, 255, 255, 75, 255, 255, 255, 54, 255, 255, 255, 247, 255, 255, 255, 106, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 219, 255, 255, 255, 131, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 47, 255, 255, 255, 148, 255, 255, 255, 147, 255, 255, 255, 41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 138, 255, 255, 255, 215, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 203, 255, 255, 255, 183, 255, 255, 255, 6, 0, 0, 0, 0, 255, 255, 255, 47, 255, 255, 255, 248, 255, 255, 255, 196, 255, 255, 255, 201, 255, 255, 255, 244, 255, 255, 255, 37, 0, 0, 0, 0, 255, 255, 255, 8, 255, 255, 255, 186, 255, 255, 255, 195, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 46, 255, 255, 255, 234, 255, 255, 255, 117, 0, 0, 0, 0, 255, 255, 255, 149, 255, 255, 255, 197, 0, 0, 0, 0, 255, 255, 255, 1, 255, 255, 255, 208, 255, 255, 255, 135, 0, 0, 0, 0, 255, 255, 255, 126, 255, 255, 255, 230, 255, 255, 255, 43, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 49, 255, 255, 255, 236, 255, 255, 255, 114, 0, 0, 0, 0, 255, 255, 255, 146, 255, 255, 255, 201, 255, 255, 255, 1, 255, 255, 255, 3, 255, 255, 255, 213, 255, 255, 255, 133, 0, 0, 0, 0, 255, 255, 255, 123, 255, 255, 255, 233, 255, 255, 255, 46, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 206, 255, 255, 255, 180, 255, 255, 255, 5, 0, 0, 0, 0, 255, 255, 255, 42, 255, 255, 255, 246, 255, 255, 255, 209, 255, 255, 255, 212, 255, 255, 255, 241, 255, 255, 255, 33, 0, 0, 0, 0, 255, 255, 255, 7, 255, 255, 255, 185, 255, 255, 255, 202, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 218, 255, 255, 255, 134, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 39, 255, 255, 255, 135, 255, 255, 255, 133, 255, 255, 255, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 141, 255, 255, 255, 214, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 108, 255, 255, 255, 247, 255, 255, 255, 58, 255, 255, 255, 80, 255, 255, 255, 68, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 72, 255, 255, 255, 80, 255, 255, 255, 59, 255, 255, 255, 248, 255, 255, 255, 102, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 1, 255, 255, 255, 181, 255, 255, 255, 255, 255, 255, 255, 247, 255, 255, 255, 251, 255, 255, 255, 96, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 102, 255, 255, 255, 251, 255, 255, 255, 248, 255, 255, 255, 255, 255, 255, 255, 176, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 43, 255, 255, 255, 13, 255, 255, 255, 158, 255, 255, 255, 188, 255, 255, 255, 6, 255, 255, 255, 7, 255, 255, 255, 192, 255, 255, 255, 153, 255, 255, 255, 14, 255, 255, 255, 40, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 57, 255, 255, 255, 245, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 244, 255, 255, 255, 53, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 26, 255, 255, 255, 67, 255, 255, 255, 66, 255, 255, 255, 25, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+"format": "RGBA8",
+"height": 16,
+"mipmaps": false,
+"width": 16
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_c088l"]
+image = SubResource("Image_dnknk")
+
+[sub_resource type="Image" id="Image_dyg6s"]
+data = {
+"data": PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 140, 255, 255, 255, 246, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 246, 255, 255, 255, 137, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 1, 255, 255, 255, 42, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 183, 255, 255, 255, 199, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 198, 255, 255, 255, 183, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 140, 255, 255, 255, 246, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 246, 255, 255, 255, 137, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 208, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 96, 255, 255, 255, 207, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 138, 255, 255, 255, 244, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 244, 255, 255, 255, 135, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 182, 255, 255, 255, 183, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 48, 255, 255, 255, 183, 255, 255, 255, 181, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 255, 255, 255, 33, 0, 0, 0, 0, 255, 255, 255, 17, 255, 255, 255, 16, 0, 0, 0, 0, 255, 255, 255, 33, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 41, 255, 255, 255, 238, 255, 255, 255, 38, 255, 255, 255, 171, 255, 255, 255, 170, 255, 255, 255, 41, 255, 255, 255, 238, 255, 255, 255, 38, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 48, 255, 255, 255, 255, 255, 255, 255, 48, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 176, 255, 255, 255, 176, 255, 255, 255, 40, 255, 255, 255, 238, 255, 255, 255, 37, 255, 255, 255, 171, 255, 255, 255, 169, 255, 255, 255, 40, 255, 255, 255, 238, 255, 255, 255, 37, 255, 255, 255, 176, 255, 255, 255, 176, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 159, 255, 255, 255, 214, 255, 255, 255, 67, 255, 255, 255, 75, 255, 255, 255, 48, 255, 255, 255, 62, 255, 255, 255, 61, 255, 255, 255, 48, 255, 255, 255, 75, 255, 255, 255, 69, 255, 255, 255, 214, 255, 255, 255, 159, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 40, 255, 255, 255, 208, 255, 255, 255, 251, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 251, 255, 255, 255, 207, 255, 255, 255, 34, 0, 0, 0, 0, 0, 0, 0, 0),
+"format": "RGBA8",
+"height": 16,
+"mipmaps": false,
+"width": 16
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_utd0q"]
+image = SubResource("Image_dyg6s")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_rhepg"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0.14, 0.16, 0.2, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.28, 0.35, 1)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+
+[sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_k6p1g"]
+
+[sub_resource type="Image" id="Image_khim2"]
+data = {
+"data": PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 43, 255, 255, 255, 26, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 44, 255, 255, 255, 132, 255, 255, 255, 219, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 22, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 37, 255, 255, 255, 125, 255, 255, 255, 212, 255, 255, 255, 255, 255, 255, 255, 223, 255, 255, 255, 245, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 27, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 30, 255, 255, 255, 117, 255, 255, 255, 205, 255, 255, 255, 255, 255, 255, 255, 228, 255, 255, 255, 143, 255, 255, 255, 55, 255, 255, 255, 110, 255, 255, 255, 253, 255, 255, 255, 242, 255, 255, 255, 213, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 9, 255, 255, 255, 182, 255, 255, 255, 254, 255, 255, 255, 234, 255, 255, 255, 150, 255, 255, 255, 62, 255, 255, 255, 2, 0, 0, 0, 0, 255, 255, 255, 109, 255, 255, 255, 253, 255, 255, 255, 102, 255, 255, 255, 227, 255, 255, 255, 126, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 58, 255, 255, 255, 255, 255, 255, 255, 159, 255, 255, 255, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 109, 255, 255, 255, 253, 255, 255, 255, 100, 255, 255, 255, 62, 255, 255, 255, 255, 255, 255, 255, 38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 1, 255, 255, 255, 143, 255, 255, 255, 251, 255, 255, 255, 210, 255, 255, 255, 83, 255, 255, 255, 1, 255, 255, 255, 109, 255, 255, 255, 253, 255, 255, 255, 100, 0, 0, 0, 0, 255, 255, 255, 149, 255, 255, 255, 206, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 35, 255, 255, 255, 160, 255, 255, 255, 252, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 100, 0, 0, 0, 0, 255, 255, 255, 3, 255, 255, 255, 233, 255, 255, 255, 118, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 36, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 1, 0, 0, 0, 0, 255, 255, 255, 69, 255, 255, 255, 255, 255, 255, 255, 31, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 38, 255, 255, 255, 252, 255, 255, 255, 80, 0, 0, 0, 0, 255, 255, 255, 157, 255, 255, 255, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 163, 255, 255, 255, 208, 255, 255, 255, 7, 255, 255, 255, 238, 255, 255, 255, 111, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 37, 255, 255, 255, 252, 255, 255, 255, 159, 255, 255, 255, 252, 255, 255, 255, 25, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 151, 255, 255, 255, 255, 255, 255, 255, 169, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 2, 255, 255, 255, 50, 255, 255, 255, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+"format": "RGBA8",
+"height": 16,
+"mipmaps": false,
+"width": 16
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_jias5"]
+image = SubResource("Image_khim2")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_1bxap"]
+content_margin_left = 8.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+bg_color = Color(0.14, 0.16, 0.2, 1)
+border_width_right = 1
+border_color = Color(0.25, 0.28, 0.35, 1)
+
+[sub_resource type="Image" id="Image_176a4"]
+data = {
+"data": PackedByteArray(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 9, 255, 255, 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 11, 255, 255, 255, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 13, 255, 255, 255, 204, 255, 255, 255, 207, 255, 255, 255, 42, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 45, 255, 255, 255, 210, 255, 255, 255, 204, 255, 255, 255, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 13, 255, 255, 255, 212, 255, 255, 255, 255, 255, 255, 255, 215, 255, 255, 255, 42, 255, 255, 255, 44, 255, 255, 255, 215, 255, 255, 255, 255, 255, 255, 255, 205, 255, 255, 255, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 53, 255, 255, 255, 218, 255, 255, 255, 255, 255, 255, 255, 215, 255, 255, 255, 215, 255, 255, 255, 255, 255, 255, 255, 214, 255, 255, 255, 38, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 53, 255, 255, 255, 218, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 214, 255, 255, 255, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 52, 255, 255, 255, 219, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 213, 255, 255, 255, 34, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 51, 255, 255, 255, 218, 255, 255, 255, 255, 255, 255, 255, 215, 255, 255, 255, 220, 255, 255, 255, 255, 255, 255, 255, 210, 255, 255, 255, 29, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 10, 255, 255, 255, 211, 255, 255, 255, 255, 255, 255, 255, 213, 255, 255, 255, 38, 255, 255, 255, 58, 255, 255, 255, 220, 255, 255, 255, 255, 255, 255, 255, 199, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 16, 255, 255, 255, 211, 255, 255, 255, 207, 255, 255, 255, 36, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 58, 255, 255, 255, 213, 255, 255, 255, 200, 255, 255, 255, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 13, 255, 255, 255, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 10, 255, 255, 255, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
+"format": "RGBA8",
+"height": 14,
+"mipmaps": false,
+"width": 14
+}
+
+[sub_resource type="ImageTexture" id="ImageTexture_eagps"]
+image = SubResource("Image_176a4")
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_537yw"]
+content_margin_left = 6.0
+content_margin_top = 6.0
+content_margin_right = 6.0
+content_margin_bottom = 6.0
+bg_color = Color(0.1, 0.12, 0.15, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.25, 0.28, 0.35, 1)
+
+[node name="LittleHelper" type="MarginContainer" unique_id=744944434]
+clip_contents = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_dnknk")
+metadata/_edit_lock_ = true
+
+[node name="VBoxContainer" type="VBoxContainer" parent="." unique_id=1578513956]
+layout_mode = 2
+size_flags_horizontal = 17
+size_flags_vertical = 17
+metadata/_edit_lock_ = true
+
+[node name="HeaderBox" type="HBoxContainer" parent="VBoxContainer" unique_id=681410847]
+layout_mode = 2
+size_flags_horizontal = 17
+metadata/_edit_lock_ = true
+
+[node name="SettingsButton" type="Button" parent="VBoxContainer/HeaderBox" unique_id=1849182012]
+layout_mode = 2
+tooltip_text = "Settings"
+icon = SubResource("ImageTexture_c088l")
+flat = true
+metadata/_edit_lock_ = true
+
+[node name="StatusBox" type="HBoxContainer" parent="VBoxContainer/HeaderBox" unique_id=1237009162]
+layout_mode = 2
+theme_override_constants/separation = 6
+metadata/_edit_lock_ = true
+
+[node name="StatusIcon" type="TextureRect" parent="VBoxContainer/HeaderBox/StatusBox" unique_id=1829304918]
+visible = false
+custom_minimum_size = Vector2(16, 16)
+layout_mode = 2
+size_flags_vertical = 4
+stretch_mode = 5
+metadata/_edit_lock_ = true
+
+[node name="StatusLabel" type="Label" parent="VBoxContainer/HeaderBox/StatusBox" unique_id=-1356565368]
+visible = false
+layout_mode = 2
+vertical_alignment = 1
+metadata/_edit_lock_ = true
+
+[node name="HeaderSpacer" type="Control" parent="VBoxContainer/HeaderBox" unique_id=-475938884]
+layout_mode = 2
+size_flags_horizontal = 3
+metadata/_edit_lock_ = true
+
+[node name="ClearButton" type="Button" parent="VBoxContainer/HeaderBox" unique_id=1555812603]
+layout_mode = 2
+text = "Clear"
+icon = SubResource("ImageTexture_utd0q")
+metadata/_edit_lock_ = true
+
+[node name="ChatHistory" type="RichTextLabel" parent="VBoxContainer" unique_id=593501875]
+layout_mode = 2
+size_flags_horizontal = 17
+size_flags_vertical = 19
+focus_mode = 2
+bbcode_enabled = true
+selection_enabled = true
+metadata/_edit_lock_ = true
+
+[node name="AutocompleteBox" type="PanelContainer" parent="VBoxContainer" unique_id=2049182371]
+visible = false
+custom_minimum_size = Vector2(0, 36)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_rhepg")
+metadata/_edit_lock_ = true
+
+[node name="AutocompleteList" type="ItemList" parent="VBoxContainer/AutocompleteBox" unique_id=-1235784914]
+layout_mode = 2
+focus_mode = 0
+theme_override_styles/panel = SubResource("StyleBoxEmpty_k6p1g")
+metadata/_edit_lock_ = true
+
+[node name="InputBox" type="HBoxContainer" parent="VBoxContainer" unique_id=894434564]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="PromptInput" type="LineEdit" parent="VBoxContainer/InputBox" unique_id=872028880]
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "Running as MCP server (use /help for tools)..."
+metadata/_edit_lock_ = true
+
+[node name="SendButton" type="Button" parent="VBoxContainer/InputBox" unique_id=1450366983]
+layout_mode = 2
+text = "Send"
+icon = SubResource("ImageTexture_jias5")
+metadata/_edit_lock_ = true
+
+[node name="SettingsOverlay" type="Control" parent="." unique_id=-1904774451]
+visible = false
+clip_contents = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+metadata/_edit_lock_ = true
+
+[node name="SettingsPanel" type="PanelContainer" parent="SettingsOverlay" unique_id=-1192019106]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+theme_override_styles/panel = SubResource("StyleBoxFlat_1bxap")
+metadata/_edit_lock_ = true
+
+[node name="SettingsLayout" type="VBoxContainer" parent="SettingsOverlay/SettingsPanel" unique_id=-1545862475]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="SettingsHeader" type="HBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout" unique_id=-384672484]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="SettingsTitle" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsHeader" unique_id=1940192834]
+layout_mode = 2
+text = "Settings"
+metadata/_edit_lock_ = true
+
+[node name="Spacer" type="Control" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsHeader" unique_id=1029481923]
+layout_mode = 2
+size_flags_horizontal = 3
+metadata/_edit_lock_ = true
+
+[node name="CloseSettingsButton" type="Button" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsHeader" unique_id=-1445864348]
+layout_mode = 2
+tooltip_text = "Close Settings"
+icon = SubResource("ImageTexture_eagps")
+metadata/_edit_lock_ = true
+
+[node name="HeaderSep" type="HSeparator" parent="SettingsOverlay/SettingsPanel/SettingsLayout" unique_id=-1275682384]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="SettingsScroll" type="ScrollContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout" unique_id=1948102934]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+metadata/_edit_lock_ = true
+
+[node name="FormLayout" type="VBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll" unique_id=-1445864386]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+metadata/_edit_lock_ = true
+
+[node name="ModeLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout" unique_id=987123456]
+layout_mode = 2
+text = "Operating Mode:"
+metadata/_edit_lock_ = true
+
+[node name="ModeOption" type="OptionButton" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout" unique_id=987123457]
+layout_mode = 2
+selected = 1
+item_count = 3
+popup/item_0/text = "In-Engine Chat (API Key / Ollama)"
+popup/item_0/id = 0
+popup/item_1/text = "External Agent (MCP Bridge)"
+popup/item_1/id = 1
+popup/item_2/text = "Dual Mode (Both Active)"
+popup/item_2/id = 2
+metadata/_edit_lock_ = true
+
+[node name="ModeSep" type="HSeparator" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout" unique_id=987123458]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="DirectAiSection" type="VBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout" unique_id=987123459]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 6
+metadata/_edit_lock_ = true
+
+[node name="ProviderLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=1029384756]
+layout_mode = 2
+text = "LLM Provider:"
+metadata/_edit_lock_ = true
+
+[node name="ProviderOption" type="OptionButton" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=2039485716]
+layout_mode = 2
+selected = 2
+item_count = 6
+popup/item_0/text = "OpenAI (ChatGPT)"
+popup/item_0/id = 0
+popup/item_1/text = "Anthropic (Claude)"
+popup/item_1/id = 1
+popup/item_2/text = "Google Gemini"
+popup/item_2/id = 2
+popup/item_3/text = "DeepSeek"
+popup/item_3/id = 3
+popup/item_4/text = "Ollama (Local)"
+popup/item_4/id = 4
+popup/item_5/text = "Custom / Compatible"
+popup/item_5/id = 5
+metadata/_edit_lock_ = true
+
+[node name="ModelLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=-1245380571]
+layout_mode = 2
+text = "Model:"
+metadata/_edit_lock_ = true
+
+[node name="ModelInput" type="LineEdit" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=-235280162]
+layout_mode = 2
+text = "gemini-1.5-pro"
+placeholder_text = "e.g. gpt-4o, claude-3-5-sonnet"
+metadata/_edit_lock_ = true
+
+[node name="ApiKeyLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=774820947]
+layout_mode = 2
+text = "API Key:"
+metadata/_edit_lock_ = true
+
+[node name="ApiKeyInput" type="LineEdit" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=1784922056]
+layout_mode = 2
+placeholder_text = "AIzaSy..."
+secret = true
+metadata/_edit_lock_ = true
+
+[node name="EndpointLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=-1499944131]
+layout_mode = 2
+text = "API Endpoint / Base URL:"
+metadata/_edit_lock_ = true
+
+[node name="EndpointInput" type="LineEdit" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=-490843022]
+layout_mode = 2
+text = "https://generativelanguage.googleapis.com/v1beta/models/"
+placeholder_text = "https://api.openai.com/v1"
+metadata/_edit_lock_ = true
+
+[node name="TempLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=519258089]
+layout_mode = 2
+text = "Temperature: 0.55"
+metadata/_edit_lock_ = true
+
+[node name="TempSlider" type="HSlider" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/DirectAiSection" unique_id=1219293792]
+layout_mode = 2
+max_value = 1.0
+step = 0.05
+value = 0.55
+metadata/_edit_lock_ = true
+
+[node name="McpSection" type="VBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout" unique_id=987123460]
+layout_mode = 2
+theme_override_constants/separation = 6
+metadata/_edit_lock_ = true
+
+[node name="McpEnableCheck" type="CheckBox" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123462]
+layout_mode = 2
+button_pressed = true
+text = "Enable TCP Bridge Server"
+metadata/_edit_lock_ = true
+
+[node name="McpPortBox" type="HBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123463]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="McpPortLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection/McpPortBox" unique_id=987123464]
+layout_mode = 2
+text = "Bridge Port:"
+metadata/_edit_lock_ = true
+
+[node name="McpPortInput" type="LineEdit" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection/McpPortBox" unique_id=987123465]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "9099"
+metadata/_edit_lock_ = true
+
+[node name="McpGuideTitle" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123466]
+layout_mode = 2
+text = "Connect External Agent:"
+metadata/_edit_lock_ = true
+
+[node name="McpGuideDesc" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123467]
+layout_mode = 2
+text = "Allows Antigravity, Claude Desktop, or Cursor to inspect & edit your Godot scene live via MCP."
+autowrap_mode = 3
+metadata/_edit_lock_ = true
+
+[node name="McpSnippet" type="TextEdit" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123468]
+custom_minimum_size = Vector2(0, 95)
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_537yw")
+theme_override_styles/read_only = SubResource("StyleBoxFlat_537yw")
+text = "{
+  \"mcpServers\": {
+    \"godot-little-helper\": {
+      \"args\": [
+        \"D:/personal/dev_stuff/game_dev/_projects/test_template_godot/addons/little_helper/mcp_bridge.js\"
+      ],
+      \"command\": \"node\",
+      \"env\": {
+        \"GODOT_PORT\": \"9099\"
+      }
+    }
+  }
+}"
+editable = false
+wrap_mode = 1
+scroll_vertical = 9.925925925925926
+metadata/_edit_lock_ = true
+
+[node name="CopyConfigButton" type="Button" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123470]
+layout_mode = 2
+text = "Copy MCP Config"
+metadata/_edit_lock_ = true
+
+[node name="McpFeedbackLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsScroll/FormLayout/McpSection" unique_id=987123472]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="FooterSep" type="HSeparator" parent="SettingsOverlay/SettingsPanel/SettingsLayout" unique_id=-1965572493]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="SettingsFooter" type="HBoxContainer" parent="SettingsOverlay/SettingsPanel/SettingsLayout" unique_id=-855471382]
+layout_mode = 2
+metadata/_edit_lock_ = true
+
+[node name="SaveStatusLabel" type="Label" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsFooter" unique_id=254628729]
+layout_mode = 2
+size_flags_horizontal = 3
+metadata/_edit_lock_ = true
+
+[node name="SaveSettingsButton" type="Button" parent="SettingsOverlay/SettingsPanel/SettingsLayout/SettingsFooter" unique_id=1364729840]
+layout_mode = 2
+text = "Save Settings"
+metadata/_edit_lock_ = true

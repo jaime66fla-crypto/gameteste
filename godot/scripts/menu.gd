@@ -1,8 +1,13 @@
 extends Control
 const Settings = preload("res://scripts/game_settings.gd")
+const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
+const CharacterCard = preload("res://scripts/characters/character_card.gd")
 var settings: Dictionary
 var content: VBoxContainer
 var status: Label
+var menu_card: PanelContainer
+var page_width := 430.0
+var selection_feedback: Label
 
 func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -33,8 +38,9 @@ func _ready() -> void:
     center.size_flags_vertical = Control.SIZE_EXPAND_FILL
     scroll.add_child(center)
     var card := PanelContainer.new()
+    menu_card = card
     card.custom_minimum_size.x = minf(430.0,get_viewport_rect().size.x - 48)
-    resized.connect(func(): card.custom_minimum_size.x = minf(430.0,get_viewport_rect().size.x - 48))
+    resized.connect(func(): card.custom_minimum_size.x = minf(page_width,get_viewport_rect().size.x - 48))
     var panel := StyleBoxFlat.new()
     panel.bg_color = Color("#142328")
     panel.border_color = Color("#49615b")
@@ -92,24 +98,143 @@ func _button(text: String, node_name: String, action: Callable, primary: bool = 
 
 func _show_main() -> void:
     _clear()
+    _set_page_width(430.0)
     _label("CAMPO DE FOGO",32,Color("#f0f2e9"))
     _label("PARTIDA EXPERIMENTAL",13,Color("#9bad9f"))
     _button("Iniciar partida teste","StartButton",_start_match,true).grab_focus()
+    _button("Personagens","CharactersButton",_show_characters)
     _button("Multiplayer","MultiplayerButton",_show_multiplayer)
     _button("Configurações","ConfigButton",_show_config)
     _button("Sair","ExitButton",func(): get_tree().quit())
+    _label("versão " + Net.game_version(),12,Color("#6f8278")).name = "VersionLabel"
+
+func _set_page_width(width: float) -> void:
+    page_width = width
+    if menu_card:
+        menu_card.custom_minimum_size.x = minf(width, get_viewport_rect().size.x - 48)
+
+func _show_characters() -> void:
+    _clear()
+    _set_page_width(940.0)
+    _label("PERSONAGENS", 28, Color("#f0f2e9"))
+    _label("Escolha seu personagem. A seleção fica salva para a próxima partida.", 15)
+    var cards := HFlowContainer.new()
+    cards.name = "CharacterCards"
+    cards.add_theme_constant_override("h_separation", 20)
+    cards.add_theme_constant_override("v_separation", 16)
+    content.add_child(cards)
+    var selected_id := CharacterRegistry.load_selection()
+    for definition in CharacterRegistry.all_characters():
+        var card := CharacterCard.new()
+        card.name = "CharacterCard_" + definition.id
+        card.definition = definition
+        card.selected = definition.id == selected_id
+        card.selection_requested.connect(_select_character)
+        cards.add_child(card)
+    selection_feedback = _label("", 14)
+    selection_feedback.name = "SelectionFeedback"
+    _button("Voltar", "BackButton", _show_main)
+
+func _select_character(id: String) -> void:
+    var error := CharacterRegistry.select_character(id)
+    if error != OK:
+        selection_feedback.text = "Não foi possível salvar a seleção. A escolha anterior foi preservada."
+        return
+    _show_characters()
 
 func _start_match() -> void:
+    Net.leave() # offline practice match
     var error := get_tree().change_scene_to_file("res://scenes/main.tscn")
     if error != OK:
         _label("Não foi possível iniciar a partida.",15)
 
 func _show_multiplayer() -> void:
     _clear()
+    _set_page_width(430.0)
     _label("Multiplayer",28)
-    var note := _label("Em preparação nesta versão Godot. A partida teste está disponível no menu principal.",17)
+    _label("Eliminatória online para 8 jogadores. A partida começa 20 s após a sala abrir; vagas livres são completadas com bots. Uma vida só: vence o último vivo.",15,Color("#9bad9f"))
+    var name_field := LineEdit.new()
+    name_field.name = "PlayerName"
+    name_field.placeholder_text = "Seu nome"
+    name_field.max_length = 16
+    name_field.text = Net.load_name()
+    name_field.custom_minimum_size.y = 44
+    name_field.add_theme_font_size_override("font_size",18)
+    content.add_child(name_field)
+    var note := _label("",16)
     note.name = "MultiplayerStatus"
-    _button("Voltar","BackButton",_show_main,true)
+    status = note
+    var find := _button("Procurar partida","FindMatchButton",func():
+        Net.save_name(name_field.text.strip_edges())
+        _show_lobby(name_field.text)
+    ,true)
+    find.grab_focus()
+    _button("Voltar","BackButton",_show_main)
+
+func _show_lobby(player_name: String) -> void:
+    _clear()
+    _label("Procurando partida",28)
+    status = _label("Conectando ao servidor...",17)
+    status.name = "MultiplayerStatus"
+    var players := _label("",15,Color("#9bad9f"))
+    players.name = "LobbyPlayers"
+    _button("Cancelar","CancelButton",func():
+        _disconnect_net()
+        Net.leave()
+        _show_multiplayer()
+    )
+    Net.lobby_joined.connect(_on_lobby_joined)
+    Net.lobby_updated.connect(_on_lobby_updated)
+    Net.match_started.connect(_on_match_started)
+    Net.connection_lost.connect(_on_connection_lost)
+    Net.update_required.connect(_on_update_required)
+    if Net.find_match(player_name) != OK:
+        _on_connection_lost("Não foi possível conectar ao servidor.")
+
+func _disconnect_net() -> void:
+    for pair in [[Net.lobby_joined,_on_lobby_joined],[Net.lobby_updated,_on_lobby_updated],[Net.match_started,_on_match_started],[Net.connection_lost,_on_connection_lost],[Net.update_required,_on_update_required]]:
+        if pair[0].is_connected(pair[1]):
+            pair[0].disconnect(pair[1])
+
+func _exit_tree() -> void:
+    _disconnect_net()
+
+func _on_lobby_joined(info: Dictionary) -> void:
+    status.text = "Sala encontrada! Começa em %d s" % int(info.get("seconds",20))
+
+func _on_lobby_updated(info: Dictionary) -> void:
+    var count := int(info.get("count",1))
+    var capacity := int(info.get("capacity",8))
+    status.text = "Jogadores: %d/%d  •  Começa em %d s" % [count,capacity,int(info.get("seconds",0))]
+    var label := content.get_node_or_null("LobbyPlayers") as Label
+    if label:
+        var names: Array = info.get("names",[])
+        label.text = ", ".join(PackedStringArray(names)) + ("\n%d vaga(s) serão completadas com bots" % (capacity-count) if count < capacity else "")
+
+func _on_match_started(_info: Dictionary) -> void:
+    _disconnect_net()
+    status.text = "Iniciando partida..."
+    get_tree().change_scene_to_file("res://scenes/main.tscn")
+
+func _on_update_required(message: String, url: String) -> void:
+    _disconnect_net()
+    Net.leave()
+    _clear()
+    _label("Atualização disponível",28,Color("#f0f2e9"))
+    _label(message,17)
+    _label("Sua versão: " + Net.game_version(),14,Color("#9bad9f"))
+    if not url.is_empty():
+        _button("Baixar no itch.io","DownloadUpdateButton",func(): OS.shell_open(url),true).grab_focus()
+    _label("Se instalou pelo app do itch.io, ele atualiza sozinho: abra o app e clique em Atualizar.",13,Color("#9bad9f"))
+    _button("Voltar","BackButton",_show_main)
+
+func _on_connection_lost(reason: String) -> void:
+    _disconnect_net()
+    _clear()
+    _label("Multiplayer",28)
+    _label(reason,17)
+    _button("Tentar novamente","RetryButton",_show_multiplayer,true)
+    _button("Voltar","BackButton",_show_main)
 
 func _slider(title: String, node_name: String, low: float, high: float, value: float) -> HSlider:
     var caption := _label(title + "  %d%%" % roundi(value),16)

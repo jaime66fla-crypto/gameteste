@@ -1,0 +1,14 @@
+# Add these entries to your Codex config after review.
+# On Windows, that file is usually %USERPROFILE%\.codex\config.toml.
+# Replace <PROJECT_ROOT> with the folder that contains project.godot.
+
+[mcp_servers.context7]
+command = "npx"
+args = [ "-y", "@upstash/context7-mcp@latest" ]
+startup_timeout_sec = 60
+
+[mcp_servers.godotMCP]
+command = "node"
+args = [ "<PROJECT_ROOT>/tools/mcp-godot/src/server.mjs", "--project-root", "<PROJECT_ROOT>" ]
+startup_timeout_sec = 20
+env = { GODOT_PROJECT_ROOT = "<PROJECT_ROOT>", GODOT_MCP_PORT = "8765" }

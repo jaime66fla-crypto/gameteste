@@ -54,7 +54,10 @@ func _box(pos: Vector3, size: Vector3, color: String, solid: bool = false, paren
     return body
 
 func _surface(center: Vector2, size: Vector2, color: String, top: float = 0.025) -> void:
-    _box(Vector3(center.x, top - 0.01, center.y), Vector3(size.x, 0.02, size.y), color)
+    # Pavement and grass must support the player at their visible height.
+    # Road markings remain cosmetic overlays, without redundant colliders.
+    var solid := color not in ["#dbcb96", "#dfdfd4", "#ded8bd"]
+    _box(Vector3(center.x, top - 0.01, center.y), Vector3(size.x, 0.02, size.y), color, solid)
 
 func _tune_environment() -> void:
     var existing := get_parent().get_node("WorldEnvironment") as WorldEnvironment

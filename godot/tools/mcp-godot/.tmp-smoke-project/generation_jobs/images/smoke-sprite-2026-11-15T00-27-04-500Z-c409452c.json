@@ -1,0 +1,16 @@
+{
+  "id": "2026-11-15T00-27-04-500Z-c409452c",
+  "kind": "images",
+  "provider": "none",
+  "prompt": "A tiny smoke-test sprite",
+  "targetPath": "res://assets/generated/sprites/smoke.png",
+  "options": {
+    "name": "smoke-sprite",
+    "size": "1024x1024",
+    "kind": "sprite"
+  },
+  "status": "done",
+  "createdAt": "2026-11-15T00:27:04.509Z",
+  "note": "Smoke test completed.",
+  "updatedAt": "2026-11-15T00:27:04.522Z"
+}
