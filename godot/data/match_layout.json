@@ -1,0 +1,20 @@
+{
+  "_comment": "Online match layout shared by the Godot client (scripts/net) and the Cloudflare server (src/godot-match.js). Coordinates in metres, [x, z] on the ground. Buildings mirror scripts/world_polish.gd; doors face +Z. Validated by tests/match_layout.gd.",
+  "buildings": [
+    {"name": "CASA 01", "center": [-34, -34], "size": [10, 10], "spawn": [-34, -35], "loot": [-31, -37]},
+    {"name": "CASA 02", "center": [-16, -34], "size": [10, 10], "spawn": [-16, -35], "loot": [-13, -37]},
+    {"name": "CASA 03", "center": [-34, -16], "size": [10, 10], "spawn": [-34, -17], "loot": [-31, -19]},
+    {"name": "CASA 04", "center": [-16, -16], "size": [10, 10], "spawn": [-16, -17], "loot": [-13, -19]},
+    {"name": "MERCADO", "center": [-34, 16], "size": [12, 10], "spawn": [-34, 16], "loot": [-30, 12.8]},
+    {"name": "OFICINA", "center": [-16, 16], "size": [10, 10], "spawn": [-16, 17.5], "loot": [-16, 12.6]},
+    {"name": "GALPAO", "center": [32, -32], "size": [20, 16], "spawn": [32, -28], "loot": [32, -37.5]},
+    {"name": "ESCRITORIO", "center": [14, -38], "size": [8, 8], "spawn": [13, -37], "loot": [16, -40.5]}
+  ],
+  "outdoor_loot": [
+    [2.5, -30], [-2.5, 30], [-30, 2.5], [30, -2.5],
+    [-45.5, -20], [-45.5, 22], [45.5, 20], [45.5, -22],
+    [-20, -45.5], [20, -45.5], [-20, 45.5], [20, 45.5],
+    [12, -10], [24, 20], [40, -9], [-25, 36]
+  ],
+  "map_half_size": 60
+}

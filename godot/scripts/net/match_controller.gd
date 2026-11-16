@@ -7,16 +7,17 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const STATE_RATE := 1.0 / 15.0
 const BOT_RATE := 1.0 / 10.0
-# Eight spawn points on the always-clear road crossings (corners and edge
-# midpoints, ~48 m apart), all facing the centre.
-const SPAWNS := [
-	Vector3(-48, 0, -48), Vector3(0, 0, -48), Vector3(48, 0, -48), Vector3(48, 0, 0),
-	Vector3(48, 0, 48), Vector3(0, 0, 48), Vector3(-48, 0, 48), Vector3(-48, 0, 0),
-]
+const MatchLayout = preload("res://scripts/net/match_layout.gd")
+const LootCrateScript = preload("res://scripts/net/loot_crate.gd")
+const LOOT_REACH := 2.4 # metres; the server allows a little more for latency
+const LABEL_RANGE := 9.0
 
 var main_node: Node
 var player: CharacterBody3D
 var actors: Dictionary = {} # id -> NetActor
+var crates: Dictionary = {} # id -> LootCrate
+var loot_prompt: Label
+var _pending_loot := ""
 var names: Dictionary = {} # id -> display name
 var my_id := ""
 var alive_count := 8
@@ -50,11 +51,16 @@ func _ready() -> void:
 	_build_ui()
 	var info: Dictionary = Net.start_info
 	alive_count = int(info.get("alive", 8))
+	for crate_data in info.get("crates", []):
+		_add_crate(crate_data)
+	player.call("start_unarmed")
+	player.set("interact_handler", _try_loot)
 	for entry in info.get("roster", []):
 		var id := str(entry["id"])
 		names[id] = str(entry["name"])
-		var spawn: Vector3 = SPAWNS[int(entry.get("spawn", 0)) % SPAWNS.size()]
-		var facing := atan2(spawn.x, spawn.z) # -Z forward looks at the centre
+		# Everyone starts inside a building, facing its door (+Z).
+		var spawn: Vector3 = MatchLayout.spawn_point(int(entry.get("spawn", 0)))
+		var facing := PI
 		if id == my_id:
 			player.global_position = spawn + Vector3(0, 0.1, 0)
 			player.set("yaw", facing)
@@ -65,9 +71,11 @@ func _ready() -> void:
 		actor.position = spawn + Vector3(0, 0.1, 0)
 		actor.rotation.y = facing
 		actor.set("combatants", _combatants)
+		actor.set("crate_targets", _crate_targets)
 		actor.connect("damaged", _on_actor_damaged)
 		actor.connect("bot_fired", _on_bot_fired)
 		actor.connect("bot_hit", _on_bot_hit)
+		actor.connect("bot_loot", _on_bot_loot)
 		main_node.add_child(actor)
 		actors[id] = actor
 	player.connect("shot_fired", _on_local_shot)
@@ -76,6 +84,7 @@ func _ready() -> void:
 	_apply_host()
 	Net.attach_consumer()
 	_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
+	_feed("Você começa sem arma: procure as caixas de suprimento (E para coletar).")
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
@@ -115,7 +124,7 @@ func _physics_process(delta: float) -> void:
 		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": move, "r": player.get("sprinting"),
 			"c": player.get("crouching"), "a": player.get("aiming"), "f": not player.is_on_floor(),
-			"rl": player.get("reloading"), "v": [v.x, v.z]})
+			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z]})
 	_bot_timer -= delta
 	if _bot_timer <= 0.0 and is_host():
 		_bot_timer = BOT_RATE
@@ -157,6 +166,97 @@ func _on_message(data: Dictionary) -> void:
 				_feed("%s saiu da partida." % names[who])
 		"end":
 			_on_end(data)
+		"looted":
+			_on_looted(data)
+		"crate":
+			_add_crate(data.get("crate", {}))
+			var crate_data: Dictionary = data.get("crate", {})
+			if bool(crate_data.get("drop", false)):
+				_feed("%s deixou uma caixa com as armas." % str(crate_data.get("name", "")))
+
+# ------------------------------------------------------------------ loot ---
+
+func _add_crate(data: Dictionary) -> void:
+	var id := str(data.get("id", ""))
+	if id.is_empty() or crates.has(id):
+		return
+	var p: Array = data.get("p", [0, 0, 0])
+	var crate: StaticBody3D = LootCrateScript.new()
+	crate.call("setup", data)
+	crate.position = Vector3(float(p[0]), float(p[1]), float(p[2]))
+	main_node.add_child(crate)
+	crates[id] = crate
+	if bool(data.get("open", false)):
+		crate.call("mark_opened")
+
+## Unopened crates, for the bots this client simulates.
+func _crate_targets() -> Array:
+	var list: Array = []
+	for id in crates:
+		var crate = crates[id]
+		if not crate.opened:
+			list.append({"id": id, "pos": crate.global_position})
+	return list
+
+func _closest_crate(reach: float) -> Node3D:
+	var best: Node3D = null
+	var best_distance := reach
+	for crate in crates.values():
+		if crate.opened:
+			continue
+		var offset: Vector3 = crate.global_position - player.global_position
+		var distance := Vector2(offset.x, offset.z).length()
+		if distance < best_distance and absf(offset.y) < 2.0:
+			best_distance = distance
+			best = crate
+	return best
+
+## Player pressed E. Returns true when a crate was in reach (no elbow strike).
+func _try_loot() -> bool:
+	if local_dead or finished:
+		return false
+	var crate := _closest_crate(LOOT_REACH)
+	if crate == null:
+		return false
+	_pending_loot = crate.get("crate_id")
+	Net.send({"t": "loot", "crate": _pending_loot})
+	return true
+
+func _on_bot_loot(actor_id: String, crate_id: String) -> void:
+	if is_host():
+		Net.send({"t": "loot", "crate": crate_id, "bot": actor_id})
+
+func _on_looted(data: Dictionary) -> void:
+	var crate_id := str(data.get("crate", ""))
+	var by := str(data.get("by", ""))
+	var items: Dictionary = data.get("items", {})
+	if crates.has(crate_id):
+		crates[crate_id].call("mark_opened")
+	if by == my_id:
+		var picked: Array[String] = []
+		for weapon_id in items:
+			player.call("give_weapon", weapon_id, int(items[weapon_id]))
+			picked.append("%s +%d" % [WeaponData.stats(weapon_id)["name"], int(items[weapon_id])])
+		player.get("sound_fx").call("reload")
+		_toast("PEGOU " + ", ".join(picked))
+	elif actors.has(by):
+		for weapon_id in items:
+			actors[by].call("give_weapon", weapon_id)
+	elif crate_id == _pending_loot:
+		_toast("Alguém pegou primeiro")
+	if crate_id == _pending_loot:
+		_pending_loot = ""
+
+func _update_loot_ui() -> void:
+	var nearest := _closest_crate(LOOT_REACH) if not local_dead and not finished else null
+	for crate in crates.values():
+		var distance: float = crate.global_position.distance_to(player.global_position)
+		crate.call("show_label", distance < LABEL_RANGE and not local_dead)
+	if nearest != null:
+		loot_prompt.text = "[E] Coletar: " + str(nearest.call("contents_text")).replace("\n", " — ")
+		loot_prompt.visible = true
+	else:
+		loot_prompt.visible = false
 
 func _vec(value) -> Variant:
 	if value is Array and value.size() == 3:
@@ -297,7 +397,9 @@ func _on_bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vecto
 	Net.send({"t": "shot", "bot": actor_id, "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]})
 
 func _on_bot_hit(actor_id: String, target_id: String, damage: float) -> void:
-	Net.send({"t": "hit", "bot": actor_id, "target": target_id, "dmg": damage, "w": "rifle"})
+	var bot = actors.get(actor_id)
+	var weapon: String = bot.weapon_id if bot != null else "rifle"
+	Net.send({"t": "hit", "bot": actor_id, "target": target_id, "dmg": damage, "w": weapon})
 
 func _on_connection_lost(reason: String) -> void:
 	if finished:
@@ -329,6 +431,7 @@ func _on_local_death(killer_id: String) -> void:
 
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 1.2)
+	_update_loot_ui()
 	var my_name: String = names.get(my_id, "Você")
 	if finished:
 		status_label.text = ""
@@ -417,6 +520,19 @@ func _build_ui() -> void:
 	health_bar.offset_right = 130
 	health_bar.offset_top = -46
 	health_bar.offset_bottom = -28
+	loot_prompt = Label.new()
+	loot_prompt.visible = false
+	loot_prompt.add_theme_font_size_override("font_size", 19)
+	loot_prompt.add_theme_color_override("font_color", Color("#ffe08a"))
+	loot_prompt.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+	loot_prompt.add_theme_constant_override("shadow_offset_y", 2)
+	loot_prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ui.add_child(loot_prompt)
+	loot_prompt.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	loot_prompt.offset_left = -320
+	loot_prompt.offset_right = 320
+	loot_prompt.offset_top = 90
+	loot_prompt.offset_bottom = 120
 	feed = VBoxContainer.new()
 	feed.alignment = BoxContainer.ALIGNMENT_END
 	ui.add_child(feed)

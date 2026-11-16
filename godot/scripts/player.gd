@@ -32,6 +32,11 @@ const FIRST_PERSON_CUTOFF := 0.45 # spring length below which the body is hidden
 var viewmodel: Node3D
 var first_person_view := false
 var hit_shake := 0.0 # camera jolt when this player takes damage
+## Online matches: weapons must be found in loot crates. Offline practice keeps all five.
+var loadout_limited := false
+var owned_weapons: Dictionary = {}
+## Set by the online match: returns true when E was used to open a crate.
+var interact_handler: Callable
 var last_shot_origin := Vector3.ZERO
 @export var character_id: String = ""
 var requested_character_id := ""
@@ -309,15 +314,25 @@ func _unhandled_input(event: InputEvent) -> void:
         if event.physical_keycode == KEY_Q and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
             humanoid_avatar.call("play_action", "punch")
             return
-        if event.physical_keycode == KEY_E and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
-            humanoid_avatar.call("play_action", "elbow_punch")
+        if event.physical_keycode == KEY_E:
+            # E collects loot when a crate is in reach; otherwise elbow strike.
+            if interact_handler.is_valid() and bool(interact_handler.call()):
+                return
+            if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+                humanoid_avatar.call("play_action", "elbow_punch")
             return
         if event.physical_keycode == KEY_H:
-            _toggle_weapon_holster()
+            if not loadout_limited or not owned_weapons.is_empty():
+                _toggle_weapon_holster()
             return
         var key_slots := {KEY_1: "rifle", KEY_2: "sniper", KEY_3: "pistol", KEY_4: "shotgun", KEY_5: "smg"}
         if key_slots.has(event.physical_keycode):
-            _equip_weapon(key_slots[event.physical_keycode])
+            var slot: String = key_slots[event.physical_keycode]
+            if loadout_limited and not owned_weapons.has(slot):
+                return
+            _equip_weapon(slot)
+            if weapon_holstered:
+                _toggle_weapon_holster()
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
         Input.action_release("aim")
         aiming = false
@@ -538,6 +553,36 @@ func _shoot() -> void:
             if target_node != null and target_node.has_method("take_damage"):
                 target_node.call("take_damage", float(stats["damage"]))
             _impact_mark(endpoint)
+
+## Online match start: no weapons, no ammo, nothing in hand.
+func start_unarmed() -> void:
+    loadout_limited = true
+    owned_weapons.clear()
+    for weapon_id in reserve_ammo.keys():
+        reserve_ammo[weapon_id] = 0
+        magazines[weapon_id] = 0
+    ammo = 0
+    reloading = false
+    if not weapon_holstered:
+        _toggle_weapon_holster()
+
+## A weapon from a loot crate: adds reserve ammo, and draws it if the hands were empty.
+func give_weapon(weapon_id: String, reserve: int) -> void:
+    if not WeaponData.DATA.has(weapon_id):
+        return
+    var first := owned_weapons.is_empty()
+    var new_weapon := not owned_weapons.has(weapon_id)
+    owned_weapons[weapon_id] = true
+    reserve_ammo[weapon_id] = int(reserve_ammo.get(weapon_id, 0)) + reserve
+    if new_weapon:
+        magazines[weapon_id] = int(WeaponData.stats(weapon_id)["mag"])
+    if first:
+        _equip_weapon(weapon_id)
+        ammo = int(magazines[weapon_id])
+        if weapon_holstered:
+            _toggle_weapon_holster()
+    elif weapon_id == current_weapon and new_weapon:
+        ammo = int(magazines[weapon_id])
 
 ## Called by the online match when the server reports damage to this player.
 func add_hit_shake(strength: float) -> void:
@@ -782,7 +827,9 @@ func _reload() -> void:
     sound_fx.reload()
 
 func status_text() -> String:
-    var state := "ARMA GUARDADA (H: SACAR)" if weapon_holstered else ("MIRANDO" if aiming else "LIVRE (H: GUARDAR)" )
+    if loadout_limited and owned_weapons.is_empty():
+        return "SEM ARMA\nAche uma caixa e aperte E"
+    var state :="ARMA GUARDADA (H: SACAR)" if weapon_holstered else ("MIRANDO" if aiming else "LIVRE (H: GUARDAR)" )
     if crouching:
         state += " / AGACHADO"
     var stats: Dictionary = WeaponData.stats(current_weapon)

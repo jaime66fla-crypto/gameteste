@@ -255,3 +255,23 @@ func _perimeter() -> void:
         if abs(coordinate) < 50:
             _tree(Vector2(-56, coordinate), 3.4)
             _tree(Vector2(56, coordinate), 3.4)
+    _boundary_walls()
+
+func _boundary_walls() -> void:
+    # The 120 m ground ends at +/-60: a visible 3 m concrete wall on every edge,
+    # plus a tall invisible barrier so nobody can jump or climb out.
+    var half := 59.6
+    var thickness := 0.8
+    for side in [-1.0, 1.0]:
+        _box(Vector3(side * half, 1.5, 0), Vector3(thickness, 3.0, half * 2 + thickness), "#9a9a92", true)
+        _box(Vector3(0, 1.5, side * half), Vector3(half * 2 + thickness, 3.0, thickness), "#9a9a92", true)
+        for along in [Vector3(side * half, 15.0, 0), Vector3(0, 15.0, side * half)]:
+            var barrier := StaticBody3D.new()
+            barrier.name = "EdgeBarrier"
+            barrier.position = along
+            add_child(barrier)
+            var collider := CollisionShape3D.new()
+            var shape := BoxShape3D.new()
+            shape.size = Vector3(thickness, 30.0, half * 2 + thickness) if absf(along.x) > 1.0 else Vector3(half * 2 + thickness, 30.0, thickness)
+            collider.shape = shape
+            barrier.add_child(collider)

@@ -6,11 +6,15 @@ extends CharacterBody3D
 signal damaged(actor_id: String, zone: String, point: Vector3, normal: Vector3, weapon_id: String)
 signal bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vector3)
 signal bot_hit(actor_id: String, target_id: String, damage: float)
+signal bot_loot(actor_id: String, crate_id: String)
 
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const MatchLayout = preload("res://scripts/net/match_layout.gd")
+# Bots prefer the strongest weapon they have picked up.
+const WEAPON_PREFERENCE := ["rifle", "smg", "shotgun", "sniper", "pistol"]
 # Body-part volumes: [from bone, to bone, zone, radius in metres].
 # Mixamo bone names; prefixes (mixamorig9_, mixamorig:) are matched by suffix.
 const HITBOXES := [
@@ -67,6 +71,14 @@ var _sees_target := false
 var _move_amount := 0.0
 var _death_timer := 0.0
 var hitboxes: Array[StaticBody3D] = []
+# Loot: everyone starts unarmed in online matches.
+var armed := false
+var owned_weapons: Dictionary = {}
+var crate_targets: Callable # returns Array of {id, pos} for unopened crates
+var _goal_crate := ""
+var _loot_cooldown := 0.0
+var _wander_goal := Vector3.ZERO
+var _detour_until := 0
 var _flinch := 0.0
 var _flinch_side := 0.0
 
@@ -107,6 +119,7 @@ func _ready() -> void:
 	add_child(name_tag)
 	target_position = global_position
 	_set_weapon(weapon_id)
+	_apply_armed()
 
 func _set_weapon(id: String) -> void:
 	weapon_id = id
@@ -130,6 +143,24 @@ func _set_weapon(id: String) -> void:
 		visual.call("configure_weapon", id, weapon_model.scale.x)
 	if visual.has_method("bind_weapon"):
 		visual.call("bind_weapon", weapon_model)
+
+## Weapon in hand only when this combatant has one.
+func _apply_armed() -> void:
+	if weapon_model != null:
+		weapon_model.visible = armed
+	if visual != null and visual.has_method("set_armed"):
+		visual.call("set_armed", armed)
+
+## Server confirmed a loot pickup for this combatant.
+func give_weapon(id: String) -> void:
+	owned_weapons[id] = true
+	for preferred in WEAPON_PREFERENCE:
+		if owned_weapons.has(preferred):
+			if preferred != weapon_id or not armed:
+				_set_weapon(preferred)
+			break
+	armed = true
+	_apply_armed()
 
 func muzzle_position() -> Vector3:
 	var muzzle := weapon_model.get_node_or_null("Muzzle") as Marker3D if weapon_model != null else null
@@ -210,6 +241,10 @@ func apply_state(state: Dictionary) -> void:
 	var w := str(state.get("w", weapon_id))
 	if w != weapon_id:
 		_set_weapon(w)
+	var now_armed := not bool(state.get("h", false))
+	if now_armed != armed:
+		armed = now_armed
+		_apply_armed()
 
 func set_controlled(value: bool) -> void:
 	controlled = value and is_bot and not dead
@@ -272,19 +307,20 @@ func _animate(delta: float, move: float, running: bool, crouch: bool, aim: bool,
 ## Compact state for the server, same shape as the local player's packet.
 func bot_state() -> Dictionary:
 	var p := global_position
-	return {"id": actor_id, "p": [p.x, p.y, p.z], "y": rotation.y, "w": weapon_id, "m": _move_amount, "r": _move_amount > 0.8, "c": false, "a": _sees_target, "f": not is_on_floor(), "rl": false, "v": [velocity.x, velocity.z]}
+	return {"id": actor_id, "p": [p.x, p.y, p.z], "y": rotation.y, "w": weapon_id, "m": _move_amount, "r": _move_amount > 0.8, "c": false, "a": _sees_target, "f": not is_on_floor(), "rl": false, "h": not armed, "v": [velocity.x, velocity.z]}
 
 # ---------------------------------------------------------------- bot AI ---
 
 func _run_bot(delta: float) -> void:
 	_think_timer -= delta
 	_fire_timer -= delta
+	_loot_cooldown -= delta
 	if _think_timer <= 0.0:
 		_think_timer = 0.35
-		_pick_target()
+		_think()
 	var desired := Vector3.ZERO
 	var speed := BOT_SPEED
-	if _ai_target != null and _sees_target:
+	if armed and _ai_target != null and _sees_target:
 		var to_target := _ai_target.global_position - global_position
 		to_target.y = 0.0
 		var distance := to_target.length()
@@ -302,7 +338,12 @@ func _run_bot(delta: float) -> void:
 			_fire_timer = BOT_FIRE_INTERVAL * randf_range(0.8, 1.4)
 			_bot_shoot(distance)
 	else:
-		desired = _patrol_direction()
+		var to := _waypoint - global_position
+		to.y = 0.0
+		if to.length() < 0.6:
+			_think_timer = 0.0 # reached: choose the next waypoint right away
+		elif to.length() > 0.2:
+			desired = to.normalized()
 		speed = BOT_RUN_SPEED
 		if desired.length_squared() > 0.01:
 			rotation.y = lerp_angle(rotation.y, atan2(-desired.x, -desired.z), minf(1.0, delta * 6.0))
@@ -316,24 +357,98 @@ func _run_bot(delta: float) -> void:
 	var real := get_real_velocity()
 	var planar := Vector2(real.x, real.z).length()
 	_move_amount = clampf(planar / BOT_RUN_SPEED, 0.0, 1.0)
-	# Unstick: if the bot wants to move but cannot, pick another waypoint.
+	# Unstick: if the bot wants to move but cannot, side-step for a moment.
 	if desired.length_squared() > 0.1 and planar < 0.4:
 		_stuck_timer += delta
 		if _stuck_timer > 0.8:
 			_stuck_timer = 0.0
-			_waypoint = _nearest_road_point(global_position + Vector3(randf_range(-20, 20), 0, randf_range(-20, 20)))
-			_has_waypoint = true
+			var side := desired.cross(Vector3.UP).normalized() * (1.0 if randf() < 0.5 else -1.0)
+			_waypoint = global_position + side * 2.5 - desired * 1.0
+			_detour_until = Time.get_ticks_msec() + 900
 	else:
 		_stuck_timer = 0.0
-	_animate(delta, _move_amount, _move_amount > 0.8 and not _sees_target, false, _sees_target, not is_on_floor(), false, Vector3(real.x, 0, real.z))
+	var fighting := armed and _sees_target
+	_animate(delta, _move_amount, _move_amount > 0.8 and not fighting, false, fighting, not is_on_floor(), false, Vector3(real.x, 0, real.z))
 
-func _pick_target() -> void:
+## Decide what to do: fight a visible enemy, grab loot, or move toward people.
+func _think() -> void:
+	var fallback := _pick_target()
+	if armed and _sees_target:
+		return
+	if Time.get_ticks_msec() < _detour_until:
+		return
+	var goal := Vector3.ZERO
+	var has_goal := false
+	_goal_crate = ""
+	var crate := _nearest_crate()
+	if not crate.is_empty() and (not armed or _flat_distance(crate["pos"], global_position) < 22.0):
+		goal = crate["pos"]
+		has_goal = true
+		_goal_crate = crate["id"]
+		if _flat_distance(goal, global_position) < 1.7 and _loot_cooldown <= 0.0:
+			_loot_cooldown = 1.0
+			bot_loot.emit(actor_id, _goal_crate)
+	elif armed and not fallback.is_empty():
+		goal = (fallback["node"] as Node3D).global_position
+		has_goal = true
+	if not has_goal:
+		if _flat_distance(_wander_goal, global_position) < 3.0 or _wander_goal == Vector3.ZERO:
+			_wander_goal = _nearest_road_point(Vector3(randf_range(-45, 45), 0, randf_range(-45, 45)))
+		goal = _wander_goal
+	_waypoint = _waypoint_for(goal)
+
+func _flat_distance(a: Vector3, b: Vector3) -> float:
+	return Vector2(a.x - b.x, a.z - b.z).length()
+
+func _nearest_crate() -> Dictionary:
+	if not crate_targets.is_valid():
+		return {}
+	var best: Dictionary = {}
+	var best_distance := INF
+	for entry in crate_targets.call():
+		var distance := _flat_distance(entry["pos"], global_position)
+		if distance < best_distance:
+			best_distance = distance
+			best = entry
+	return best
+
+## Next point to walk to: through doors when leaving or entering a building,
+## straight when the way is clear, otherwise along the main roads.
+func _waypoint_for(goal: Vector3) -> Vector3:
+	var here := MatchLayout.building_at(global_position)
+	var there := MatchLayout.building_at(goal)
+	var here_name: String = here.get("name", "")
+	var there_name: String = there.get("name", "")
+	if not here_name.is_empty() and here_name != there_name:
+		var door_in: Vector3 = here["door_in"]
+		if global_position.z < door_in.z - 0.4 and _flat_distance(global_position, door_in) > 0.7:
+			return door_in
+		return here["door_out"]
+	if not there_name.is_empty() and there_name != here_name:
+		var door_out: Vector3 = there["door_out"]
+		if _flat_distance(global_position, door_out) < 1.2:
+			return there["door_in"]
+		return door_out if _clear_path(door_out) else _next_road_point(door_out)
+	return goal if _clear_path(goal) else _next_road_point(goal)
+
+func _clear_path(target: Vector3) -> bool:
+	var query := PhysicsShapeQueryParameters3D.new()
+	var sphere := SphereShape3D.new()
+	sphere.radius = 0.32
+	query.shape = sphere
+	query.collision_mask = HitboxScript.LAYER_WORLD
+	query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3(0, 0.9, 0))
+	query.motion = Vector3(target.x, global_position.y, target.z) - global_position
+	return get_world_3d().direct_space_state.cast_motion(query)[0] >= 0.999
+
+## Closest visible enemy (fights only when armed); returns the closest enemy overall.
+func _pick_target() -> Dictionary:
+	var previous_target := _ai_target_id
 	_ai_target = null
 	_ai_target_id = ""
 	_sees_target = false
 	if not combatants.is_valid():
-		return
-	var previous_target := _ai_target_id
+		return {}
 	var best_distance := INF
 	var fallback: Dictionary = {}
 	var fallback_distance := INF
@@ -345,7 +460,7 @@ func _pick_target() -> void:
 		if distance < fallback_distance:
 			fallback_distance = distance
 			fallback = entry
-		if distance < BOT_VIEW_RANGE and distance < best_distance and _line_of_sight(node):
+		if armed and distance < BOT_VIEW_RANGE and distance < best_distance and _line_of_sight(node):
 			best_distance = distance
 			_ai_target = node
 			_ai_target_id = entry["id"]
@@ -354,11 +469,7 @@ func _pick_target() -> void:
 		if _ai_target_id != previous_target:
 			# Reaction time before the first shot at a newly spotted enemy.
 			_fire_timer = maxf(_fire_timer, randf_range(0.6, 1.0))
-	elif not fallback.is_empty():
-		# Nobody visible: head toward the closest opponent along the roads.
-		_ai_target_id = fallback["id"]
-		_waypoint = _next_road_point((fallback["node"] as Node3D).global_position)
-		_has_waypoint = true
+	return fallback
 
 func _eye() -> Vector3:
 	return global_position + Vector3(0, 1.55, 0)
@@ -384,15 +495,6 @@ func _bot_shoot(distance: float) -> void:
 	bot_fired.emit(actor_id, weapon_id, from, aim_point)
 	if hit:
 		bot_hit.emit(actor_id, _ai_target_id, BOT_DAMAGE)
-
-func _patrol_direction() -> Vector3:
-	if not _has_waypoint or global_position.distance_to(_waypoint) < 2.0:
-		var goal := global_position + Vector3(randf_range(-40, 40), 0, randf_range(-40, 40))
-		_waypoint = _next_road_point(goal)
-		_has_waypoint = true
-	var direction := _waypoint - global_position
-	direction.y = 0.0
-	return direction.normalized()
 
 func _nearest_road_point(point: Vector3) -> Vector3:
 	# Snap onto the closest road line, clamped to the map.

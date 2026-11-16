@@ -6,7 +6,14 @@
 // (the "host") so they respect the Godot map collision; the server owns
 // every health value and decides the winner.
 
+// Spawns (one per building) and loot spots, shared with the Godot client.
+import layout from '../godot/data/match_layout.json' with { type: 'json' };
+
 const CAPACITY = 8;
+// Loot: everyone starts unarmed; crates hold one weapon plus reserve ammo.
+const LOOT_WEIGHTS = [['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
+const RESERVE_AMMO = { pistol: 45, smg: 90, rifle: 90, shotgun: 18, sniper: 15 };
+const LOOT_RANGE = 3.5; // metres between the looter's last known position and the crate
 const LOBBY_MS = 20000;
 const MAX_MATCH_MS = 8 * 60 * 1000;
 const CLOSE_AFTER_END_MS = 15000;
@@ -17,6 +24,18 @@ const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7
 const BOT_DAMAGE = 14;
 const MAX_HITS_PER_SECOND = 18; // shotgun fires 8 pellets per shot
 const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cabo Nunes', 'Sgt. Prado', 'Soldado Reis', 'Cabo Vidal'];
+
+function rollWeapon() {
+	const total = LOOT_WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
+	let pick = Math.random() * total;
+	for (const [weapon, weight] of LOOT_WEIGHTS) {
+		pick -= weight;
+		if (pick < 0) return weapon;
+	}
+	return 'pistol';
+}
+
+const flatDistance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
 
 function json(data, status = 200) {
 	return new Response(JSON.stringify(data), {
@@ -44,6 +63,7 @@ function cleanState(d) {
 		a: !!d.a,
 		f: !!d.f,
 		rl: !!d.rl,
+		h: !!d.h, // holstered / no weapon yet
 		v,
 	};
 }
@@ -114,7 +134,7 @@ export class GodotMatch {
 	}
 
 	fresh(room) {
-		return { room, phase: 'waiting', deadline: 0, startedAt: 0, players: {}, order: [], host: null, winner: null };
+		return { room, phase: 'waiting', deadline: 0, startedAt: 0, players: {}, order: [], host: null, winner: null, crates: {}, dropSeq: 0 };
 	}
 
 	save() {
@@ -209,9 +229,21 @@ export class GodotMatch {
 			m.players[id] = { id, name: BOT_NAMES[n % BOT_NAMES.length], bot: true, hp: 100, dead: false, kills: 0, spawn: 0 };
 		}
 		m.order = Object.keys(m.players);
-		// Shuffle spawn points so nobody always starts in the same corner.
+		// One building each, shuffled; everyone starts indoors and unarmed.
 		const spawns = [...Array(m.order.length).keys()].sort(() => Math.random() - 0.5);
-		m.order.forEach((id, i) => (m.players[id].spawn = spawns[i]));
+		m.order.forEach((id, i) => {
+			const player = m.players[id];
+			player.spawn = spawns[i];
+			const at = layout.buildings[spawns[i] % layout.buildings.length].spawn;
+			player.p = [at[0], 0, at[1]];
+			player.inv = {};
+		});
+		const spots = [...layout.buildings.map((b) => b.loot), ...layout.outdoor_loot];
+		m.crates = {};
+		spots.forEach((spot, i) => {
+			const weapon = rollWeapon();
+			m.crates['c' + i] = { id: 'c' + i, p: [spot[0], 0, spot[1]], items: { [weapon]: RESERVE_AMMO[weapon] }, open: false, drop: false };
+		});
 		m.phase = 'running';
 		m.startedAt = Date.now();
 		m.host = humans[0];
@@ -221,6 +253,7 @@ export class GodotMatch {
 			host: m.host,
 			alive: m.order.length,
 			roster: m.order.map((id) => ({ id, name: m.players[id].name, bot: m.players[id].bot, spawn: m.players[id].spawn })),
+			crates: Object.values(m.crates),
 		});
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS));
 	}
@@ -242,7 +275,9 @@ export class GodotMatch {
 			case 's': {
 				if (me.dead) return;
 				const state = cleanState(d);
-				if (state) this.broadcast({ t: 's', id: meta.id, ...state }, meta.id);
+				if (!state) return;
+				me.p = state.p; // last known position, for loot range and death drops
+				this.broadcast({ t: 's', id: meta.id, ...state }, meta.id);
 				return;
 			}
 			case 'b': {
@@ -253,7 +288,9 @@ export class GodotMatch {
 					const bot = m.players[entry?.id];
 					if (!bot?.bot || bot.dead) continue;
 					const state = cleanState(entry);
-					if (state) list.push({ id: bot.id, ...state });
+					if (!state) continue;
+					bot.p = state.p;
+					list.push({ id: bot.id, ...state });
 				}
 				if (list.length) this.broadcast({ t: 'b', l: list }, meta.id);
 				return;
@@ -267,9 +304,24 @@ export class GodotMatch {
 				this.broadcast({ t: 'shot', id: shooter.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'rifle', o, e }, meta.id);
 				return;
 			}
+			case 'loot': {
+				const looter = d.bot ? m.players[d.bot] : me;
+				if (!looter || looter.dead || (d.bot && (!isHost || !looter.bot))) return;
+				const crate = m.crates[d.crate];
+				if (!crate || crate.open || !looter.p || flatDistance(looter.p, crate.p) > LOOT_RANGE) return;
+				crate.open = true;
+				looter.inv = looter.inv || {};
+				for (const weapon of Object.keys(crate.items)) looter.inv[weapon] = true;
+				this.save();
+				this.broadcast({ t: 'looted', crate: crate.id, by: looter.id, items: crate.items });
+				return;
+			}
 			case 'hit': {
 				const attacker = d.bot ? m.players[d.bot] : me;
 				if (!attacker || attacker.dead || (d.bot && (!isHost || !attacker.bot))) return;
+				// Only weapons actually picked up can deal damage.
+				const owned = attacker.inv || {};
+				if (attacker.bot ? !Object.keys(owned).length : !owned[d.w]) return;
 				const target = m.players[d.target];
 				if (!target || target.dead || target.id === attacker.id) return;
 				let damage = 0;
@@ -303,7 +355,25 @@ export class GodotMatch {
 		}
 		this.save();
 		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length });
-		if (killed) this.checkEnd();
+		if (killed) {
+			this.dropCrate(target);
+			this.checkEnd();
+		}
+	}
+
+	/** A dead player's weapons stay where they fell, in a crate anyone can open. */
+	dropCrate(player) {
+		const m = this.match;
+		const weapons = Object.keys(player.inv || {});
+		if (!player.p || !weapons.length) return;
+		const id = 'd' + ++m.dropSeq;
+		const items = {};
+		for (const weapon of weapons) items[weapon] = RESERVE_AMMO[weapon] || 0;
+		const crate = { id, p: [...player.p], items, open: false, drop: true, name: player.name };
+		m.crates[id] = crate;
+		player.inv = {};
+		this.save();
+		this.broadcast({ t: 'crate', crate });
 	}
 
 	checkEnd(force = false) {
@@ -389,6 +459,7 @@ export class GodotMatch {
 			player.dead = true;
 			player.hp = 0;
 			this.broadcast({ t: 'hp', id: player.id, hp: 0, by: 'saiu', w: '', killed: true, kills: 0, alive: this.alive().length });
+			this.dropCrate(player);
 		}
 		this.save();
 		this.checkEnd();
