@@ -12,6 +12,8 @@ const MAX_MATCH_MS = 8 * 60 * 1000;
 const CLOSE_AFTER_END_MS = 15000;
 // Per-hit damage caps (one pellet). Matches godot/scripts/weapon_data.gd.
 const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+// Body-part multipliers. Matches godot/scripts/net/hitbox.gd.
+const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
 const BOT_DAMAGE = 14;
 const MAX_HITS_PER_SECOND = 18; // shotgun fires 8 pellets per shot
 const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cabo Nunes', 'Sgt. Prado', 'Soldado Reis', 'Cabo Vidal'];
@@ -240,10 +242,14 @@ export class GodotMatch {
 				if (!attacker || attacker.dead || (d.bot && (!isHost || !attacker.bot))) return;
 				const target = m.players[d.target];
 				if (!target || target.dead || target.id === attacker.id) return;
-				const cap = attacker.bot ? BOT_DAMAGE : WEAPON_DAMAGE[d.w] || 0;
-				const damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), cap) : 0;
+				let damage = 0;
+				const zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
+				if (attacker.bot) damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), BOT_DAMAGE) : 0;
+				// Human hits: the server computes damage from weapon and body zone.
+				else if (zone) damage = (WEAPON_DAMAGE[d.w] || 0) * ZONE_MULTIPLIER[zone];
+				else damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), WEAPON_DAMAGE[d.w] || 0) : 0;
 				if (damage <= 0 || !this.allowHit(attacker.id)) return;
-				this.damage(attacker, target, damage, d.w);
+				this.damage(attacker, target, damage, d.w, zone);
 				return;
 			}
 		}
@@ -258,7 +264,7 @@ export class GodotMatch {
 		return true;
 	}
 
-	damage(attacker, target, amount, weapon) {
+	damage(attacker, target, amount, weapon, zone = null) {
 		target.hp = Math.max(0, Math.round((target.hp - amount) * 10) / 10);
 		const killed = target.hp === 0;
 		if (killed) {
@@ -266,7 +272,7 @@ export class GodotMatch {
 			attacker.kills++;
 		}
 		this.save();
-		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, killed, kills: attacker.kills, alive: this.alive().length });
+		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length });
 		if (killed) this.checkEnd();
 	}
 
