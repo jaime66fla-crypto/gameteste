@@ -8,7 +8,7 @@
   // number). Raise to 100 once 0.1.0 is live on itch via butler.
   "vars": {
     "GODOT_MIN_BUILD": "0",
-    "GODOT_DOWNLOAD_URL": ""
+    "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {
     "directory": "./public",
