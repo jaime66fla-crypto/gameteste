@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="metal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f2f2f2"/><stop offset="0.5" stop-color="#9a9a9a"/>
+      <stop offset="0.52" stop-color="#5c5c5c"/><stop offset="1" stop-color="#d0d0d0"/>
+    </linearGradient>
+    <radialGradient id="bg" cx="0.5" cy="0.7" r="0.7">
+      <stop offset="0" stop-color="#5a1c06"/><stop offset="1" stop-color="#120708"/>
+    </radialGradient>
+    <linearGradient id="outer" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#b3120a"/><stop offset="0.55" stop-color="#ff4d00"/><stop offset="1" stop-color="#ff9a00"/>
+    </linearGradient>
+    <linearGradient id="inner" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#ffb000"/><stop offset="1" stop-color="#fff3b0"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="96" fill="#140805"/>
+  <rect x="28" y="28" width="456" height="456" rx="86" fill="url(#metal)"/>
+  <rect x="48" y="48" width="416" height="416" rx="70" fill="url(#bg)"/>
+  <path transform="translate(86 72) scale(3.4 3.6)" d="M50 0 C60 16 84 30 82 60 C80 84 66 98 50 98 C33 98 18 86 18 63 C18 46 28 38 33 24 C38 38 42 44 47 47 C44 31 43 15 50 0 Z" fill="#140805" stroke="#140805" stroke-width="5" stroke-linejoin="round"/>
+  <path transform="translate(86 72) scale(3.4 3.6)" d="M50 0 C60 16 84 30 82 60 C80 84 66 98 50 98 C33 98 18 86 18 63 C18 46 28 38 33 24 C38 38 42 44 47 47 C44 31 43 15 50 0 Z" fill="url(#outer)"/>
+  <path transform="translate(176 212) scale(1.6 1.75)" d="M50 0 C60 16 84 30 82 60 C80 84 66 98 50 98 C33 98 18 86 18 63 C18 46 28 38 33 24 C38 38 42 44 47 47 C44 31 43 15 50 0 Z" fill="url(#inner)"/>
+</svg>

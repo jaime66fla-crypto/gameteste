@@ -66,6 +66,7 @@ func _start_session() -> void:
         _show_login(false)
         return
     _clear()
+    _logo()
     _label("CAMPO DE FOGO",32,Color("#f0f2e9"))
     _label("Entrando na sua conta...",16)
     var error: String = await Net.refresh_profile()
@@ -78,6 +79,20 @@ func _start_session() -> void:
     else:
         # Server unreachable: offline practice still works.
         _show_main(error)
+
+## Game logo (icon.png) centred above the title.
+func _logo(size: float = 110.0) -> void:
+    var texture := load("res://icon.png") as Texture2D
+    if texture == null:
+        return
+    var logo := TextureRect.new()
+    logo.name = "GameLogo"
+    logo.texture = texture
+    logo.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    logo.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    logo.custom_minimum_size = Vector2(size, size)
+    logo.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    content.add_child(logo)
 
 func _field(placeholder: String, node_name: String, secret: bool = false) -> LineEdit:
     var field := LineEdit.new()
@@ -93,6 +108,7 @@ func _field(placeholder: String, node_name: String, secret: bool = false) -> Lin
 func _show_login(create: bool, message: String = "") -> void:
     _clear()
     _set_page_width(430.0)
+    _logo()
     _label("CAMPO DE FOGO",32,Color("#f0f2e9"))
     _label("CRIAR CONTA" if create else "ENTRAR",15,Color("#9bad9f"))
     var name_field := _field("Nome de jogador (3 a 16 letras)","AccountName")
@@ -202,6 +218,7 @@ func _button(text: String, node_name: String, action: Callable, primary: bool = 
 func _show_main(notice: String = "") -> void:
     _clear()
     _set_page_width(430.0)
+    _logo()
     _label("CAMPO DE FOGO",32,Color("#f0f2e9"))
     if Net.is_logged_in():
         _profile_header()
