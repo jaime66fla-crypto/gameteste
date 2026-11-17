@@ -35,6 +35,10 @@ window/stretch/mode="canvas_items"
 
 enabled=PackedStringArray("res://addons/ai_mcp_bridge/plugin.cfg", "res://addons/little_helper/plugin.cfg")
 
+[gui]
+
+theme/custom_font="res://assets/fonts/InterVariable.ttf"
+
 [physics]
 
 3d/default_gravity=22.0

@@ -56,9 +56,12 @@ var hub: Control
 var hub_compact := false
 var main_notice := ""
 var embers: CPUParticles2D
-var base_font: SystemFont
+const INTER_PATH := "res://assets/fonts/InterVariable.ttf"
+var base_font: FontVariation
+var semi_font: FontVariation
 var title_font: FontVariation
 var caps_font: FontVariation
+var code_font: FontVariation
 
 func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -256,12 +259,14 @@ func _button(text: String, node_name: String, action: Callable, primary: bool = 
     var button := Button.new()
     button.name = node_name
     button.text = text
-    button.custom_minimum_size.y = 50
-    button.add_theme_font_size_override("font_size",18)
-    if title_font != null:
-        button.add_theme_font_override("font",title_font)
+    button.custom_minimum_size.y = 48
+    button.add_theme_font_size_override("font_size",16)
+    if semi_font != null:
+        button.add_theme_font_override("font",semi_font)
     for state in ["normal","hover","pressed","focus","disabled"]:
-        var box := _box(ACCENT if primary else Color(1,1,1,0.05), Color(1,1,1,0.10), 0 if primary else 1, 5)
+        var box := _box(ACCENT if primary else Color(1,1,1,0.05), Color(1,1,1,0.10), 0 if primary else 1, 8)
+        box.content_margin_left = 18
+        box.content_margin_right = 18
         if state == "hover" or state == "focus":
             box.bg_color = ACCENT.lightened(0.12) if primary else Color(ACCENT, 0.14)
             box.border_color = ACCENT
@@ -855,20 +860,27 @@ func _box(bg: Color, border: Color, border_width: int, radius: int) -> StyleBoxF
     box.anti_aliasing = true
     return box
 
+## Inter (variable, 100–900) for the whole menu; the project default font is the same file.
 func _build_fonts() -> void:
-    base_font = SystemFont.new()
-    base_font.font_names = PackedStringArray(["Bahnschrift", "Segoe UI", "Roboto", "Arial"])
-    var bold := SystemFont.new()
-    bold.font_names = base_font.font_names
-    bold.font_weight = 700
+    var inter := load(INTER_PATH) as Font
+    if inter == null:
+        var fallback := SystemFont.new()
+        fallback.font_names = PackedStringArray(["Inter", "Segoe UI", "Roboto", "Arial"])
+        inter = fallback
+    base_font = _weighted(inter, 400)
+    semi_font = _weighted(inter, 600)
+    title_font = _weighted(inter, 700)
+    caps_font = _weighted(inter, 600)
+    caps_font.spacing_glyph = 1
+    code_font = _weighted(inter, 700)
+    code_font.spacing_glyph = 8
+
+func _weighted(base: Font, weight_value: int) -> FontVariation:
     var weight := TextServerManager.get_primary_interface().name_to_tag("wght")
-    title_font = FontVariation.new()
-    title_font.base_font = bold
-    title_font.variation_opentype = {weight: 700}
-    caps_font = FontVariation.new()
-    caps_font.base_font = bold
-    caps_font.variation_opentype = {weight: 600}
-    caps_font.spacing_glyph = 2
+    var font := FontVariation.new()
+    font.base_font = base
+    font.variation_opentype = {weight: weight_value}
+    return font
 
 ## Defaults for the plain controls used on the other screens.
 func _build_theme() -> Theme:
@@ -1018,72 +1030,289 @@ func _start_match() -> void:
     if error != OK:
         _label("Não foi possível iniciar a partida.",15)
 
-## Tabs at the top of the online screen: public elimination or custom team room.
-func _online_tabs(active: int) -> void:
+# ------------------------------------------------- card screen pieces ---
+
+const ONLINE_PAGE_WIDTH := 560.0
+
+## Small accent kicker + big title (+ optional subtitle), centred.
+func _screen_header(kicker: String, title: String, subtitle: String = "") -> void:
+    var head := VBoxContainer.new()
+    head.name = "ScreenHeader"
+    head.add_theme_constant_override("separation", 2)
+    content.add_child(head)
+    for part in [[kicker.to_upper(), 12, ACCENT, caps_font], [title, 30, TEXT, title_font]]:
+        var label := _plain(part[0], part[1], part[2], part[3])
+        label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        head.add_child(label)
+    if not subtitle.is_empty():
+        var sub := _wrap(subtitle, 14, MUTED)
+        sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+        head.add_child(sub)
+
+## Wrapping, left-aligned paragraph.
+func _wrap(text: String, font_size: int, color: Color, font: Font = null) -> Label:
+    var label := _plain(text, font_size, color, font)
+    label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    label.add_theme_constant_override("line_spacing", 3)
+    return label
+
+## Rounded panel with padding; returns the inner VBox.
+func _card(parent: Node, card_name: String, bg: Color = Color(1, 1, 1, 0.035), border: Color = LINE, pad: int = 18) -> VBoxContainer:
+    var panel := PanelContainer.new()
+    panel.name = card_name
+    var box := _box(bg, border, 1, 10)
+    box.content_margin_left = pad
+    box.content_margin_right = pad
+    box.content_margin_top = pad - 4
+    box.content_margin_bottom = pad - 2
+    panel.add_theme_stylebox_override("panel", box)
+    parent.add_child(panel)
+    var stack := VBoxContainer.new()
+    stack.add_theme_constant_override("separation", 10)
+    panel.add_child(stack)
+    return stack
+
+## Small rounded tag ("8 JOGADORES", "SEU PERSONAGEM"...).
+func _pill(text: String, color: Color, filled: bool = false) -> PanelContainer:
+    var pill := PanelContainer.new()
+    var box := _box(color if filled else Color(color, 0.14), Color.TRANSPARENT, 0, 10)
+    box.content_margin_left = 9
+    box.content_margin_right = 9
+    box.content_margin_top = 3
+    box.content_margin_bottom = 3
+    pill.add_theme_stylebox_override("panel", box)
+    pill.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    pill.add_child(_plain(text.to_upper(), 11, Color("#1a1208") if filled else color, caps_font))
+    return pill
+
+## Caps caption on the left, optional control on the right.
+func _section_title(text: String, right: Control = null) -> HBoxContainer:
     var row := HBoxContainer.new()
-    row.name = "OnlineTabs"
-    row.add_theme_constant_override("separation",8)
+    row.add_theme_constant_override("separation", 8)
     content.add_child(row)
-    var titles := ["Eliminatória","Equipes 2x2 / 4x4","Sobrevivência"]
+    var label := _plain(text.to_upper(), 12, MUTED, caps_font)
+    label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(label)
+    if right != null:
+        row.add_child(right)
+    return row
+
+## "──── TEXT ────" separator.
+func _divider_text(text: String) -> void:
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    content.add_child(row)
+    for i in 3:
+        if i == 1:
+            row.add_child(_plain(text.to_upper(), 11, DIM, caps_font))
+            continue
+        var line := ColorRect.new()
+        line.color = LINE
+        line.custom_minimum_size.y = 1
+        line.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        line.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        row.add_child(line)
+
+## Low-emphasis button (Voltar, Atualizar): no fill until hovered.
+func _ghost(button: Button, height: float = 44.0) -> Button:
+    button.custom_minimum_size.y = height
+    for state in ["normal","hover","pressed","focus","disabled"]:
+        var box := _box(Color(0, 0, 0, 0), Color(1, 1, 1, 0.0), 1, 8)
+        box.content_margin_left = 14
+        box.content_margin_right = 14
+        if state == "hover" or state == "focus":
+            box.bg_color = Color(1, 1, 1, 0.05)
+            box.border_color = LINE
+        elif state == "pressed":
+            box.bg_color = Color(1, 1, 1, 0.09)
+        button.add_theme_stylebox_override(state, box)
+    button.add_theme_color_override("font_color", MUTED)
+    for state in ["font_hover_color","font_pressed_color","font_focus_color"]:
+        button.add_theme_color_override(state, TEXT)
+    return button
+
+## Mode summary: name + capacity tag, description and the key rules as a list.
+func _mode_card(title: String, tag: String, description: String, facts: Array = [], fact_color: Color = TEXT) -> void:
+    var stack := _card(content, "ModeCard")
+    var top := HBoxContainer.new()
+    top.add_theme_constant_override("separation", 10)
+    stack.add_child(top)
+    var name_label := _plain(title, 18, TEXT, title_font)
+    name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    top.add_child(name_label)
+    top.add_child(_pill(tag, ACCENT))
+    stack.add_child(_wrap(description, 14, MUTED))
+    if facts.is_empty():
+        return
+    var list := VBoxContainer.new()
+    list.add_theme_constant_override("separation", 6)
+    stack.add_child(list)
+    for fact in facts:
+        var row := HBoxContainer.new()
+        row.add_theme_constant_override("separation", 10)
+        list.add_child(row)
+        var dot := Panel.new()
+        dot.custom_minimum_size = Vector2(6, 6)
+        dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        dot.add_theme_stylebox_override("panel", _box(ACCENT, Color.TRANSPARENT, 0, 3))
+        row.add_child(dot)
+        row.add_child(_wrap(str(fact), 13, fact_color))
+
+## "Jogando como" strip: initial avatar, name, rank tag.
+func _player_strip() -> void:
+    var panel := PanelContainer.new()
+    panel.name = "PlayerStrip"
+    var box := _box(Color(0, 0, 0, 0.28), LINE, 1, 10)
+    box.content_margin_left = 12
+    box.content_margin_right = 14
+    box.content_margin_top = 10
+    box.content_margin_bottom = 10
+    panel.add_theme_stylebox_override("panel", box)
+    content.add_child(panel)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    panel.add_child(row)
+    var player_name := str(Net.profile.get("name", ""))
+    var avatar := PanelContainer.new()
+    avatar.custom_minimum_size = Vector2(38, 38)
+    avatar.add_theme_stylebox_override("panel", _box(Color(ACCENT, 0.14), Color(ACCENT, 0.6), 1, 19))
+    row.add_child(avatar)
+    var initial := _plain(player_name.left(1).to_upper() if not player_name.is_empty() else "?", 17, ACCENT, title_font)
+    initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    avatar.add_child(initial)
+    var names := VBoxContainer.new()
+    names.add_theme_constant_override("separation", -2)
+    names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    names.alignment = BoxContainer.ALIGNMENT_CENTER
+    row.add_child(names)
+    names.add_child(_plain("JOGANDO COMO", 10, DIM, caps_font))
+    names.add_child(_plain(player_name, 16, TEXT, semi_font))
+    row.add_child(_pill(str(Net.profile.get("rank", "Recruta")), ACCENT))
+
+## Header + login check + tabs shared by the three online tabs. False = sent to login.
+func _online_screen(active: int) -> bool:
+    _clear()
+    _set_page_width(ONLINE_PAGE_WIDTH)
+    _screen_header("Jogar online", "Multiplayer")
+    if not Net.is_logged_in():
+        _show_login(false,"Entre na sua conta para jogar online.")
+        return false
+    _online_tabs(active)
+    return true
+
+## Segmented control at the top of the online screen.
+func _online_tabs(active: int) -> void:
+    var bar := PanelContainer.new()
+    bar.name = "OnlineTabs"
+    var bg := _box(Color(0, 0, 0, 0.35), LINE, 1, 10)
+    bg.set_content_margin_all(4)
+    bar.add_theme_stylebox_override("panel", bg)
+    content.add_child(bar)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 4)
+    bar.add_child(row)
+    var titles := ["Eliminatória","Equipes","Sobrevivência"]
     var names := ["TabElimination","TabTeams","TabSurvival"]
     var actions := [_show_multiplayer,_show_teams_tab,_show_survival_tab]
     for i in titles.size():
-        var tab := _button(titles[i],names[i],Callable(),i == active)
-        content.remove_child(tab)
+        var on: bool = i == active
+        var tab := Button.new()
+        tab.name = names[i]
+        tab.text = titles[i]
         tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        tab.custom_minimum_size.y = 42
-        tab.add_theme_font_size_override("font_size",16)
-        if i != active:
+        tab.custom_minimum_size.y = 38
+        tab.add_theme_font_override("font", semi_font)
+        tab.add_theme_font_size_override("font_size", 14)
+        for state in ["normal","hover","pressed","focus"]:
+            var box := _box(ACCENT if on else Color(0, 0, 0, 0), Color.TRANSPARENT, 0, 7)
+            if not on and (state == "hover" or state == "focus"):
+                box.bg_color = Color(1, 1, 1, 0.06)
+            elif not on and state == "pressed":
+                box.bg_color = Color(1, 1, 1, 0.10)
+            tab.add_theme_stylebox_override(state, box)
+        tab.add_theme_color_override("font_color", Color("#1a1208") if on else MUTED)
+        for state in ["font_hover_color","font_pressed_color","font_focus_color"]:
+            tab.add_theme_color_override(state, Color("#1a1208") if on else TEXT)
+        if not on:
             tab.pressed.connect(actions[i])
         row.add_child(tab)
 
-func _show_multiplayer() -> void:
-    _clear()
-    _set_page_width(480.0)
-    _label("Multiplayer",28)
-    if not Net.is_logged_in():
-        _show_login(false,"Entre na sua conta para jogar online.")
-        return
-    _online_tabs(0)
-    _label("Eliminatória online para 8 jogadores. Entre numa sala, confirme que está pronto e o primeiro jogador da sala (líder) inicia a partida quando todos estiverem prontos. Vagas livres são completadas com bots. Uma vida só: vence o último vivo.",15,Color("#9bad9f"))
-    _label("XP: abate de jogador 100  •  abate de bot 25  •  na cabeça +15  •  vitória 150  •  partida 20",13,Color("#d9b44a"))
-    _label("Jogando como %s (%s)" % [Net.profile.get("name",""), Net.profile.get("rank","")],16)
-    var note := _label("",16)
+func _status_note() -> void:
+    var note := _label("",14,MUTED)
     note.name = "MultiplayerStatus"
+    note.visible = false # nothing writes here on the tabs; avoids an empty gap
     status = note
+
+func _back_row() -> void:
+    _ghost(_button("Voltar","BackButton",_show_main))
+
+func _show_multiplayer() -> void:
+    if not _online_screen(0):
+        return
+    _mode_card("Eliminatória", "8 jogadores",
+        "Entre numa sala e confirme que está pronto. O primeiro jogador da sala (líder) inicia quando todos estiverem prontos.",
+        ["Vagas livres são completadas com bots", "Uma vida só: vence o último vivo"])
+    var xp_head := _section_title("Recompensas de XP")
+    xp_head.name = "XpTitle"
+    var rewards := HFlowContainer.new()
+    rewards.name = "XpRewards"
+    rewards.add_theme_constant_override("h_separation", 6)
+    rewards.add_theme_constant_override("v_separation", 6)
+    content.add_child(rewards)
+    for reward in [["Abate", "+100"], ["Bot", "+25"], ["Na cabeça", "+15"], ["Vitória", "+150"], ["Partida", "+20"]]:
+        var chip := PanelContainer.new()
+        var box := _box(Color(1, 1, 1, 0.05), LINE, 1, 8)
+        box.content_margin_left = 10
+        box.content_margin_right = 10
+        box.content_margin_top = 5
+        box.content_margin_bottom = 5
+        chip.add_theme_stylebox_override("panel", box)
+        var line := HBoxContainer.new()
+        line.add_theme_constant_override("separation", 6)
+        chip.add_child(line)
+        line.add_child(_plain(reward[0], 13, MUTED))
+        line.add_child(_plain(reward[1], 13, ACCENT, semi_font))
+        rewards.add_child(chip)
+    _player_strip()
+    _status_note()
     var find := _button("Procurar sala","FindMatchButton",func():
         _show_lobby(str(Net.profile.get("name","")))
     ,true)
     find.grab_focus()
-    _button("Voltar","BackButton",_show_main)
+    _back_row()
 
 # ------------------------------------------------------- sobrevivência ---
 
 ## Aba "Sobrevivência": mundo aberto com zumbis, até 16 jogadores, sem sala de espera.
 func _show_survival_tab() -> void:
-    _clear()
-    _set_page_width(520.0)
-    _label("Multiplayer",28)
-    if not Net.is_logged_in():
-        _show_login(false,"Entre na sua conta para jogar online.")
+    if not _online_screen(2):
         return
-    _online_tabs(2)
-    _label("Mundo aberto infestado de zumbis, para até 16 jogadores. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",15,Color("#9bad9f"))
-    _label("Fome e sede caem com o tempo. Tiros atraem zumbis. Mordida de zumbi infecta: sem vacina em 2 minutos você vira zumbi. Ao morrer, suas coisas ficam numa mochila no chão. Ao sair, seu personagem fica dormindo no mundo.",14,Color("#d9b44a"))
-    _label("Jogando como %s (%s)" % [Net.profile.get("name",""), Net.profile.get("rank","")],16)
-    var note := _label("",16)
-    note.name = "MultiplayerStatus"
-    status = note
-    _label("Mundos ativos — cada mundo guarda o seu próprio personagem",17)
+    _mode_card("Sobrevivência", "Até 16 jogadores",
+        "Mundo aberto infestado de zumbis. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",
+        ["Fome e sede caem com o tempo; tiros atraem zumbis",
+        "Mordida infecta: sem vacina em 2 minutos você vira zumbi",
+        "Ao morrer, suas coisas ficam numa mochila no chão",
+        "Ao sair, seu personagem fica dormindo no mundo"], Color("#e6c98a"))
+    _player_strip()
+    _status_note()
+    var refresh := _ghost(_button("Atualizar","RefreshWorldsButton",_show_survival_tab), 32)
+    content.remove_child(refresh)
+    refresh.add_theme_font_size_override("font_size", 13)
+    _section_title("Mundos ativos", refresh)
+    var hint := _wrap("Cada mundo guarda o seu próprio personagem.", 12, DIM)
+    content.add_child(hint)
     var list := VBoxContainer.new()
     list.name = "SurvivalWorlds"
-    list.add_theme_constant_override("separation",6)
+    list.add_theme_constant_override("separation",8)
     content.add_child(list)
-    var loading := _label("Carregando mundos...",14,Color("#9bad9f"))
-    content.remove_child(loading)
-    list.add_child(loading)
-    _button("Atualizar lista","RefreshWorldsButton",_show_survival_tab)
-    _button("Voltar","BackButton",_show_main)
+    list.add_child(_wrap("Carregando mundos...", 14, MUTED))
+    _back_row()
     _fill_survival_worlds(list)
 
 ## Preenche a lista: mundos com gente online, o mundo do seu personagem e um mundo vazio para começar do zero.
@@ -1095,37 +1324,79 @@ func _fill_survival_worlds(list: VBoxContainer) -> void:
         child.queue_free()
     var worlds: Array = data.get("worlds", [])
     if worlds.is_empty():
-        var error := _label(str(data.get("error", "Nenhum mundo disponível agora.")),14,Color("#f0a08a"))
-        content.remove_child(error)
-        list.add_child(error)
-        _world_button(list, "Entrar num mundo com vaga", "", true, false)
+        list.add_child(_wrap(str(data.get("error", "Nenhum mundo disponível agora.")), 14, Color("#f0a08a")))
+        _world_button(list, "Entrar num mundo com vaga", "O servidor escolhe um mundo com espaço", "", "", true, false)
         return
     var shown := 0
     var fresh_shown := false
     for w in worlds:
         var online := int(w.get("online",0))
+        var capacity := int(w.get("capacity",16))
         var mine := bool(w.get("mine",false))
         var fresh := online == 0 and not mine
         if fresh and fresh_shown:
             continue # só um mundo vazio na lista
         fresh_shown = fresh_shown or fresh
-        var text := "Mundo %d   •   %d/%d online   •   dia %d" % [int(w.get("number",0)), online, int(w.get("capacity",16)), int(w.get("day",1))]
+        var title := "Mundo %d" % int(w.get("number",0))
+        var detail := "%d/%d online  ·  dia %d" % [online, capacity, int(w.get("day",1))]
+        var tag := ""
         if mine:
-            text += "   ★ seu personagem"
+            tag = "Seu personagem"
         elif fresh:
-            text = "Mundo %d   •   vazio — começar do zero" % int(w.get("number",0))
-        var full := online >= int(w.get("capacity",16))
-        _world_button(list, text + ("   (cheio)" if full else ""), str(w.get("id","")), not full, mine)
+            detail = "Vazio — começar do zero"
+            tag = "Novo"
+        var full := online >= capacity
+        if full:
+            tag = "Cheio"
+        _world_button(list, title, detail, tag, str(w.get("id","")), not full, mine)
         shown += 1
     if shown == 0:
-        _world_button(list, "Entrar num mundo com vaga", "", true, false)
+        _world_button(list, "Entrar num mundo com vaga", "O servidor escolhe um mundo com espaço", "", "", true, false)
 
-func _world_button(list: VBoxContainer, text: String, world_id: String, enabled: bool, primary: bool) -> void:
-    var b := _button(text, "World_" + world_id.replace(":", "_"), func(): _join_survival(world_id), primary)
-    content.remove_child(b)
+## One world as a wide card: name + details on the left, tag and arrow on the right.
+func _world_button(list: VBoxContainer, title: String, detail: String, tag: String, world_id: String, enabled: bool, mine: bool) -> void:
+    var b := Button.new()
+    b.name = "World_" + world_id.replace(":", "_")
+    b.custom_minimum_size.y = 62
     b.disabled = not enabled
-    b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+    b.pressed.connect(func(): _join_survival(world_id))
+    for state in ["normal","hover","pressed","focus","disabled"]:
+        var box := _box(Color(ACCENT, 0.09) if mine else Color(1, 1, 1, 0.04), Color(ACCENT, 0.55) if mine else LINE, 1, 10)
+        if state == "hover" or state == "focus":
+            box.bg_color = Color(ACCENT, 0.15)
+            box.border_color = ACCENT
+        elif state == "pressed":
+            box.bg_color = Color(ACCENT, 0.24)
+            box.border_color = ACCENT
+        elif state == "disabled":
+            box.bg_color = Color(1, 1, 1, 0.02)
+            box.border_color = Color(1, 1, 1, 0.05)
+        b.add_theme_stylebox_override(state, box)
     list.add_child(b)
+    var pad := MarginContainer.new()
+    pad.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    for edge in ["left","right"]:
+        pad.add_theme_constant_override("margin_" + edge, 16)
+    b.add_child(pad)
+    pad.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    var row := HBoxContainer.new()
+    row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    row.add_theme_constant_override("separation", 12)
+    pad.add_child(row)
+    var words := VBoxContainer.new()
+    words.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    words.alignment = BoxContainer.ALIGNMENT_CENTER
+    words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    words.add_theme_constant_override("separation", 0)
+    row.add_child(words)
+    words.add_child(_plain(title, 16, TEXT if enabled else DIM, semi_font))
+    words.add_child(_plain(detail, 12, MUTED if enabled else DIM))
+    if not tag.is_empty():
+        row.add_child(_pill(tag, ACCENT if enabled else DIM, mine))
+    var arrow := _plain("›", 24, ACCENT if mine else MUTED, semi_font)
+    arrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    arrow.visible = enabled
+    row.add_child(arrow)
 
 func _join_survival(world_id: String) -> void:
     _clear()
@@ -1145,28 +1416,38 @@ func _join_survival(world_id: String) -> void:
 
 ## "Equipes" tab: create a room or join a friend's with the code.
 func _show_teams_tab(message: String = "") -> void:
-    _clear()
-    _set_page_width(480.0)
-    _label("Multiplayer",28)
-    if not Net.is_logged_in():
-        _show_login(false,"Entre na sua conta para jogar online.")
+    if not _online_screen(1):
         return
-    _online_tabs(1)
-    _label("Partida personalizada em equipes: 2 contra 2 ou 4 contra 4. Crie uma sala e mande o código para seus amigos. Vagas livres podem ser completadas com bots. Vence a equipe que eliminar a outra.",15,Color("#9bad9f"))
-    var feedback := _label(message,15,Color("#f0a08a"))
+    _mode_card("Equipes", "2x2 ou 4x4",
+        "Partida personalizada em equipes. Crie uma sala e mande o código para seus amigos.",
+        ["Vagas livres podem ser completadas com bots", "Vence a equipe que eliminar a outra"])
+    var feedback := _label(message,14,Color("#f0a08a"))
     feedback.name = "PartyFeedback"
+    feedback.visible = not message.is_empty()
     _button("Criar sala","CreatePartyButton",func(): _connect_party(""),true).grab_focus()
-    _label("ou entre na sala de um amigo",13,Color("#7f9187"))
+    _divider_text("ou entre na sala de um amigo")
+    var row := HBoxContainer.new()
+    row.name = "JoinRow"
+    row.add_theme_constant_override("separation", 8)
+    content.add_child(row)
     var code := _field("Código da sala (ex.: K7Q2M)","PartyCodeField")
+    content.remove_child(code)
     code.max_length = 5
-    var join := _button("Entrar com código","JoinPartyButton",func():
+    code.custom_minimum_size.y = 48
+    code.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    row.add_child(code)
+    var join := _button("Entrar","JoinPartyButton",func():
         if code.text.strip_edges().length() != 5:
             feedback.text = "O código tem 5 letras/números."
+            feedback.visible = true
             return
         _connect_party(code.text)
     )
+    content.remove_child(join)
+    join.custom_minimum_size.x = 120
+    row.add_child(join)
     code.text_submitted.connect(func(_text): join.pressed.emit())
-    _button("Voltar","BackButton",_show_main)
+    _back_row()
 
 ## Empty code creates a new room.
 func _connect_party(code: String) -> void:
@@ -1198,6 +1479,7 @@ func _on_party_notice(message: String) -> void:
     var note := content.get_node_or_null("PartyNote") as Label
     if note:
         note.text = message
+        note.visible = not message.is_empty()
 
 ## Room screen (public elimination or team room), rebuilt on every update.
 ## Everyone confirms "ready"; the first player in the room (leader) starts.
@@ -1212,45 +1494,69 @@ func _on_party_updated(info: Dictionary) -> void:
     if not team_room:
         _show_elimination_room(info, leader)
         return
-    _label("SALA PERSONALIZADA  •  %dx%d" % [team_size,team_size],26,Color("#f0f2e9"))
+    _screen_header("Sala personalizada", "Equipes %dx%d" % [team_size,team_size])
+    # Invite code: caption + big spaced code on the left, copy on the right.
+    var code_card := PanelContainer.new()
+    code_card.name = "PartyCodeCard"
+    var code_box := _box(Color(0, 0, 0, 0.32), Color(ACCENT, 0.45), 1, 10)
+    code_box.content_margin_left = 18
+    code_box.content_margin_right = 12
+    code_box.content_margin_top = 10
+    code_box.content_margin_bottom = 10
+    code_card.add_theme_stylebox_override("panel", code_box)
+    content.add_child(code_card)
     var code_row := HBoxContainer.new()
-    code_row.alignment = BoxContainer.ALIGNMENT_CENTER
     code_row.add_theme_constant_override("separation",12)
-    content.add_child(code_row)
-    var code_label := _label("Código:  %s" % Net.party_code,30,Color("#ffe08a"))
+    code_card.add_child(code_row)
+    var code_words := VBoxContainer.new()
+    code_words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    code_words.add_theme_constant_override("separation", 0)
+    code_row.add_child(code_words)
+    code_words.add_child(_plain("CÓDIGO DA SALA", 11, MUTED, caps_font))
+    var code_label := _plain(Net.party_code, 30, Color("#ffd27a"), code_font)
     code_label.name = "PartyCode"
-    content.remove_child(code_label)
-    code_row.add_child(code_label)
+    code_words.add_child(code_label)
     var copy := _button("Copiar","CopyCodeButton",Callable())
     content.remove_child(copy)
     copy.custom_minimum_size = Vector2(110,44)
+    copy.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     copy.pressed.connect(func():
         DisplayServer.clipboard_set(Net.party_code)
         copy.text = "Copiado!")
     code_row.add_child(copy)
-    _label("Convide seus amigos: eles abrem Jogar online > Equipes 2x2 / 4x4 > Entrar com código.",13,Color("#9bad9f"))
+    var invite_hint := _wrap("Seus amigos entram em Jogar online › Equipes › Entrar com o código.", 12, DIM)
+    invite_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    content.add_child(invite_hint)
     # Mode and bots: the leader edits, everyone else sees the current choice.
     if leader:
         var settings_row := HBoxContainer.new()
-        settings_row.alignment = BoxContainer.ALIGNMENT_CENTER
-        settings_row.add_theme_constant_override("separation",18)
+        settings_row.name = "PartySettings"
+        settings_row.add_theme_constant_override("separation",12)
         content.add_child(settings_row)
         var mode := OptionButton.new()
         mode.name = "PartyModeSelect"
         mode.add_item("2 contra 2")
         mode.add_item("4 contra 4")
         mode.select(0 if team_size == 2 else 1)
-        mode.custom_minimum_size = Vector2(180,40)
+        mode.custom_minimum_size = Vector2(170,42)
+        mode.add_theme_font_override("font", semi_font)
         settings_row.add_child(mode)
         var fill := CheckButton.new()
         fill.name = "PartyBotsToggle"
         fill.text = "Completar vagas com bots"
         fill.button_pressed = bots
+        fill.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        fill.alignment = HORIZONTAL_ALIGNMENT_LEFT
         settings_row.add_child(fill)
         mode.item_selected.connect(func(index: int): Net.party_configure(2 if index == 0 else 4, fill.button_pressed))
         fill.toggled.connect(func(on: bool): Net.party_configure(team_size, on))
     else:
-        _label("Modo %dx%d  •  %s" % [team_size,team_size,"vagas completadas com bots" if bots else "sem bots"],15)
+        var mode_info := HBoxContainer.new()
+        mode_info.alignment = BoxContainer.ALIGNMENT_CENTER
+        mode_info.add_theme_constant_override("separation", 8)
+        content.add_child(mode_info)
+        mode_info.add_child(_pill("Modo %dx%d" % [team_size,team_size], ACCENT))
+        mode_info.add_child(_pill("Vagas com bots" if bots else "Sem bots", MUTED))
     # The two teams side by side.
     var columns := HBoxContainer.new()
     columns.name = "PartyTeams"
@@ -1265,19 +1571,14 @@ func _on_party_updated(info: Dictionary) -> void:
 func _show_elimination_room(info: Dictionary, leader: bool) -> void:
     var players: Array = info.get("players",[])
     var capacity := int(info.get("capacity",8))
-    _label("ELIMINATÓRIA  •  SALA",26,Color("#f0f2e9"))
-    _label("Jogadores: %d/%d  •  vagas livres viram bots" % [players.size(),capacity],15,Color("#9bad9f"))
-    var list := VBoxContainer.new()
+    _screen_header("Eliminatória", "Sala de espera", "%d/%d jogadores  ·  vagas livres viram bots" % [players.size(),capacity])
+    var list := _card(content, "RoomPlayersCard", Color(0, 0, 0, 0.25), LINE, 16)
     list.name = "RoomPlayers"
-    list.add_theme_constant_override("separation",6)
-    content.add_child(list)
+    list.add_theme_constant_override("separation",8)
     for entry in players:
         list.add_child(_player_row(info,entry))
     for _slot in range(players.size(),capacity):
-        var empty := Label.new()
-        empty.text = "—  vaga (bot)"
-        empty.add_theme_color_override("font_color",Color("#6f8278"))
-        list.add_child(empty)
+        list.add_child(_plain("—   Vaga livre  ·  bot", 14, DIM))
     _ready_controls(info, leader)
 
 ## "★ líder / (você) / ✓ PRONTO" row used by both room screens.
@@ -1290,10 +1591,13 @@ func _player_row(info: Dictionary, entry: Dictionary) -> Label:
         tags += "  ★ líder"
     if id == Net.my_id:
         tags += "  (você)"
-    var ready_tag := "✓ PRONTO" if bool(entry.get("ready",false)) else "… aguardando"
+    var ready_tag := "✓ pronto" if bool(entry.get("ready",false)) else "aguardando…"
     if is_leader:
-        ready_tag = "âœ“ inicia a partida"
-    row.text = "%s  [%s]%s   %s" % [entry.get("name",""),entry.get("rank",""),tags,ready_tag]
+        ready_tag = "inicia a partida"
+    row.text = "%s  ·  %s%s  ·  %s" % [entry.get("name",""),entry.get("rank",""),tags,ready_tag]
+    row.add_theme_font_size_override("font_size",14)
+    row.add_theme_font_override("font",semi_font)
+    row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
     var color := Color("#e2e9e4")
     if bool(entry.get("ready",false)):
         color = Color("#a8e08c")
@@ -1306,6 +1610,7 @@ func _player_row(info: Dictionary, entry: Dictionary) -> Label:
 func _ready_controls(info: Dictionary, leader: bool) -> void:
     var note := _label("",14,Color("#f0a08a"))
     note.name = "PartyNote"
+    note.visible = false
     var all_ready := bool(info.get("allReady",false))
     if leader:
         var waiting: Array[String] = []
@@ -1324,28 +1629,23 @@ func _ready_controls(info: Dictionary, leader: bool) -> void:
         var toggle := _button("Cancelar pronto" if confirmed else "Estou pronto","ReadyButton",func(): Net.party_ready(not confirmed),not confirmed)
         toggle.grab_focus()
         _label("Aguardando o líder iniciar a partida..." if confirmed else "Confirme que está pronto. O líder inicia quando todos estiverem prontos.",14,Color("#9bad9f"))
-    _button("Sair da sala","LeavePartyButton",_leave_party)
+    _ghost(_button("Sair da sala","LeavePartyButton",_leave_party))
 
 func _team_column(info: Dictionary, team: int, title: String, team_size: int, bots: bool) -> PanelContainer:
+    var tint := Color("#5ea8d0") if team == 0 else Color("#d07a5e")
     var panel := PanelContainer.new()
     panel.name = "Team%d" % team
     panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    var box := StyleBoxFlat.new()
-    box.bg_color = Color("#1b3036") if team == 0 else Color("#33231f")
-    box.border_color = Color("#5d9fc0") if team == 0 else Color("#c0715d")
-    box.set_border_width_all(1)
-    box.set_corner_radius_all(10)
+    var box := _box(Color(tint, 0.08), Color(tint, 0.35), 1, 10)
+    box.border_width_top = 3
+    box.border_color = Color(tint, 0.35)
     for side in ["left","right","top","bottom"]:
         box.set("content_margin_" + side,14)
     panel.add_theme_stylebox_override("panel",box)
     var column := VBoxContainer.new()
-    column.add_theme_constant_override("separation",6)
+    column.add_theme_constant_override("separation",8)
     panel.add_child(column)
-    var heading := Label.new()
-    heading.text = "EQUIPE %s" % title.to_upper()
-    heading.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    heading.add_theme_font_size_override("font_size",19)
-    heading.add_theme_color_override("font_color",Color("#9fd4ee") if team == 0 else Color("#f0b0a0"))
+    var heading := _plain("EQUIPE %s" % title.to_upper(), 13, tint.lightened(0.35), caps_font)
     column.add_child(heading)
     var members := 0
     for entry in info.get("players",[]):
@@ -1356,10 +1656,7 @@ func _team_column(info: Dictionary, team: int, title: String, team_size: int, bo
         row.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
         column.add_child(row)
     for _slot in range(members,team_size):
-        var empty := Label.new()
-        empty.text = "—  vaga (bot)" if bots else "—  vaga livre"
-        empty.add_theme_color_override("font_color",Color("#6f8278"))
-        column.add_child(empty)
+        column.add_child(_plain("—   Vaga livre  ·  bot" if bots else "—   Vaga livre", 14, DIM))
     if Net.my_team != team:
         var switch := Button.new()
         switch.name = "JoinTeam%d" % team
