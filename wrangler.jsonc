@@ -7,8 +7,9 @@
   // 300 = 0.3.0: online play needs an account (login + XP); older builds are told to update.
   // 400 = 0.4.0: rooms start by ready/leader (no timer), team rooms, medkits.
   // 500 = 0.5.0: grenades, 3 s medkit (heal_start), watchtower crate, lean, friends.
+  // 903 = 0.9.3: everyone online on the itch release (ADS aim, 8-way unarmed locomotion).
   "vars": {
-    "GODOT_MIN_BUILD": "500",
+    "GODOT_MIN_BUILD": "903",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {
