@@ -186,6 +186,10 @@ func save_name(value: String) -> void:
 func find_match(player_name: String) -> Error:
 	return _open(player_name, "")
 
+## Sobrevivência: entra num mundo aberto (até 16 jogadores) sem sala de espera.
+func find_survival(player_name: String) -> Error:
+	return _open(player_name, "", "/godot/survival")
+
 ## New custom team room; the server answers with its code.
 func create_party() -> Error:
 	return _open("", "NEW")
@@ -221,7 +225,7 @@ func in_room_lobby() -> bool:
 func is_party_leader() -> bool:
 	return not my_id.is_empty() and str(party_info.get("leader", "")) == my_id
 
-func _open(player_name: String, party: String) -> Error:
+func _open(player_name: String, party: String, path: String = "/godot/ws") -> Error:
 	leave()
 	socket = WebSocketPeer.new()
 	_opened = false
@@ -234,7 +238,7 @@ func _open(player_name: String, party: String) -> Error:
 	var query := "?name=" + clean.uri_encode() + "&v=" + str(build_number())
 	if not party.is_empty():
 		query += "&party=" + party.uri_encode()
-	return socket.connect_to_url(server_url + query)
+	return socket.connect_to_url(server_url.replace("/godot/ws", path) + query)
 
 func is_online() -> bool:
 	return socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN

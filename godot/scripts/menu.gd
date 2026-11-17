@@ -332,9 +332,9 @@ func _online_tabs(active: int) -> void:
     row.name = "OnlineTabs"
     row.add_theme_constant_override("separation",8)
     content.add_child(row)
-    var titles := ["Eliminatória","Equipes 2x2 / 4x4"]
-    var names := ["TabElimination","TabTeams"]
-    var actions := [_show_multiplayer,_show_teams_tab]
+    var titles := ["Eliminatória","Equipes 2x2 / 4x4","Sobrevivência"]
+    var names := ["TabElimination","TabTeams","TabSurvival"]
+    var actions := [_show_multiplayer,_show_teams_tab,_show_survival_tab]
     for i in titles.size():
         var tab := _button(titles[i],names[i],Callable(),i == active)
         content.remove_child(tab)
@@ -363,6 +363,39 @@ func _show_multiplayer() -> void:
         _show_lobby(str(Net.profile.get("name","")))
     ,true)
     find.grab_focus()
+    _button("Voltar","BackButton",_show_main)
+
+# ------------------------------------------------------- sobrevivência ---
+
+## Aba "Sobrevivência": mundo aberto com zumbis, até 16 jogadores, sem sala de espera.
+func _show_survival_tab() -> void:
+    _clear()
+    _set_page_width(520.0)
+    _label("Multiplayer",28)
+    if not Net.is_logged_in():
+        _show_login(false,"Entre na sua conta para jogar online.")
+        return
+    _online_tabs(2)
+    _label("Mundo aberto infestado de zumbis, para até 16 jogadores. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",15,Color("#9bad9f"))
+    _label("Fome e sede caem com o tempo. Tiros atraem zumbis. De noite eles enxergam menos — e você também. Ao morrer, suas coisas ficam numa mochila no chão. Ao sair, seu personagem fica guardado no mundo.",14,Color("#d9b44a"))
+    _label("Jogando como %s (%s)" % [Net.profile.get("name",""), Net.profile.get("rank","")],16)
+    var note := _label("",16)
+    note.name = "MultiplayerStatus"
+    status = note
+    _button("Entrar no mundo","JoinSurvivalButton",func():
+        _clear()
+        _label("Sobrevivência",28)
+        status = _label("Procurando um mundo com vaga...",17)
+        status.name = "MultiplayerStatus"
+        _button("Cancelar","CancelButton",func():
+            _disconnect_net()
+            Net.leave()
+            _show_survival_tab()
+        )
+        _connect_net()
+        if Net.find_survival(str(Net.profile.get("name",""))) != OK:
+            _on_connection_lost("Não foi possível conectar ao servidor.")
+    ,true).grab_focus()
     _button("Voltar","BackButton",_show_main)
 
 # ------------------------------------------------- custom team rooms ---
@@ -847,6 +880,9 @@ func _invite_friends_section() -> void:
 func _on_lobby_joined(info: Dictionary) -> void:
     if bool(info.get("party",false)) or bool(info.get("lobby",false)):
         return # the room screen arrives right after (party_updated)
+    if bool(info.get("survival",false)):
+        status.text = "Mundo encontrado! Entrando..."
+        return
     status.text = "Sala encontrada! Começa em %d s" % int(info.get("seconds",20))
 
 func _on_lobby_updated(info: Dictionary) -> void:

@@ -42,6 +42,21 @@ Menu > **Jogar online** > **Procurar sala**. A partida é uma eliminatória de 8
 - Cliente: autoload `Net` (`scripts/net/net.gd`), `scripts/net/match_controller.gd` e `scripts/net/net_actor.gd`.
 - Teste com servidor local: `npx wrangler dev` na raiz do repositório e, no jogo, `-- --server=ws://127.0.0.1:8787/godot/ws`.
 
+## Sobrevivência zumbi (mundo aberto, 16 jogadores)
+Menu > **Jogar online** > aba **Sobrevivência** > **Entrar no mundo**. Não há sala de espera: você entra num mundo com vaga (até 16 pessoas por mundo) e nasce no mato com água, barra de cereal e bandagem.
+
+- **Mapa (480 × 480 m):** a cidade do Campo de Fogo fica no meio; em volta, Vila Rosário (farmácia), Bairro Novo (mercadinho), Posto Rodovia (conveniência e oficina), Fazenda Boa Vista, Vila Pesqueira (delegacia), Hospital São Lucas e Base Militar, ligadas por estradas com carros abandonados, florestas, rochas e arbustos de frutas. Gerado por `node scripts/gen-survival-world.mjs` em `data/survival_world.json` (semente fixa).
+- **Saque (E):** revista geladeiras, armários, guarda-roupas, caixas de ferramentas, armários de remédios, prateleiras, porta-malas, armários de armas e caixas militares (1 s). Cada tipo sorteia da sua tabela; o recipiente esvaziado volta a ter coisas depois de 20 min.
+- **Inventário (TAB):** mochila com limite de peso (20 kg + a melhor mochila: escolar +8, improvisada +6, militar +14), comer/beber/curar, largar, pegar do recipiente e fabricar. Armas vêm descarregadas: a munição do calibre na mochila é a reserva (R recarrega). F usa bandagem/analgésico/kit médico (o kit leva 3 s).
+- **Coleta (segure E):** árvore → madeira, rocha → pedra, carro → sucata (às vezes pólvora), arbusto → maçã. Machado rende mais madeira; pé de cabra, mais pedra e sucata. O recurso volta depois de alguns minutos.
+- **Fabricação:** bandagem, corda, machado improvisado, mochila improvisada e munição 9mm / calibre 12 / 5.56.
+- **Fome e sede** caem com o tempo (~75 e ~50 min); zeradas, tiram vida.
+- **Zumbis:** andarilhos lentos, corredores e brutamontes. Veem até 24 m (metade de noite), ouvem tiros a 48 m, perseguem e mordem. Q é soco ou a melhor arma branca da mochila (taco, pé de cabra, machado). Nascem longe dos jogadores, mais nas cidades, no hospital e na base.
+- **Dia e noite:** um dia dura 24 min (noite das 20h às 6h, bem escura).
+- **Morte:** tudo fica numa mochila no chão (25 min); renasce em 8 s com o kit inicial. Ao sair do jogo, o personagem (posição, vida, fome, sede e mochila) fica guardado no mundo por 3 dias.
+- Servidor: Durable Object `GodotSurvival` (`../src/godot-survival.js`, rota `/godot/survival`, mundos `world:1`…`world:12`). Ele guarda vida, fome, sede, mochilas, recipientes e recursos e confere distância e tempo de cada ação. Os zumbis são movidos pelo jogo de um dos jogadores (anfitrião), como os bots; o servidor limita mordidas a 1 por segundo e por zumbi, ao alcance. Itens, saques, coleta e receitas: `data/survival_items.json`.
+- Testes: `node --test tests/godot-survival.test.mjs` (na raiz), `tests/survival_world.gd` (`--script`) e `godot --headless --path godot res://tests/survival_session.tscn`.
+
 ## Versão e atualizações (Windows)
 A versão do jogo fica em `project.godot` (`application/config/version`, hoje 0.5.1) e aparece no menu principal. Ao procurar uma partida, o jogo envia o número da versão (0.1.0 = 100, 0.2.0 = 200). Se o número for menor que `GODOT_MIN_BUILD` (em `../wrangler.jsonc`), o servidor responde "Atualização disponível" com o botão **Baixar no itch.io** (`GODOT_DOWNLOAD_URL`) em vez de colocar o jogador numa sala. Mudanças só nas regras do servidor (dano, tempos, bots) não exigem atualização do jogo.
 

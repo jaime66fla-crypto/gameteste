@@ -40,6 +40,7 @@ var slot_order: Array[String] = []
 ## Set by the online match: returns true when E was used to open a crate.
 var interact_handler: Callable
 var heal_handler: Callable # F: use a carried medkit (online matches)
+var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
 ## G: grenade. Online the match controller decides (inventory); offline it is
 ## unlimited with a short cooldown.
 var grenade_handler: Callable
@@ -346,6 +347,9 @@ func _unhandled_input(event: InputEvent) -> void:
             return
         if event.physical_keycode == KEY_Q and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
             humanoid_avatar.call("play_action", "punch")
+            # Sobrevivência: o soco (ou a arma branca da mochila) acerta zumbis.
+            if melee_handler.is_valid():
+                melee_handler.call()
             return
         if event.physical_keycode == KEY_E:
             # E collects loot when a crate is in reach; otherwise elbow strike.
@@ -807,6 +811,24 @@ func give_weapon(weapon_id: String, reserve: int) -> void:
             _toggle_weapon_holster()
     elif weapon_id == current_weapon and new_weapon:
         ammo = int(magazines[weapon_id])
+
+## Survival: the weapon left the backpack (dropped, death). Draws another one or holsters.
+func remove_weapon(weapon_id: String) -> void:
+    if not owned_weapons.has(weapon_id):
+        return
+    owned_weapons.erase(weapon_id)
+    slot_order.erase(weapon_id)
+    reserve_ammo[weapon_id] = 0
+    magazines[weapon_id] = 0
+    if current_weapon != weapon_id:
+        return
+    if slot_order.is_empty():
+        ammo = 0
+        reloading = false
+        if not weapon_holstered:
+            _toggle_weapon_holster()
+    else:
+        _equip_weapon(slot_order[0])
 
 ## Called by the online match when the server reports damage to this player.
 func add_hit_shake(strength: float) -> void:

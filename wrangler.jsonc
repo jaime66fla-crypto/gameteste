@@ -19,12 +19,14 @@
     "bindings": [
       { "name": "GAME_ROOMS", "class_name": "GameRoom" },
       { "name": "GODOT_MATCHES", "class_name": "GodotMatch" },
-      { "name": "GODOT_ACCOUNTS", "class_name": "GodotAccounts" }
+      { "name": "GODOT_ACCOUNTS", "class_name": "GodotAccounts" },
+      { "name": "GODOT_SURVIVAL", "class_name": "GodotSurvival" }
     ]
   },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["GameRoom"] },
     { "tag": "v2", "new_sqlite_classes": ["GodotMatch"] },
-    { "tag": "v3", "new_sqlite_classes": ["GodotAccounts"] }
+    { "tag": "v3", "new_sqlite_classes": ["GodotAccounts"] },
+    { "tag": "v4", "new_sqlite_classes": ["GodotSurvival"] }
   ]
 }

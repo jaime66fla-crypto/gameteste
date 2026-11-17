@@ -2,3 +2,4 @@
 export { default, GameRoom } from './worker.js';
 export { GodotMatch } from './godot-match.js';
 export { GodotAccounts } from './godot-accounts.js';
+export { GodotSurvival } from './godot-survival.js';

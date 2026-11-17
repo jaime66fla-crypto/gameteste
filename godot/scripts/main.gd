@@ -8,6 +8,8 @@ const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
+const SurvivalWorldScript = preload("res://scripts/survival/survival_world.gd")
+const SurvivalControllerScript = preload("res://scripts/survival/survival_controller.gd")
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Control
@@ -24,10 +26,17 @@ func _ready() -> void:
     var settings := GameSettings.load_settings()
     GameSettings.apply(settings,get_viewport())
     _build_world()
+    var survival := Net.in_match and bool(Net.start_info.get("survival", false))
     var world_polish := Node3D.new()
     world_polish.name = "WorldPolish"
     world_polish.set_script(WorldPolishScript)
+    world_polish.set("open_world", survival)
     add_child(world_polish)
+    var survival_world: Node3D = null
+    if survival:
+        # Sobrevivência: mundo aberto em volta da cidade do Campo de Fogo.
+        survival_world = SurvivalWorldScript.new()
+        add_child(survival_world)
     var ambient := Node3D.new()
     ambient.name = "EnvironmentAudio"
     ambient.set_script(AmbientAudioScript)
@@ -39,7 +48,11 @@ func _ready() -> void:
     add_child(player)
     player.mouse_sensitivity *= float(settings["sensitivity"])
     _build_ui()
-    if Net.in_match:
+    if survival:
+        match_controller = SurvivalControllerScript.new()
+        match_controller.call("setup", self, player, survival_world)
+        add_child(match_controller)
+    elif Net.in_match:
         match_controller = Node3D.new()
         match_controller.set_script(MatchControllerScript)
         match_controller.call("setup", self, player)
@@ -219,6 +232,9 @@ func _process(_delta: float) -> void:
         if match_controller != null:
             var out: bool = match_controller.get("local_dead") or match_controller.get("finished")
             crosshair.visible = crosshair.visible and not out
+            if match_controller.has_method("game_hour"):
+                hud.text = "" if out else player.status_text() + "\n1-5 armas  E revistar/coletar  TAB inventário  Q golpe  F curativo  R recarregar (munição da mochila)  |  ESC: sair"
+                return
             hud.text = "" if out else player.status_text() + "\n1-5 armas (ordem em que pegou)  E coletar  F kit médico  G granada (segure p/ mirar)  R recarregar  Direito mirar (+Q/E inclinar)  |  ESC: sair da partida"
             return
         hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() +"\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\nQ soco  E cotovelada  G granada (segure p/ mirar)  |  mirando: Q/E inclinar\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"

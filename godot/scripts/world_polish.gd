@@ -2,6 +2,8 @@ extends Node3D
 ## One authored 120 m neighborhood. Roads, plots and entrances share one layout.
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 var mat_cache: Dictionary = {}
+## Sobrevivência: a cidade fica no meio do mundo aberto, sem os muros da borda.
+var open_world := false
 
 func _ready() -> void:
     _tune_environment()
@@ -346,7 +348,8 @@ func _perimeter() -> void:
         if abs(coordinate) < 50:
             _tree(Vector2(-56, coordinate), 3.4)
             _tree(Vector2(56, coordinate), 3.4)
-    _boundary_walls()
+    if not open_world:
+        _boundary_walls()
 
 func _boundary_walls() -> void:
     # The 120 m ground ends at +/-60: a visible 3 m concrete wall on every edge,

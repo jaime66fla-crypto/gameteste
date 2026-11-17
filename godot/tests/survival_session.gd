@@ -1,0 +1,74 @@
+extends Node
+## Sobrevivência sem servidor: abre a cena principal com um pacote "start"
+## falso e simula mensagens do servidor (zumbis, mochila, recipiente, morte).
+## godot --headless --path godot res://tests/survival_session.tscn
+const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+
+var failures := 0
+
+func check(ok: bool, what: String) -> void:
+	if not ok:
+		failures += 1
+		printerr("FALHOU: " + what)
+	else:
+		print("ok: " + what)
+
+func _ready() -> void:
+	_run.call_deferred()
+
+func _frames(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+func _run() -> void:
+	var spawn: Array = SurvivalData.world()["spawns"][0]
+	Net.my_id = "me"
+	Net.host_id = "me"
+	Net.in_match = true
+	Net.start_info = {
+		"t": "start", "survival": true, "host": "me", "clock": {"day_ms": 1440000, "time": 0},
+		"you": {"id": "me", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 85, "thirst": 85, "dead": false,
+			"inv": {"water_bottle": 1, "bandage": 1}, "weight": 0.7, "cap": 20},
+		"roster": [{"id": "p2", "name": "Amigo", "rank": "Recruta", "p": [spawn[0] + 4, 0.2, spawn[1]], "dead": false}],
+		"zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [spawn[0] + 15, 0.2, spawn[1]]}],
+		"bags": [], "searched": [], "depleted": {},
+	}
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	get_tree().root.add_child(main)
+	await _frames(20)
+	var controller := main.get_node_or_null("SurvivalController")
+	check(controller != null, "controlador da sobrevivência criado")
+	if controller == null:
+		get_tree().quit(1)
+		return
+	check(main.get_node_or_null("SurvivalWorld") != null, "mundo aberto montado")
+	check(controller.zombies.has("z1") and controller.actors.has("p2"), "zumbi e outro jogador aparecem")
+	check(controller.zombies["z1"].controlled, "anfitrião controla os zumbis")
+	var player: CharacterBody3D = main.get("player")
+	# Arma chega na mochila: aparece descarregada, com a munição como reserva.
+	Net.message.emit({"t": "inv", "inv": {"w_pistol": 1, "a_9mm": 24, "water_bottle": 1}, "weight": 1.84, "cap": 20})
+	await _frames(2)
+	check(player.get("owned_weapons").has("pistol"), "pistola equipável")
+	check(int(player.get("reserve_ammo")["pistol"]) == 24 and int(player.get("ammo")) == 0, "munição da mochila vira reserva, pente vazio")
+	Net.message.emit({"t": "inv", "inv": {"water_bottle": 1}, "weight": 0.6, "cap": 20})
+	await _frames(2)
+	check(not player.get("owned_weapons").has("pistol"), "arma largada sai das mãos")
+	Net.message.emit({"t": "container", "k": "k0", "title": "Geladeira", "items": {"soda": 2}})
+	await _frames(2)
+	check(controller.inventory.visible, "revistar abre o inventário")
+	Net.message.emit({"t": "zspawn", "l": [{"id": "z2", "kind": "brute", "hp": 150, "p": [spawn[0] - 20, 0.2, spawn[1]]}]})
+	Net.message.emit({"t": "zdead", "id": "z1", "by": "me", "zone": "head"})
+	await _frames(2)
+	check(controller.zombies.has("z2") and not controller.zombies.has("z1"), "zumbis nascem e morrem")
+	Net.message.emit({"t": "clock", "day_ms": 1440000, "time": 1300000, "online": 2, "zombies": 1})
+	await _frames(2)
+	check(controller.night, "relógio: 21h é noite")
+	Net.message.emit({"t": "hp", "id": "me", "hp": 0, "by": "z2", "w": "zombie", "killed": true})
+	await _frames(2)
+	check(controller.local_dead and controller.death_panel.visible, "morte mostra a tela de renascer")
+	Net.message.emit({"t": "respawned", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 85, "thirst": 85, "inv": {"bandage": 1}, "weight": 0.1, "cap": 20})
+	await _frames(2)
+	check(not controller.local_dead and player.visible, "renasce")
+	print("FALHAS: %d" % failures)
+	Net.in_match = false
+	get_tree().quit(1 if failures else 0)

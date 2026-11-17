@@ -2,6 +2,7 @@ import '../public/tactical-rules.js';
 import './tactical-room.js';
 import { handleGodotSocket } from './godot-match.js';
 import { handleGodotAccount } from './godot-accounts.js';
+import { handleSurvivalSocket } from './godot-survival.js';
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
 
 function deepMotionConfig(env){
@@ -75,6 +76,8 @@ export default {
   }
   // Godot build (itch.io): quick-match 8-player elimination rooms.
   if (url.pathname === "/godot/ws") return handleGodotSocket(request, env, url);
+  // Godot build: open-world zombie survival, 16 players per world.
+  if (url.pathname === "/godot/survival") return handleSurvivalSocket(request, env, url);
   // Godot accounts: register, login, profile (XP / rank) and friends list.
   if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me" || url.pathname === "/godot/friends" || url.pathname.startsWith("/godot/friends/")) return handleGodotAccount(request, env, url);
   if (url.pathname === "/ws") {
