@@ -134,7 +134,7 @@ func _run() -> void:
 		_check(int(controller.get("my_medkits")) == 1, "Medkit goes to the inventory")
 		_check(crates.has("m0") and bool(crates["m0"].get("opened")), "Collected medkit crate opens")
 		await process_frame
-		_check(str(controller.get("status_label").text).contains("KITS: 1"), "HUD shows carried kits")
+		_check(str(controller.call("hud_extra")).contains("KITS 1"), "HUD shows carried kits (next to the ammo)")
 		var heal_key := InputEventKey.new()
 		heal_key.pressed = true
 		heal_key.physical_keycode = KEY_F

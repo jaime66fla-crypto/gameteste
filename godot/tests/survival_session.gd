@@ -69,6 +69,16 @@ func _run() -> void:
 	Net.message.emit({"t": "respawned", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 85, "thirst": 85, "inv": {"bandage": 1}, "weight": 0.1, "cap": 20})
 	await _frames(2)
 	check(not controller.local_dead and player.visible, "renasce")
+	# Mochila nas costas: aparece no personagem e aumenta a carga.
+	Net.message.emit({"t": "inv", "inv": {"bandage": 1}, "back": "backpack", "weight": 0.9, "cap": 34})
+	await _frames(3)
+	var avatar = player.get("humanoid_avatar")
+	check(avatar != null and str(avatar.get("backpack_id")) == "backpack", "mochila equipada aparece nas costas")
+	check(controller.inventory.get("back") == "backpack" and is_equal_approx(float(controller.inventory.get("cap")), 34.0), "inventário mostra o slot das costas")
+	check(main.get_node_or_null("SurvivalWorld").call("in_tall_grass", Vector3(float(SurvivalData.world()["grass"][0]["x"]), 0, float(SurvivalData.world()["grass"][0]["z"]))), "grama alta reconhecida")
+	var hud: CanvasLayer = main.get_node_or_null("Hud")
+	check(hud != null and hud.get_node_or_null("Minimap") != null and hud.get_node_or_null("AmmoHud") != null, "HUD com minimapa e munição")
+	check(str(main.get("hud").text).find("ARMA:") < 0, "sem o bloco de texto antigo na tela")
 	print("FALHAS: %d" % failures)
 	Net.in_match = false
 	get_tree().quit(1 if failures else 0)

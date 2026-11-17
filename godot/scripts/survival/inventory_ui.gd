@@ -6,6 +6,8 @@ signal take_all_requested(container_id: String)
 signal drop_requested(item: String, all: bool)
 signal use_requested(item: String)
 signal craft_requested(recipe: String)
+signal equip_requested(item: String)
+signal unequip_requested()
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CAT_ORDER := ["weapon", "ammo", "melee", "medical", "food", "drink", "gear", "material"]
@@ -13,7 +15,8 @@ const CAT_NAME := {"weapon": "Arma", "ammo": "Munição", "melee": "Arma branca"
 
 var inv: Dictionary = {}
 var weight := 0.0
-var cap := 20.0
+var cap := 10.0
+var back := "" # mochila equipada nas costas
 var container_id := ""
 var container_title := ""
 var container_items: Dictionary = {}
@@ -25,6 +28,9 @@ var _box_title: Label
 var _take_all: Button
 var _craft_list: VBoxContainer
 var _weight_bar: ProgressBar
+var _back_row: HBoxContainer
+var _back_label: Label
+var _back_button: Button
 
 func _ready() -> void:
 	name = "Inventory"
@@ -40,10 +46,11 @@ func _ready() -> void:
 	style.content_margin_top = 10
 	style.content_margin_bottom = 12
 	add_theme_stylebox_override("panel", style)
-	set_anchors_preset(Control.PRESET_CENTER)
-	grow_horizontal = Control.GROW_DIRECTION_BOTH
-	grow_vertical = Control.GROW_DIRECTION_BOTH
 	custom_minimum_size = Vector2(980, 520)
+	clip_contents = true
+	get_viewport().size_changed.connect(func():
+		if visible:
+			_center())
 	var root := VBoxContainer.new()
 	root.add_theme_constant_override("separation", 8)
 	add_child(root)
@@ -55,7 +62,7 @@ func _ready() -> void:
 	columns.add_theme_constant_override("separation", 12)
 	columns.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(columns)
-	var bag := _column(columns, "Mochila")
+	var bag := _column(columns, "Inventário")
 	_bag_title = bag[0]
 	_bag_list = bag[1]
 	_weight_bar = ProgressBar.new()
@@ -63,6 +70,19 @@ func _ready() -> void:
 	_weight_bar.show_percentage = false
 	_bag_title.get_parent().add_child(_weight_bar)
 	_bag_title.get_parent().move_child(_weight_bar, 1)
+	# Slot das costas: mochila equipada (aumenta a carga).
+	_back_row = HBoxContainer.new()
+	_back_row.add_theme_constant_override("separation", 6)
+	_bag_title.get_parent().add_child(_back_row)
+	_bag_title.get_parent().move_child(_back_row, 2)
+	_back_label = Label.new()
+	_back_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_back_label.add_theme_color_override("font_color", Color("#c9d6a8"))
+	_back_row.add_child(_back_label)
+	_back_button = Button.new()
+	_back_button.text = "Tirar"
+	_back_button.pressed.connect(func(): unequip_requested.emit())
+	_back_row.add_child(_back_button)
 	var box := _column(columns, "Chão / recipiente")
 	_box_title = box[0]
 	_box_list = box[1]
@@ -98,15 +118,26 @@ func open() -> void:
 	visible = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_refresh()
+	_center()
+
+## Centraliza na tela com tamanho fixo (o conteúdo rola dentro das colunas).
+func _center() -> void:
+	var screen := get_viewport_rect().size
+	var wanted := Vector2(minf(980.0, screen.x - 40.0), minf(560.0, screen.y - 80.0))
+	set_anchors_preset(Control.PRESET_TOP_LEFT)
+	custom_minimum_size = wanted
+	size = wanted
+	position = ((screen - wanted) * 0.5).floor()
 
 func close() -> void:
 	visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
-func set_inventory(new_inv: Dictionary, new_weight: float, new_cap: float) -> void:
+func set_inventory(new_inv: Dictionary, new_weight: float, new_cap: float, new_back: String = "") -> void:
 	inv = new_inv
 	weight = new_weight
 	cap = new_cap
+	back = new_back
 	_refresh()
 
 func show_container(id: String, title: String, items: Dictionary) -> void:
@@ -167,15 +198,22 @@ func _refresh() -> void:
 	for list in [_bag_list, _box_list, _craft_list]:
 		for child in list.get_children():
 			child.queue_free()
-	_bag_title.text = "Mochila  —  %.1f / %.0f kg" % [weight, cap]
+	_bag_title.text = "Inventário  —  %.1f / %.0f kg" % [weight, cap]
 	_weight_bar.max_value = cap
 	_weight_bar.value = minf(weight, cap)
+	if back.is_empty():
+		_back_label.text = "Costas: vazio (só bolsos, %d kg). Equipe uma mochila." % int(SurvivalData.catalog().get("carry_base", 10))
+	else:
+		_back_label.text = "Costas: %s (+%d kg)" % [SurvivalData.item_name(back), int(SurvivalData.item(back).get("carry", 0))]
+	_back_button.visible = not back.is_empty()
 	for id in _sorted(inv):
 		var n := int(inv[id])
 		var entry := SurvivalData.item(id)
 		var buttons: Array = []
 		if entry.has("use"):
 			buttons.append(["Usar", func(): use_requested.emit(id)])
+		if str(entry.get("slot", "")) == "back":
+			buttons.append(["Equipar", func(): equip_requested.emit(id)])
 		buttons.append(["Largar", func(): drop_requested.emit(id, false)])
 		_row(_bag_list, "%s  ×%d" % [SurvivalData.item_name(id), n], _describe(id), buttons)
 	if inv.is_empty():

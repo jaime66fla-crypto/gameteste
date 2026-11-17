@@ -120,10 +120,36 @@ test('search rolls loot once, take moves items into the backpack', async () => {
 	assert.ok(p.ws.last('inv'));
 });
 
-test('weight limit: a full backpack refuses more, a better backpack raises the limit', () => {
-	assert.equal(carryLimit({}), catalog.carry_base);
-	assert.equal(carryLimit({ school_bag: 1, backpack: 1 }), catalog.carry_base + catalog.items.backpack.carry);
+test('weight limit: pockets only, an equipped backpack raises it', () => {
+	assert.equal(carryLimit(''), catalog.carry_base);
+	assert.equal(carryLimit('backpack'), catalog.carry_base + catalog.items.backpack.carry);
 	assert.equal(inventoryWeight({ wood: 3, stone: 1 }), 3.8);
+});
+
+test('backpacks are equipped on the back: carrying one in the pockets does not help', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const box = world.containers.find((c) => c.type === 'toolbox');
+	at(p, box.p);
+	p.me().inv = { school_bag: 1 };
+	room.state.containers[box.id] = { items: { wood: 40 }, refillAt: Date.now() + 1e6 };
+	say(room, p, { t: 'take', k: box.id, item: 'wood' });
+	assert.equal(p.me().inv.wood, Math.floor(catalog.carry_base - catalog.items.school_bag.weight), 'bag in pockets only weighs');
+	say(room, p, { t: 'equip', item: 'school_bag' });
+	assert.equal(p.me().back, 'school_bag');
+	assert.equal(p.me().inv.school_bag, undefined);
+	assert.equal(p.ws.last('inv').cap, catalog.carry_base + catalog.items.school_bag.carry);
+	say(room, p, { t: 'take', k: box.id, item: 'wood' });
+	assert.ok(p.me().inv.wood > catalog.carry_base, 'more room with the bag on');
+	say(room, p, { t: 'unequip' });
+	assert.match(p.ws.last('note').message, /bolsos/, 'cannot take it off while overloaded');
+	assert.equal(p.me().back, 'school_bag');
+	p.me().inv = { cloth: 2, backpack: 1 };
+	say(room, p, { t: 'equip', item: 'backpack' });
+	assert.equal(p.me().back, 'backpack');
+	assert.equal(p.me().inv.school_bag, 1, 'swapped bag goes back to the inventory');
+	room.damagePlayer(p.me(), 500, 'z1', 'zombie');
+	assert.equal(Object.values(room.state.bags)[0].items.backpack, 1, 'equipped bag drops on death');
 });
 
 test('take is capped by weight', async () => {

@@ -32,7 +32,132 @@ func _ready() -> void:
 		_resource(res)
 	for town in data.get("towns", []):
 		_town_sign(town)
+	grass_patches = data.get("grass", [])
+	_short_grass()
+	for patch in grass_patches:
+		_tall_grass(patch)
 	_fence()
+
+# ------------------------------------------------------------------ grama ---
+# Grama baixa espalhada pelo campo (só visual, some de longe) e manchas de
+# grama alta (1,3–1,7 m): agachado dentro delas, zumbis só te veem bem de perto.
+var grass_patches: Array = []
+var _grass_material: ShaderMaterial
+const GRASS_SHADER := """
+shader_type spatial;
+render_mode cull_disabled, diffuse_lambert, specular_disabled;
+uniform float sway = 0.10;
+void vertex() {
+	vec3 world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	float h = VERTEX.y;
+	float wave = sin(TIME * 1.7 + world.x * 0.31 + world.z * 0.23) + 0.4 * sin(TIME * 3.1 + world.x * 0.9);
+	VERTEX.x += wave * sway * h;
+	VERTEX.z += wave * sway * 0.6 * h;
+}
+void fragment() {
+	ALBEDO = COLOR.rgb;
+	ROUGHNESS = 0.95;
+}
+"""
+
+func _grass_mat() -> ShaderMaterial:
+	if _grass_material == null:
+		var shader := Shader.new()
+		shader.code = GRASS_SHADER
+		_grass_material = ShaderMaterial.new()
+		_grass_material.shader = shader
+	return _grass_material
+
+## Tufo de folhas finas (triângulos), base escura e ponta clara.
+func _clump_mesh(blades: int, height: float, width: float, base: Color, tip: Color) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = blades * 31 + int(height * 100)
+	for i in blades:
+		var a := TAU * i / blades + rng.randf_range(-0.3, 0.3)
+		var r := rng.randf_range(0.0, 0.18)
+		var center := Vector3(cos(a) * r, 0, sin(a) * r)
+		var h := height * rng.randf_range(0.7, 1.15)
+		var side := Vector3(cos(a + PI * 0.5), 0, sin(a + PI * 0.5)) * width * 0.5
+		var lean := Vector3(cos(a), 0, sin(a)) * h * rng.randf_range(0.1, 0.35)
+		var b := base.lerp(base.darkened(0.2), rng.randf())
+		var t := tip.lerp(tip.lightened(0.15), rng.randf())
+		st.set_color(b)
+		st.add_vertex(center - side)
+		st.set_color(b)
+		st.add_vertex(center + side)
+		st.set_color(t)
+		st.add_vertex(center + lean + Vector3(0, h, 0))
+	st.generate_normals()
+	return st.commit()
+
+func _multimesh(mesh: Mesh, transforms: Array, visible_until: float) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = mm
+	node.material_override = _grass_mat()
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.visibility_range_end = visible_until
+	node.visibility_range_end_margin = 10.0
+	node.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	add_child(node)
+	return node
+
+## Grama baixa em blocos de 40 m (cada bloco some sozinho de longe).
+func _short_grass() -> void:
+	var mesh := _clump_mesh(4, 0.38, 0.07, Color("#3e5a2e"), Color("#8aa65a"))
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 4242
+	var tile := 40.0
+	var h := half_size
+	var x := -h
+	while x < h:
+		var z := -h
+		while z < h:
+			var list: Array = []
+			for i in 520:
+				var p := Vector3(x + rng.randf() * tile, 0, z + rng.randf() * tile)
+				if absf(p.x) < CENTER_HALF + 1 and absf(p.z) < CENTER_HALF + 1:
+					continue
+				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4))
+				list.append(Transform3D(basis, p))
+			if not list.is_empty():
+				var node := _multimesh(mesh, list, 55.0)
+				node.name = "ShortGrass"
+			z += tile
+		x += tile
+
+func _tall_grass(patch: Dictionary) -> void:
+	var mesh := _clump_mesh(7, 1.45, 0.09, Color("#4a5b2a"), Color("#b8b46a"))
+	var c := Vector3(float(patch["x"]), 0, float(patch["z"]))
+	var r := float(patch["r"])
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(c.x * 13 + c.z * 7)
+	var count := int(PI * r * r * 1.6)
+	var list: Array = []
+	for i in count:
+		var a := rng.randf() * TAU
+		var d := sqrt(rng.randf()) * r
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, rng.randf_range(0.85, 1.2), 1))
+		list.append(Transform3D(basis, c + Vector3(cos(a) * d, 0, sin(a) * d)))
+	var node := _multimesh(mesh, list, 170.0)
+	node.name = "TallGrass"
+
+## Ponto dentro de uma mancha de grama alta?
+func in_tall_grass(point: Vector3) -> bool:
+	for patch in grass_patches:
+		var dx := point.x - float(patch["x"])
+		var dz := point.z - float(patch["z"])
+		var r := float(patch["r"]) - 0.6
+		if dx * dx + dz * dz < r * r:
+			return true
+	return false
 
 # ------------------------------------------------------------ materiais ---
 
@@ -93,15 +218,16 @@ func _ground() -> void:
 	]
 	for slab in slabs:
 		_solid(self, slab[0], slab[1], grass).name = "Ground"
-	# Terra batida em algumas manchas, para o campo não ficar liso.
-	var dirt := _mat("concrete", "#7a6a4f")
+	# Manchas de terra e de grama mais clara/escura, para o campo não ficar liso.
+	var tints := [_mat("concrete", "#7a6a4f"), _mat("grass", "#6f8a52"), _mat("grass", "#4e6a40"), _mat("grass", "#7c8e4a")]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
-	for i in 60:
-		var p := Vector3(rng.randf_range(-h + 10, h - 10), 0.004, rng.randf_range(-h + 10, h - 10))
-		if absf(p.x) < c + 6 and absf(p.z) < c + 6:
+	for i in 220:
+		var p := Vector3(rng.randf_range(-h + 10, h - 10), 0.004 + (i % 4) * 0.003, rng.randf_range(-h + 10, h - 10))
+		if absf(p.x) < c + 10 and absf(p.z) < c + 10:
 			continue
-		var patch := _part(self, p, Vector3(rng.randf_range(6, 18), 0.01, rng.randf_range(6, 18)), dirt)
+		var size := rng.randf_range(8, 30) if i % 4 else rng.randf_range(5, 14)
+		var patch := _part(self, p, Vector3(size, 0.01, size * rng.randf_range(0.5, 1.2)), tints[i % 4])
 		patch.rotation.y = rng.randf() * TAU
 
 func _road(road: Dictionary) -> void:

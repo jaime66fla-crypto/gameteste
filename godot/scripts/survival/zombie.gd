@@ -16,6 +16,7 @@ const KINDS := {
 	"brute":  {"wander": 0.8, "chase": 2.1, "scale": 1.3, "skin": "#6f7d5c", "shirt": "#463b33"},
 }
 const SIGHT := 24.0 # metros; de noite cai pela metade
+const HIDDEN_SIGHT := 4.0 # agachado dentro da grama alta
 const HEARING := 48.0 # tiros ouvidos daqui
 const ATTACK_RANGE := 1.7
 const ATTACK_COOLDOWN := 1.3
@@ -243,8 +244,19 @@ func _closest_target() -> Dictionary:
 		var d := global_position.distance_to(node.global_position)
 		if d < best_d:
 			best_d = d
-			best = {"id": entry["id"], "node": node, "dist": d}
+			best = {"id": entry["id"], "node": node, "dist": d, "range": _sight_for(entry)}
 	return best
+
+## Quanto o zumbi enxerga esse alvo: agachado na grama alta = só bem de perto.
+func _sight_for(entry: Dictionary) -> float:
+	var sight := SIGHT * (0.55 if night else 1.0)
+	var grass := bool(entry.get("grass", false))
+	var crouch := bool(entry.get("crouch", false))
+	if grass and crouch:
+		return HIDDEN_SIGHT
+	if grass or crouch:
+		sight *= 0.65
+	return sight
 
 func _sees(node: Node3D) -> bool:
 	var from := global_position + Vector3(0, 1.6, 0)
@@ -266,7 +278,7 @@ func _run_ai(delta: float) -> void:
 			velocity.z = 0.0
 			_apply_gravity(delta)
 			return
-		var sight := SIGHT * (0.55 if night else 1.0)
+		var sight := float(near["range"])
 		if _target == null:
 			if float(near["dist"]) < sight and _sees(near["node"]):
 				_target = near["node"]
@@ -279,10 +291,12 @@ func _run_ai(delta: float) -> void:
 			if str(near["id"]) != _target_id and float(near["dist"]) + 4.0 < global_position.distance_to(_target.global_position):
 				_target = near["node"]
 				_target_id = str(near["id"])
-			if _sees(_target):
+			# Agachou na grama alta longe do zumbi: ele perde a pista em ~3 s e vai até o último ponto.
+			var hiding := str(near["id"]) == _target_id and float(near["range"]) <= HIDDEN_SIGHT and float(near["dist"]) > HIDDEN_SIGHT * 2.0
+			if _sees(_target) and not hiding:
 				_lost_timer = 0.0
 			else:
-				_lost_timer += 0.4
+				_lost_timer += 2.7 if hiding else 0.4
 				if _lost_timer > 8.0:
 					_investigate = _target.global_position
 					_target = null

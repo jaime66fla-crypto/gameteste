@@ -181,7 +181,7 @@ for (const r of roads) {
 }
 // Florestas: aglomerados de árvores, com rochas e arbustos de frutas espalhados.
 const forests = [];
-for (let f = 0; f < 22; f++) {
+for (let f = 0; f < 34; f++) {
 	let x;
 	let z;
 	let tries = 0;
@@ -192,7 +192,7 @@ for (let f = 0; f < 22; f++) {
 	if (tries >= 60) continue;
 	const radius = between(14, 30);
 	forests.push({ x: r1(x), z: r1(z), r: r1(radius) });
-	const trees = Math.floor(radius * 0.9);
+	const trees = Math.floor(radius * 1.4);
 	for (let i = 0; i < trees; i++) {
 		const a = rand() * Math.PI * 2;
 		const d = Math.sqrt(rand()) * radius;
@@ -210,9 +210,40 @@ function scatter(kind, count, margin) {
 		i++;
 	}
 }
-scatter('tree', 140, 2);
-scatter('rock', 70, 2);
-scatter('bush', 60, 2);
+scatter('tree', 300, 2);
+scatter('rock', 80, 2);
+scatter('bush', 70, 2);
+
+// --- Grama alta: manchas onde dá para se esconder agachado (o jogo e os zumbis usam) ---
+const grass = [];
+function grassFree(x, z, r) {
+	if (Math.abs(x) > HALF - 8 || Math.abs(z) > HALF - 8) return false;
+	if (Math.abs(x) < CENTER_CLEAR + r && Math.abs(z) < CENTER_CLEAR + r) return false;
+	for (const b of buildings) {
+		if (Math.abs(x - b.center[0]) < b.size[0] / 2 + r + 2 && Math.abs(z - b.center[1]) < b.size[1] / 2 + r + 5) return false;
+	}
+	for (const road of roads) if (segmentDistance(x, z, road.from, road.to) < road.width / 2 + r * 0.7) return false;
+	return true;
+}
+// Campos grandes entre as cidades e bordas das florestas.
+for (let i = 0, tries = 0; grass.length < 150 && tries < 6000; tries++) {
+	const nearForest = i % 3 === 0 && forests.length;
+	let x;
+	let z;
+	if (nearForest) {
+		const f = pick(forests);
+		const a = rand() * Math.PI * 2;
+		x = f.x + Math.cos(a) * (f.r + between(2, 10));
+		z = f.z + Math.sin(a) * (f.r + between(2, 10));
+	} else {
+		x = between(-HALF + 15, HALF - 15);
+		z = between(-HALF + 15, HALF - 15);
+	}
+	const r = between(5, 13);
+	if (!grassFree(x, z, r)) continue;
+	grass.push({ x: r1(x), z: r1(z), r: r1(r) });
+	i++;
+}
 
 // --- Nascimento dos jogadores: campo aberto, longe das cidades -------------------
 const spawns = [];
@@ -246,6 +277,7 @@ const world = {
 	resources,
 	spawns,
 	zombie_zones,
+	grass,
 };
 writeFileSync(new URL('../godot/data/survival_world.json', import.meta.url), JSON.stringify(world, null, 1) + '\n');
-console.log(`${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos, ${spawns.length} nascimentos, ${roads.length} estradas`);
+console.log(`${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos (${resources.filter((r) => r.kind === 'tree').length} árvores), ${grass.length} manchas de grama alta, ${spawns.length} nascimentos, ${roads.length} estradas`);

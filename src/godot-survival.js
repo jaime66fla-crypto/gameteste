@@ -96,11 +96,14 @@ export function inventoryWeight(inv) {
 	return Math.round(total * 100) / 100;
 }
 
-/** Peso máximo: base + a melhor mochila carregada (mochilas não somam). */
-export function carryLimit(inv) {
-	let bonus = 0;
-	for (const item of Object.keys(inv)) bonus = Math.max(bonus, ITEMS[item]?.carry || 0);
-	return catalog.carry_base + bonus;
+/** Peso máximo: bolsos do personagem + a mochila equipada nas costas (se houver). */
+export function carryLimit(back = '') {
+	return catalog.carry_base + (ITEMS[back]?.carry || 0);
+}
+
+/** Peso carregado: itens + a mochila equipada (ela pesa, mas não ocupa espaço). */
+export function carriedWeight(player) {
+	return Math.round((inventoryWeight(player.inv) + (ITEMS[player.back]?.weight || 0)) * 100) / 100;
 }
 
 function addItems(inv, item, n) {
@@ -115,11 +118,11 @@ function removeItems(inv, item, n) {
 	return true;
 }
 
-/** Quanto de `item` cabe na mochila sem passar do peso. */
-function roomFor(inv, item, wanted) {
+/** Quanto de `item` cabe no inventário do jogador sem passar do peso. */
+function roomFor(player, item, wanted) {
 	const unit = ITEMS[item]?.weight || 0;
 	if (unit <= 0) return wanted;
-	const free = carryLimit({ ...inv, [item]: 1 }) - inventoryWeight(inv);
+	const free = carryLimit(player.back) - carriedWeight(player);
 	return Math.max(0, Math.min(wanted, Math.floor((free + 1e-6) / unit)));
 }
 
@@ -272,12 +275,12 @@ export class GodotSurvival {
 
 	newCharacter() {
 		const spawn = world.spawns[Math.floor(Math.random() * world.spawns.length)];
-		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, dead: false };
+		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', dead: false };
 	}
 
 	restore(saved) {
 		if (saved.dead) return { ...this.newCharacter(), inv: {}, dead: true, respawnAt: Date.now() };
-		return { p: saved.p, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, dead: false };
+		return { p: saved.p, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', dead: false };
 	}
 
 	startPacket(me) {
@@ -302,7 +305,7 @@ export class GodotSurvival {
 	}
 
 	invPacket(player) {
-		return { inv: player.inv, weight: inventoryWeight(player.inv), cap: carryLimit(player.inv) };
+		return { inv: player.inv, back: player.back || '', weight: carriedWeight(player), cap: carryLimit(player.back) };
 	}
 
 	sendInv(player) {
@@ -349,7 +352,7 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h,
+					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
 				return;
@@ -376,6 +379,8 @@ export class GodotSurvival {
 			}
 			case 'use': return this.use(me, d, note);
 			case 'craft': return this.craft(me, d, note);
+			case 'equip': return this.equip(me, d, note);
+			case 'unequip': return this.unequip(me, note);
 			case 'gather_start': {
 				const res = RESOURCES[d.r];
 				if (!res || flat(me.p, res.p) > REACH) return;
@@ -463,8 +468,10 @@ export class GodotSurvival {
 			this.credit(attacker, XP.player);
 		}
 		// Tudo o que carregava fica numa mochila no chão.
+		if (target.back) addItems(target.inv, target.back, 1);
 		if (Object.keys(target.inv).length) this.makeBag(target.p, target.inv, target.name);
 		target.inv = {};
+		target.back = '';
 		this.sendInv(target);
 	}
 
@@ -626,7 +633,7 @@ export class GodotSurvival {
 		if (!items || !at || flat(me.p, at) > REACH) return;
 		const wanted = Number.isInteger(d.n) && d.n > 0 ? Math.min(d.n, items[d.item] || 0) : items[d.item] || 0;
 		if (!ITEMS[d.item] || !wanted) return;
-		const fits = roomFor(me.inv, d.item, wanted);
+		const fits = roomFor(me, d.item, wanted);
 		if (!fits) return note('Mochila pesada demais.');
 		removeItems(items, d.item, fits);
 		addItems(me.inv, d.item, fits);
@@ -691,6 +698,42 @@ export class GodotSurvival {
 		note(`Usou ${item.name}.`);
 	}
 
+	/** Veste uma mochila nas costas (a que estava volta para o inventário). */
+	equip(me, d, note) {
+		const item = ITEMS[d.item];
+		if (item?.slot !== 'back' || !me.inv[d.item]) return;
+		const old = me.back;
+		removeItems(me.inv, d.item, 1);
+		me.back = d.item;
+		if (old) addItems(me.inv, old, 1);
+		if (carriedWeight(me) > carryLimit(me.back)) {
+			// Trocar por uma mochila menor não pode deixar o jogador acima do limite.
+			if (old) removeItems(me.inv, old, 1);
+			me.back = old;
+			addItems(me.inv, d.item, 1);
+			return note('Peso demais para essa mochila. Largue alguns itens antes.');
+		}
+		this.save();
+		this.sendInv(me);
+		note(`Equipou ${item.name} (+${item.carry} kg).`);
+	}
+
+	/** Tira a mochila das costas: só se o resto couber nos bolsos. */
+	unequip(me, note) {
+		if (!me.back) return;
+		const old = me.back;
+		me.back = '';
+		addItems(me.inv, old, 1);
+		if (carriedWeight(me) > carryLimit('')) {
+			removeItems(me.inv, old, 1);
+			me.back = old;
+			return note('Os bolsos não aguentam tudo. Largue itens antes de tirar a mochila.');
+		}
+		this.save();
+		this.sendInv(me);
+		note(`Tirou ${ITEMS[old].name}.`);
+	}
+
 	craft(me, d, note) {
 		const recipe = RECIPES[d.recipe];
 		if (!recipe) return;
@@ -722,7 +765,7 @@ export class GodotSurvival {
 		if (rule.extra && Math.random() < rule.extra[1]) gained[rule.extra[0]] = 1;
 		const got = [];
 		for (const [item, n] of Object.entries(gained)) {
-			const fits = roomFor(me.inv, item, n);
+			const fits = roomFor(me, item, n);
 			addItems(me.inv, item, fits);
 			if (fits) got.push(`${ITEMS[item].name} +${fits}`);
 		}
@@ -786,7 +829,7 @@ export class GodotSurvival {
 		const player = s.players[meta.id];
 		if (player) {
 			if (player.account) {
-				s.chars[player.account] = { p: player.p, hp: player.hp, hunger: player.hunger, thirst: player.thirst, inv: player.inv, dead: player.dead, savedAt: Date.now() };
+				s.chars[player.account] = { p: player.p, hp: player.hp, hunger: player.hunger, thirst: player.thirst, inv: player.inv, back: player.back || '', dead: player.dead, savedAt: Date.now() };
 			}
 			this.ctx.waitUntil(this.flushXp(player));
 			delete s.players[meta.id];

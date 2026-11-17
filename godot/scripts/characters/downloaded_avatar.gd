@@ -104,30 +104,214 @@ func set_aim_target(point: Vector3, active: bool) -> void:
 	aim_target = point
 	aim_active = active
 
-func animate(delta: float, move_amount: float, running: bool, _crouched: bool, _aiming: bool, airborne: bool, _reloading: bool, _movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
+func animate(delta: float, move_amount: float, running: bool, crouched: bool, _aiming: bool, airborne: bool, _reloading: bool, _movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
 	if not ready_ok:
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
+	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne else 0.0, delta * 6.0)
+	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
 	animation_player.advance(delta)
 	var moving := move_amount > 0.08 and not airborne
 	locomotion_active = moving
+	_move_amount = move_amount if moving else 0.0
 	if current_clip in ["punch", "elbow_punch"] and animation_player.is_playing():
+		_apply_crouch()
 		_update_weapon_mount()
+		_update_backpack()
 		return
 	if current_clip in ["punch", "elbow_punch"] and not animation_player.is_playing():
 		current_clip = ""
 	if current_clip == "run_to_stop" and animation_player.is_playing() and not moving:
-		_update_weapon_mount()
+		_finish_pose()
 		return
 	var clip := "idle_with_rifle"
 	if moving:
-		clip = "run_in_place" if running else "walk_with_rifle"
+		# Agachado não corre: anda devagar com as pernas dobradas.
+		clip = "run_in_place" if running and crouch_weight < 0.5 else "walk_with_rifle"
 	elif current_clip == "run_in_place":
 		clip = "run_to_stop"
 	var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
 	var gait_rate := clampf(speed / (4.0 if running else 2.8), 0.75, 2.2) if moving else 1.0
 	_play_clip(clip, gait_rate)
+	_finish_pose()
+
+## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
+func _finish_pose() -> void:
+	_apply_crouch()
 	_update_weapon_mount()
+	if unarmed_weight > 0.01:
+		_relax_arms()
+	_update_backpack()
+
+# -------------------------------------------------------------- mochila ---
+## Mochila nas costas (Sobrevivência): "" tira. Tamanho e cor pelo tipo.
+const BACKPACK_LOOK := {
+	"school_bag": [Vector3(0.30, 0.38, 0.14), Color("#2f5d8a")],
+	"sack_bag": [Vector3(0.32, 0.34, 0.16), Color("#8a7a5a")],
+	"backpack": [Vector3(0.36, 0.50, 0.20), Color("#4b5a32")],
+}
+var backpack_id := ""
+var _backpack: Node3D
+
+func set_backpack(item_id: String) -> void:
+	if item_id == backpack_id or skeleton == null:
+		return
+	backpack_id = item_id
+	if _backpack != null:
+		_backpack.queue_free()
+		_backpack = null
+	if not BACKPACK_LOOK.has(item_id):
+		return
+	var look: Array = BACKPACK_LOOK[item_id]
+	var size: Vector3 = look[0]
+	_backpack = Node3D.new()
+	_backpack.name = "Backpack"
+	skeleton.add_child(_backpack)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = look[1]
+	mat.roughness = 0.9
+	var strap_mat := StandardMaterial3D.new()
+	strap_mat.albedo_color = Color("#1f2320")
+	# Corpo, bolso da frente e alças (atrás do tronco: -Z no espaço do esqueleto).
+	for spec in [[Vector3(0, 0, -size.z * 0.5), size, mat], [Vector3(0, -size.y * 0.18, -size.z - 0.03), Vector3(size.x * 0.75, size.y * 0.38, 0.06), mat]]:
+		var part := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = spec[1]
+		part.mesh = box
+		part.position = spec[0]
+		part.material_override = spec[2]
+		_backpack.add_child(part)
+	for x in [-0.09, 0.09]:
+		var strap := MeshInstance3D.new()
+		var box := BoxMesh.new()
+		box.size = Vector3(0.045, size.y * 0.9, 0.24)
+		strap.mesh = box
+		strap.position = Vector3(x, 0.02, 0.06)
+		strap.material_override = strap_mat
+		_backpack.add_child(strap)
+	_update_backpack()
+
+func _update_backpack() -> void:
+	if _backpack == null:
+		return
+	var hips := Grip._bone(skeleton, "Hips")
+	var left := Grip._bone(skeleton, "LeftArm")
+	var right := Grip._bone(skeleton, "RightArm")
+	if hips < 0 or left < 0 or right < 0:
+		return
+	# Plano das costas pelos ombros e quadril: a mochila fica chapada nas costas
+	# mesmo com o peito torcido da pose de fuzil ou inclinado ao agachar.
+	var l := skeleton.get_bone_global_pose(left).origin
+	var r := skeleton.get_bone_global_pose(right).origin
+	var shoulders := (l + r) * 0.5
+	var up := (shoulders - skeleton.get_bone_global_pose(hips).origin).normalized()
+	var side := (l - r)
+	side = (side - up * side.dot(up)).normalized()
+	var back := side.cross(up).normalized()
+	if back.dot(Vector3(0, 0, -1)) < 0.0:
+		back = -back # costas = -Z no espaço do esqueleto (o modelo olha para +Z)
+	side = up.cross(back).normalized()
+	var basis := Basis(-side, up, -back) # base direita (x × y = z)
+	_backpack.transform = Transform3D(basis, shoulders - up * 0.24 + back * 0.10)
+
+# ------------------------------------------------------------- agachar ---
+# Os clipes do Ch31 são todos em pé. Agachar é feito por cima: o quadril desce,
+# as pernas dobram com IK (pés onde o clipe os pôs, joelhos para a frente) e o
+# tronco inclina um pouco. As hitboxes seguem os ossos, então o alvo fica menor.
+const CROUCH_DROP := 0.36 # fração do comprimento da perna
+const CROUCH_LEAN := 0.32 # radianos de inclinação do tronco
+var crouch_weight := 0.0
+var unarmed_weight := 0.0
+var _move_amount := 0.0
+
+func _apply_crouch() -> void:
+	if crouch_weight <= 0.001:
+		return
+	var hips := Grip._bone(skeleton, "Hips")
+	var spine := Grip._bone(skeleton, "Spine")
+	if hips < 0:
+		return
+	var feet := {}
+	for side in ["Left", "Right"]:
+		var foot := Grip._bone(skeleton, side + "Foot")
+		if foot >= 0:
+			feet[side] = skeleton.get_bone_global_pose(foot)
+	var leg_length := 0.0
+	var up_leg := Grip._bone(skeleton, "LeftUpLeg")
+	var leg := Grip._bone(skeleton, "LeftLeg")
+	var foot_bone := Grip._bone(skeleton, "LeftFoot")
+	if up_leg >= 0 and leg >= 0 and foot_bone >= 0:
+		leg_length = skeleton.get_bone_rest(leg).origin.length() + skeleton.get_bone_rest(foot_bone).origin.length()
+	# Desce o quadril no espaço do esqueleto (Y para cima), convertido para o espaço do pai.
+	var drop := Vector3(0, -leg_length * CROUCH_DROP * crouch_weight, 0)
+	var parent := skeleton.get_bone_parent(hips)
+	if parent >= 0:
+		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
+	if spine >= 0:
+		var spine_global := skeleton.get_bone_global_pose(spine).basis
+		# Frente do modelo é +Z no espaço do esqueleto: girar em X leva o topo para a frente.
+		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, CROUCH_LEAN * crouch_weight) * spine_global)
+	for side in feet:
+		_leg_ik(side, (feet[side] as Transform3D).origin, Vector3(0, 0, 1))
+		Grip._set_global_rotation(skeleton, Grip._bone(skeleton, side + "Foot"), (feet[side] as Transform3D).basis)
+
+## IK de duas juntas (coxa e canela) até `target`, com o joelho apontando para `pole`.
+func _leg_ik(side: String, target: Vector3, pole: Vector3) -> void:
+	_two_bone_ik(Grip._bone(skeleton, side + "UpLeg"), Grip._bone(skeleton, side + "Leg"), Grip._bone(skeleton, side + "Foot"), target, pole)
+
+func _two_bone_ik(upper: int, lower: int, foot: int, target: Vector3, pole: Vector3) -> void:
+	if upper < 0 or lower < 0 or foot < 0:
+		return
+	var upper_pose := skeleton.get_bone_global_pose(upper)
+	var upper_length := skeleton.get_bone_rest(lower).origin.length()
+	var lower_length := skeleton.get_bone_rest(foot).origin.length()
+	var offset := target - upper_pose.origin
+	var distance := clampf(offset.length(), 0.001, upper_length + lower_length - 0.0001)
+	var direction := offset.normalized()
+	var bend := pole - direction * pole.dot(direction)
+	if bend.length_squared() < 0.00001:
+		return
+	bend = bend.normalized()
+	var along := (upper_length * upper_length - lower_length * lower_length + distance * distance) / (2.0 * distance)
+	var outward := sqrt(maxf(0.0, upper_length * upper_length - along * along))
+	var knee := upper_pose.origin + direction * along + bend * outward
+	var upper_dir := (upper_pose.basis * skeleton.get_bone_rest(lower).origin).normalized()
+	Grip._set_global_rotation(skeleton, upper, Basis(Quaternion(upper_dir, (knee - upper_pose.origin).normalized())) * upper_pose.basis)
+	var lower_pose := skeleton.get_bone_global_pose(lower)
+	var lower_dir := (lower_pose.basis * skeleton.get_bone_rest(foot).origin).normalized()
+	var reach := upper_pose.origin + direction * distance
+	Grip._set_global_rotation(skeleton, lower, Basis(Quaternion(lower_dir, (reach - lower_pose.origin).normalized())) * lower_pose.basis)
+
+# ------------------------------------------------------ braços desarmado ---
+## Sem arma: mãos ao lado do quadril, balançando ao andar (os clipes seguram um fuzil).
+func _relax_arms() -> void:
+	var hips := Grip._bone(skeleton, "Hips")
+	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	if hips < 0 or chest < 0:
+		return
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var hip := skeleton.get_bone_global_pose(hips).origin
+	var length := maxf(animation_player.current_animation_length, 0.01)
+	var phase := animation_player.current_animation_position / length * TAU
+	for side in ["Left", "Right"]:
+		var upper := Grip._bone(skeleton, side + "Arm")
+		var hand := Grip._bone(skeleton, side + "Hand")
+		if upper < 0 or hand < 0:
+			continue
+		var shoulder := skeleton.get_bone_global_pose(upper).origin
+		var lateral := shoulder - torso
+		lateral.y = 0.0
+		if lateral.length_squared() < 0.0001:
+			continue
+		lateral = lateral.normalized()
+		var swing := sin(phase + (0.0 if side == "Left" else PI)) * 0.18 * _move_amount
+		var relaxed := Vector3(hip.x, hip.y + 0.02, hip.z) + lateral * 0.24 + Vector3(0, 0, 0.02 + swing)
+		var current := skeleton.get_bone_global_pose(hand).origin
+		var target := current.lerp(relaxed, unarmed_weight)
+		# Cotovelo para trás e um pouco para fora; punho reto (pose de descanso da mão).
+		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, target, lateral * 0.4 + Vector3(0, 0, -1))
+		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
 
 func play_action(action: String) -> bool:
 	if not ready_ok or action not in ["punch", "elbow_punch"]:

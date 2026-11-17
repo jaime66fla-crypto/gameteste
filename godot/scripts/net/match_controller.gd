@@ -157,6 +157,22 @@ func _combatants() -> Array:
 			list.append({"id": id, "node": actor, "team": teams.get(id, -1)})
 	return list
 
+## Linha curta acima da munição (HUD): kits e granadas que você carrega.
+func hud_extra() -> String:
+	if local_dead or finished:
+		return ""
+	return "KITS %d [F]   GRANADAS %d [G]" % [my_medkits, my_nades]
+
+## Aliados vivos, para o minimapa (só em equipes).
+func ally_nodes() -> Array:
+	var list: Array = []
+	if not team_mode:
+		return list
+	for id in actors:
+		if is_ally(id) and not actors[id].dead:
+			list.append(actors[id])
+	return list
+
 func _team_name(team: int) -> String:
 	return str(team_names[team]) if team >= 0 and team < team_names.size() else "?"
 
@@ -663,7 +679,6 @@ func _on_watched_killed(victim_id: String, killer_id: String) -> void:
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 1.2)
 	_update_loot_ui()
-	var my_name: String = names.get(my_id, "Você")
 	if finished:
 		status_label.text = ""
 	elif local_dead:
@@ -679,9 +694,9 @@ func _process(delta: float) -> void:
 			status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, watched]
 	elif team_mode:
 		var sides := _team_alive()
-		status_label.text = "%s (%s)  |  ALIADOS: %d  x  INIMIGOS: %d  |  ABATES: %d  |  KITS: %d [F]  |  GRANADAS: %d [G]  |  +%d XP" % [my_name, _team_name(my_team).to_upper(), sides[0], sides[1], my_kills, my_medkits, my_nades, match_xp]
+		status_label.text = "%s  %d  x  %d  •  ABATES %d" % [_team_name(my_team).to_upper(), sides[0], sides[1], my_kills]
 	else:
-		status_label.text = "%s  |  VIVOS: %d  |  ABATES: %d  |  KITS: %d [F]  |  GRANADAS: %d [G]  |  +%d XP" % [my_name, alive_count, my_kills, my_medkits, my_nades, match_xp]
+		status_label.text = "VIVOS %d  •  ABATES %d" % [alive_count, my_kills]
 	health_bar.value = my_hp
 	health_bar.visible = not local_dead and not finished
 	if local_dead and spectate_camera != null:

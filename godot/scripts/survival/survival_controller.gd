@@ -25,6 +25,8 @@ var names: Dictionary = {}
 var zombies: Dictionary = {} # id -> Zombie
 var bags: Dictionary = {} # id -> {node, pos, name, count}
 var inv: Dictionary = {}
+var carried := 0.0 # kg (servidor)
+var carry_cap := 10.0
 var my_hp := 100.0
 var hunger := 100.0
 var thirst := 100.0
@@ -84,7 +86,7 @@ func _ready() -> void:
 	my_hp = float(you.get("hp", 100))
 	hunger = float(you.get("hunger", 100))
 	thirst = float(you.get("thirst", 100))
-	_apply_inventory(you.get("inv", {}), float(you.get("weight", 0)), float(you.get("cap", 20)))
+	_apply_inventory(you.get("inv", {}), float(you.get("weight", 0)), float(you.get("cap", 10)), str(you.get("back", "")))
 	for entry in info.get("roster", []):
 		_add_actor(entry)
 	_spawn_zombies(info.get("zombies", []))
@@ -121,13 +123,16 @@ func _apply_host() -> void:
 		z.call("set_controlled", is_host())
 
 ## Jogadores vivos que os zumbis podem atacar (no anfitrião).
+## "grass": dentro de grama alta; "crouch": agachado (os dois juntos = escondido).
 func _targets() -> Array:
 	var list: Array = []
 	if not local_dead:
-		list.append({"id": my_id, "node": player})
+		list.append({"id": my_id, "node": player, "grass": world.call("in_tall_grass", player.global_position), "crouch": bool(player.get("crouching"))})
 	for id in actors:
-		if not actors[id].dead:
-			list.append({"id": id, "node": actors[id]})
+		var actor = actors[id]
+		if not actor.dead:
+			var state: Dictionary = actor.get("remote_state")
+			list.append({"id": id, "node": actor, "grass": world.call("in_tall_grass", actor.global_position), "crouch": bool(state.get("c", false))})
 	return list
 
 # ------------------------------------------------------------------- rede ---
@@ -167,6 +172,9 @@ func _on_message(data: Dictionary) -> void:
 			var actor = actors.get(str(data.get("id", "")))
 			if actor != null:
 				actor.call("apply_state", data)
+				var visual = actor.get("visual")
+				if visual != null and visual.has_method("set_backpack"):
+					visual.call("set_backpack", str(data.get("bp", "")))
 		"join":
 			_add_actor(data)
 		"leave":
@@ -216,7 +224,7 @@ func _on_message(data: Dictionary) -> void:
 		"hp":
 			_on_health(data)
 		"inv":
-			_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 20)))
+			_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 10)), str(data.get("back", "")))
 		"stats":
 			my_hp = float(data.get("hp", my_hp))
 			hunger = float(data.get("hunger", hunger))
@@ -400,15 +408,20 @@ func _on_respawned(data: Dictionary) -> void:
 	my_hp = float(data.get("hp", 100))
 	hunger = float(data.get("hunger", 85))
 	thirst = float(data.get("thirst", 85))
-	_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 20)))
+	_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 10)), str(data.get("back", "")))
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 # --------------------------------------------------------------- mochila ---
 
 ## O servidor mandou a mochila: armas aparecem/somem e a munição vira reserva.
-func _apply_inventory(new_inv: Dictionary, weight: float, cap: float) -> void:
+func _apply_inventory(new_inv: Dictionary, weight: float, cap: float, back: String = "") -> void:
 	inv = new_inv
-	inventory.call("set_inventory", inv, weight, cap)
+	carried = weight
+	carry_cap = cap
+	inventory.call("set_inventory", inv, weight, cap, back)
+	var avatar = player.get("humanoid_avatar")
+	if avatar != null and avatar.has_method("set_backpack"):
+		avatar.call("set_backpack", back)
 	var owned: Dictionary = player.get("owned_weapons")
 	for item in inv:
 		var w := SurvivalData.weapon_of(str(item))
@@ -622,7 +635,7 @@ func _process(delta: float) -> void:
 		entry["label"].visible = (entry["pos"] as Vector3).distance_to(player.global_position) < 6.0
 	var hour := game_hour()
 	var day := int(floor(_clock_ms / _day_ms)) + 1
-	clock_label.text = "Dia %d   %02d:%02d %s\nOnline: %d/16   Zumbis por perto: %d" % [day, int(hour), int(fmod(hour, 1.0) * 60.0), "(noite)" if night else "(dia)", online, zombies.size()]
+	clock_label.text = "Dia %d  •  %02d:%02d\n%d/16 online" % [day, int(hour), int(fmod(hour, 1.0) * 60.0), online]
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_TAB or event.physical_keycode == KEY_I):
@@ -706,7 +719,7 @@ func _build_ui() -> void:
 	toast_label.modulate.a = 0.0
 	ui.add_child(toast_label)
 	feed = VBoxContainer.new()
-	feed.position = Vector2(18, 130)
+	feed.position = Vector2(18, 212) # abaixo do minimapa
 	feed.custom_minimum_size.x = 520
 	ui.add_child(feed)
 	inventory = InventoryUI.new()
@@ -716,6 +729,8 @@ func _build_ui() -> void:
 	inventory.connect("drop_requested", _on_drop)
 	inventory.connect("use_requested", _on_use)
 	inventory.connect("craft_requested", _on_craft)
+	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
+	inventory.connect("unequip_requested", func(): Net.send({"t": "unequip"}))
 	death_panel = PanelContainer.new()
 	death_panel.visible = false
 	death_panel.set_anchors_preset(Control.PRESET_CENTER)
@@ -742,10 +757,8 @@ func _update_bars() -> void:
 	bars["hp"].value = my_hp
 	bars["hunger"].value = hunger
 	bars["thirst"].value = thirst
-	var weight := SurvivalData.inventory_weight(inv)
-	var cap := float(inventory.get("cap")) if inventory else 20.0
-	bars["weight"].max_value = cap
-	bars["weight"].value = minf(weight, cap)
+	bars["weight"].max_value = carry_cap
+	bars["weight"].value = minf(carried, carry_cap)
 
 func _show_death(title: String, body: String, can_respawn: bool) -> void:
 	death_label.text = title + "\n\n" + body

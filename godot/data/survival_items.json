@@ -1,6 +1,7 @@
 {
   "_comment": "Sobrevivência (mundo aberto): itens, saques, coleta e receitas. Usado pelo servidor (src/godot-survival.js) e pelo jogo (scripts/survival). Peso em kg; 'stack' = vários iguais contam como um item na lista.",
-  "carry_base": 20,
+  "_carry_comment": "carry_base = bolsos do personagem (kg). Mochila equipada (slot de costas) soma 'carry'.",
+  "carry_base": 10,
   "items": {
     "water_bottle":   {"name": "Garrafa d'água",       "weight": 0.6,  "cat": "drink",    "use": {"thirst": 40}},
     "soda":           {"name": "Refrigerante",          "weight": 0.4,  "cat": "drink",    "use": {"thirst": 22, "hunger": 4}},
@@ -23,9 +24,9 @@
     "crowbar":        {"name": "Pé de cabra",           "weight": 1.5,  "cat": "melee",    "melee": 30, "tool": "scrap"},
     "axe":            {"name": "Machado",               "weight": 2.0,  "cat": "melee",    "melee": 38, "tool": "wood"},
     "improvised_axe": {"name": "Machado improvisado",   "weight": 1.8,  "cat": "melee",    "melee": 28, "tool": "wood"},
-    "backpack":       {"name": "Mochila militar",       "weight": 0.8,  "cat": "gear",     "carry": 14},
-    "school_bag":     {"name": "Mochila escolar",       "weight": 0.5,  "cat": "gear",     "carry": 8},
-    "sack_bag":       {"name": "Mochila improvisada",   "weight": 0.6,  "cat": "gear",     "carry": 6},
+    "backpack":       {"name": "Mochila militar",       "weight": 0.8,  "cat": "gear",     "carry": 24, "slot": "back"},
+    "school_bag":     {"name": "Mochila escolar",       "weight": 0.5,  "cat": "gear",     "carry": 12, "slot": "back"},
+    "sack_bag":       {"name": "Mochila improvisada",   "weight": 0.6,  "cat": "gear",     "carry": 9,  "slot": "back"},
     "w_pistol":       {"name": "Pistola",               "weight": 1.0,  "cat": "weapon",   "weapon": "pistol",  "ammo": "a_9mm"},
     "w_smg":          {"name": "SMG",                   "weight": 2.6,  "cat": "weapon",   "weapon": "smg",     "ammo": "a_9mm"},
     "w_rifle":        {"name": "Fuzil",                 "weight": 3.6,  "cat": "weapon",   "weapon": "rifle",   "ammo": "a_556"},

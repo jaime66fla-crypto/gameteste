@@ -18,6 +18,11 @@ var action_state: Dictionary = {}
 var scope_overlay: Control
 var menu_button: Button
 var match_controller: Node3D # online matches only
+var minimap: Control
+var ammo_hud: Control
+const MinimapScript = preload("res://scripts/ui/minimap.gd")
+const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
+const HELP_TEXT := "WASD andar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  |  ESC liberar o mouse"
 
 func _ready() -> void:
     _register_inputs()
@@ -59,6 +64,34 @@ func _ready() -> void:
         add_child(match_controller)
     else:
         _spawn_training_dummies()
+    _build_hud(survival)
+
+## HUD enxuto: minimapa redondo (canto superior esquerdo) e munição (inferior
+## direito). Os controles aparecem segurando F1.
+func _build_hud(survival: bool) -> void:
+    var layer := CanvasLayer.new()
+    layer.name = "Hud"
+    layer.layer = 4
+    add_child(layer)
+    minimap = MinimapScript.new()
+    minimap.call("setup", player, survival)
+    if match_controller != null and match_controller.has_method("ally_nodes"):
+        minimap.set("allies", Callable(match_controller, "ally_nodes"))
+    layer.add_child(minimap)
+    ammo_hud = AmmoHudScript.new()
+    ammo_hud.set("player", player)
+    if match_controller != null and match_controller.has_method("hud_extra"):
+        ammo_hud.set("extra", Callable(match_controller, "hud_extra"))
+    layer.add_child(ammo_hud)
+    # A legenda de controles (F1) fica centralizada, longe do minimapa.
+    hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    hud.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+    hud.offset_left = -520
+    hud.offset_right = 520
+    hud.offset_top = -120
+    hud.offset_bottom = -70
+
+var _hint_time := 0.0
 
 ## Offline practice: dummies in front of the spawn (two close, one at 20 m)
 ## that show the damage of every weapon and body zone.
@@ -229,12 +262,19 @@ func _process(_delta: float) -> void:
         crosshair.visible = not scoped
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)
+        var out := false
         if match_controller != null:
-            var out: bool = match_controller.get("local_dead") or match_controller.get("finished")
+            out = match_controller.get("local_dead") or match_controller.get("finished")
             crosshair.visible = crosshair.visible and not out
-            if match_controller.has_method("game_hour"):
-                hud.text = "" if out else player.status_text() + "\n1-5 armas  E revistar/coletar  TAB inventário  Q golpe  F curativo  R recarregar (munição da mochila)  |  ESC: sair"
-                return
-            hud.text = "" if out else player.status_text() + "\n1-5 armas (ordem em que pegou)  E coletar  F kit médico  G granada (segure p/ mirar)  R recarregar  Direito mirar (+Q/E inclinar)  |  ESC: sair da partida"
-            return
-        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() +"\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\nQ soco  E cotovelada  G granada (segure p/ mirar)  |  mirando: Q/E inclinar\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"
+        if ammo_hud != null:
+            ammo_hud.visible = not out and not scoped
+        # Sem textos fixos na tela: controles só segurando F1 (dica nos primeiros segundos).
+        _hint_time += _delta
+        if Input.is_physical_key_pressed(KEY_F1):
+            hud.text = HELP_TEXT
+            hud.modulate.a = 1.0
+        elif _hint_time < 8.0 and not out:
+            hud.text = "F1: controles"
+            hud.modulate.a = clampf(8.0 - _hint_time, 0.0, 1.0) * 0.8
+        else:
+            hud.text = ""
