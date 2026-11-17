@@ -10,6 +10,7 @@ const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CarModel = preload("res://scripts/survival/car_model.gd")
+const NatureModel = preload("res://scripts/survival/nature_model.gd")
 const CENTER_HALF := 60.0
 
 var containers: Dictionary = {} # id -> {node, type, pos}
@@ -31,6 +32,7 @@ func _ready() -> void:
 		_container(spot)
 	for res in data.get("resources", []):
 		_resource(res)
+	_flush_batches()
 	for town in data.get("towns", []):
 		_town_sign(town)
 	grass_patches = data.get("grass", [])
@@ -38,6 +40,35 @@ func _ready() -> void:
 	for patch in grass_patches:
 		_tall_grass(patch)
 	_fence()
+	_cull_details.call_deferred()
+
+## Objetos pequenos (móveis, janelas, placas, detalhes da cidade do meio) somem
+## de longe: a maior parte das chamadas de desenho era de coisas de 1 m a 200 m.
+func _cull_details() -> void:
+	var root := get_parent() if get_parent() != null else self
+	for node in root.find_children("*", "GeometryInstance3D", true, false):
+		var g := node as GeometryInstance3D
+		if g is MultiMeshInstance3D or g.visibility_range_end > 0.0 or _in_character(g):
+			continue
+		var box := g.get_aabb()
+		var longest := maxf(box.size.x * g.global_basis.get_scale().x, maxf(box.size.y * g.global_basis.get_scale().y, box.size.z * g.global_basis.get_scale().z))
+		if g is Label3D:
+			g.visibility_range_end = 70.0
+		elif longest < 1.6:
+			g.visibility_range_end = 75.0
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		elif longest < 5.0:
+			g.visibility_range_end = 170.0
+		elif longest < 14.0:
+			g.visibility_range_end = 320.0
+
+func _in_character(node: Node) -> bool:
+	var n := node.get_parent()
+	while n != null:
+		if n is CharacterBody3D or n is VehicleBody3D:
+			return true
+		n = n.get_parent()
+	return false
 
 # ------------------------------------------------------------------ grama ---
 # Grama baixa espalhada pelo campo (só visual, some de longe) e manchas de
@@ -223,13 +254,34 @@ func _ground() -> void:
 	var tints := [_mat("concrete", "#7a6a4f"), _mat("grass", "#6f8a52"), _mat("grass", "#4e6a40"), _mat("grass", "#7c8e4a")]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
+	var lists: Array = [[], [], [], []]
 	for i in 220:
 		var p := Vector3(rng.randf_range(-h + 10, h - 10), 0.004 + (i % 4) * 0.003, rng.randf_range(-h + 10, h - 10))
 		if absf(p.x) < c + 10 and absf(p.z) < c + 10:
 			continue
 		var size := rng.randf_range(8, 30) if i % 4 else rng.randf_range(5, 14)
-		var patch := _part(self, p, Vector3(size, 0.01, size * rng.randf_range(0.5, 1.2)), tints[i % 4])
-		patch.rotation.y = rng.randf() * TAU
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size, 1.0, size * rng.randf_range(0.5, 1.2)))
+		lists[i % 4].append(Transform3D(basis, p))
+	# Um lote por cor (4 chamadas de desenho em vez de ~200).
+	for k in 4:
+		_flat_batch(_box_mesh(Vector3(1, 0.01, 1)), tints[k], lists[k], "GroundPatches")
+
+## Várias caixas iguais num MultiMesh só (sem sombra).
+func _flat_batch(mesh: Mesh, material: Material, transforms: Array, title: String) -> void:
+	if transforms.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = transforms.size()
+	for i in transforms.size():
+		mm.set_instance_transform(i, transforms[i])
+	var node := MultiMeshInstance3D.new()
+	node.name = title
+	node.multimesh = mm
+	node.material_override = material
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
 
 func _road(road: Dictionary) -> void:
 	var a := Vector3(float(road["from"][0]), 0, float(road["from"][1]))
@@ -241,12 +293,14 @@ func _road(road: Dictionary) -> void:
 	node.rotation.y = atan2(b.x - a.x, b.z - a.z)
 	add_child(node)
 	_part(node, Vector3.ZERO, Vector3(width, 0.02, length), _mat("asphalt", "#4a5052"))
-	# Faixa amarela tracejada no meio.
-	var paint := _flat("#cdb56a")
+	# Faixa amarela tracejada no meio (um lote por estrada).
 	var step := 7.0
 	var n := int(length / step)
+	var dashes: Array = []
+	var basis := Basis(Vector3.UP, node.rotation.y)
 	for i in n:
-		_part(node, Vector3(0, 0.012, -length * 0.5 + (i + 0.5) * step), Vector3(0.15, 0.01, 3.0), paint)
+		dashes.append(Transform3D(basis, node.position + basis * Vector3(0, 0.012, -length * 0.5 + (i + 0.5) * step)))
+	_flat_batch(_box_mesh(Vector3(0.15, 0.01, 3.0)), _mat("flat", "#cdb56a"), dashes, "RoadPaint")
 
 # -------------------------------------------------------------- prédios ---
 
@@ -383,35 +437,19 @@ func _resource(res: Dictionary) -> void:
 	var parts: Array = []
 	var seed_value := int(str(res["id"]).substr(1))
 	var s := 0.8 + float(seed_value % 7) * 0.07
+	var slots := {}
+	var xform := Transform3D(Basis(Vector3.UP, body.rotation.y).scaled(Vector3.ONE * s), body.position)
 	match kind:
 		"tree":
-			var trunk_h := 3.2 * s
-			_cylinder(body, Vector3(0, trunk_h * 0.5, 0), 0.16 * s, 0.26 * s, trunk_h, _mat("bark", "#5e4733"))
-			var crown := MeshInstance3D.new()
-			var cone := CylinderMesh.new()
-			cone.top_radius = 0.0
-			cone.bottom_radius = 1.9 * s
-			cone.height = 4.2 * s
-			cone.radial_segments = 8
-			crown.mesh = cone
-			crown.position.y = trunk_h + 1.2 * s
-			crown.material_override = _mat("leaf", "#3f6a3c" if seed_value % 3 else "#4d7a42")
-			body.add_child(crown)
-			parts.append(crown)
-			_collider(body, CylinderShape3D.new(), Vector3(0, trunk_h * 0.5, 0), 0.26 * s, trunk_h)
+			# Desenhada em lote (MultiMesh); o corpo só guarda a colisão do tronco.
+			var variant: String = NatureModel.TREE_VARIANTS[seed_value % NatureModel.TREE_VARIANTS.size()]
+			var tree_scale := s * (1.12 if variant.begins_with("pine") else 1.0)
+			xform = Transform3D(Basis(Vector3.UP, body.rotation.y).scaled(Vector3.ONE * tree_scale), body.position)
+			slots["full"] = _slot(variant, xform, true)
+			slots["empty"] = _slot("stump", xform, false)
+			_collider(body, CylinderShape3D.new(), Vector3(0, 1.5, 0), 0.32 * tree_scale, 3.0)
 		"rock":
-			var rock := MeshInstance3D.new()
-			var sphere := SphereMesh.new()
-			sphere.radius = 1.0
-			sphere.height = 1.3
-			sphere.radial_segments = 7
-			sphere.rings = 4
-			rock.mesh = sphere
-			rock.scale = Vector3(1.3, 0.9, 1.0) * s
-			rock.position.y = 0.35 * s
-			rock.material_override = _mat("concrete", "#7d7f7a")
-			body.add_child(rock)
-			parts.append(rock)
+			slots["full"] = _slot("rock", xform, true)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.35 * s, 0), 1.0 * s, 0.0)
 		"car":
 			# Carro abandonado realista (ferrugem, vidro sujo, pneu murcho às vezes).
@@ -420,6 +458,11 @@ func _resource(res: Dictionary) -> void:
 			var model := CarModel.build(car_kind, colors[seed_value % colors.size()], true, seed_value)
 			body.add_child(model)
 			parts.append(model)
+			# Muitas peças: de longe some (a neblina já esconde).
+			for mesh in model.find_children("*", "GeometryInstance3D", true, false):
+				(mesh as GeometryInstance3D).visibility_range_end = 220.0
+				if not mesh.name == "Body":
+					(mesh as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			var size := CarModel.size_of(car_kind)
 			var shape := BoxShape3D.new()
 			shape.size = Vector3(size.x, size.y - 0.2, size.z)
@@ -429,22 +472,70 @@ func _resource(res: Dictionary) -> void:
 			body.add_child(col)
 			body.rotation.z = 0.03 * float(seed_value % 3 - 1)
 		"bush":
-			var bush := MeshInstance3D.new()
-			var sphere := SphereMesh.new()
-			sphere.radius = 0.8 * s
-			sphere.height = 1.2 * s
-			sphere.radial_segments = 8
-			sphere.rings = 4
-			bush.mesh = sphere
-			bush.position.y = 0.5 * s
-			bush.material_override = _mat("leaf", "#4f7b3a")
-			body.add_child(bush)
-			var fruit := _flat("#c0392b")
-			for i in 5:
-				var a := TAU * i / 5.0
-				parts.append(_part(body, Vector3(cos(a) * 0.65 * s, 0.6 * s + (i % 2) * 0.2, sin(a) * 0.65 * s), Vector3(0.14, 0.14, 0.14), fruit))
+			slots["full"] = _slot("bush_full", xform, true)
+			slots["empty"] = _slot("bush_empty", xform, false)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.5 * s, 0), 0.6 * s, 0.0)
-	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "depleted": false}
+	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "slots": slots, "depleted": false}
+
+# ---------------------------------------------------- desenho em lote ---
+# Árvores, pedras e arbustos: um MultiMesh por modelo e por quadrado de 80 m
+# (o motor descarta quadrados fora da câmera). Perto usa o modelo detalhado;
+# longe, o leve, sem sombra. Esconder = escala zero naquela posição do lote.
+const CHUNK := 120.0
+const NEAR_RANGE := 130.0
+const FAR_RANGE := 430.0
+const HAS_FAR := ["pine_a", "pine_b", "oak_a", "oak_b", "birch", "rock"]
+var _batches: Dictionary = {} # "modelo|cx|cz" -> {variant, center, list, mms}
+
+func _slot(variant: String, xform: Transform3D, visible: bool) -> Array:
+	var cx := int(floor((xform.origin.x + half_size) / CHUNK))
+	var cz := int(floor((xform.origin.z + half_size) / CHUNK))
+	var key := "%s|%d|%d" % [variant, cx, cz]
+	if not _batches.has(key):
+		var center := Vector3((cx + 0.5) * CHUNK - half_size, 0, (cz + 0.5) * CHUNK - half_size)
+		_batches[key] = {"variant": variant, "center": center, "list": [], "mms": []}
+	var batch: Dictionary = _batches[key]
+	var local := Transform3D(xform.basis, xform.origin - batch["center"])
+	batch["list"].append(local if visible else _hidden(local))
+	return [key, batch["list"].size() - 1, local]
+
+static func _hidden(local: Transform3D) -> Transform3D:
+	return Transform3D(Basis(Vector3.ZERO, Vector3.ZERO, Vector3.ZERO), local.origin)
+
+func _flush_batches() -> void:
+	for key in _batches:
+		var batch: Dictionary = _batches[key]
+		var variant: String = batch["variant"]
+		for far in ([false, true] if variant in HAS_FAR else [false]):
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = NatureModel.mesh(variant, far)
+			mm.instance_count = batch["list"].size()
+			for i in batch["list"].size():
+				mm.set_instance_transform(i, batch["list"][i])
+			var node := MultiMeshInstance3D.new()
+			node.name = "Nature_" + variant + ("_far" if far else "")
+			node.multimesh = mm
+			node.position = batch["center"]
+			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if far else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+			if variant in HAS_FAR:
+				node.visibility_range_begin = NEAR_RANGE if far else 0.0
+				node.visibility_range_end = FAR_RANGE if far else NEAR_RANGE
+				node.visibility_range_begin_margin = 6.0
+				node.visibility_range_end_margin = 6.0
+			else:
+				node.visibility_range_end = 150.0
+				node.visibility_range_end_margin = 8.0
+			add_child(node)
+			batch["mms"].append(mm)
+
+func _set_slot(slot: Array, visible: bool, scale_factor: float = 1.0) -> void:
+	if slot.is_empty():
+		return
+	var local: Transform3D = slot[2]
+	var xform := Transform3D(local.basis.scaled(Vector3.ONE * scale_factor), local.origin) if visible else _hidden(local)
+	for mm in _batches[slot[0]]["mms"]:
+		(mm as MultiMesh).set_instance_transform(int(slot[1]), xform)
 
 func _cylinder(parent: Node3D, pos: Vector3, top: float, bottom: float, height: float, material: Material, rot: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var key := "cyl%.2f_%.2f_%.2f" % [top, bottom, height]
@@ -480,12 +571,14 @@ func set_depleted(id: String, value: bool) -> void:
 	if entry.is_empty() or bool(entry["depleted"]) == value:
 		return
 	entry["depleted"] = value
+	var slots: Dictionary = entry.get("slots", {})
 	match str(entry["kind"]):
-		"tree", "bush", "rock":
-			for part in entry["parts"]:
-				part.visible = not value
-			if str(entry["kind"]) == "rock":
-				entry["node"].scale = Vector3.ONE * (0.45 if value else 1.0)
+		"tree", "bush":
+			_set_slot(slots.get("full", []), not value)
+			_set_slot(slots.get("empty", []), value)
+		"rock":
+			_set_slot(slots.get("full", []), true, 0.45 if value else 1.0)
+			entry["node"].scale = Vector3.ONE * (0.45 if value else 1.0)
 		"car":
 			entry["node"].rotation.z = 0.12 if value else 0.0
 

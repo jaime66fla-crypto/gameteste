@@ -47,6 +47,12 @@ func _run() -> void:
     var ceiling := _solid(scene, Vector3(0, 1.72, 10), Vector3(3, 0.20, 3))
     await _frames(4)
     Input.action_release("crouch")
+    await _frames(2)
+    _check(bool(player.get("crouching")), "Ctrl is a toggle: stays crouched after release")
+    # Space asks to stand up; the low ceiling keeps the player crouched.
+    Input.action_press("jump")
+    await _frames(2)
+    Input.action_release("jump")
     await _frames(35)
     _check(bool(player.get("crouching")), "Player stands under low ceiling")
     _check(capsule.height <= 1.62, "Capsule expands into low ceiling")

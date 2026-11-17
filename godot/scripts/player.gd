@@ -12,6 +12,7 @@ signal shot_fired(weapon_id: String, from: Vector3, to: Vector3)
 @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CROUCH_SPEED := 2.7
+const PRONE_SPEED := 0.9 # rastejando
 @export_range(1.0, 60.0, 0.5) var acceleration := 24.0
 @export_range(1.0, 60.0, 0.5) var deceleration := 30.0
 var body_collision: CollisionShape3D
@@ -76,6 +77,9 @@ var aiming := false
 var scope_zoom := 4.0
 var scope_was_active := false
 var crouching := false
+var prone := false # deitado (Ctrl duas vezes)
+var stance := 0 # 0 em pé, 1 agachado, 2 deitado
+var stance_changed := false
 var ammo := MAG_SIZE
 var reloading := false
 var shots := 0
@@ -405,10 +409,25 @@ func _can_stand() -> bool:
     query.transform.origin += global_basis.y * (height * 0.5 + 0.005)
     return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
+## Ctrl alterna a postura: 1º toque agacha, 2º deita, 3º levanta (fica na
+## posição sem segurar). Espaço ou Shift levantam direto. Sob um teto baixo
+## continua abaixado até ter espaço.
 func _update_crouch(delta: float) -> void:
-    var requested := Input.is_action_pressed("crouch")
-    crouching = requested or (body_capsule.height < height - 0.001 and not _can_stand())
-    var target_height := maxf(body_capsule.radius * 2.0, height * 0.86) if crouching else height
+    stance_changed = false
+    if Input.is_action_just_pressed("crouch"):
+        stance = (stance + 1) % 3
+        stance_changed = true
+    elif stance > 0 and (Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("sprint")):
+        stance = 0
+        stance_changed = true
+    var blocked := stance == 0 and body_capsule.height < height - 0.001 and not _can_stand()
+    prone = stance == 2
+    crouching = stance == 1 or blocked
+    var target_height := height
+    if prone:
+        target_height = body_capsule.radius * 2.0
+    elif crouching:
+        target_height = maxf(body_capsule.radius * 2.0, height * 0.86)
     body_capsule.height = move_toward(body_capsule.height, target_height, delta * 3.0)
     # Preserve the foot origin through every intermediate capsule size.
     body_collision.position.y = body_capsule.height * 0.5
@@ -443,8 +462,8 @@ func _physics_process(delta: float) -> void:
     var camera_blend := minf(1, delta * 16)
     spring.spring_length = lerpf(spring.spring_length, 0.0 if wants_first_person else (2.15 if aiming else cam_distance), camera_blend)
     spring.position.x = lerpf(spring.position.x, 0.0 if wants_first_person else 1.0, camera_blend)
-    var eye_height := height * (0.62 if crouching else 0.92)
-    var shoulder_height := height * (0.59 if crouching else 0.86)
+    var eye_height := height * (0.24 if prone else (0.62 if crouching else 0.92))
+    var shoulder_height := height * (0.30 if prone else (0.59 if crouching else 0.86))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, eye_height if wants_first_person else shoulder_height, minf(1,delta * 12))
     # The body hides once the camera is inside the head; the viewmodel replaces it.
     first_person_view = wants_first_person and spring.spring_length < FIRST_PERSON_CUTOFF
@@ -454,7 +473,7 @@ func _physics_process(delta: float) -> void:
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
-    var current_speed: float = CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed)
+    var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed))
     var horizontal := Vector2(velocity.x, velocity.z)
     var desired_velocity := Vector2(movement.x, movement.z) * current_speed
     var rate := deceleration if desired_velocity.length_squared() < horizontal.length_squared() or horizontal.dot(desired_velocity) < 0.0 else acceleration
@@ -463,14 +482,14 @@ func _physics_process(delta: float) -> void:
     velocity.z = horizontal.y
     if not is_on_floor():
         velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
-    elif Input.is_action_just_pressed("jump") and not crouching:
+    elif Input.is_action_just_pressed("jump") and not crouching and not prone and not stance_changed:
         velocity.y = jump_velocity
     else:
         velocity.y = -0.1
     move_and_slide()
     var actual_velocity := get_real_velocity()
     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
-    sprinting = Input.is_action_pressed("sprint") and not aiming and not crouching and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
+    sprinting = Input.is_action_pressed("sprint") and not aiming and not crouching and not prone and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
     _animate_avatar(delta, actual_move, is_on_floor())
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
@@ -688,13 +707,35 @@ func crosshair_point() -> Vector3:
     var origin := camera.global_position
     var forward := -camera.global_transform.basis.z
     if not first_person_view and not is_scope_active():
-        var chest := global_position + Vector3(0, height * 0.75, 0)
+        var chest := global_position + Vector3(0, height * (0.25 if prone else 0.75), 0)
         origin += forward * maxf(0.0, (chest - origin).dot(forward))
     var far := origin + forward * 700.0
-    var query := PhysicsRayQueryParameters3D.create(origin, far, HitboxScript.SHOT_MASK)
-    query.exclude = [get_rid()]
-    var hit := get_world_3d().direct_space_state.intersect_ray(query)
+    var hit := _shot_ray(origin, far)
     return hit["position"] if not hit.is_empty() else far
+
+## Ray against the world and hit volumes. A hit "shell" (survival zombies: one
+## capsule per body instead of a physics body per bone) resolves the exact body
+## part by math; when the ray passes between arms and legs it continues past it.
+func _shot_ray(from: Vector3, to: Vector3, from_inside: bool = false) -> Dictionary:
+    var exclude: Array[RID] = [get_rid()]
+    var direction := (to - from).normalized()
+    for attempt in range(6):
+        var query := PhysicsRayQueryParameters3D.create(from, to, HitboxScript.SHOT_MASK)
+        query.exclude = exclude
+        query.hit_from_inside = from_inside
+        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        if hit.is_empty():
+            return hit
+        var collider: Object = hit["collider"]
+        if collider == null or not collider.has_method("resolve_ray"):
+            return hit
+        var part: Dictionary = collider.call("resolve_ray", from, direction)
+        if not part.is_empty():
+            hit["position"] = part["position"]
+            hit["normal"] = part["normal"]
+            return hit
+        exclude.append(hit["rid"])
+    return {}
 
 func _shoot() -> void:
     if ammo <= 0:
@@ -715,7 +756,7 @@ func _shoot() -> void:
     if not first_person_view and not is_scope_active():
         # Shoulder camera: start the aim ray level with the character, so a
         # tree or wall between the camera and the player cannot eat the shot.
-        var chest := global_position + Vector3(0, height * 0.75, 0)
+        var chest := global_position + Vector3(0, height * (0.25 if prone else 0.75), 0)
         origin += forward * maxf(0.0, (chest - origin).dot(forward))
     var muzzle := weapon_model.get_node_or_null("Muzzle") as Marker3D
     last_shot_origin = muzzle.global_position if muzzle else gun_flash.global_position
@@ -727,7 +768,9 @@ func _shoot() -> void:
     # Accuracy: tighter when aiming, wider when running or airborne.
     var planar_speed := Vector2(velocity.x, velocity.z).length()
     var spread := float(stats["spread"]) * (WeaponData.AIM_SPREAD if aiming else 1.0)
-    if crouching:
+    if prone:
+        spread *= WeaponData.CROUCH_SPREAD * 0.6 # deitado e apoiado: o tiro mais firme
+    elif crouching:
         spread *= WeaponData.CROUCH_SPREAD
     spread *= 1.0 + clampf(planar_speed / speed, 0.0, 1.6) * 0.6
     if not is_on_floor():
@@ -738,18 +781,13 @@ func _shoot() -> void:
         var radius := sqrt(randf()) * spread
         var direction := (forward + camera.global_transform.basis.x * cos(angle) * radius + camera.global_transform.basis.y * sin(angle) * radius).normalized()
         var target := origin + direction * float(stats["range"])
-        var query := PhysicsRayQueryParameters3D.create(origin, target, HitboxScript.SHOT_MASK)
-        query.exclude = [get_rid()]
-        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        var hit := _shot_ray(origin, target)
         var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
         if muzzle:
             # Camera chooses the aim point; the actual shot starts at the barrel.
             # A wall near the weapon must block it even when the camera sees past it.
             var barrel_direction := (endpoint-last_shot_origin).normalized()
-            var barrel_query := PhysicsRayQueryParameters3D.create(last_shot_origin, endpoint+barrel_direction*0.02, HitboxScript.SHOT_MASK)
-            barrel_query.exclude = [get_rid()]
-            barrel_query.hit_from_inside = true
-            var barrel_hit := get_world_3d().direct_space_state.intersect_ray(barrel_query)
+            var barrel_hit := _shot_ray(last_shot_origin, endpoint+barrel_direction*0.02, true)
             # Retain a camera hit if numerical rounding at its surface misses it.
             if not barrel_hit.is_empty():
                 hit = barrel_hit
@@ -891,6 +929,8 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
             var aim_ready := not weapon_holstered and not reloading and not sprinting
             humanoid_avatar.call("set_aim_target", crosshair_point(), aim_ready)
         var running := sprinting
+        if humanoid_avatar.has_method("set_prone"):
+            humanoid_avatar.call("set_prone", prone)
         humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
         return
     if jaime_model != null and jaime_animation != null:
@@ -1105,7 +1145,9 @@ func status_text() -> String:
     if loadout_limited and owned_weapons.is_empty():
         return "SEM ARMA\nAche uma caixa e aperte E"
     var state :="ARMA GUARDADA (H: SACAR)" if weapon_holstered else ("MIRANDO" if aiming else "LIVRE (H: GUARDAR)" )
-    if crouching:
+    if prone:
+        state += " / DEITADO"
+    elif crouching:
         state += " / AGACHADO"
     var stats: Dictionary = WeaponData.stats(current_weapon)
     if is_scope_active():

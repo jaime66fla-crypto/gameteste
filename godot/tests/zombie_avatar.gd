@@ -43,11 +43,20 @@ func _run() -> void:
 			print("%s %s: mão %.2f m à frente do ombro, %.2f m abaixo" % [kind, names[state], ahead, shoulder.y - hand.y])
 			check(ahead > (0.42 if state != 3 else 0.5), "%s %s: braços esticados para a frente" % [kind, names[state]])
 			if kind == "walker" and state == 0:
-				check((avatar.get("hitboxes") as Array).size() >= 12, "áreas de acerto nos ossos")
-				var zones := {}
-				for hb in avatar.get("hitboxes"):
-					zones[str(hb.get("zone"))] = true
-				check(zones.has("head") and zones.has("chest") and zones.has("leg"), "zonas cabeça/peito/perna")
+				# Casca única na física; a parte do corpo sai da conta nos ossos.
+				check((z.get("hitboxes") as Array).size() == 1, "uma casca de acerto por zumbi")
+				var p := z.global_position
+				var zone_at := func(x: float, y: float) -> String:
+					return str((avatar.call("resolve_ray", p + Vector3(x, y, 6), Vector3(0, 0, -1)) as Dictionary).get("zone", ""))
+				var head: Vector3 = sk.global_transform * sk.get_bone_global_pose(int(avatar.call("_bone", "Head"))).origin
+				var head_y := head.y - p.y + 0.12
+				check(zone_at.call(head.x - p.x, head_y) == "head", "tiro na cabeça = cabeça (%s)" % zone_at.call(head.x - p.x, head_y))
+				check(zone_at.call(0.0, 1.2) == "chest", "tiro no peito = tronco (%s)" % zone_at.call(0.0, 1.2))
+				check(zone_at.call(0.1, 0.45) == "leg", "tiro na canela = perna (%s)" % zone_at.call(0.1, 0.45))
+				check(zone_at.call(0.5, 0.3) == "", "tiro entre a perna e a borda da casca passa direto")
+				var query := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1.2, 6), p + Vector3(0, 1.2, -6), 4)
+				var hit := root.get_world_3d().direct_space_state.intersect_ray(query)
+				check(not hit.is_empty() and (hit["collider"] as Object).has_method("resolve_ray"), "raio do tiro acerta a casca")
 			z.queue_free()
 			await process_frame
 	print("FALHAS: %d" % failures)

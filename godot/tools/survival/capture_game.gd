@@ -69,6 +69,48 @@ func _run() -> void:
 	await _frames(70)
 	get_viewport().get_texture().get_image().save_png(out.path_join("survival_crouch.png"))
 	Input.action_release("crouch")
+	# Ctrl de novo: deita, armado e mirando (fica na posição sem segurar).
+	player.call("_toggle_weapon_holster")
+	await _frames(5)
+	Input.action_press("crouch")
+	await _frames(2)
+	Input.action_release("crouch")
+	player.set("yaw", face + 2.4) # de lado, para ver o corpo deitado
+	await _frames(120)
+	get_viewport().get_texture().get_image().save_png(out.path_join("survival_prone.png"))
+	Input.action_press("crouch") # 3º toque: levanta
+	await _frames(2)
+	Input.action_release("crouch")
+	# Correndo desarmado, visto de lado (braços do clipe de corrida).
+	player.call("_toggle_weapon_holster")
+	player.set("yaw", face)
+	Input.action_press("move_forward")
+	Input.action_press("sprint")
+	await _frames(50)
+	player.set("pitch", -0.05)
+	var cam: Camera3D = get_viewport().get_camera_3d()
+	var saved_cam := cam.global_transform
+	cam.global_position = player.global_position + player.global_basis.x * 3.2 + Vector3(0, 1.2, 0)
+	cam.look_at(player.global_position + Vector3(0, 1.0, 0))
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out.path_join("survival_run.png"))
+	Input.action_release("sprint")
+	Input.action_release("move_forward")
+	cam.global_transform = saved_cam
+	# Floresta de cima.
+	player.set("pitch", -0.35)
+	await _frames(20)
+	var forest := Vector3.ZERO
+	var best_trees := 0
+	for r in SurvivalData.world()["resources"]:
+		if str(r["kind"]) == "tree":
+			forest = Vector3(float(r["p"][0]), 0, float(r["p"][2]))
+			break
+	cam.global_position = forest + Vector3(14, 9, 14)
+	cam.look_at(forest + Vector3(0, 3, 0))
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(out.path_join("survival_trees.png"))
+	await _frames(5)
 	# Dirigindo a caminhonete (câmera de perseguição, velocímetro e gasolina).
 	var car: Node3D = controller.driving_ctl.vehicles["v0"]
 	var cp := car.global_position

@@ -28,7 +28,7 @@ const RESPAWN_MS = 8000;
 const REACH = 3.6; // metros entre o jogador e o recipiente/recurso
 const MELEE_REACH = 3.2;
 const GUN_REACH = 700; // alcance da sniper (scripts/weapon_data.gd)
-const CONTAINER_REFILL_MS = 20 * 60 * 1000;
+const CONTAINER_REFILL_MS = 45 * 60 * 1000;
 const BAG_LIFETIME_MS = 25 * 60 * 1000;
 const CHAR_KEEP_MS = 3 * 24 * 3600 * 1000; // personagem guardado de quem saiu
 // Só recebe posições de quem está até essa distância. Precisa cobrir o alcance
@@ -88,6 +88,7 @@ export function rollLoot(type) {
 	const table = catalog.loot[type];
 	if (!table) return {};
 	const items = {};
+	if (Math.random() < (table.empty || 0)) return items; // muitos recipientes já foram saqueados
 	const rolls = randInt(table.rolls[0], table.rolls[1]);
 	for (let i = 0; i < rolls; i++) {
 		const [item, , min, max] = weighted(table.table, (e) => e[1]);

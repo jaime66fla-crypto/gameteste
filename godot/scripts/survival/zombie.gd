@@ -16,6 +16,7 @@ const KINDS := {
 	"brute":  {"wander": 0.8, "chase": 2.1, "scale": 1.18, "skin": "#6f7d5c", "shirt": "#463b33", "tint": "#a89a8a", "width": 1.25},
 }
 const ZombieAvatar = preload("res://scripts/survival/zombie_avatar.gd")
+const ZombieHull = preload("res://scripts/survival/zombie_hull.gd")
 var _avatar: Node3D
 const SIGHT := 24.0 # metros; de noite cai pela metade
 const HIDDEN_SIGHT := 4.0 # agachado dentro da grama alta
@@ -36,6 +37,10 @@ var targets: Callable
 var night := false
 
 var anim := Anim.IDLE
+var _lod := 0
+var _asleep := false
+var _move_accum := 0.0
+var _move_tick := randi() % 3
 var _target_id := ""
 var _target: Node3D
 var _investigate := Vector3.INF
@@ -85,7 +90,18 @@ func _ready() -> void:
 		_avatar.scale = Vector3(float(spec.get("width", 1.0)), 1.0, float(spec.get("width", 1.0))) * s
 		add_child(_avatar)
 		visual = _avatar
-		hitboxes.assign(_avatar.get("hitboxes"))
+		# Uma casca de acerto presa ao corpo; a parte atingida sai da conta nos ossos.
+		var hull: StaticBody3D = ZombieHull.new()
+		hull.set("actor", self)
+		var shape := CapsuleShape3D.new()
+		shape.radius = 0.62 * s * float(spec.get("width", 1.0))
+		shape.height = 2.15 * s
+		var hull_col := CollisionShape3D.new()
+		hull_col.shape = shape
+		hull.position = Vector3(0, 1.0 * s, -0.18 * s) # braços esticados para a frente (-Z)
+		hull.add_child(hull_col)
+		add_child(hull)
+		hitboxes.append(hull)
 	else:
 		_build_body(spec, s)
 	_remote_pos = global_position
@@ -234,7 +250,8 @@ func _animate(delta: float) -> void:
 		# Distância da câmera decide o detalhe da animação.
 		var camera := get_viewport().get_camera_3d()
 		var d := camera.global_position.distance_to(global_position) if camera != null else 0.0
-		var lod := 0 if d < 45.0 else (1 if d < 110.0 else 2)
+		var lod := 0 if d < 35.0 else (1 if d < 90.0 else 2)
+		_lod = lod
 		_flinch = move_toward(_flinch, 0.0, delta * 4.0)
 		_avatar.set("flinch", maxf(float(_avatar.get("flinch")), _flinch))
 		var rate := clampf(velocity.length() / 2.4, 0.6, 1.6) if anim == Anim.WALK else clampf(velocity.length() / 5.0, 0.7, 1.4)
@@ -290,15 +307,20 @@ func _run_ai(delta: float) -> void:
 	var spec: Dictionary = KINDS[kind]
 	_attack_timer = maxf(0.0, _attack_timer - delta)
 	_think -= delta
+	if _asleep and _think > 0.0:
+		return # longe de todos: parado, sem física até a próxima checagem
 	if _think <= 0.0:
 		_think = 0.3 + randf() * 0.2
 		var near := _closest_target()
-		if near.is_empty() or float(near["dist"]) > SLEEP_RANGE:
+		_asleep = near.is_empty() or float(near["dist"]) > SLEEP_RANGE
+		if _asleep:
 			_target = null
 			anim = Anim.IDLE
 			velocity.x = 0.0
 			velocity.z = 0.0
-			_apply_gravity(delta)
+			velocity.y = -4.0
+			move_and_slide() # assenta no chão antes de dormir
+			_think = 1.0 + randf() * 0.5
 			return
 		var sight := float(near["range"])
 		if _target == null:
@@ -368,7 +390,21 @@ func _apply_gravity(delta: float) -> void:
 		velocity.y -= GRAVITY * delta
 	else:
 		velocity.y = -0.1
+	# Longe da câmera: anda 1 a cada 3 passos de física, com o passo triplo
+	# (mover o corpo arrasta as áreas de acerto junto, e isso custa).
+	_move_accum += delta
+	_move_tick += 1
+	if _lod > 0 and _move_tick % 3 != 0:
+		return
+	var factor := _move_accum / delta
+	_move_accum = 0.0
+	if is_equal_approx(factor, 1.0):
+		move_and_slide()
+		return
+	var wanted := velocity
+	velocity *= factor
 	move_and_slide()
+	velocity = Vector3(wanted.x, velocity.y / factor, wanted.z)
 
 ## Contorna paredes, carros e árvores: se a frente está bloqueada, desvia para um lado por um tempo.
 func _avoid(dir: Vector3, delta: float) -> Vector3:

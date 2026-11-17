@@ -59,6 +59,40 @@ func _ready() -> void:
 	_canvas.size = size
 	_canvas.draw.connect(_draw_map)
 	disc.add_child(_canvas)
+	_bake()
+
+# O mapa (grama, árvores, ruas, prédios) não muda: é desenhado uma vez numa
+# textura e, a cada quadro, só essa textura é girada em volta do jogador.
+const BAKE_PX_PER_M := 2.0
+var _map_texture: Texture2D
+
+func _bake() -> void:
+	var viewport := SubViewport.new()
+	var px := int(ceil(_half * 2.0 * BAKE_PX_PER_M))
+	viewport.size = Vector2i(px, px)
+	viewport.disable_3d = true
+	viewport.transparent_bg = true
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	add_child(viewport)
+	var painter := Control.new()
+	painter.size = Vector2(px, px)
+	painter.draw.connect(_paint_map.bind(painter))
+	viewport.add_child(painter)
+	_map_texture = viewport.get_texture()
+
+func _paint_map(ci: Control) -> void:
+	ci.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
+	ci.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), Color(0.33, 0.45, 0.27, 1.0))
+	for g in _grass:
+		ci.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
+	for t in _trees:
+		ci.draw_circle(t, 1.6, Color(0.14, 0.28, 0.14, 1.0))
+	for road in _roads:
+		ci.draw_line(road[0], road[1], Color(0.30, 0.31, 0.31, 1.0), road[2])
+	for b in _buildings:
+		var s: Vector2 = b[1]
+		ci.draw_rect(Rect2(b[0] - s * 0.5, s), Color(0.78, 0.72, 0.60, 1.0))
+		ci.draw_rect(Rect2(b[0] - s * 0.5, s), Color(0.25, 0.22, 0.18, 1.0), false, 0.6)
 
 func _process(_delta: float) -> void:
 	if _canvas != null:
@@ -72,25 +106,9 @@ func _draw_map() -> void:
 	var c := size * 0.5
 	var me := Vector2(player.global_position.x, player.global_position.z)
 	var yaw := float(player.get("yaw")) if player.get("yaw") != null else player.rotation.y
-	var view := RADIUS * meters_per_px + 10.0
 	_canvas.draw_set_transform(c, yaw, Vector2.ONE / meters_per_px)
-	# Fora do mundo: mais escuro.
-	_canvas.draw_rect(Rect2(Vector2(-_half, -_half) - me, Vector2(_half, _half) * 2.0), Color(0.33, 0.45, 0.27, 1.0))
-	for g in _grass:
-		if (g[0] as Vector2).distance_to(me) < view + float(g[1]):
-			_canvas.draw_circle(g[0] - me, g[1], Color(0.56, 0.58, 0.30, 0.9))
-	for t in _trees:
-		if absf(t.x - me.x) < view and absf(t.y - me.y) < view:
-			_canvas.draw_circle(t - me, 1.6, Color(0.14, 0.28, 0.14, 1.0))
-	for road in _roads:
-		_canvas.draw_line(road[0] - me, road[1] - me, Color(0.30, 0.31, 0.31, 1.0), road[2])
-	for b in _buildings:
-		var center: Vector2 = b[0]
-		if center.distance_to(me) > view + 20.0:
-			continue
-		var s: Vector2 = b[1]
-		_canvas.draw_rect(Rect2(center - me - s * 0.5, s), Color(0.78, 0.72, 0.60, 1.0))
-		_canvas.draw_rect(Rect2(center - me - s * 0.5, s), Color(0.25, 0.22, 0.18, 1.0), false, 0.6)
+	if _map_texture != null:
+		_canvas.draw_texture_rect(_map_texture, Rect2(Vector2(-_half, -_half) - me, Vector2(_half, _half) * 2.0), false)
 	if allies.is_valid():
 		for node in allies.call():
 			if is_instance_valid(node):

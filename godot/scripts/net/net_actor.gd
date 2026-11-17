@@ -342,6 +342,8 @@ func _animate(delta: float, move: float, running: bool, crouch: bool, aim: bool,
 	if visual == null or not visual.has_method("animate"):
 		return
 	var local_velocity := visual.global_basis.inverse() * planar_world
+	if visual.has_method("set_prone"):
+		visual.call("set_prone", bool(remote_state.get("pr", false)))
 	visual.call("animate", delta, move, running, crouch, aim, air, reload, Vector2(0, -1), local_velocity)
 
 ## Compact state for the server, same shape as the local player's packet.

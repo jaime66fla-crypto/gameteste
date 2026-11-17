@@ -18,8 +18,8 @@ const Grip = preload("res://scripts/characters/swat_grip.gd")
 # [osso de, osso até, zona, raio]
 const HITBOXES := [
 	["Head", "HeadTop_End", "head", 0.12],
-	["Neck", "Head", "chest", 0.08],
-	["Spine2", "Neck", "chest", 0.17],
+	["Neck", "Head", "chest", 0.07],
+	["Spine2", "Neck", "chest", 0.15],
 	["Spine", "Spine2", "chest", 0.16],
 	["Hips", "Spine", "pelvis", 0.16],
 	["LeftArm", "LeftForeArm", "arm", 0.065],
@@ -47,6 +47,7 @@ var _phase := randf() * TAU
 var _lod_accum := 0.0
 var _frame := randi() % 4
 var _mesh: MeshInstance3D
+var _last_lod := -1
 
 static func available() -> bool:
 	return ResourceLoader.exists(MODEL)
@@ -66,7 +67,7 @@ func _ready() -> void:
 	player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_play("idle", 1.0)
 	player.seek(randf() * 2.0, true)
-	_build_hitboxes()
+	_build_caps()
 
 ## Variação por tipo (corredor mais pálido, brutamontes mais escuro): materiais por tom, compartilhados.
 func _apply_tint() -> void:
@@ -146,6 +147,10 @@ func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
 		Anim.ATTACK: _play("idle", 1.0) # o bote é feito na pose (tronco e braços)
 	_phase += delta
 	flinch = move_toward(flinch, 0.0, delta * 4.0)
+	if lod != _last_lod and _mesh != null:
+		_last_lod = lod
+		# Sombra só de perto (de longe ninguém nota e custa redesenhar o corpo).
+		_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if lod == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	if lod >= 2:
 		return
 	_lod_accum += delta
@@ -154,46 +159,111 @@ func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
 		return
 	player.advance(_lod_accum)
 	_lod_accum = 0.0
-	if lod == 0:
-		_zombie_pose(state)
+	_zombie_pose(state) # barato agora: também no médio, para os braços não voltarem à pose de fuzil
 
-## Pose de zumbi por cima do clipe.
+## Pose de zumbi por cima do clipe. Só rotações locais já calculadas (sem ler
+## a pose global do esqueleto, que recalculava os 65 ossos várias vezes por quadro).
 func _zombie_pose(state: int) -> void:
-	var spine := _bone("Spine1")
-	var neck := _bone("Neck")
-	var head := _bone("Head")
-	var forward := Vector3(0, 0, 1) # frente do modelo no espaço do esqueleto
+	if _pose.is_empty():
+		_bake_pose()
 	# Bote (ataque): o tronco avança e volta num ciclo rápido de agarrar.
 	var lunge := (0.5 + 0.5 * sin(_phase * 7.0)) if state == Anim.ATTACK else 0.0
+	# Tronco do zumbi no lugar do tronco do clipe (que segura um fuzil e gira o peito).
+	for bone in _pose["upper_body"]:
+		skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_rest(bone).basis.get_rotation_quaternion())
+	var hips: int = _pose["hips"]
+	var spine0: int = _pose["spine0"]
+	if hips >= 0 and spine0 >= 0 and skeleton.get_bone_parent(spine0) == hips:
+		var hips_global := skeleton.get_bone_pose_rotation(hips)
+		var up := skeleton.get_bone_parent(hips)
+		if up >= 0:
+			hips_global = skeleton.get_bone_global_pose(up).basis.get_rotation_quaternion() * hips_global
+		skeleton.set_bone_pose_rotation(spine0, hips_global.inverse() * (_pose["spine0_rest"] as Quaternion))
+	var spine: int = _pose["spine"]
 	if spine >= 0:
-		var lean := 0.32 + (0.15 if state == Anim.RUN else 0.0) + lunge * 0.35 - flinch * 0.5
-		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, lean) * skeleton.get_bone_global_pose(spine).basis)
+		var lean := (0.15 if state == Anim.RUN else 0.0) + lunge * 0.35 - flinch * 0.5
+		skeleton.set_bone_pose_rotation(spine, Quaternion(_pose["spine_axis"], BASE_LEAN + lean) * skeleton.get_bone_rest(spine).basis.get_rotation_quaternion())
+		# O peito desfaz a inclinação extra: o corpo avança, os braços seguem retos para a frente.
+		var chest_bone := _bone("Spine2")
+		if chest_bone >= 0 and skeleton.get_bone_parent(chest_bone) == spine:
+			skeleton.set_bone_pose_rotation(chest_bone, Quaternion(_pose["spine_axis"], -lean) * skeleton.get_bone_rest(chest_bone).basis.get_rotation_quaternion())
+	var head: int = _pose["head"]
 	if head >= 0:
-		var wobble := Basis(Vector3.FORWARD, sin(_phase * 1.3) * 0.22) * Basis(Vector3.RIGHT, 0.25 + sin(_phase * 0.7) * 0.08)
-		Grip._set_global_rotation(skeleton, head, wobble * skeleton.get_bone_global_pose(head).basis)
-	var chest := _bone("Spine2")
-	if chest < 0:
+		var wobble := Quaternion(_pose["head_roll"], sin(_phase * 1.3) * 0.22) * Quaternion(_pose["head_axis"], 0.25 + sin(_phase * 0.7) * 0.08)
+		skeleton.set_bone_pose_rotation(head, wobble * skeleton.get_bone_rest(head).basis.get_rotation_quaternion())
+	for side in ["Left", "Right"]:
+		var arm: Dictionary = _pose.get(side, {})
+		if arm.is_empty():
+			continue
+		var k := 0.5 + 0.5 * sin(_phase * 2.1 + (0.0 if side == "Left" else 1.7)) * 0.35
+		if state == Anim.ATTACK:
+			# Mãos sobem e descem alternadas, tentando agarrar.
+			k = 0.5 + 0.5 * sin(_phase * 7.0 + (0.0 if side == "Left" else PI))
+		var low: Array = arm["low"]
+		var high: Array = arm["high"]
+		skeleton.set_bone_pose_rotation(arm["upper"], (low[0] as Quaternion).slerp(high[0], k))
+		skeleton.set_bone_pose_rotation(arm["lower"], (low[1] as Quaternion).slerp(high[1], k))
+		skeleton.set_bone_pose_rotation(arm["hand"], arm["hand_q"])
+
+var _pose: Dictionary = {}
+static var _pose_cache: Dictionary = {}
+const BASE_LEAN := 0.32 # tronco curvado para a frente (radianos)
+
+## Calcula uma vez (na pose de descanso) as rotações locais dos braços esticados
+## para a frente, mais alto e mais baixo, e os eixos de inclinação do tronco e da cabeça.
+func _bake_pose() -> void:
+	if _pose_cache.has("pose"):
+		_pose = _pose_cache["pose"]
 		return
-	var torso := skeleton.get_bone_global_pose(chest).origin
+	var saved: Array = []
+	for i in skeleton.get_bone_count():
+		saved.append([skeleton.get_bone_pose_position(i), skeleton.get_bone_pose_rotation(i), skeleton.get_bone_pose_scale(i)])
+	skeleton.reset_bone_poses()
+	var pose := {"spine": _bone("Spine1"), "head": _bone("Head"), "upper_body": []}
+	for name in ["Spine2", "Neck", "LeftShoulder", "RightShoulder"]:
+		if _bone(name) >= 0:
+			pose["upper_body"].append(_bone(name))
+	# Base da coluna: desfaz o giro do quadril do clipe (postura de fuzil de lado).
+	pose["hips"] = _bone("Hips")
+	pose["spine0"] = _bone("Spine")
+	if pose["spine0"] >= 0:
+		pose["spine0_rest"] = skeleton.get_bone_global_rest(pose["spine0"]).basis.get_rotation_quaternion()
+	var forward := Vector3(0, 0, 1) # frente do modelo no espaço do esqueleto
+	for key in [["spine", "spine_axis", Vector3.RIGHT], ["head", "head_axis", Vector3.RIGHT], ["head", "head_roll", Vector3.FORWARD]]:
+		var bone: int = pose[key[0]]
+		var parent := skeleton.get_bone_parent(bone) if bone >= 0 else -1
+		var parent_basis := skeleton.get_bone_global_pose(parent).basis if parent >= 0 else Basis()
+		pose[key[1]] = (parent_basis.inverse() * (key[2] as Vector3)).normalized()
+	# Braços calculados com o tronco já curvado, para ficarem na horizontal.
+	var lean_bone: int = pose["spine"]
+	if lean_bone >= 0:
+		skeleton.set_bone_pose_rotation(lean_bone, Quaternion(pose["spine_axis"], BASE_LEAN) * skeleton.get_bone_rest(lean_bone).basis.get_rotation_quaternion())
+	var chest := _bone("Spine2")
+	var torso := skeleton.get_bone_global_pose(chest).origin if chest >= 0 else Vector3.ZERO
 	for side in ["Left", "Right"]:
 		var upper := _bone(side + "Arm")
 		var lower := _bone(side + "ForeArm")
 		var hand := _bone(side + "Hand")
-		if upper < 0 or lower < 0 or hand < 0:
+		if upper < 0 or lower < 0 or hand < 0 or chest < 0:
 			continue
 		var shoulder := skeleton.get_bone_global_pose(upper).origin
 		var lateral := shoulder - torso
 		lateral.y = 0.0
 		lateral = lateral.normalized()
-		var reach := 0.55 if state != Anim.RUN else 0.48
-		var sway := sin(_phase * 2.1 + (0.0 if side == "Left" else 1.7)) * 0.06
-		if state == Anim.ATTACK:
-			# Mãos sobem e descem alternadas, tentando agarrar.
-			reach = 0.62
-			sway = sin(_phase * 7.0 + (0.0 if side == "Left" else PI)) * 0.14 + 0.06
-		var target := shoulder + forward * reach + lateral * (0.04 - lunge * 0.06) + Vector3(0, -0.06 + sway, 0)
-		_two_bone_ik(upper, lower, hand, target, lateral * 0.5 + Vector3(0, -1, 0))
-		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
+		var arm := {"upper": upper, "lower": lower, "hand": hand, "hand_q": skeleton.get_bone_rest(hand).basis.get_rotation_quaternion()}
+		for spec in [["low", -0.16], ["high", 0.12]]:
+			var target := shoulder + forward * 0.56 + lateral * 0.03 + Vector3(0, float(spec[1]), 0)
+			_two_bone_ik(upper, lower, hand, target, lateral * 0.5 + Vector3(0, -1, 0))
+			arm[spec[0]] = [skeleton.get_bone_pose_rotation(upper), skeleton.get_bone_pose_rotation(lower)]
+			skeleton.reset_bone_pose(upper)
+			skeleton.reset_bone_pose(lower)
+		pose[side] = arm
+	for i in saved.size():
+		skeleton.set_bone_pose_position(i, saved[i][0])
+		skeleton.set_bone_pose_rotation(i, saved[i][1])
+		skeleton.set_bone_pose_scale(i, saved[i][2])
+	_pose = pose
+	_pose_cache["pose"] = pose
 
 func _two_bone_ik(upper: int, lower: int, end: int, target: Vector3, pole: Vector3) -> void:
 	var upper_pose := skeleton.get_bone_global_pose(upper)
@@ -230,33 +300,48 @@ func _find_bone(suffix: String) -> int:
 			return i
 	return -1
 
-## Cápsulas de acerto de cada osso até o filho, seguindo o esqueleto animado.
-func _build_hitboxes() -> void:
-	var scale_factor := maxf(skeleton.global_basis.get_scale().x, 0.0001)
+## Partes do corpo [osso de, osso até, zona, raio] para a conta do tiro.
+var _caps: Array = []
+
+func _build_caps() -> void:
 	for spec in HITBOXES:
 		var from := _find_bone(spec[0])
 		var to := _find_bone(spec[1])
-		if from < 0 or to < 0:
+		if from >= 0 and to >= 0:
+			_caps.append([from, to, spec[2], float(spec[3])])
+
+## Raio contra as cápsulas dos ossos (pose atual): a mais próxima de quem atira.
+func resolve_ray(origin: Vector3, direction: Vector3) -> Dictionary:
+	if skeleton == null:
+		return {}
+	var dir := direction.normalized()
+	var to_world := skeleton.global_transform
+	var size := global_basis.get_scale().y
+	var best_t := INF
+	var best := {}
+	for cap in _caps:
+		var a: Vector3 = to_world * skeleton.get_bone_global_pose(cap[0]).origin
+		var b: Vector3 = to_world * skeleton.get_bone_global_pose(cap[1]).origin
+		var radius: float = float(cap[3]) * size
+		# Pontos mais próximos entre o raio (origin + dir*t) e o segmento a-b.
+		var ab := b - a
+		var w := origin - a
+		var aa := ab.dot(ab)
+		var bd := ab.dot(dir)
+		var denom := aa - bd * bd
+		var s := 0.0
+		if aa > 0.000001 and absf(denom) > 0.000001:
+			s = clampf((ab.dot(w) - bd * dir.dot(w)) / denom, 0.0, 1.0)
+		var on_bone := a + ab * s
+		var t := maxf(0.0, (on_bone - origin).dot(dir))
+		var on_ray := origin + dir * t
+		var d := on_ray.distance_to(on_bone)
+		if d > radius:
 			continue
-		var from_rest := skeleton.get_bone_global_rest(from)
-		var local_to: Vector3 = from_rest.affine_inverse() * skeleton.get_bone_global_rest(to).origin
-		var length := local_to.length()
-		if length < 0.001:
-			continue
-		var attachment := BoneAttachment3D.new()
-		attachment.bone_name = skeleton.get_bone_name(from)
-		skeleton.add_child(attachment)
-		var body: StaticBody3D = HitboxScript.new()
-		body.set("actor", actor)
-		body.set("zone", spec[2])
-		attachment.add_child(body)
-		var shape := CapsuleShape3D.new()
-		var radius: float = float(spec[3]) / scale_factor
-		shape.radius = radius
-		shape.height = length + radius * 2.0
-		var collision := CollisionShape3D.new()
-		collision.shape = shape
-		collision.position = local_to * 0.5
-		collision.quaternion = Quaternion(Vector3.UP, local_to / length)
-		body.add_child(collision)
-		hitboxes.append(body)
+		var entry := t - sqrt(maxf(0.0, radius * radius - d * d))
+		if entry < best_t:
+			best_t = entry
+			var point := origin + dir * maxf(entry, 0.0)
+			var normal := (point - on_bone)
+			best = {"zone": cap[2], "position": point, "normal": normal.normalized() if normal.length_squared() > 0.0001 else -dir}
+	return best

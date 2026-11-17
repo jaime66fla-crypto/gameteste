@@ -72,6 +72,12 @@ func _ready() -> void:
 	name = "SurvivalController"
 	my_id = Net.my_id
 	sun = main_node.get_node_or_null("Sun")
+	if sun:
+		# Mundo aberto cheio de árvores: sombra mais curta e em 2 faixas (cada faixa redesenha tudo).
+		sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+		sun.directional_shadow_max_distance = 60.0
+	# Modelos com níveis de detalhe (zumbis): troca para o mais leve um pouco antes.
+	get_viewport().mesh_lod_threshold = 3.0
 	var we := main_node.get_node_or_null("WorldEnvironment") as WorldEnvironment
 	env = we.environment if we else null
 	_build_ui()
@@ -133,7 +139,7 @@ func _apply_host() -> void:
 func _targets() -> Array:
 	var list: Array = []
 	if not local_dead:
-		list.append({"id": my_id, "node": player, "grass": world.call("in_tall_grass", player.global_position), "crouch": bool(player.get("crouching"))})
+		list.append({"id": my_id, "node": player, "grass": world.call("in_tall_grass", player.global_position), "crouch": bool(player.get("crouching")) or bool(player.get("prone"))})
 	for id in actors:
 		var actor = actors[id]
 		if not actor.dead:
@@ -163,7 +169,7 @@ func _physics_process(delta: float) -> void:
 		var v := player.get_real_velocity() if not is_driving() else Vector3.ZERO
 		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
-			"r": player.get("sprinting"), "c": player.get("crouching"), "a": player.get("aiming"),
+			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
 			"act": action, "tool": action_tool})
 	_zombie_timer -= delta
@@ -371,8 +377,12 @@ func _melee() -> void:
 		return
 	var target_id := str(target.get("zombie_id")) if target.get("zombie_id") != null else str(target.get("actor_id"))
 	var best: Array = SurvivalData.best_melee(inv)
-	Net.send({"t": "melee", "target": target_id, "item": best[0], "zone": str(body.get("zone"))})
-	combat_feedback.call("show_hit", str(body.get("zone")) == "head")
+	var zone := str(body.get("zone"))
+	if body.has_method("resolve_ray"):
+		# Casca do zumbi: a parte do corpo sai da conta (de perto, sem acerto exato = tronco).
+		zone = str((body.call("resolve_ray", from, forward) as Dictionary).get("zone", "chest"))
+	Net.send({"t": "melee", "target": target_id, "item": best[0], "zone": zone})
+	combat_feedback.call("show_hit", zone == "head")
 	player.get("sound_fx").call("hit_confirm", false)
 	_blood(hit["position"], hit["normal"])
 
@@ -687,8 +697,15 @@ func _update_daylight() -> void:
 
 # --------------------------------------------------------------------- HUD ---
 
+var _scan_timer := 0.0
+
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 0.8)
+	# Procurar o que está perto percorre ~1500 coisas: 10 vezes por segundo basta.
+	_scan_timer -= delta
+	if _scan_timer > 0.0:
+		return
+	_scan_timer = 0.1
 	if not local_dead and not is_driving():
 		var target := _find_target()
 		prompt.visible = not target.is_empty() and not inventory.visible
@@ -702,7 +719,7 @@ func _process(delta: float) -> void:
 		inventory.call("clear_container")
 	for id in world.containers:
 		var entry: Dictionary = world.containers[id]
-		entry["label"].visible = (entry["pos"] as Vector3).distance_to(player.global_position) < 6.0
+		entry["label"].visible = (entry["pos"] as Vector3).distance_squared_to(player.global_position) < 36.0
 	var hour := game_hour()
 	var day := int(floor(_clock_ms / _day_ms)) + 1
 	clock_label.text = "Dia %d  •  %02d:%02d\n%d/16 online" % [day, int(hour), int(fmod(hour, 1.0) * 60.0), online]

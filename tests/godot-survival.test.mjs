@@ -107,7 +107,13 @@ test('search rolls loot once, take moves items into the backpack', async () => {
 	say(room, p, { t: 'search', k: box.id });
 	assert.match(p.ws.last('note').message, /Longe/);
 	at(p, box.p);
-	say(room, p, { t: 'search', k: box.id });
+	const random = Math.random;
+	Math.random = () => 0.7; // acima da chance de vazio: sempre sorteia algo
+	try {
+		say(room, p, { t: 'search', k: box.id });
+	} finally {
+		Math.random = random;
+	}
 	const first = p.ws.last('container');
 	assert.equal(first.k, box.id);
 	const [item, n] = Object.entries(first.items)[0];
@@ -350,4 +356,10 @@ test('loot rolls only produce known items', () => {
 	for (const type of Object.keys(catalog.loot)) {
 		for (let i = 0; i < 50; i++) for (const item of Object.keys(rollLoot(type))) assert.ok(catalog.items[item], item);
 	}
+});
+
+test('loot is scarce: many containers come up empty', () => {
+	let empty = 0;
+	for (let i = 0; i < 400; i++) if (!Object.keys(rollLoot('shelf')).length) empty++;
+	assert.ok(empty > 100 && empty < 260, `vazios: ${empty}/400`);
 });

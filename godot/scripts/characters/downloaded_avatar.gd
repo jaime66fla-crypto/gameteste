@@ -110,7 +110,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
 	_last_delta = delta
-	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne else 0.0, delta * 6.0)
+	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
+	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne and prone_weight < 0.01 and not prone_requested else 0.0, delta * 6.0)
 	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
 	animation_player.advance(delta)
 	var moving := move_amount > 0.08 and not airborne
@@ -127,6 +128,12 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_finish_pose()
 		return
 	var clip := "idle_with_rifle"
+	if prone_weight > 0.5:
+		# Deitado: pernas paradas do clipe; o rastejar é feito na pose.
+		_crawl_time += delta * (6.0 * _move_amount)
+		_play_clip("idle_with_rifle", 1.0)
+		_finish_pose()
+		return
 	if moving:
 		# Agachado não corre: anda devagar com as pernas dobradas.
 		clip = "run_in_place" if running and crouch_weight < 0.5 else "walk_with_rifle"
@@ -140,14 +147,94 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
 	_apply_crouch()
+	_apply_prone()
 	if not work_action.is_empty():
 		_apply_work()
 		_update_backpack()
 		return
 	_update_weapon_mount()
-	if unarmed_weight > 0.01:
-		_relax_arms()
+	# Correndo desarmado, o próprio clipe de corrida já balança os braços
+	# naturalmente: só andando/parado os braços descem para o lado do corpo.
+	var running_clip := current_clip in ["run_in_place", "run_to_stop"]
+	_run_arms = move_toward(_run_arms, 1.0 if running_clip else 0.0, _last_delta * 5.0)
+	if prone_weight > 0.01 and unarmed_weight > 0.01:
+		_prone_arms(unarmed_weight)
+	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
+		_relax_arms(unarmed_weight * (1.0 - _run_arms))
 	_update_backpack()
+
+# -------------------------------------------------------------- deitado ---
+# Deitado de bruços: o quadril gira 90° (cabeça para a frente, rosto para o
+# chão) e desce até o chão; o peito levanta apoiado nos cotovelos e a cabeça
+# olha para a frente. Armado, a arma aponta para a mira e as mãos seguem a arma.
+# Andando deitado, rasteja: o quadril balança e os joelhos dobram alternados.
+const PRONE_HIPS_HEIGHT := 0.17
+var prone_requested := false
+var prone_weight := 0.0
+var _crawl_time := 0.0
+
+func set_prone(value: bool) -> void:
+	prone_requested = value
+
+func _apply_prone() -> void:
+	if prone_weight <= 0.001:
+		return
+	var w := _ease_in_out(prone_weight)
+	var hips := Grip._bone(skeleton, "Hips")
+	if hips < 0:
+		return
+	var crawl := sin(_crawl_time) * _move_amount
+	var hips_global := skeleton.get_bone_global_pose(hips)
+	var turn := Basis(Vector3.RIGHT, PI * 0.5 * w) * Basis(Vector3.FORWARD, crawl * 0.12 * w)
+	Grip._set_global_rotation(skeleton, hips, turn * hips_global.basis)
+	# Quadril desce até o chão (no espaço do esqueleto, Y para cima).
+	var hips_now := skeleton.get_bone_global_pose(hips).origin
+	var drop := Vector3(0, (PRONE_HIPS_HEIGHT - hips_now.y) * w, 0)
+	var parent := skeleton.get_bone_parent(hips)
+	if parent >= 0:
+		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
+	# Coluna e cabeça levantam (girar em X negativo leva a frente para cima).
+	for spec in [["Spine", -0.18], ["Spine1", -0.2], ["Spine2", -0.18], ["Neck", -0.25], ["Head", -0.3]]:
+		var bone := Grip._bone(skeleton, spec[0])
+		if bone >= 0:
+			Grip._set_global_rotation(skeleton, bone, Basis(Vector3.RIGHT, float(spec[1]) * w) * skeleton.get_bone_global_pose(bone).basis)
+	# Pernas esticadas para trás, um pouco abertas; ao rastejar, um joelho sobe de cada vez.
+	for side in ["Left", "Right"]:
+		var up_leg := Grip._bone(skeleton, side + "UpLeg")
+		var leg := Grip._bone(skeleton, side + "Leg")
+		var sign := -1.0 if side == "Left" else 1.0
+		if up_leg >= 0:
+			skeleton.set_bone_pose_rotation(up_leg, skeleton.get_bone_pose_rotation(up_leg).slerp(skeleton.get_bone_rest(up_leg).basis.get_rotation_quaternion(), w))
+			var bend := maxf(0.0, crawl * sign) * 0.9 * w
+			# Perna deitada aponta para trás (-Z): abrir = girar no eixo vertical.
+			Grip._set_global_rotation(skeleton, up_leg, Basis(Vector3.UP, sign * (0.12 + bend * 0.5) * w) * skeleton.get_bone_global_pose(up_leg).basis)
+		if leg >= 0:
+			skeleton.set_bone_pose_rotation(leg, skeleton.get_bone_pose_rotation(leg).slerp(skeleton.get_bone_rest(leg).basis.get_rotation_quaternion(), w))
+			var knee := maxf(0.0, crawl * sign) * 0.9 * w
+			if knee > 0.001:
+				Grip._set_global_rotation(skeleton, leg, Basis(Vector3.RIGHT, knee) * skeleton.get_bone_global_pose(leg).basis) # pé sobe
+
+## Deitado sem arma: antebraços no chão à frente dos ombros (apoiado nos cotovelos).
+func _prone_arms(weight: float) -> void:
+	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	if chest < 0:
+		return
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var crawl := sin(_crawl_time) * _move_amount
+	for side in ["Left", "Right"]:
+		var upper := Grip._bone(skeleton, side + "Arm")
+		var hand := Grip._bone(skeleton, side + "Hand")
+		if upper < 0 or hand < 0:
+			continue
+		var shoulder := skeleton.get_bone_global_pose(upper).origin
+		var lateral := shoulder - torso
+		lateral.y = 0.0
+		lateral = lateral.normalized()
+		var reach := 0.32 + (crawl if side == "Left" else -crawl) * 0.12
+		var target := Vector3(shoulder.x, 0.08, shoulder.z) + Vector3(0, 0, reach) - lateral * 0.06
+		var current := skeleton.get_bone_global_pose(hand).origin
+		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, current.lerp(target, weight * prone_weight), lateral * 0.6 + Vector3(0, -1, 0))
 
 # ------------------------------------------------- trabalho (machado etc.) ---
 # Golpes com as duas mãos no cabo: levanta devagar por cima do ombro direito e
@@ -403,7 +490,9 @@ func _two_bone_ik(upper: int, lower: int, foot: int, target: Vector3, pole: Vect
 
 # ------------------------------------------------------ braços desarmado ---
 ## Sem arma: mãos ao lado do quadril, balançando ao andar (os clipes seguram um fuzil).
-func _relax_arms() -> void:
+var _run_arms := 0.0
+
+func _relax_arms(weight: float) -> void:
 	var hips := Grip._bone(skeleton, "Hips")
 	var chest := skeleton.find_bone("mixamorig9_Spine2")
 	if hips < 0 or chest < 0:
@@ -423,10 +512,11 @@ func _relax_arms() -> void:
 		if lateral.length_squared() < 0.0001:
 			continue
 		lateral = lateral.normalized()
-		var swing := sin(phase + (0.0 if side == "Left" else PI)) * 0.18 * _move_amount
-		var relaxed := Vector3(hip.x, hip.y + 0.02, hip.z) + lateral * 0.24 + Vector3(0, 0, 0.02 + swing)
+		var swing := sin(phase + (0.0 if side == "Left" else PI)) * 0.2 * _move_amount
+		# Mão à frente sobe um pouco (cotovelo dobra), atrás fica mais baixa.
+		var relaxed := Vector3(hip.x, hip.y + 0.03 + maxf(swing, 0.0) * 0.35, hip.z) + lateral * 0.24 + Vector3(0, 0, 0.03 + swing)
 		var current := skeleton.get_bone_global_pose(hand).origin
-		var target := current.lerp(relaxed, unarmed_weight)
+		var target := current.lerp(relaxed, weight)
 		# Cotovelo para trás e um pouco para fora; punho reto (pose de descanso da mão).
 		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, target, lateral * 0.4 + Vector3(0, 0, -1))
 		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
