@@ -13,6 +13,15 @@ const SurvivalControllerScript = preload("res://scripts/survival/survival_contro
 var player: CharacterBody3D
 var hud: Label
 var crosshair: Control
+## Dynamic crosshair: gap (px from centre) follows the real shot spread; the
+## four arms fade out once the sights are up (first-person ADS), dot stays.
+var crosshair_gap := 2.5
+var crosshair_arm_alpha := 1.0
+## 0 = white centre dot, 1 = red-dot reticle (aiming through an optic).
+var crosshair_red_dot := 0.0
+const CROSSHAIR_MIN_GAP := 2.5
+const CROSSHAIR_MAX_GAP := 70.0
+const CROSSHAIR_ARM_LENGTH := 6.0
 var action_clock: Control
 var action_state: Dictionary = {}
 var scope_overlay: Control
@@ -22,7 +31,7 @@ var minimap: Control
 var ammo_hud: Control
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
-const HELP_TEXT := "WASD andar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  M mapa  |  ESC liberar o mouse"
+const HELP_TEXT := "WASD mover  ALT andar devagar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  M mapa  |  ESC liberar o mouse"
 
 func _ready() -> void:
     _register_inputs()
@@ -166,6 +175,7 @@ func _register_inputs() -> void:
         "move_right": KEY_D,
         "jump": KEY_SPACE,
         "sprint": KEY_SHIFT,
+        "walk": KEY_ALT, # segurar: anda devagar (estilo GTA)
         "crouch": KEY_CTRL,
         "reload": KEY_R
     }
@@ -243,15 +253,27 @@ func _build_ui() -> void:
     crosshair.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     crosshair.draw.connect(func():
         var c := crosshair.size * 0.5
-        for pass_index in 2:
-            var color := Color(0, 0, 0, 0.75) if pass_index == 0 else Color(1, 1, 1, 0.95)
-            var width := 4.0 if pass_index == 0 else 2.0
-            var arm := 9.0 if pass_index == 0 else 8.0
-            crosshair.draw_line(c + Vector2(-arm, 0), c + Vector2(-2.5, 0), color, width)
-            crosshair.draw_line(c + Vector2(2.5, 0), c + Vector2(arm, 0), color, width)
-            crosshair.draw_line(c + Vector2(0, -arm), c + Vector2(0, -2.5), color, width)
-            crosshair.draw_line(c + Vector2(0, 2.5), c + Vector2(0, arm), color, width)
-        crosshair.draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.95)))
+        var gap := crosshair_gap
+        if crosshair_arm_alpha > 0.01:
+            for pass_index in 2:
+                var color := Color(0, 0, 0, 0.75) if pass_index == 0 else Color(1, 1, 1, 0.95)
+                color.a *= crosshair_arm_alpha
+                var width := 4.0 if pass_index == 0 else 2.0
+                var arm := gap + CROSSHAIR_ARM_LENGTH + (1.0 if pass_index == 0 else 0.0)
+                crosshair.draw_line(c + Vector2(-arm, 0), c + Vector2(-gap, 0), color, width)
+                crosshair.draw_line(c + Vector2(gap, 0), c + Vector2(arm, 0), color, width)
+                crosshair.draw_line(c + Vector2(0, -arm), c + Vector2(0, -gap), color, width)
+                crosshair.draw_line(c + Vector2(0, gap), c + Vector2(0, arm), color, width)
+        if crosshair_red_dot > 0.01:
+            # Red-dot reticle: soft glow plus a bright core, centred on the shot axis.
+            var red := crosshair_red_dot
+            crosshair.draw_circle(c, 4.5, Color(1.0, 0.1, 0.05, 0.22 * red))
+            crosshair.draw_circle(c, 2.6, Color(1.0, 0.15, 0.08, 0.55 * red))
+            crosshair.draw_circle(c, 1.5, Color(1.0, 0.35, 0.25, red))
+        if crosshair_red_dot < 0.99:
+            var white := 1.0 - crosshair_red_dot
+            crosshair.draw_rect(Rect2(c - Vector2(1.5, 1.5), Vector2(3, 3)), Color(0, 0, 0, 0.6 * white))
+            crosshair.draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.95 * white)))
     crosshair.resized.connect(crosshair.queue_redraw)
     # Action clock under the crosshair: reload / medkit progress (3 s).
     action_clock = Control.new()
@@ -296,6 +318,27 @@ func _draw_action_clock() -> void:
     action_clock.draw_string(font, c + Vector2(-width * 0.5 + 1, radius + 23), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0, 0, 0, 0.9))
     action_clock.draw_string(font, c + Vector2(-width * 0.5, radius + 22), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1))
 
+## Spread (tangent of the cone half-angle) -> pixels at the current vertical FOV.
+func _update_crosshair(delta: float) -> void:
+    var camera: Camera3D = player.get("camera")
+    var spread: float = player.call("current_spread")
+    var half_height := crosshair.size.y * 0.5
+    var target_gap := spread * half_height / tan(deg_to_rad(camera.fov) * 0.5) if camera != null else CROSSHAIR_MIN_GAP
+    target_gap = clampf(target_gap, CROSSHAIR_MIN_GAP, CROSSHAIR_MAX_GAP)
+    var ads := float(player.call("ads_amount"))
+    var target_alpha := 1.0 - ads
+    # The red dot appears only once the sights are nearly up.
+    var target_red := smoothstep(0.6, 1.0, ads) if bool(player.call("ads_optic")) else 0.0
+    var blend := 1.0 - exp(-delta * 18.0)
+    var gap := lerpf(crosshair_gap, target_gap, blend)
+    var alpha := lerpf(crosshair_arm_alpha, target_alpha, blend)
+    var red := lerpf(crosshair_red_dot, target_red, blend)
+    if absf(gap - crosshair_gap) > 0.01 or absf(alpha - crosshair_arm_alpha) > 0.005 or absf(red - crosshair_red_dot) > 0.005:
+        crosshair_gap = gap
+        crosshair_arm_alpha = alpha
+        crosshair_red_dot = red
+        crosshair.queue_redraw()
+
 func return_to_menu() -> void:
     Input.action_release("fire")
     Input.action_release("aim")
@@ -313,6 +356,7 @@ func _process(_delta: float) -> void:
         if action_clock.visible:
             action_clock.queue_redraw()
         crosshair.visible = not scoped
+        _update_crosshair(_delta)
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)
         var out := false

@@ -18,6 +18,35 @@ const RIGHT_SHOULDER := Vector3(0.24, -0.32, 0.10)
 const LEFT_SHOULDER := Vector3(-0.22, -0.34, 0.08)
 # Toe the barrel slightly inward so it points toward the crosshair.
 const BASE_ROTATION := Vector3(0.0, 0.05, 0.0)
+## ADS (CoD-style): the weapon's "Sight" marker slides onto the screen centre,
+## this far in front of the eye (metres), per weapon.
+const ADS_EYE_DISTANCE := {
+    "pistol": 0.30,
+    "smg": 0.30,
+    "rifle": 0.30,
+    "shotgun": 0.30,
+    "sniper": 0.28,
+}
+## The low-poly optics are solid blocks (no glass), so the eye line rests just
+## above the weapon's highest point, like the tip of an iron-sight post.
+const ADS_TOP_CLEARANCE := 0.003
+## Weapons with an optic: a window is cut through the solid housing (weapon
+## model space, before scaling) and the eye looks through its centre, where
+## the HUD draws the red dot. Measured from the Polyy carbine geometry.
+const OPTIC_WINDOW := {
+    "rifle": AABB(Vector3(-0.029, 0.178, -0.08), Vector3(0.062, 0.074, 0.17)),
+}
+const OpticWindowShader = preload("res://scripts/weapons/optic_window.gdshader")
+## Hip -> sights time (s); eased with smoothstep.
+@export var ads_time := 0.24
+## Mouse sway: radians of weapon lag per radian/s of look, and its limit.
+@export var sway_amount := 0.012
+@export var sway_limit := 0.06
+@export var sway_smoothing := 10.0
+## Fractions kept while fully aimed down sights.
+@export var ads_bob_scale := 0.25
+@export var ads_sway_scale := 0.3
+@export var ads_kick_rotation_scale := 0.5
 
 var holder: Node3D
 var weapon: Node3D
@@ -82,7 +111,84 @@ func build(id: String) -> void:
         (mesh as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     holder.position = HOLD.get(id, HOLD["rifle"])
     holder.rotation = BASE_ROTATION
+    _cut_optic_window()
+    _aim_point = _compute_aim_point()
     _build_arms()
+
+## True when the current weapon is looked at through an optic (red dot).
+func has_optic() -> bool:
+    return OPTIC_WINDOW.has(weapon_id) and weapon != null and weapon.get_meta("optic_window", false)
+
+## Replaces the viewmodel copy's material with one that keeps its look but cuts
+## the optic window. The third-person weapon and the shared resource are untouched.
+func _cut_optic_window() -> void:
+    if not OPTIC_WINDOW.has(weapon_id) or not weapon.is_inside_tree():
+        return
+    var window: AABB = OPTIC_WINDOW[weapon_id]
+    var to_weapon := weapon.global_transform.affine_inverse()
+    var cut := false
+    for node in weapon.find_children("*", "MeshInstance3D", true, false):
+        var mesh_instance := node as MeshInstance3D
+        if mesh_instance.mesh == null:
+            continue
+        var to_mesh := (to_weapon * mesh_instance.global_transform).affine_inverse()
+        var box: AABB = to_mesh * window
+        var source := mesh_instance.get_active_material(0) as BaseMaterial3D
+        var material := ShaderMaterial.new()
+        material.shader = OpticWindowShader
+        if source != null:
+            material.set_shader_parameter("albedo_color", source.albedo_color)
+            material.set_shader_parameter("use_texture", source.albedo_texture != null)
+            if source.albedo_texture != null:
+                material.set_shader_parameter("albedo_texture", source.albedo_texture)
+            material.set_shader_parameter("roughness", source.roughness)
+            material.set_shader_parameter("metallic", source.metallic)
+            if source.roughness_texture != null:
+                material.set_shader_parameter("use_roughness_texture", true)
+                material.set_shader_parameter("roughness_texture", source.roughness_texture)
+                material.set_shader_parameter("roughness_channel", _channel_mask(source.roughness_texture_channel))
+            if source.metallic_texture != null:
+                material.set_shader_parameter("use_metallic_texture", true)
+                material.set_shader_parameter("metallic_texture", source.metallic_texture)
+                material.set_shader_parameter("metallic_channel", _channel_mask(source.metallic_texture_channel))
+        material.set_shader_parameter("cut_min", box.position)
+        material.set_shader_parameter("cut_max", box.end)
+        mesh_instance.material_override = material
+        cut = true
+    weapon.set_meta("optic_window", cut)
+
+static func _channel_mask(channel: int) -> Vector4:
+    match channel:
+        BaseMaterial3D.TEXTURE_CHANNEL_RED: return Vector4(1, 0, 0, 0)
+        BaseMaterial3D.TEXTURE_CHANNEL_GREEN: return Vector4(0, 1, 0, 0)
+        BaseMaterial3D.TEXTURE_CHANNEL_BLUE: return Vector4(0, 0, 1, 0)
+        BaseMaterial3D.TEXTURE_CHANNEL_ALPHA: return Vector4(0, 0, 0, 1)
+    return Vector4(0.333, 0.333, 0.333, 0) # grayscale
+
+## Holder-space point that ADS puts on the screen centre: the Sight marker,
+## raised to clear the top of the weapon geometry.
+func _compute_aim_point() -> Vector3:
+    var sight := weapon.get_node_or_null("Sight") as Marker3D
+    if sight == null:
+        return Vector3.INF
+    var point := weapon.transform * sight.position
+    if has_optic():
+        # Look through the centre of the cut window.
+        var window: AABB = OPTIC_WINDOW[weapon_id]
+        var centre := weapon.transform * window.get_center()
+        return Vector3(centre.x, centre.y, point.z)
+    if not weapon.is_inside_tree():
+        return point
+    var top := -INF
+    var to_weapon := weapon.global_transform.affine_inverse()
+    for node in weapon.find_children("*", "VisualInstance3D", true, false):
+        var visual := node as VisualInstance3D
+        var box: AABB = (to_weapon * visual.global_transform) * visual.get_aabb()
+        top = maxf(top, box.end.y)
+    if top > -INF:
+        # The weapon node only scales and offsets (no rotation): its Y is holder Y.
+        point.y = maxf(point.y, (weapon.transform * Vector3(0.0, top, 0.0)).y + ADS_TOP_CLEARANCE)
+    return point
 
 func _build_arms() -> void:
     for child in arms.get_children():
@@ -208,6 +314,29 @@ func _tube(parent: Node3D, node_name: String, a: Vector3, b: Vector3, radius: fl
 
 var _reload_weight := 0.0
 var _wall_weight := 0.0
+var _ads_weight := 0.0
+var _sway := Vector2.ZERO
+var _last_physics_frame := -10
+var _aim_point := Vector3.INF
+
+## Holder position that puts the aim point on the camera axis.
+func _ads_position() -> Vector3:
+    if weapon == null or _aim_point == Vector3.INF:
+        return HOLD.get(weapon_id, HOLD["rifle"])
+    var distance: float = ADS_EYE_DISTANCE.get(weapon_id, 0.30)
+    return Vector3(0.0, 0.0, -distance) - _aim_point
+
+## Rest pose blended between hip and sights (no recoil, wall or reload offsets).
+func _rest_position() -> Vector3:
+    var hip: Vector3 = HOLD.get(weapon_id, HOLD["rifle"])
+    return hip.lerp(_ads_position(), smoothstep(0.0, 1.0, _ads_weight))
+
+func _rest_rotation() -> Vector3:
+    return BASE_ROTATION.lerp(Vector3.ZERO, smoothstep(0.0, 1.0, _ads_weight))
+
+## 0 = hip, 1 = fully aimed down sights.
+func ads_amount() -> float:
+    return smoothstep(0.0, 1.0, _ads_weight)
 
 ## Weapon length from grip to muzzle (metres), used to detect walls ahead.
 func reach() -> float:
@@ -215,24 +344,42 @@ func reach() -> float:
     if muzzle == null:
         return 0.6
     # Rest pose only, so the wall tilt does not feed back into the measurement.
-    return -(holder.position + Basis.from_euler(BASE_ROTATION) * (weapon.transform * muzzle.position)).z
+    return -(_rest_position() + Basis.from_euler(_rest_rotation()) * (weapon.transform * muzzle.position)).z
 
 ## kick: recoil; bob: walk sway (m); flash_on: muzzle flash; reloading: lower and
-## tilt the weapon; wall_clearance: free distance ahead of the camera (m).
-func animate(delta: float, kick: float, bob: float, flash_on: bool, reloading: bool = false, wall_clearance: float = INF) -> void:
+## tilt the weapon; wall_clearance: free distance ahead of the camera (m);
+## look_delta: mouse look this frame (yaw, pitch radians) for weapon sway.
+func animate(delta: float, kick: float, bob: float, flash_on: bool, reloading: bool = false, wall_clearance: float = INF, look_delta: Vector2 = Vector2.ZERO) -> void:
+    # Each entry into first person starts from the hip and raises the sights.
+    var frame := Engine.get_physics_frames()
+    if frame - _last_physics_frame > 2:
+        _ads_weight = 0.0
+        _sway = Vector2.ZERO
+    _last_physics_frame = frame
     _reload_weight = move_toward(_reload_weight, 1.0 if reloading else 0.0, delta * 5.0)
     # 0 = free, 1 = muzzle would be inside the wall: pull back and raise the barrel.
     var blocked := clampf((reach() + 0.05 - wall_clearance) / maxf(reach(), 0.1), 0.0, 1.0)
     _wall_weight = lerpf(_wall_weight, blocked, minf(1.0, delta * 14.0))
+    # Reloading or a wall in front drops out of the sights, like CoD.
+    var wants_ads := not reloading and _wall_weight < 0.35
+    _ads_weight = move_toward(_ads_weight, 1.0 if wants_ads else 0.0, delta / maxf(ads_time, 0.01))
+    var ads := ads_amount()
     var reload_ease := smoothstep(0.0, 1.0, _reload_weight)
-    var recoil := Vector3(0.0, bob + kick * 0.04, kick * 0.12)
+    # Sway: the weapon lags behind the look direction, clamped and smoothed.
+    var sway_target := Vector2.ZERO
+    if delta > 0.0:
+        sway_target = (-look_delta / delta * sway_amount).limit_length(sway_limit) * lerpf(1.0, ads_sway_scale, ads)
+    _sway = _sway.lerp(sway_target, minf(1.0, delta * sway_smoothing))
+    var recoil := Vector3(0.0, bob * lerpf(1.0, ads_bob_scale, ads) + kick * 0.04, kick * 0.12)
     var reload_offset := Vector3(-0.04, -0.12, 0.04) * reload_ease
     # Low ready against walls: drop the weapon so the barrel leaves the view.
     var wall_offset := Vector3(0.05, -0.24, 0.06) * _wall_weight
-    position = recoil + reload_offset + wall_offset
-    rotation = Vector3(kick * 0.18, 0.0, 0.0)
+    var sway_offset := Vector3(-_sway.x, _sway.y, 0.0) * 0.25
+    position = recoil + reload_offset + wall_offset + sway_offset
+    rotation = Vector3(kick * 0.18 * lerpf(1.0, ads_kick_rotation_scale, ads), 0.0, 0.0)
+    holder.position = _rest_position()
     # Tilt about the grip: barrel down against walls, rolled and dipped while reloading.
-    holder.rotation = BASE_ROTATION + Vector3(-0.5 * _wall_weight - 0.3 * reload_ease, 0.25 * _wall_weight, 0.6 * reload_ease)
+    holder.rotation = _rest_rotation() + Vector3(-0.5 * _wall_weight - 0.3 * reload_ease + _sway.y, 0.25 * _wall_weight + _sway.x, 0.6 * reload_ease - _sway.x * 0.5)
     flash_on = flash_on and _wall_weight < 0.5
     var muzzle := weapon.get_node_or_null("Muzzle") as Marker3D if weapon != null else null
     flash.visible = flash_on and muzzle != null

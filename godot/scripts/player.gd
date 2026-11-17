@@ -12,6 +12,9 @@ signal shot_fired(weapon_id: String, from: Vector3, to: Vector3)
 @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CROUCH_SPEED := 2.7
+## Holding Alt walks (GTA-style); matches the natural unarmed walk cycle so the
+## feet do not slide.
+const WALK_SPEED := 1.6
 const PRONE_SPEED := 0.9 # rastejando
 @export_range(1.0, 60.0, 0.5) var acceleration := 24.0
 @export_range(1.0, 60.0, 0.5) var deceleration := 30.0
@@ -28,7 +31,13 @@ const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const FirstPersonViewmodel = preload("res://scripts/weapons/first_person_viewmodel.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 ## Holding aim (except the sniper scope) switches to a CS-style first-person view.
-const FIRST_PERSON_FOV := 68.0
+const BASE_FOV := 72.0
+## ADS zoom per weapon (CoD-like: iron sights ~1.1x, red dot/holo ~1.2-1.3x),
+## applied to the base FOV. The sniper uses its own scope.
+const ADS_ZOOM := {"pistol": 1.10, "shotgun": 1.10, "smg": 1.20, "rifle": 1.30}
+## ADS look speed follows the zoom (1 = same angle per mouse count as the zoom ratio).
+@export_range(0.0, 1.5, 0.05) var ads_sensitivity_scale: float = 1.0
+var _look_delta := Vector2.ZERO
 const FIRST_PERSON_CUTOFF := 0.45 # spring length below which the body is hidden
 var viewmodel: Node3D
 var first_person_view := false
@@ -406,8 +415,19 @@ func _unhandled_input(event: InputEvent) -> void:
 
 func _apply_mouse_look(relative: Vector2) -> void:
     var sensitivity := mouse_sensitivity / scope_zoom if is_scope_active() else mouse_sensitivity
+    if first_person_view and not is_scope_active():
+        # Same screen-relative speed as the hip view: scale by the FOV ratio.
+        var ratio := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(BASE_FOV) * 0.5)
+        sensitivity *= lerpf(1.0, ratio, ads_sensitivity_scale)
+    var previous := Vector2(yaw, pitch)
     yaw -= relative.x * sensitivity
     pitch = clampf(pitch - relative.y * sensitivity, -1.15, 0.95)
+    _look_delta += Vector2(yaw, pitch) - previous
+
+## First-person ADS FOV for the current weapon.
+func first_person_fov() -> float:
+    var zoom: float = ADS_ZOOM.get(current_weapon, 1.15)
+    return rad_to_deg(2.0 * atan(tan(deg_to_rad(BASE_FOV) * 0.5) / zoom))
 
 func _can_stand() -> bool:
     var query := PhysicsShapeQueryParameters3D.new()
@@ -459,9 +479,9 @@ func _physics_process(delta: float) -> void:
                 done.call()
     var scoped := is_scope_active()
     var wants_first_person := aiming and not scoped
-    var desired_fov := FIRST_PERSON_FOV if wants_first_person else 72.0
+    var desired_fov := first_person_fov() if wants_first_person else BASE_FOV
     if scoped:
-        desired_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(72.0) * 0.5) / scope_zoom))
+        desired_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(BASE_FOV) * 0.5) / scope_zoom))
     # Closing the optic restores the shoulder frame before showing the body.
     camera.fov = desired_fov if scope_was_active and not scoped else lerpf(camera.fov, desired_fov, 1.0 - exp(-delta * 14.0))
     scope_was_active = scoped
@@ -486,7 +506,8 @@ func _physics_process(delta: float) -> void:
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
-    var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else speed))
+    var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
+    var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
     var horizontal := Vector2(velocity.x, velocity.z)
     var desired_velocity := Vector2(movement.x, movement.z) * current_speed
     var rate := deceleration if desired_velocity.length_squared() < horizontal.length_squared() or horizontal.dot(desired_velocity) < 0.0 else acceleration
@@ -524,7 +545,8 @@ func _physics_process(delta: float) -> void:
     if humanoid_avatar != null and humanoid_avatar.has_method("refresh_weapon_grip"):
         humanoid_avatar.call("refresh_weapon_grip")
     if first_person_view:
-        viewmodel.call("animate", delta, gun_kick, bob * 0.5, muzzle_flare.visible, reloading, _first_person_clearance())
+        viewmodel.call("animate", delta, gun_kick, bob * 0.5, muzzle_flare.visible, reloading, _first_person_clearance(), _look_delta)
+    _look_delta = Vector2.ZERO
     if reloading:
         reload_timer -= delta
         if reload_timer <= 0:
@@ -769,6 +791,32 @@ func _shot_ray(from: Vector3, to: Vector3, from_inside: bool = false) -> Diction
         exclude.append(hit["rid"])
     return {}
 
+## Shot cone radius (tangent of the half-angle) right now; the HUD crosshair
+## draws this same value, so the gap always matches where rounds can land.
+func current_spread() -> float:
+    # Accuracy: tighter when aiming, wider when running or airborne.
+    var stats: Dictionary = WeaponData.stats(current_weapon)
+    var planar_speed := Vector2(velocity.x, velocity.z).length()
+    var spread := float(stats["spread"]) * (WeaponData.AIM_SPREAD if aiming else 1.0)
+    if prone:
+        spread *= WeaponData.CROUCH_SPREAD * 0.6 # deitado e apoiado: o tiro mais firme
+    elif crouching:
+        spread *= WeaponData.CROUCH_SPREAD
+    spread *= 1.0 + clampf(planar_speed / speed, 0.0, 1.6) * 0.6
+    if not is_on_floor():
+        spread *= 1.8
+    return spread
+
+## 0 = hip, 1 = sights fully up (first-person ADS).
+func ads_amount() -> float:
+    if not first_person_view or viewmodel == null:
+        return 0.0
+    return float(viewmodel.call("ads_amount"))
+
+## True while aiming through an optic (the HUD dot becomes the red-dot reticle).
+func ads_optic() -> bool:
+    return first_person_view and viewmodel != null and bool(viewmodel.call("has_optic"))
+
 func _shoot() -> void:
     if ammo <= 0:
         _reload()
@@ -797,16 +845,7 @@ func _shoot() -> void:
         # the visible viewmodel barrel, and the hidden third-person gun is ignored.
         muzzle = null
         last_shot_origin = viewmodel.call("muzzle_position")
-    # Accuracy: tighter when aiming, wider when running or airborne.
-    var planar_speed := Vector2(velocity.x, velocity.z).length()
-    var spread := float(stats["spread"]) * (WeaponData.AIM_SPREAD if aiming else 1.0)
-    if prone:
-        spread *= WeaponData.CROUCH_SPREAD * 0.6 # deitado e apoiado: o tiro mais firme
-    elif crouching:
-        spread *= WeaponData.CROUCH_SPREAD
-    spread *= 1.0 + clampf(planar_speed / speed, 0.0, 1.6) * 0.6
-    if not is_on_floor():
-        spread *= 1.8
+    var spread := current_spread()
     for pellet in range(int(stats["pellets"])):
         # Uniform disc (not a square) around the crosshair.
         var angle := randf() * TAU

@@ -6,6 +6,18 @@ const RUN_TO_STOP := preload("res://assets/personagens/downloaded/movements/run_
 const PUNCH := preload("res://assets/personagens/downloaded/movements/punch.tres")
 const ELBOW_PUNCH := preload("res://assets/personagens/downloaded/movements/elbow_punch.tres")
 const IDLE_WITH_RIFLE := preload("res://assets/personagens/downloaded/movements/idle_with_rifle.tres")
+# Unarmed (GTA-style) locomotion, retargeted by tools/characters/build_unarmed_locomotion.gd.
+const IDLE_UNARMED := preload("res://assets/personagens/downloaded/movements/idle_unarmed.tres")
+const WALK_UNARMED := preload("res://assets/personagens/downloaded/movements/walk_unarmed.tres")
+const JOG_UNARMED := preload("res://assets/personagens/downloaded/movements/jog_unarmed.tres")
+## Unarmed: below this speed (m/s) the character walks, above it jogs.
+const UNARMED_JOG_SPEED := 2.3
+## Playback rate limits: past them the stride slides a little instead of the
+## legs turning over unnaturally fast (the game moves at 5 m/s, a fast jog).
+const UNARMED_RATE_MIN := 0.75
+const UNARMED_RATE_MAX := 1.45
+## Clips whose own arm swing is kept (no procedural "relaxed arms" on top).
+const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed", "walk_unarmed", "jog_unarmed"]
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
 const SOURCE_HEIGHT := 1.782
@@ -58,7 +70,7 @@ func _ready() -> void:
 	_make_in_place(run, hip_anchor)
 	library.remove_animation("mixamo_com")
 	library.add_animation("run_in_place", run)
-	var clips := {"idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH}
+	var clips := {"idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED, "walk_unarmed": WALK_UNARMED, "jog_unarmed": JOG_UNARMED}
 	for clip_name in clips:
 		# Duplicate: the preloaded resources are shared between avatars.
 		var clip := (clips[clip_name] as Animation).duplicate() as Animation
@@ -134,6 +146,10 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_play_clip("idle_with_rifle", 1.0)
 		_finish_pose()
 		return
+	if not armed:
+		_play_unarmed(moving, running, planar_velocity)
+		_finish_pose()
+		return
 	if moving:
 		# Agachado não corre: anda devagar com as pernas dobradas.
 		clip = "run_in_place" if running and crouch_weight < 0.5 else "walk_with_rifle"
@@ -143,6 +159,24 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	var gait_rate := clampf(speed / (4.0 if running else 2.8), 0.75, 2.2) if moving else 1.0
 	_play_clip(clip, gait_rate)
 	_finish_pose()
+
+## Sem arma (estilo GTA): parado respira solto, devagar anda, normal trota e
+## Shift corre. Cada ciclo toca na velocidade do chão medida no clipe, para o
+## pé não deslizar (dentro dos limites de UNARMED_RATE_*).
+func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> void:
+	var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
+	if not moving:
+		# Stopping from a sprint plays the brake clip first (handled in animate()).
+		_play_clip("run_to_stop" if current_clip == "run_in_place" else "idle_unarmed", 1.0)
+		return
+	if running and crouch_weight < 0.5:
+		_play_clip("run_in_place", clampf(speed / 4.0, 0.75, 2.2))
+		return
+	# Hysteresis so the gait does not flicker around the threshold.
+	var jog_threshold := UNARMED_JOG_SPEED - (0.3 if current_clip == "jog_unarmed" else 0.0)
+	var clip := "jog_unarmed" if speed > jog_threshold and crouch_weight < 0.5 else "walk_unarmed"
+	var ground := float(animation_player.get_animation(clip).get_meta("ground_speed", 1.5))
+	_play_clip(clip, clampf(speed / maxf(ground, 0.1), UNARMED_RATE_MIN, UNARMED_RATE_MAX))
 
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
@@ -155,7 +189,7 @@ func _finish_pose() -> void:
 	_update_weapon_mount()
 	# Correndo desarmado, o próprio clipe de corrida já balança os braços
 	# naturalmente: só andando/parado os braços descem para o lado do corpo.
-	var running_clip := current_clip in ["run_in_place", "run_to_stop"]
+	var running_clip := current_clip in NATURAL_ARM_CLIPS
 	_run_arms = move_toward(_run_arms, 1.0 if running_clip else 0.0, _last_delta * 5.0)
 	if prone_weight > 0.01 and unarmed_weight > 0.01:
 		_prone_arms(unarmed_weight)
