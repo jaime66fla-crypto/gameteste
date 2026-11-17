@@ -141,6 +141,13 @@ func friend_action(action: String, friend_name: String, code: String = "") -> St
 	var data: Dictionary = response["data"]
 	return str(data.get("message", data.get("error", "Não foi possível falar com o servidor.")))
 
+## Top players by XP (public). Returns {"players": [...], "me": {...}|null} or {"error": "..."}.
+func fetch_leaderboard(limit: int = 10) -> Dictionary:
+	var response := await _api("/leaderboard?limit=%d" % limit, {}, HTTPClient.METHOD_GET)
+	if response["status"] != 200:
+		return {"error": str(response["data"].get("error", "Ranking indisponível."))}
+	return response["data"]
+
 func logout() -> void:
 	leave()
 	session_token = ""

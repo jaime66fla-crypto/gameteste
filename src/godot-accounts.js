@@ -55,6 +55,19 @@ function profile(account) {
 	};
 }
 
+const BOARD_KEY = 'board';
+const BOARD_SIZE = 100; // players kept in the stored leaderboard
+const BOARD_MAX_LIMIT = 50; // most rows one request can return
+
+function boardEntry(key, account) {
+	return { key, name: account.name, xp: account.xp || 0, kills: account.kills || 0, wins: account.wins || 0, matches: account.matches || 0 };
+}
+
+/** XP first, then wins, then kills, then name. */
+function sortBoard(entries) {
+	return entries.sort((a, b) => b.xp - a.xp || b.wins - a.wins || b.kills - a.kills || a.name.localeCompare(b.name));
+}
+
 function bearer(request, url) {
 	const header = request.headers.get('Authorization') || '';
 	if (header.startsWith('Bearer ')) return header.slice(7).trim();
@@ -107,6 +120,8 @@ export class GodotAccounts {
 					return request.method === 'POST' ? this.login(await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/me':
 					return this.me(bearer(request, url));
+				case '/leaderboard':
+					return this.leaderboard(bearer(request, url), url);
 				case '/internal/session':
 					return this.session(bearer(request, url));
 				case '/internal/xp':
@@ -147,6 +162,7 @@ export class GodotAccounts {
 		const salt = randomHex(16);
 		const account = { name, salt, hash: await hashPassword(password, salt), xp: 0, kills: 0, botKills: 0, wins: 0, matches: 0, created: Date.now(), failures: 0, lockedUntil: 0 };
 		await this.ctx.storage.put(key, account);
+		await this.updateBoard(key, account);
 		return json({ token: await this.newSession(key), profile: profile(account) }, 201);
 	}
 
@@ -310,6 +326,47 @@ export class GodotAccounts {
 		account.wins += body.win ? 1 : 0;
 		account.matches += 1;
 		await this.ctx.storage.put(key, account);
+		await this.updateBoard(key, account);
 		return json({ profile: profile(account), rankUp: rankFor(account.xp).rankIndex > before.rankIndex });
+	}
+
+	// --------------------------------------------------------- leaderboard ---
+
+	/** Stored top list; built once from every account the first time it is needed. */
+	async board() {
+		let board = await this.ctx.storage.get(BOARD_KEY);
+		if (Array.isArray(board)) return board;
+		board = [];
+		if (typeof this.ctx.storage.list === 'function') {
+			const all = await this.ctx.storage.list({ prefix: 'acct:' });
+			for (const [key, account] of all) board.push(boardEntry(key, account));
+		}
+		board = sortBoard(board).slice(0, BOARD_SIZE);
+		await this.ctx.storage.put(BOARD_KEY, board);
+		return board;
+	}
+
+	async updateBoard(key, account) {
+		const board = (await this.board()).filter((entry) => entry.key !== key);
+		board.push(boardEntry(key, account));
+		await this.ctx.storage.put(BOARD_KEY, sortBoard(board).slice(0, BOARD_SIZE));
+	}
+
+	/**
+	 * GET /leaderboard?limit=10 — public top players by XP. With a session it
+	 * also returns the caller's own line ({position: null} when outside the top 100).
+	 */
+	async leaderboard(token, url) {
+		const limit = Math.max(1, Math.min(BOARD_MAX_LIMIT, Math.floor(Number(url.searchParams.get('limit')) || 10)));
+		const board = await this.board();
+		const line = (entry, index) => ({ position: index + 1, name: entry.name, rank: rankFor(entry.xp).rank, xp: entry.xp, kills: entry.kills, wins: entry.wins, matches: entry.matches });
+		const players = board.slice(0, limit).map(line);
+		let me = null;
+		const found = token ? await this.accountFor(token) : null;
+		if (found) {
+			const index = board.findIndex((entry) => entry.key === found.key);
+			me = index >= 0 ? line(board[index], index) : { ...line(boardEntry(found.key, found.account), 0), position: null };
+		}
+		return json({ players, me, total: board.length });
 	}
 }
