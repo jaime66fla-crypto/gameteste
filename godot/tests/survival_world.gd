@@ -52,7 +52,7 @@ func _run() -> void:
 	check(z.global_position.distance_to(target.global_position) < start - 4.0, "zumbi se aproxima do alvo")
 	check(bites[0] > 0, "zumbi ataca de perto")
 	check(z.call("state").size() == 6, "pacote do zumbi")
-	var ui: PanelContainer = InventoryUI.new()
+	var ui: Control = InventoryUI.new()
 	var layer := CanvasLayer.new()
 	root.add_child(layer)
 	layer.add_child(ui)

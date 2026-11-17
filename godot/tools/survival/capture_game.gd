@@ -36,7 +36,10 @@ func _run() -> void:
 	Net.start_info = {"t": "start", "survival": true, "host": "me", "clock": {"day_ms": 1440000, "time": 260000},
 		"you": {"id": "me", "p": [spot.x, spot.y, spot.z], "hp": 82, "hunger": 64, "thirst": 47,
 			"inv": {"w_rifle": 1, "a_556": 60, "canned_beans": 2, "water_bottle": 1, "bandage": 3, "wood": 2, "cloth": 4}, "back": "backpack", "weight": 9.4, "cap": 34},
-		"roster": [], "zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [float(patch["x"]), 0.2, float(patch["z"])]}], "bags": [], "searched": [], "depleted": {},
+		"roster": [], "zombies": [
+			{"id": "z1", "kind": "walker", "hp": 60, "p": [spot.x - sin(face) * 7.0 + 1.5, 0.2, spot.z - cos(face) * 7.0]},
+			{"id": "z2", "kind": "brute", "hp": 150, "p": [spot.x - sin(face) * 10.0 - 2.0, 0.2, spot.z - cos(face) * 10.0]},
+			{"id": "z3", "kind": "runner", "hp": 45, "p": [spot.x - sin(face) * 13.0 + 3.5, 0.2, spot.z - cos(face) * 13.0]}], "bags": [], "searched": [], "depleted": {},
 		"vehicles": [{"id": "v0", "kind": "pickup", "color": "#8c1d18", "p": [spot.x + 4.0, 0, spot.z + 3.0], "yaw": face, "fuel": 60, "driver": null}]}
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main)
@@ -45,6 +48,13 @@ func _run() -> void:
 	player.set("yaw", face)
 	player.set("pitch", -0.12)
 	player.set("ammo", 22)
+	# Zumbis olhando para o jogador, andando.
+	var controller_node := main.get_node("SurvivalController")
+	for zid in controller_node.zombies:
+		var z: Node3D = controller_node.zombies[zid]
+		var to := player.global_position - z.global_position
+		z.set("_remote_yaw", atan2(-to.x, -to.z))
+		z.set("anim", 1)
 	await _frames(60)
 	get_viewport().get_texture().get_image().save_png(out.path_join("survival_hud.png"))
 	var controller := main.get_node("SurvivalController")

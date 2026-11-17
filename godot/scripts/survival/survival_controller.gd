@@ -49,7 +49,7 @@ var _open_container_pos := Vector3.INF
 var _target: Dictionary = {} # o que está ao alcance do E
 
 var ui: CanvasLayer
-var inventory: PanelContainer
+var inventory: Control
 var bars: Dictionary = {}
 var clock_label: Label
 var prompt: Label
@@ -836,6 +836,10 @@ func _update_bars() -> void:
 	bars["thirst"].value = thirst
 	bars["weight"].max_value = carry_cap
 	bars["weight"].value = minf(carried, carry_cap)
+	if inventory != null:
+		var owned: Dictionary = player.get("owned_weapons")
+		var weapon_name := "" if owned.is_empty() else str(WeaponData.stats(str(player.get("current_weapon")))["name"]).capitalize()
+		inventory.call("set_status", my_hp, hunger, thirst, weapon_name)
 
 func _show_death(title: String, body: String, can_respawn: bool) -> void:
 	death_label.text = title + "\n\n" + body

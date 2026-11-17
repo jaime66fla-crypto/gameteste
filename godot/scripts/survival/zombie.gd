@@ -11,10 +11,12 @@ signal attacked(zombie_id: String, target_id: String)
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const GRAVITY := 22.0
 const KINDS := {
-	"walker": {"wander": 0.9, "chase": 2.4, "scale": 1.0, "skin": "#7f8f6a", "shirt": "#5a4a3c"},
-	"runner": {"wander": 1.2, "chase": 5.0, "scale": 0.95, "skin": "#8c9a74", "shirt": "#3b4d63"},
-	"brute":  {"wander": 0.8, "chase": 2.1, "scale": 1.3, "skin": "#6f7d5c", "shirt": "#463b33"},
+	"walker": {"wander": 0.9, "chase": 2.4, "scale": 1.0, "skin": "#7f8f6a", "shirt": "#5a4a3c", "tint": "#ffffff", "width": 1.0},
+	"runner": {"wander": 1.2, "chase": 5.0, "scale": 0.95, "skin": "#8c9a74", "shirt": "#3b4d63", "tint": "#d9e0d0", "width": 0.95},
+	"brute":  {"wander": 0.8, "chase": 2.1, "scale": 1.18, "skin": "#6f7d5c", "shirt": "#463b33", "tint": "#a89a8a", "width": 1.25},
 }
+const ZombieAvatar = preload("res://scripts/survival/zombie_avatar.gd")
+var _avatar: Node3D
 const SIGHT := 24.0 # metros; de noite cai pela metade
 const HIDDEN_SIGHT := 4.0 # agachado dentro da grama alta
 const HEARING := 48.0 # tiros ouvidos daqui
@@ -75,7 +77,17 @@ func _ready() -> void:
 	col.shape = capsule
 	col.position.y = 0.875 * s
 	add_child(col)
-	_build_body(spec, s)
+	if ZombieAvatar.available():
+		# Modelo de zumbi animado (assets/personagens/zumbi); sem ele, o corpo de blocos.
+		_avatar = ZombieAvatar.new()
+		_avatar.set("actor", self)
+		_avatar.set("tint", Color(spec.get("tint", "#ffffff")))
+		_avatar.scale = Vector3(float(spec.get("width", 1.0)), 1.0, float(spec.get("width", 1.0))) * s
+		add_child(_avatar)
+		visual = _avatar
+		hitboxes.assign(_avatar.get("hitboxes"))
+	else:
+		_build_body(spec, s)
 	_remote_pos = global_position
 	_avoid_side = 1.0 if randf() < 0.5 else -1.0
 
@@ -218,6 +230,16 @@ func _physics_process(delta: float) -> void:
 	_animate(delta)
 
 func _animate(delta: float) -> void:
+	if _avatar != null:
+		# Distância da câmera decide o detalhe da animação.
+		var camera := get_viewport().get_camera_3d()
+		var d := camera.global_position.distance_to(global_position) if camera != null else 0.0
+		var lod := 0 if d < 45.0 else (1 if d < 110.0 else 2)
+		_flinch = move_toward(_flinch, 0.0, delta * 4.0)
+		_avatar.set("flinch", maxf(float(_avatar.get("flinch")), _flinch))
+		var rate := clampf(velocity.length() / 2.4, 0.6, 1.6) if anim == Anim.WALK else clampf(velocity.length() / 5.0, 0.7, 1.4)
+		_avatar.call("animate", delta, int(anim), rate if controlled else 1.0, lod)
+		return
 	var speed: float = float({Anim.IDLE: 0.0, Anim.WALK: 5.0, Anim.RUN: 11.0, Anim.ATTACK: 3.0}[anim])
 	_phase += delta * speed
 	var swing := sin(_phase) * (0.55 if anim == Anim.RUN else 0.35) * (0.0 if anim == Anim.IDLE else 1.0)
