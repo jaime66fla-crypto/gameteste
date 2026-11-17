@@ -507,7 +507,7 @@ func _on_actor_damaged(actor_id: String, zone: String, point: Vector3, normal: V
 func _on_local_damaged(amount: float, attacker_id: String) -> void:
 	damage_flash.color.a = clampf(0.18 + amount / 60.0, 0.2, 0.55)
 	player.call("add_hit_shake", clampf(amount / 25.0, 0.25, 1.0))
-	player.get("sound_fx").call("hurt")
+	player.get("sound_fx").call("hurt", amount)
 	var attacker = actors.get(attacker_id)
 	if attacker != null:
 		var camera := get_viewport().get_camera_3d()

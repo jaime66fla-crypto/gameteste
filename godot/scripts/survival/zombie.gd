@@ -21,11 +21,25 @@ var _avatar: Node3D
 const SIGHT := 24.0 # metros; de noite cai pela metade
 const HIDDEN_SIGHT := 4.0 # agachado dentro da grama alta
 const HEARING := 48.0 # tiros ouvidos daqui
-const ATTACK_RANGE := 1.7
+const ATTACK_RANGE := 1.25 # precisa encostar (antes 1,7 m: acertava de longe)
 const ATTACK_COOLDOWN := 1.3
 const GIVE_UP := 45.0
 const SLEEP_RANGE := 95.0 # longe de todos: fica parado (economiza o anfitrião)
+## Golpe: prepara (braços sobem, corpo recua), bote (avança e desce os braços)
+## e recupera. O dano sai no impacto: dá para escapar se sair do alcance antes.
+const STRIKE_TIME := 0.75
+const STRIKE_IMPACT := 0.38
+const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 enum Anim { IDLE, WALK, RUN, ATTACK }
+
+static var _last_groan_ms := 0 # um gemido por vez no mundo todo (não vira coral)
+var strike_t := -1.0 # segundos desde o início do golpe; < 0 = sem golpe
+var _strike_pending := false
+var _strike_target := ""
+var _swiped := false
+var _groan_timer := randf_range(2.0, 8.0)
+var _voice: AudioStreamPlayer3D
+var _swipe_audio: AudioStreamPlayer3D
 
 var zombie_id := ""
 var kind := "walker"
@@ -182,6 +196,7 @@ func receive_hit(zone: String, _amount: float, point: Vector3, normal: Vector3, 
 	if dead:
 		return
 	_flinch = 1.0
+	pain_sound()
 	damaged.emit(zombie_id, zone, point, normal, weapon)
 
 func take_damage(amount: float) -> void:
@@ -226,6 +241,110 @@ func die() -> void:
 	for body in hitboxes:
 		body.collision_layer = 0
 	_death_timer = 0.0
+	strike_t = -1.0
+	_strike_pending = false
+	_play_voice(SfxBank.zombie_death(randi() % 3), randf_range(0.92, 1.06), 2.0)
+	if _avatar != null:
+		_avatar.set("strike", -1.0)
+		_avatar.position = Vector3.ZERO
+
+## Começa o golpe. `from_impact`: quem só soube pelo servidor que a mordida
+## acertou entra direto no instante do impacto (o bote bate junto com o dano).
+func strike(from_impact: bool = false) -> void:
+	if dead or (strike_t >= 0.0 and strike_t < STRIKE_TIME):
+		return
+	strike_t = STRIKE_IMPACT - 0.06 if from_impact else 0.0
+	_swiped = from_impact
+	_play_voice(SfxBank.zombie_snarl(randi() % 3), randf_range(0.92, 1.1), 0.0)
+
+func _audio_player(player_name: String) -> AudioStreamPlayer3D:
+	var p := AudioStreamPlayer3D.new()
+	p.name = player_name
+	p.position.y = 1.6
+	p.unit_size = 4.0
+	p.max_distance = 38.0
+	p.attenuation_filter_cutoff_hz = 3000.0
+	p.attenuation_filter_db = -16.0
+	add_child(p)
+	return p
+
+func _play_voice(stream: AudioStream, pitch: float, volume: float) -> void:
+	if _voice == null:
+		_voice = _audio_player("Voice")
+	_voice.stream = stream
+	_voice.pitch_scale = pitch * (0.85 if kind == "brute" else (1.1 if kind == "runner" else 1.0))
+	_voice.volume_db = volume + (3.0 if kind == "brute" else 0.0)
+	_voice.play()
+
+## Avança o golpe; no impacto o anfitrião confere o alcance e avisa o servidor.
+func _update_strike(delta: float) -> void:
+	if strike_t < 0.0:
+		return
+	strike_t += delta
+	if not _swiped and strike_t >= STRIKE_IMPACT - 0.12:
+		_swiped = true
+		if _swipe_audio == null:
+			_swipe_audio = _audio_player("Swipe")
+			_swipe_audio.position.y = 1.2
+			_swipe_audio.stream = SfxBank.zombie_swipe()
+		_swipe_audio.pitch_scale = randf_range(0.9, 1.1)
+		_swipe_audio.play()
+	if _strike_pending and strike_t >= STRIKE_IMPACT:
+		_strike_pending = false
+		if controlled and is_instance_valid(_target) and _target_id == _strike_target \
+				and _flat_distance(_target.global_position) < ATTACK_RANGE + 0.3 and _can_reach(_target):
+			attacked.emit(zombie_id, _strike_target)
+	if strike_t >= STRIKE_TIME:
+		strike_t = -1.0
+
+## Braço alcança sem atravessar parede: dois raios (peito e cintura) contra o cenário.
+## Basta um livre (janela baixa, porta, mureta) para o golpe valer.
+func _can_reach(node: Node3D) -> bool:
+	if node == null or not is_instance_valid(node):
+		return false
+	var space := get_world_3d().direct_space_state
+	for h in [1.3, 0.8]:
+		var from := global_position + Vector3(0, h, 0)
+		var to := node.global_position + Vector3(0, h, 0)
+		var query := PhysicsRayQueryParameters3D.create(from, to, HitboxScript.LAYER_WORLD)
+		query.exclude = [get_rid()]
+		if space.intersect_ray(query).is_empty():
+			return true
+	return false
+
+func _flat_distance(point: Vector3) -> float:
+	return Vector2(point.x - global_position.x, point.z - global_position.z).length()
+
+## Grito de dor (levou tiro/golpe). Não repete a cada bala da rajada.
+var _last_pain_ms := 0
+func pain_sound() -> void:
+	var now := Time.get_ticks_msec()
+	if dead or now - _last_pain_ms < 350:
+		return
+	_last_pain_ms = now
+	_play_voice(SfxBank.zombie_pain(randi() % 3), randf_range(0.9, 1.12), 0.0)
+
+## Gemidos: perseguindo geme sempre; andando, de vez em quando; parado, raro.
+## Só os que estão perto da câmera, e um por vez no mundo (não vira coral).
+func _update_groan(delta: float) -> void:
+	if _lod != 0 or strike_t >= 0.0:
+		return
+	_groan_timer -= delta
+	if _groan_timer > 0.0:
+		return
+	match anim:
+		Anim.RUN, Anim.ATTACK: _groan_timer = randf_range(1.8, 4.0)
+		Anim.WALK: _groan_timer = randf_range(3.5, 8.0)
+		_: _groan_timer = randf_range(7.0, 15.0)
+	var now := Time.get_ticks_msec()
+	if now - _last_groan_ms < 450 or (_voice != null and _voice.playing):
+		return
+	var camera := get_viewport().get_camera_3d()
+	if camera == null or camera.global_position.distance_to(global_position) > 34.0:
+		return
+	_last_groan_ms = now
+	var chasing := anim == Anim.RUN or anim == Anim.ATTACK or (controlled and _target != null)
+	_play_voice(SfxBank.zombie_groan(randi() % 3), randf_range(0.9, 1.08), -2.0 if chasing else -5.0)
 
 # ---------------------------------------------------------------- quadro ---
 
@@ -243,6 +362,8 @@ func _physics_process(delta: float) -> void:
 		var blend := minf(1.0, delta * 8.0)
 		global_position = global_position.lerp(_remote_pos, blend)
 		rotation.y = lerp_angle(rotation.y, _remote_yaw, blend)
+	_update_strike(delta)
+	_update_groan(delta)
 	_animate(delta)
 
 func _animate(delta: float) -> void:
@@ -254,6 +375,7 @@ func _animate(delta: float) -> void:
 		_lod = lod
 		_flinch = move_toward(_flinch, 0.0, delta * 4.0)
 		_avatar.set("flinch", maxf(float(_avatar.get("flinch")), _flinch))
+		_avatar.set("strike", strike_t / STRIKE_TIME if strike_t >= 0.0 else -1.0)
 		var rate := clampf(velocity.length() / 2.4, 0.6, 1.6) if anim == Anim.WALK else clampf(velocity.length() / 5.0, 0.7, 1.4)
 		_avatar.call("animate", delta, int(anim), rate if controlled else 1.0, lod)
 		return
@@ -263,12 +385,20 @@ func _animate(delta: float) -> void:
 	_legs[0].rotation.x = swing
 	_legs[1].rotation.x = -swing
 	var arm_base := 1.35
-	if anim == Anim.ATTACK:
-		arm_base = 1.35 + sin(_phase * 3.0) * 0.6
+	var strike_lean := 0.0
+	if strike_t >= 0.0:
+		# Golpe: braços sobem (2.6), descem no bote (0.9) e voltam (1.35).
+		var s := strike_t / STRIKE_TIME
+		var curve := ZombieAvatar.strike_curve(s)
+		arm_base = lerpf(lerpf(1.35, 2.6, curve.x), 0.9, curve.y)
+		arm_base = lerpf(arm_base, 1.35, curve.z)
+		strike_lean = curve.w
+	elif anim == Anim.ATTACK:
+		arm_base = 1.35 + sin(_phase * 3.0) * 0.25
 	_arms[0].rotation.x = arm_base + sin(_phase * 0.7) * 0.12
 	_arms[1].rotation.x = arm_base + cos(_phase * 0.8) * 0.12
 	# Curvado para a frente (-Z); o tranco do tiro empurra para trás.
-	_torso.rotation.x = -0.18 - (0.15 if anim == Anim.RUN else 0.0)
+	_torso.rotation.x = -0.18 - (0.15 if anim == Anim.RUN else 0.0) - strike_lean * 0.6
 	_head.rotation.z = sin(_phase * 0.5) * 0.15
 	_flinch = move_toward(_flinch, 0.0, delta * 4.0)
 	_torso.rotation.x += _flinch * 0.4
@@ -351,13 +481,16 @@ func _run_ai(delta: float) -> void:
 		goal = _target.global_position
 		speed = float(spec["chase"])
 		anim = Anim.RUN if speed > 3.0 else Anim.WALK
-		var dist := global_position.distance_to(goal)
-		if dist < ATTACK_RANGE:
+		var dist := _flat_distance(goal)
+		# Parede no meio (você dentro de casa, ele fora): não golpeia, continua contornando.
+		if dist < ATTACK_RANGE and _can_reach(_target):
 			speed = 0.0
 			anim = Anim.ATTACK
-			if _attack_timer <= 0.0:
+			if _attack_timer <= 0.0 and strike_t < 0.0:
 				_attack_timer = ATTACK_COOLDOWN
-				attacked.emit(zombie_id, _target_id)
+				strike(false)
+				_strike_pending = true
+				_strike_target = _target_id
 	elif _investigate != Vector3.INF:
 		goal = _investigate
 		speed = float(spec["chase"]) * 0.75

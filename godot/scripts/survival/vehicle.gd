@@ -10,6 +10,7 @@ signal crashed(impact: float)
 const CarModel = preload("res://scripts/survival/car_model.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const VehicleAudio = preload("res://scripts/audio/vehicle_audio.gd")
 const GRAVITY := 22.0
 const MAX_STEER := 0.55
 const REVERSE_SPEED := 6.0
@@ -42,7 +43,14 @@ var _remote_pos := Vector3.ZERO
 var _remote_yaw := 0.0
 var _remote_speed := 0.0
 var _rammed: Dictionary = {}
-var _engine_audio: AudioStreamPlayer3D
+var _audio: Node3D # VehicleAudio: motor, pneus, partida
+var throttle_input := 0.0 # quanto o motorista pisa (0..1), para o ronco
+var skidding := false
+# Interpolação visual: o corpo anda no passo da física (60 Hz) e o modelo é
+# desenhado entre os dois últimos passos, para não trepidar em telas de 75/144 Hz.
+var _prev_xf := Transform3D.IDENTITY
+var _curr_xf := Transform3D.IDENTITY
+var _model_local := Transform3D.IDENTITY
 
 func setup(data: Dictionary) -> void:
 	vehicle_id = str(data.get("id", ""))
@@ -107,10 +115,12 @@ func _ready() -> void:
 		col.shape = ball
 		col.position = Vector3(0, 0.42, z)
 		add_child(col)
-	_engine_audio = AudioStreamPlayer3D.new()
-	_engine_audio.max_distance = 60.0
-	add_child(_engine_audio)
-	_engine_audio.stream = _engine_sound()
+	_audio = VehicleAudio.new()
+	_audio.set("vehicle", self)
+	add_child(_audio)
+	_model_local = _model.transform
+	_model.top_level = true # desenhado pela interpolação em _process
+	reset_visual()
 	_remote_pos = global_position
 	_remote_yaw = rotation.y
 	# Fumaça do capô (carro muito batido ou queimado).
@@ -138,26 +148,25 @@ func _ready() -> void:
 	add_child(_smoke)
 	set_condition(hp, broken)
 
-## Ronco de motor sintético (onda em loop), tom pela velocidade.
-func _engine_sound() -> AudioStreamWAV:
-	var rate := 22050
-	var samples := rate / 2
-	var data := PackedByteArray()
-	data.resize(samples * 2)
-	for i in samples:
-		var t := float(i) / rate
-		var v := sin(TAU * 55.0 * t) * 0.45 + sin(TAU * 110.0 * t + sin(TAU * 7.0 * t)) * 0.25 + (randf() - 0.5) * 0.12
-		var s := int(clampf(v, -1.0, 1.0) * 9000)
-		data.encode_s16(i * 2, s)
-	var wav := AudioStreamWAV.new()
-	wav.format = AudioStreamWAV.FORMAT_16_BITS
-	wav.mix_rate = rate
-	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	wav.loop_end = samples
-	wav.data = data
-	return wav
+## Começa a interpolação do zero (nasceu, teleportou, correção do servidor).
+func reset_visual() -> void:
+	_curr_xf = global_transform
+	_prev_xf = _curr_xf
+	if _model != null:
+		_model.global_transform = _curr_xf * _model_local
+
+## Onde o carro aparece na tela neste quadro (entre dois passos de física).
+## A câmera de perseguição segue isto, não a posição crua do corpo.
+func visual_transform() -> Transform3D:
+	var f := clampf(Engine.get_physics_interpolation_fraction(), 0.0, 1.0)
+	return _prev_xf.interpolate_with(_curr_xf, f)
+
+func _process(_delta: float) -> void:
+	if _model != null:
+		_model.global_transform = visual_transform() * _model_local
 
 func set_engine(on: bool) -> void:
+	var was_on := engine_on
 	engine_on = on
 	var body := _model.get_node_or_null("Body") as MeshInstance3D
 	if body != null:
@@ -167,10 +176,8 @@ func set_engine(on: bool) -> void:
 				body.set_surface_override_material(i, CarModel.headlight_material(on))
 			elif surface == "taillight":
 				body.set_surface_override_material(i, CarModel.taillight_material(on))
-	if on and not _engine_audio.playing:
-		_engine_audio.play()
-	elif not on:
-		_engine_audio.stop()
+	if _audio != null and on != was_on:
+		_audio.call("set_running", on)
 
 ## Posição vinda do servidor (outros motoristas, ou correção do nosso).
 func apply_remote(p: Vector3, yaw: float, remote_speed: float, snap: bool = false) -> void:
@@ -180,6 +187,7 @@ func apply_remote(p: Vector3, yaw: float, remote_speed: float, snap: bool = fals
 	if snap or controlled:
 		global_position = p
 		rotation.y = yaw
+		reset_visual()
 		if controlled:
 			speed = 0.0
 
@@ -204,8 +212,14 @@ func _physics_process(delta: float) -> void:
 		wheel.rotation.x = -_spin
 	for wheel in _front_wheels:
 		wheel.rotation.y = steer
-	if _engine_audio.playing:
-		_engine_audio.pitch_scale = 0.7 + absf(speed) / float(_spec.get("max_speed", 24)) * 1.3
+	# Guarda os dois últimos passos para o desenho interpolado; salto grande = teleporte.
+	_prev_xf = _curr_xf
+	_curr_xf = global_transform
+	if _prev_xf.origin.distance_squared_to(_curr_xf.origin) > 36.0:
+		_prev_xf = _curr_xf
+
+func max_speed() -> float:
+	return float(_spec.get("max_speed", 24))
 
 func _drive(delta: float) -> void:
 	var max_speed := float(_spec.get("max_speed", 24))
@@ -225,6 +239,9 @@ func _drive(delta: float) -> void:
 		speed = move_toward(speed, 0.0, DRAG * delta)
 	if handbrake:
 		speed = move_toward(speed, 0.0, HANDBRAKE * delta)
+	throttle_input = absf(throttle)
+	# Pneu cantando: freio de mão ou curva fechada rápida.
+	skidding = absf(speed) > 6.0 and (handbrake or (absf(turn) > 0.5 and absf(speed) > max_speed * 0.7))
 	# Menos esterço em alta velocidade.
 	var steer_limit := MAX_STEER * (1.0 - clampf(absf(speed) / max_speed, 0.0, 1.0) * 0.55)
 	steer = move_toward(steer, turn * steer_limit, delta * 2.5)
@@ -243,6 +260,8 @@ func _drive(delta: float) -> void:
 		var lost := absf(speed) - absf(along)
 		if lost > 4.5 and _hit_wall():
 			crashed.emit(lost)
+			if _audio != null:
+				_audio.call("crash", lost)
 		speed = along
 	_check_ram()
 

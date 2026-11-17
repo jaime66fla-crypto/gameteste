@@ -193,7 +193,7 @@ func _on_crashed(impact: float) -> void:
 		return
 	Net.send({"t": "crash", "v": driving.get("vehicle_id"), "i": impact})
 	player.call("add_hit_shake", clampf(impact / 15.0, 0.3, 1.0))
-	player.get("sound_fx").call("hurt")
+	player.get("sound_fx").call("hurt", impact * 2.0)
 
 func _start_driving(v: CharacterBody3D) -> void:
 	_pending_enter = ""
@@ -254,7 +254,7 @@ func _on_rammed(zombie_id: String, speed: float) -> void:
 	var z = (controller.get("zombies") as Dictionary).get(zombie_id)
 	if z != null:
 		z.set("_flinch", 1.0)
-	player.get("sound_fx").call("hurt")
+	player.get("sound_fx").call("melee_impact", false)
 
 func handle_input(event: InputEvent) -> bool:
 	if driving == null:
@@ -285,12 +285,23 @@ func _process(delta: float) -> void:
 	if driving == null:
 		return
 	# Câmera atrás do carro; o mouse gira em volta e ela volta sozinha para trás.
-	_orbit = move_toward(_orbit, 0.0, delta * 0.6) if absf(float(driving.get("speed"))) > 3.0 else _orbit
-	var back := driving.global_basis.z.rotated(Vector3.UP, _orbit)
-	var wanted := driving.global_position + back * 7.2 + Vector3(0, 2.8, 0)
-	_camera.global_position = _camera.global_position.lerp(wanted, minf(1.0, delta * 6.0))
-	_camera.look_at(driving.global_position + Vector3(0, 1.1, 0))
-	var kmh := absf(float(driving.get("speed"))) * 3.6
+	# Segue o carro *desenhado* (interpolado entre passos de física), não o corpo
+	# físico: senão a câmera anda liso e o carro aos saltos = trepidação.
+	var speed := absf(float(driving.get("speed")))
+	_orbit = move_toward(_orbit, 0.0, delta * 0.6) if speed > 3.0 else _orbit
+	var xf: Transform3D = driving.call("visual_transform")
+	var flat_back := xf.basis.z
+	flat_back.y = 0.0
+	flat_back = flat_back.normalized() if flat_back.length_squared() > 0.0001 else Vector3.BACK
+	var back := flat_back.rotated(Vector3.UP, _orbit)
+	var speed_k := clampf(speed / float(driving.call("max_speed")), 0.0, 1.0)
+	var wanted := xf.origin + back * (7.2 + speed_k * 0.8) + Vector3(0, 2.8 - speed_k * 0.3, 0)
+	# Suavização independente do FPS (mesma sensação a 60 ou 144 Hz).
+	_camera.global_position = _camera.global_position.lerp(wanted, 1.0 - exp(-8.0 * delta))
+	_camera.look_at(xf.origin + Vector3(0, 1.1, 0))
+	# Sensação de velocidade: o campo de visão abre um pouco em alta.
+	_camera.fov = lerpf(_camera.fov, 70.0 + speed_k * 8.0, 1.0 - exp(-3.0 * delta))
+	var kmh := speed * 3.6
 	var fuel := float(driving.get("fuel"))
 	_hud.visible = true
 	var body := float(driving.get("hp"))

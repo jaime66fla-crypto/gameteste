@@ -42,6 +42,7 @@ var hitboxes: Array[StaticBody3D] = []
 var skeleton: Skeleton3D
 var player: AnimationPlayer
 var flinch := 0.0
+var strike := -1.0 # progresso do golpe 0..1 (o zumbi informa); < 0 = sem golpe
 var _clip := ""
 var _phase := randf() * TAU
 var _lod_accum := 0.0
@@ -51,6 +52,21 @@ var _last_lod := -1
 
 static func available() -> bool:
 	return ResourceLoader.exists(MODEL)
+
+## Curva do golpe para o progresso `s` (0..1): x = preparação (braços sobem,
+## corpo recua), y = bote (avança e desce os braços), z = recuperação,
+## w = inclinação do tronco (negativa = para trás, positiva = para a frente).
+static func strike_curve(s: float) -> Vector4:
+	var w := smoothstep(0.0, 0.4, s)
+	var p := smoothstep(0.4, 0.56, s)
+	var r := smoothstep(0.56, 1.0, s)
+	var lean := -0.25 * w * (1.0 - p) + 0.55 * p * (1.0 - r)
+	return Vector4(w, p, r, lean)
+
+## Passo à frente do corpo no bote (metros), recuando um pouco na preparação.
+static func strike_lunge(s: float) -> float:
+	var c := strike_curve(s)
+	return -0.08 * c.x * (1.0 - c.y) + 0.38 * c.y * (1.0 - c.z)
 
 func _ready() -> void:
 	var model: Node3D = (load(MODEL) as PackedScene).instantiate()
@@ -147,6 +163,8 @@ func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
 		Anim.ATTACK: _play("idle", 1.0) # o bote é feito na pose (tronco e braços)
 	_phase += delta
 	flinch = move_toward(flinch, 0.0, delta * 4.0)
+	# O corpo todo dá o passo do bote (até de longe, para ler a ameaça).
+	position.z = -strike_lunge(strike) if strike >= 0.0 else move_toward(position.z, 0.0, delta * 2.0)
 	if lod != _last_lod and _mesh != null:
 		_last_lod = lod
 		# Sombra só de perto (de longe ninguém nota e custa redesenhar o corpo).
@@ -166,8 +184,10 @@ func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
 func _zombie_pose(state: int) -> void:
 	if _pose.is_empty():
 		_bake_pose()
-	# Bote (ataque): o tronco avança e volta num ciclo rápido de agarrar.
-	var lunge := (0.5 + 0.5 * sin(_phase * 7.0)) if state == Anim.ATTACK else 0.0
+	# Parado no alcance sem golpe: balança tentando agarrar, mais contido.
+	var lunge := (0.5 + 0.5 * sin(_phase * 4.0)) * 0.4 if state == Anim.ATTACK else 0.0
+	var striking := strike >= 0.0
+	var curve := strike_curve(strike) if striking else Vector4.ZERO
 	# Tronco do zumbi no lugar do tronco do clipe (que segura um fuzil e gira o peito).
 	for bone in _pose["upper_body"]:
 		skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_rest(bone).basis.get_rotation_quaternion())
@@ -182,14 +202,21 @@ func _zombie_pose(state: int) -> void:
 	var spine: int = _pose["spine"]
 	if spine >= 0:
 		var lean := (0.15 if state == Anim.RUN else 0.0) + lunge * 0.35 - flinch * 0.5
+		var chest_undo := -lean
+		if striking:
+			# No golpe o peito acompanha (o peso do corpo vai junto com os braços).
+			lean = curve.w - flinch * 0.5
+			chest_undo = -lean * 0.3
 		skeleton.set_bone_pose_rotation(spine, Quaternion(_pose["spine_axis"], BASE_LEAN + lean) * skeleton.get_bone_rest(spine).basis.get_rotation_quaternion())
 		# O peito desfaz a inclinação extra: o corpo avança, os braços seguem retos para a frente.
 		var chest_bone := _bone("Spine2")
 		if chest_bone >= 0 and skeleton.get_bone_parent(chest_bone) == spine:
-			skeleton.set_bone_pose_rotation(chest_bone, Quaternion(_pose["spine_axis"], -lean) * skeleton.get_bone_rest(chest_bone).basis.get_rotation_quaternion())
+			skeleton.set_bone_pose_rotation(chest_bone, Quaternion(_pose["spine_axis"], chest_undo) * skeleton.get_bone_rest(chest_bone).basis.get_rotation_quaternion())
 	var head: int = _pose["head"]
 	if head >= 0:
-		var wobble := Quaternion(_pose["head_roll"], sin(_phase * 1.3) * 0.22) * Quaternion(_pose["head_axis"], 0.25 + sin(_phase * 0.7) * 0.08)
+		# No bote a cabeça projeta para a frente (a mordida).
+		var bite := curve.y * (1.0 - curve.z) * 0.35 - curve.x * (1.0 - curve.y) * 0.15
+		var wobble := Quaternion(_pose["head_roll"], sin(_phase * 1.3) * 0.22 * (1.0 - curve.x)) * Quaternion(_pose["head_axis"], 0.25 + bite + sin(_phase * 0.7) * 0.08)
 		skeleton.set_bone_pose_rotation(head, wobble * skeleton.get_bone_rest(head).basis.get_rotation_quaternion())
 	for side in ["Left", "Right"]:
 		var arm: Dictionary = _pose.get(side, {})
@@ -201,8 +228,18 @@ func _zombie_pose(state: int) -> void:
 			k = 0.5 + 0.5 * sin(_phase * 7.0 + (0.0 if side == "Left" else PI))
 		var low: Array = arm["low"]
 		var high: Array = arm["high"]
-		skeleton.set_bone_pose_rotation(arm["upper"], (low[0] as Quaternion).slerp(high[0], k))
-		skeleton.set_bone_pose_rotation(arm["lower"], (low[1] as Quaternion).slerp(high[1], k))
+		if striking and arm.has("raise"):
+			# Golpe: do meio sobe (prepara), desce de cima para baixo (bote) e volta ao meio.
+			# O braço direito vem um tiquinho depois, para não parecer robô.
+			var c := strike_curve(maxf(0.0, strike - (0.0 if side == "Left" else 0.035)))
+			var raise: Array = arm["raise"]
+			for j in 2:
+				var mid := (low[j] as Quaternion).slerp(high[j], 0.5)
+				var q := mid.slerp(raise[j], c.x).slerp(low[j], c.y).slerp(mid, c.z)
+				skeleton.set_bone_pose_rotation(arm["upper"] if j == 0 else arm["lower"], q)
+		else:
+			skeleton.set_bone_pose_rotation(arm["upper"], (low[0] as Quaternion).slerp(high[0], k))
+			skeleton.set_bone_pose_rotation(arm["lower"], (low[1] as Quaternion).slerp(high[1], k))
 		skeleton.set_bone_pose_rotation(arm["hand"], arm["hand_q"])
 
 var _pose: Dictionary = {}
@@ -251,8 +288,9 @@ func _bake_pose() -> void:
 		lateral.y = 0.0
 		lateral = lateral.normalized()
 		var arm := {"upper": upper, "lower": lower, "hand": hand, "hand_q": skeleton.get_bone_rest(hand).basis.get_rotation_quaternion()}
-		for spec in [["low", -0.16], ["high", 0.12]]:
-			var target := shoulder + forward * 0.56 + lateral * 0.03 + Vector3(0, float(spec[1]), 0)
+		# [nome, altura, alcance à frente, abertura]: "raise" = braços erguidos para o golpe.
+		for spec in [["low", -0.16, 0.56, 0.03], ["high", 0.12, 0.56, 0.03], ["raise", 0.42, 0.3, 0.1]]:
+			var target := shoulder + forward * float(spec[2]) + lateral * float(spec[3]) + Vector3(0, float(spec[1]), 0)
 			_two_bone_ik(upper, lower, hand, target, lateral * 0.5 + Vector3(0, -1, 0))
 			arm[spec[0]] = [skeleton.get_bone_pose_rotation(upper), skeleton.get_bone_pose_rotation(lower)]
 			skeleton.reset_bone_pose(upper)

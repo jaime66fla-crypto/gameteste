@@ -235,7 +235,10 @@ func _on_message(data: Dictionary) -> void:
 		"zhp":
 			var z = zombies.get(str(data.get("id", "")))
 			if z != null:
-				z.hp = float(data.get("hp", 0))
+				var new_hp := float(data.get("hp", 0))
+				if new_hp < float(z.hp):
+					z.call("pain_sound") # quem não atirou também ouve o zumbi gritar
+				z.hp = new_hp
 		"zdead":
 			var z = zombies.get(str(data.get("id", "")))
 			if z != null:
@@ -412,6 +415,7 @@ func _melee() -> void:
 	if not str(best_weapon[0]).is_empty():
 		_set_action("swing", str(best_weapon[0]))
 		_swing_left = SWING_TIME
+	player.get("sound_fx").call("melee_swing")
 	var camera := get_viewport().get_camera_3d()
 	var forward := -camera.global_basis.z
 	var from := player.global_position + Vector3(0, 1.35, 0)
@@ -432,7 +436,7 @@ func _melee() -> void:
 		zone = str((body.call("resolve_ray", from, forward) as Dictionary).get("zone", "chest"))
 	Net.send({"t": "melee", "target": target_id, "item": best[0], "zone": zone})
 	combat_feedback.call("show_hit", zone == "head")
-	player.get("sound_fx").call("hit_confirm", false)
+	player.get("sound_fx").call("melee_impact", zone == "head")
 	_blood(hit["position"], hit["normal"])
 
 func _on_health(data: Dictionary) -> void:
@@ -440,11 +444,17 @@ func _on_health(data: Dictionary) -> void:
 	var hp := float(data.get("hp", 0))
 	var killed := bool(data.get("killed", false))
 	var by := str(data.get("by", ""))
+	# Mordida: o zumbi que acertou faz o golpe (nos outros clientes, já no impacto).
+	if str(data.get("w", "")) == "zombie" and zombies.has(by):
+		zombies[by].call("strike", true)
 	if id == my_id:
 		if hp < my_hp:
 			damage_flash.color.a = clampf(0.2 + (my_hp - hp) / 50.0, 0.2, 0.55)
 			player.call("add_hit_shake", clampf((my_hp - hp) / 20.0, 0.25, 1.0))
-			player.get("sound_fx").call("hurt")
+			if str(data.get("w", "")) == "zombie":
+				player.get("sound_fx").call("zombie_bite", my_hp - hp)
+			else:
+				player.get("sound_fx").call("hurt", my_hp - hp)
 		my_hp = hp
 		_update_bars()
 		if killed:

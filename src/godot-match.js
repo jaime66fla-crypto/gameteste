@@ -101,6 +101,7 @@ function cleanState(d) {
 		m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 		r: !!d.r,
 		c: !!d.c,
+		pr: !!d.pr, // prone (lying down): without it the others saw you standing
 		a: !!d.a,
 		f: !!d.f,
 		rl: !!d.rl,

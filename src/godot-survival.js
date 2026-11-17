@@ -46,11 +46,14 @@ export const ZOMBIE_KINDS = {
 	brute: { hp: 150, damage: 16, weight: 10 },
 };
 const ZOMBIE_ATTACK_MS = 1000;
-const ZOMBIE_REACH = 2.8;
+const ZOMBIE_REACH = 1.8; // alcance do golpe (o jogo usa 1,25 m; a folga cobre o atraso da rede)
+const ZOMBIE_REACH_LAG = 1.0;
 const ZOMBIE_BASE = 14;
 const ZOMBIE_PER_PLAYER = 8;
 const ZOMBIE_MAX = 90;
-const ZOMBIE_SPAWN_MIN = 38; // nunca nascem na cara de ninguém
+const ZOMBIE_SPAWN_MIN = 55; // nunca nascem na cara de ninguém
+const ZOMBIE_SAFE_START = 60; // ao entrar/renascer, some zumbi que estiver mais perto que isso
+const ZOMBIE_FIGHT_KEEP = 25; // ...a não ser que outro jogador esteja brigando com ele
 const ZOMBIE_SPAWN_MAX = 130;
 const ZOMBIE_DESPAWN = 210;
 const ZOMBIE_SPAWN_BATCH = 6;
@@ -499,6 +502,7 @@ export class GodotSurvival {
 			if (saved.sid) this.broadcast({ t: 'wake', id: saved.sid });
 		}
 		if (!s.host || !this.sessions.has(s.host)) s.host = id;
+		if (!player.dead) this.clearZombiesNear(player.p, id);
 		this.save(true);
 		this.send(server, { t: 'welcome', id, room: s.name, survival: true, capacity: CAPACITY });
 		this.send(server, this.startPacket(player));
@@ -606,7 +610,7 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '',
+					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '',
 					act: d.act === 'chop' || d.act === 'pry' || d.act === 'swing' ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
@@ -749,6 +753,7 @@ export class GodotSurvival {
 	respawn(me) {
 		if (!me.dead || Date.now() < me.respawnAt) return;
 		Object.assign(me, this.newCharacter());
+		this.clearZombiesNear(me.p, me.id);
 		this.save();
 		this.sendTo(me.id, { t: 'respawned', p: me.p, hp: me.hp, hunger: me.hunger, thirst: me.thirst, ...this.invPacket(me) });
 		this.broadcast({ t: 'join', id: me.id, name: me.name, rank: me.rank, p: me.p, dead: false }, me.id);
@@ -811,7 +816,7 @@ export class GodotSurvival {
 		if (target.vehicle) return; // dentro do carro o zumbi não alcança
 		const now = Date.now();
 		if (now - (zombie.lastHit || 0) < ZOMBIE_ATTACK_MS) return;
-		if (Math.hypot(zombie.p[0] - target.p[0], zombie.p[2] - target.p[2]) > ZOMBIE_REACH + 1.5) return;
+		if (Math.hypot(zombie.p[0] - target.p[0], zombie.p[2] - target.p[2]) > ZOMBIE_REACH + ZOMBIE_REACH_LAG) return;
 		zombie.lastHit = now;
 		this.damagePlayer(target, ZOMBIE_KINDS[zombie.kind]?.damage || 9, zombie.id, 'zombie');
 		// Mordida infecta: começa o relógio de 2 minutos (só uma infecção por vez).
@@ -834,6 +839,24 @@ export class GodotSurvival {
 		const zombie = { id: 'z' + ++this.state.zSeq, kind: 'walker', hp: ZOMBIE_KINDS.walker.hp, p, from: player.name };
 		this.state.zombies[zombie.id] = zombie;
 		this.broadcast({ t: 'zspawn', l: [zombie] });
+	}
+
+	/**
+	 * Começo seguro: quem entra ou renasce não pode cair no meio dos zumbis.
+	 * Some com os que estão perto do ponto (menos os que outro jogador já está
+	 * enfrentando); o ciclo normal repõe depois, longe de todos.
+	 */
+	clearZombiesNear(p, exceptId) {
+		const s = this.state;
+		const others = this.living().filter((pl) => pl.id !== exceptId);
+		const gone = [];
+		for (const zombie of Object.values(s.zombies)) {
+			if (flat(zombie.p, p) >= ZOMBIE_SAFE_START) continue;
+			if (others.some((pl) => flat(pl.p, zombie.p) < ZOMBIE_FIGHT_KEEP)) continue;
+			delete s.zombies[zombie.id];
+			gone.push(zombie.id);
+		}
+		if (gone.length) this.broadcast({ t: 'zgone', l: gone });
 	}
 
 	spawnZombies() {

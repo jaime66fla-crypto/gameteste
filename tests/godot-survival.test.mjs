@@ -76,6 +76,40 @@ async function join(room, { account = 'acc' + ++seq, name = 'P' + seq } = {}) {
 const say = (room, player, data) => room.webSocketMessage(player.ws, JSON.stringify(data));
 const at = (player, p) => (player.me().p = [...p]);
 
+test('safe start: joining clears nearby zombies (unless someone else is fighting them); bites need contact', async () => {
+	const { room } = makeWorld();
+	const host = await join(room);
+	at(host, [200, 0, 200]);
+	room.state.zombies.zn = { id: 'zn', kind: 'walker', hp: 60, p: [201, 0, 200] }; // brigando com o host
+	room.state.zombies.zf = { id: 'zf', kind: 'walker', hp: 60, p: [0, 0, 0] }; // longe de todos
+	const p = await join(room);
+	const sp = p.me().p;
+	room.state.zombies.zc = { id: 'zc', kind: 'walker', hp: 60, p: [sp[0] + 5, 0, sp[2]] };
+	room.clearZombiesNear(sp, p.id);
+	assert.equal(room.state.zombies.zc, undefined, 'zombie next to the spawn is gone');
+	assert.ok(room.state.zombies.zn, 'zombie fighting another player stays');
+	// Golpe só de perto: 3 m já é longe demais.
+	at(p, [0, 0, 0]);
+	room.state.zombies.zb = { id: 'zb', kind: 'walker', hp: 60, p: [3, 0, 0] };
+	say(room, host, { t: 'zhit', z: 'zb', target: p.id });
+	assert.equal(p.me().hp, 100, '3 m is out of reach');
+	room.state.zombies.zb.p = [1.2, 0, 0];
+	say(room, host, { t: 'zhit', z: 'zb', target: p.id });
+	assert.ok(p.me().hp < 100, 'in contact it bites');
+});
+
+test('lying down (prone) reaches the other players, so they do not see you standing', async () => {
+	const { room } = makeWorld();
+	const a = await join(room);
+	const b = await join(room);
+	at(a, [0, 0, 0]);
+	at(b, [3, 0, 0]);
+	say(room, a, { t: 's', p: [0, 0, 0], y: 0, c: true, pr: true });
+	assert.equal(b.ws.last('s').pr, true);
+	say(room, a, { t: 's', p: [0, 0, 0], y: 0 });
+	assert.equal(b.ws.last('s').pr, false);
+});
+
 test('world data: every container type has a loot table and every resource kind a rule', () => {
 	assert.equal(world.spawns.length, 16);
 	for (const c of world.containers) assert.ok(catalog.loot[c.type], c.type);

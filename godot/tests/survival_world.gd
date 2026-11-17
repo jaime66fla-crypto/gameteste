@@ -4,6 +4,7 @@ extends SceneTree
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const SurvivalWorld = preload("res://scripts/survival/survival_world.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
+const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 
 var failures := 0
@@ -52,6 +53,29 @@ func _run() -> void:
 	check(z.global_position.distance_to(target.global_position) < start - 4.0, "zumbi se aproxima do alvo")
 	check(bites[0] > 0, "zumbi ataca de perto")
 	check(z.call("state").size() == 6, "pacote do zumbi")
+	# Parede entre os dois (jogador dentro de casa, zumbi fora): não morde através dela.
+	var wall := StaticBody3D.new()
+	wall.collision_layer = HitboxScript.LAYER_WORLD
+	var wall_shape := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(0.2, 3.0, 6.0)
+	wall_shape.shape = box
+	wall.add_child(wall_shape)
+	root3d.add_child(wall)
+	var base := Vector3(float(spawn[0]) + 40.0, 0, float(spawn[1]))
+	wall.global_position = base + Vector3(0, 1.5, 0)
+	target.global_position = base + Vector3(0.45, 0, 0)
+	z.global_position = base + Vector3(-0.55, 0.3, 0)
+	z.set("_target", target)
+	z.set("_target_id", "p1")
+	z.set("_attack_timer", 0.0)
+	await physics_frame
+	bites[0] = 0
+	for i in 150:
+		z.global_position.x = minf(z.global_position.x, base.x - 0.25) # encostado na parede
+		await physics_frame
+	check(bites[0] == 0, "zumbi não morde através da parede")
+	wall.queue_free()
 	var ui: Control = InventoryUI.new()
 	var layer := CanvasLayer.new()
 	root.add_child(layer)
