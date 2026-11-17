@@ -310,9 +310,13 @@ func _describe(id: String) -> String:
 	var parts: Array[String] = []
 	var use: Dictionary = entry.get("use", {})
 	for key in use:
+		if key == "cure":
+			continue # explicada em "desc"
 		parts.append("%s %+d" % [{"hp": "Vida", "hunger": "Fome", "thirst": "Sede"}.get(key, key), int(use[key])])
+	if entry.has("desc"):
+		parts.append(str(entry["desc"]))
 	if entry.has("melee"):
-		parts.append("Dano %d" % int(entry["melee"]))
+		parts.append("Dano %d" % int(entry["melee"]) + ("  •  alcance longo" if entry.has("reach") else ""))
 	if entry.has("tool"):
 		parts.append("Rende mais em " + ("árvores" if str(entry["tool"]) == "wood" else "pedras e carros"))
 	if entry.has("carry"):
@@ -475,7 +479,7 @@ func _refresh_items() -> void:
 			var header := _label(str(CAT_NAME.get(cat, cat)).to_upper(), 11, CAT_COLOR.get(cat, MUTED))
 			_items.add_child(header)
 		var buttons: Array = []
-		if entry.has("use"):
+		if entry.has("use") or entry.has("repair"):
 			buttons.append(["Usar", func(): use_requested.emit(id), true])
 		if str(entry.get("slot", "")) == "back":
 			buttons.append(["Equipar", func(): equip_requested.emit(id), true])

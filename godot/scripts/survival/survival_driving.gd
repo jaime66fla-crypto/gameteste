@@ -5,6 +5,7 @@ extends Node
 const VehicleScript = preload("res://scripts/survival/vehicle.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const GrenadeScript = preload("res://scripts/weapons/grenade.gd")
 const DRIVE_RATE := 1.0 / 10.0
 const REACH := 3.6
 
@@ -60,6 +61,7 @@ func _upsert(data: Dictionary) -> CharacterBody3D:
 		v.call("setup", data)
 		v.set("zombies", func(): return controller.get("zombies"))
 		v.connect("rammed", _on_rammed)
+		v.connect("crashed", _on_crashed)
 		main_node.add_child(v)
 		if p != null:
 			v.global_position = p
@@ -67,6 +69,7 @@ func _upsert(data: Dictionary) -> CharacterBody3D:
 		vehicles[id] = v
 	v.set("fuel", float(data.get("fuel", v.get("fuel"))))
 	v.set("driver", str(data.get("driver", "")) if data.get("driver") != null else "")
+	v.call("set_condition", float(data.get("hp", v.get("hp"))), bool(data.get("broken", v.get("broken"))))
 	if p != null and v != driving:
 		v.call("apply_remote", p, float(data.get("yaw", v.rotation.y)), 0.0, bool(data.get("snap", false)))
 	return v
@@ -86,13 +89,46 @@ func target_near(point: Vector3) -> Dictionary:
 		if d < best_d:
 			best_d = d
 			var fuel := float(v.get("fuel"))
-			var label := "[E] Dirigir %s  •  gasolina %d%%" % [v.call("display_name"), int(fuel)]
+			var has_kit := (controller.get("inv") as Dictionary).has("repair_kit")
+			if bool(v.get("broken")):
+				# Carcaça queimada: E conserta (com kit), não dirige.
+				var label_broken := "[E] Consertar %s com kit de reparos" % v.call("display_name") if has_kit else "%s destruído — precisa de um kit de reparos" % v.call("display_name")
+				best = {"type": "repair", "id": id, "label": label_broken}
+				continue
+			var label := "[E] Dirigir %s  •  gasolina %d%%  •  lataria %d%%" % [v.call("display_name"), int(fuel), int(float(v.get("hp")))]
 			if (controller.get("inv") as Dictionary).has("gasoline") and fuel < 99.0:
 				label += "   [T] Abastecer"
 			elif fuel <= 0.0:
 				label += "  (precisa de galão de gasolina)"
+			if has_kit and float(v.get("hp")) < 100.0:
+				label += "\nUse o kit de reparos no inventário para consertar"
 			best = {"type": "vehicle", "id": id, "label": label}
 	return best
+
+## Carro mais perto que precisa de conserto (para o kit de reparos), ou "".
+func repairable_near(point: Vector3) -> String:
+	var best := ""
+	var best_d := REACH
+	for id in vehicles:
+		var v: Node3D = vehicles[id]
+		var d := Vector2(v.global_position.x - point.x, v.global_position.z - point.z).length()
+		if d < best_d and (bool(v.get("broken")) or float(v.get("hp")) < 100.0):
+			best_d = d
+			best = str(id)
+	return best
+
+## Segura 5 s com o kit de reparos perto do carro; o servidor confere e conserta.
+func request_repair(id: String) -> bool:
+	if driving != null or id.is_empty():
+		return false
+	if not (controller.get("inv") as Dictionary).has("repair_kit"):
+		controller.call("_toast", "SEM KIT DE REPAROS")
+		return true
+	var seconds := float(SurvivalData.item("repair_kit").get("use_time", 5))
+	if player.call("start_channel", "CONSERTANDO", seconds, func(): Net.send({"t": "repair", "v": id})):
+		Net.send({"t": "repair_start", "v": id})
+		controller.call("_set_action", "pry", "crowbar")
+	return true
 
 func request_enter(id: String) -> void:
 	_pending_enter = id
@@ -136,7 +172,28 @@ func on_message(data: Dictionary) -> bool:
 			if v != null:
 				v.set("fuel", float(data.get("fuel", 0.0)))
 			return true
+		"boom":
+			# Carro explodiu: fogo, fumaça e estrondo (o dano vem do servidor).
+			var at = controller.call("_vec", data.get("p"))
+			var v: CharacterBody3D = vehicles.get(str(data.get("id", "")))
+			if v != null:
+				at = v.global_position
+			if at != null:
+				GrenadeScript.spawn_explosion(main_node, at + Vector3(0, 0.8, 0))
+				if player.global_position.distance_to(at) < 30.0:
+					player.call("add_hit_shake", 1.0)
+			if v != null and v == driving:
+				_stop_driving(false)
+			return true
 	return false
+
+## Batida forte: avisa o servidor (ele decide o dano; encostão não conta).
+func _on_crashed(impact: float) -> void:
+	if driving == null:
+		return
+	Net.send({"t": "crash", "v": driving.get("vehicle_id"), "i": impact})
+	player.call("add_hit_shake", clampf(impact / 15.0, 0.3, 1.0))
+	player.get("sound_fx").call("hurt")
 
 func _start_driving(v: CharacterBody3D) -> void:
 	_pending_enter = ""
@@ -236,5 +293,6 @@ func _process(delta: float) -> void:
 	var kmh := absf(float(driving.get("speed"))) * 3.6
 	var fuel := float(driving.get("fuel"))
 	_hud.visible = true
-	_hud.text = "%s\n%d km/h\nGasolina %d%%%s\n[E] sair   [Espaço] freio de mão" % [driving.call("display_name"), int(kmh), int(fuel), "  — VAZIO" if fuel <= 0.0 else ""]
-	_hud.add_theme_color_override("font_color", Color("#ff8a7a") if fuel < 10.0 else Color.WHITE)
+	var body := float(driving.get("hp"))
+	_hud.text = "%s\n%d km/h\nGasolina %d%%%s\nLataria %d%%%s\n[E] sair   [Espaço] freio de mão" % [driving.call("display_name"), int(kmh), int(fuel), "  — VAZIO" if fuel <= 0.0 else "", int(body), "  — VAI EXPLODIR!" if body < 25.0 else ""]
+	_hud.add_theme_color_override("font_color", Color("#ff8a7a") if fuel < 10.0 or body < 25.0 else Color.WHITE)

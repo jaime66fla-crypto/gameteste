@@ -4,6 +4,8 @@ extends CharacterBody3D
 ## motorista (`controlled`); os outros só seguem a posição que o servidor repassa.
 ## Sem gasolina o motor não liga. Atropelar zumbis: `rammed` avisa o controlador.
 signal rammed(zombie_id: String, speed: float)
+## Batida forte (só o motorista): `impact` = velocidade perdida no choque, em m/s.
+signal crashed(impact: float)
 
 const CarModel = preload("res://scripts/survival/car_model.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
@@ -21,6 +23,10 @@ var color_hex := "#8c1d18"
 var fuel := 0.0
 var driver := ""
 var controlled := false
+var hp := 100.0 # lataria (servidor)
+var broken := false # explodiu: carcaça queimada até alguém usar um kit de reparos
+var _smoke: CPUParticles3D
+var _burnt_mat: StandardMaterial3D
 ## Devolve os zumbis (id -> nó) para checar atropelamento.
 var zombies: Callable
 
@@ -44,7 +50,32 @@ func setup(data: Dictionary) -> void:
 	color_hex = str(data.get("color", "#8c1d18"))
 	fuel = float(data.get("fuel", 0.0))
 	driver = str(data.get("driver", "")) if data.get("driver") != null else ""
+	hp = float(data.get("hp", 100.0))
+	broken = bool(data.get("broken", false))
 	name = "Vehicle_" + vehicle_id
+
+## Lataria do servidor: fumaça quando muito batido; quebrado = carcaça preta, sem motor.
+func set_condition(new_hp: float, new_broken: bool) -> void:
+	hp = new_hp
+	var was_broken := broken
+	broken = new_broken
+	if _model == null:
+		return
+	if broken != was_broken or broken:
+		_apply_burnt(broken)
+	if _smoke != null:
+		_smoke.emitting = broken or hp < 35.0
+		_smoke.color = Color(0.08, 0.08, 0.08, 0.7) if broken else Color(0.45, 0.45, 0.45, 0.5)
+	if broken and engine_on:
+		set_engine(false)
+
+func _apply_burnt(on: bool) -> void:
+	if _burnt_mat == null:
+		_burnt_mat = StandardMaterial3D.new()
+		_burnt_mat.albedo_color = Color("#1b1714")
+		_burnt_mat.roughness = 1.0
+	for node in _model.find_children("*", "MeshInstance3D", true, false):
+		(node as MeshInstance3D).material_override = _burnt_mat if on else null
 
 func display_name() -> String:
 	return str(SurvivalData.catalog().get("vehicles", {}).get(kind, {}).get("name", "Carro"))
@@ -82,6 +113,30 @@ func _ready() -> void:
 	_engine_audio.stream = _engine_sound()
 	_remote_pos = global_position
 	_remote_yaw = rotation.y
+	# Fumaça do capô (carro muito batido ou queimado).
+	_smoke = CPUParticles3D.new()
+	_smoke.amount = 18
+	_smoke.lifetime = 2.2
+	_smoke.emitting = false
+	_smoke.direction = Vector3.UP
+	_smoke.spread = 18.0
+	_smoke.gravity = Vector3(0, 0.6, 0)
+	_smoke.initial_velocity_min = 0.6
+	_smoke.initial_velocity_max = 1.4
+	_smoke.scale_amount_min = 0.5
+	_smoke.scale_amount_max = 1.1
+	var puff := SphereMesh.new()
+	puff.radius = 0.35
+	puff.height = 0.7
+	var puff_mat := StandardMaterial3D.new()
+	puff_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	puff_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	puff_mat.vertex_color_use_as_albedo = true
+	puff.material = puff_mat
+	_smoke.mesh = puff
+	_smoke.position = Vector3(0, CarModel.size_of(kind).y, -CarModel.size_of(kind).z * 0.32)
+	add_child(_smoke)
+	set_condition(hp, broken)
 
 ## Ronco de motor sintético (onda em loop), tom pela velocidade.
 func _engine_sound() -> AudioStreamWAV:
@@ -131,7 +186,7 @@ func apply_remote(p: Vector3, yaw: float, remote_speed: float, snap: bool = fals
 func set_controlled(value: bool) -> void:
 	controlled = value
 	speed = 0.0
-	set_engine(value and fuel > 0.0)
+	set_engine(value and fuel > 0.0 and not broken)
 
 func _physics_process(delta: float) -> void:
 	if controlled:
@@ -141,8 +196,9 @@ func _physics_process(delta: float) -> void:
 		global_position = global_position.lerp(_remote_pos, blend)
 		rotation.y = lerp_angle(rotation.y, _remote_yaw, blend)
 		speed = lerpf(speed, _remote_speed, blend)
-		if engine_on != (not driver.is_empty() and fuel > 0.0):
-			set_engine(not driver.is_empty() and fuel > 0.0)
+		var running := not driver.is_empty() and fuel > 0.0 and not broken
+		if engine_on != running:
+			set_engine(running)
 	_spin += speed * delta / 0.34
 	for wheel in _wheels:
 		wheel.rotation.x = -_spin
@@ -157,7 +213,7 @@ func _drive(delta: float) -> void:
 	var throttle := Input.get_action_strength("move_forward") - Input.get_action_strength("move_back")
 	var turn := Input.get_action_strength("move_left") - Input.get_action_strength("move_right")
 	var handbrake := Input.is_action_pressed("jump")
-	if fuel <= 0.0:
+	if fuel <= 0.0 or broken:
 		throttle = 0.0
 		if engine_on:
 			set_engine(false)
@@ -183,8 +239,18 @@ func _drive(delta: float) -> void:
 	var real := get_real_velocity()
 	var along := real.dot(forward)
 	if absf(along) < absf(speed) - 0.5:
+		# Só conta batida em parede/obstáculo (não o chão), e o servidor ignora encostões.
+		var lost := absf(speed) - absf(along)
+		if lost > 4.5 and _hit_wall():
+			crashed.emit(lost)
 		speed = along
 	_check_ram()
+
+func _hit_wall() -> bool:
+	for i in get_slide_collision_count():
+		if absf(get_slide_collision(i).get_normal().y) < 0.6:
+			return true
+	return false
 
 func _check_ram() -> void:
 	if absf(speed) < 6.0 or not zombies.is_valid():

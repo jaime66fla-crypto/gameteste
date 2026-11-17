@@ -42,6 +42,7 @@ var slot_order: Array[String] = []
 var interact_handler: Callable
 var heal_handler: Callable # F: use a carried medkit (online matches)
 var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
+var ui_blocking: Callable # true enquanto uma janela (mochila, confirmação) precisa do cursor
 ## G: grenade. Online the match controller decides (inventory); offline it is
 ## unlimited with a short cooldown.
 var grenade_handler: Callable
@@ -142,6 +143,12 @@ func _ready() -> void:
     var spring := SpringArm3D.new()
     spring.spring_length = cam_distance
     spring.margin = 0.15
+    # Uma esfera (e não um raio) segura a câmera longe da parede: o plano de
+    # recorte da lente não atravessa a parede em ângulos rasos.
+    var spring_probe := SphereShape3D.new()
+    spring_probe.radius = 0.22
+    spring.shape = spring_probe
+    spring.collision_mask = HitboxScript.LAYER_WORLD
     spring.position.x = 1.0
     arm_pivot.add_child(spring)
     camera = Camera3D.new()
@@ -390,6 +397,9 @@ func _unhandled_input(event: InputEvent) -> void:
         aiming = false
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
     if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+        # Com a mochila (ou outra janela) aberta o clique é para ela: o cursor fica.
+        if ui_blocking.is_valid() and bool(ui_blocking.call()):
+            return
         Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
     if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
         _apply_mouse_look(event.relative)
@@ -461,7 +471,10 @@ func _physics_process(delta: float) -> void:
     var spring: SpringArm3D = camera.get_parent()
     var camera_blend := minf(1, delta * 16)
     spring.spring_length = lerpf(spring.spring_length, 0.0 if wants_first_person else (2.15 if aiming else cam_distance), camera_blend)
-    spring.position.x = lerpf(spring.position.x, 0.0 if wants_first_person else 1.0, camera_blend)
+    # O ombro fica 1 m para o lado; encostado numa parede esse ponto já estaria do
+    # outro lado dela (dava para ver através). Limita pelo espaço livre, na hora.
+    var shoulder := 0.0 if wants_first_person else _shoulder_room(1.0)
+    spring.position.x = minf(lerpf(spring.position.x, shoulder, camera_blend), shoulder)
     var eye_height := height * (0.24 if prone else (0.62 if crouching else 0.92))
     var shoulder_height := height * (0.30 if prone else (0.59 if crouching else 0.86))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, eye_height if wants_first_person else shoulder_height, minf(1,delta * 12))
@@ -680,6 +693,25 @@ func _build_grenade_preview() -> void:
     center.mesh = center_mesh
     center.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     _grenade_ring.add_child(center)
+
+## Espaço livre ao lado da cabeça (para a câmera de ombro), sem entrar em paredes.
+func _shoulder_room(wanted: float) -> float:
+    var from := arm_pivot.global_position
+    var to := arm_pivot.global_transform * Vector3(wanted, 0, 0)
+    var query := PhysicsShapeQueryParameters3D.new()
+    var probe := SphereShape3D.new()
+    probe.radius = 0.22
+    query.shape = probe
+    query.collision_mask = HitboxScript.LAYER_WORLD
+    query.exclude = [get_rid()]
+    query.transform = Transform3D(Basis.IDENTITY, from)
+    query.motion = to - from
+    var space := get_world_3d().direct_space_state
+    # Começou dentro de algo (cabeça colada na parede): sem deslocamento lateral.
+    if not space.intersect_shape(query, 1).is_empty():
+        return 0.0
+    var safe: float = space.cast_motion(query)[0]
+    return wanted * clampf(safe, 0.0, 1.0)
 
 ## Lean: slide the view sideways and roll it, limited by walls beside the head.
 func _update_lean(delta: float) -> void:

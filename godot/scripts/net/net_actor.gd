@@ -239,7 +239,7 @@ func take_damage(amount: float) -> void:
 	receive_hit("chest", amount, global_position + Vector3(0, 1.3, 0), Vector3.UP, "")
 
 func apply_state(state: Dictionary) -> void:
-	if dead or controlled:
+	if dead or controlled or sleeping:
 		return
 	var p: Array = state.get("p", [])
 	if p.size() != 3:
@@ -284,10 +284,39 @@ func die() -> void:
 	name_tag.visible = false
 	_death_timer = 0.0
 
+## Sobrevivência: jogador que saiu do jogo. Fica deitado de costas, dormindo,
+## no lugar onde saiu — os outros veem, mas ninguém acerta nem esbarra nele.
+var sleeping := false
+func sleep(yaw: float) -> void:
+	sleeping = true
+	controlled = false
+	armed = false
+	_apply_armed()
+	collision_layer = 0
+	collision_mask = 0
+	for body in hitboxes:
+		body.collision_layer = 0
+	rotation.y = yaw
+	target_position = global_position
+	if visual != null:
+		visual.rotation = Vector3(PI * 0.5, 0, 0) # de barriga para cima
+		visual.position.y = 0.16
+		if visual.has_method("set_aim_target"):
+			visual.call("set_aim_target", global_position + Vector3(0, 30, 0), false)
+	if name_tag != null:
+		name_tag.text = "%s\nZzz… (dormindo)" % display_name
+		name_tag.modulate = Color("#b8c4cc")
+		name_tag.position.y = 0.9
+
 func play_remote_shot(weapon: String) -> void:
 	sound_fx.call("shot", weapon)
 
 func _physics_process(delta: float) -> void:
+	if sleeping:
+		# Parado, respirando devagar (pose de descanso, sem andar nem mirar).
+		if visual != null and visual.has_method("animate"):
+			visual.call("animate", delta, 0.0, false, false, false, false, false, Vector2(0, -1), Vector3.ZERO)
+		return
 	if dead:
 		# Simple fall-over, then disappear.
 		_death_timer += delta

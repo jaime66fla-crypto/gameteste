@@ -17,6 +17,13 @@ const ZOMBIE_RATE := 1.0 / 6.0
 const REACH := 2.8 # interação (o servidor aceita um pouco mais)
 const SEARCH_TIME := 1.0
 const MELEE_COOLDOWN := 0.6
+const SWING_TIME := 0.55 # golpe de arma branca (igual ao ciclo "swing" do avatar)
+const INFECTION_TIME := 120.0
+const MapScript = preload("res://scripts/ui/world_map.gd")
+var _swing_left := 0.0
+var infected_left := 0.0 # segundos até virar zumbi (0 = saudável)
+var infection_clock: Control
+var world_map: Control
 
 var main_node: Node
 var player: CharacterBody3D
@@ -26,6 +33,7 @@ var actors: Dictionary = {} # id -> NetActor (outros jogadores)
 var names: Dictionary = {}
 var zombies: Dictionary = {} # id -> Zombie
 var bags: Dictionary = {} # id -> {node, pos, name, count}
+var sleepers: Dictionary = {} # id -> NetActor deitado (jogador que saiu do jogo)
 var inv: Dictionary = {}
 var carried := 0.0 # kg (servidor)
 var carry_cap := 10.0
@@ -91,6 +99,8 @@ func _ready() -> void:
 	var p = _vec(you.get("p"))
 	if p != null:
 		player.global_position = p + Vector3(0, 0.1, 0)
+	# Volta olhando para o mesmo lado de quando saiu.
+	player.set("yaw", float(you.get("y", player.get("yaw"))))
 	my_hp = float(you.get("hp", 100))
 	hunger = float(you.get("hunger", 100))
 	thirst = float(you.get("thirst", 100))
@@ -104,6 +114,8 @@ func _ready() -> void:
 	driving_ctl.call("spawn_all", info.get("vehicles", []))
 	for bag in info.get("bags", []):
 		_set_bag(bag)
+	for entry in info.get("sleepers", []):
+		_add_sleeper(entry)
 	for k in info.get("searched", []):
 		world.call("set_container_empty", str(k), true)
 	var depleted: Dictionary = info.get("depleted", {})
@@ -115,10 +127,11 @@ func _ready() -> void:
 	Net.connection_lost.connect(_on_connection_lost)
 	_apply_host()
 	Net.attach_consumer()
+	_set_infected(float(you.get("infected", 0)))
 	if bool(you.get("dead", false)):
 		_on_local_death()
 	_feed("Bem-vindo ao mundo aberto. Sobreviva: ache comida, água e armas.")
-	_feed("E revistar/coletar/dirigir  •  TAB inventário  •  Q golpe  •  F curativo  •  T abastecer")
+	_feed("E revistar/coletar/dirigir  •  TAB inventário  •  M mapa  •  Q golpe  •  F curativo  •  T abastecer")
 	_feed("Zumbis ouvem tiros. De noite enxergam menos — e você também.")
 
 func _exit_tree() -> void:
@@ -159,8 +172,9 @@ func _physics_process(delta: float) -> void:
 		respawn_button.text = "Renascer" if _respawn_left <= 0.0 else "Renascer em %d s" % ceili(_respawn_left)
 		return
 	_sync_ammo()
-	# Saiu do lugar ou cancelou: para de golpear.
-	if not action.is_empty() and float(player.get("channel_left")) <= 0.0:
+	_swing_left = maxf(0.0, _swing_left - delta)
+	# Saiu do lugar ou cancelou: para de golpear (o golpe do bastão dura SWING_TIME).
+	if not action.is_empty() and float(player.get("channel_left")) <= 0.0 and _swing_left <= 0.0:
 		_set_action("", "")
 	_state_timer -= delta
 	if _state_timer <= 0.0:
@@ -288,6 +302,16 @@ func _on_message(data: Dictionary) -> void:
 			zombie_count = int(data.get("zombies", zombie_count))
 		"respawned":
 			_on_respawned(data)
+		"infected":
+			_set_infected(float(data.get("left", 0)))
+		"sleep":
+			_add_sleeper(data)
+			_feed("%s está dormindo." % str(data.get("name", "?")))
+		"wake":
+			var sid := str(data.get("id", ""))
+			if sleepers.has(sid):
+				sleepers[sid].queue_free()
+				sleepers.erase(sid)
 
 func _on_connection_lost(reason: String) -> void:
 	finished = true
@@ -313,6 +337,25 @@ func _add_actor(entry: Dictionary) -> void:
 	actor.connect("damaged", _on_target_damaged)
 	main_node.add_child(actor)
 	actors[id] = actor
+
+## Jogador que saiu do jogo: o corpo fica deitado, dormindo, onde ele estava.
+func _add_sleeper(entry: Dictionary) -> void:
+	var id := str(entry.get("id", ""))
+	var p = _vec(entry.get("p"))
+	if id.is_empty() or p == null:
+		return
+	if sleepers.has(id):
+		sleepers[id].queue_free()
+	var actor: CharacterBody3D = NetActorScript.new()
+	actor.call("setup", id, str(entry.get("name", "?")), false)
+	actor.set("tag_subtitle", str(entry.get("rank", "")))
+	actor.position = p
+	main_node.add_child(actor)
+	actor.call("sleep", float(entry.get("y", 0.0)))
+	var visual = actor.get("visual")
+	if visual != null and visual.has_method("set_backpack"):
+		visual.call("set_backpack", str(entry.get("bp", "")))
+	sleepers[id] = actor
 
 func _spawn_zombies(list: Array) -> void:
 	for entry in list:
@@ -363,10 +406,16 @@ func _melee() -> void:
 	if local_dead or _melee_timer > 0.0:
 		return
 	_melee_timer = MELEE_COOLDOWN
+	var best_weapon: Array = SurvivalData.best_melee(inv)
+	var reach := float(SurvivalData.item(str(best_weapon[0])).get("reach", 2.4))
+	# Arma branca na mão: golpe de lado com as duas mãos (todos veem o movimento).
+	if not str(best_weapon[0]).is_empty():
+		_set_action("swing", str(best_weapon[0]))
+		_swing_left = SWING_TIME
 	var camera := get_viewport().get_camera_3d()
 	var forward := -camera.global_basis.z
 	var from := player.global_position + Vector3(0, 1.35, 0)
-	var query := PhysicsRayQueryParameters3D.create(from, from + forward * 2.4, HitboxScript.SHOT_MASK)
+	var query := PhysicsRayQueryParameters3D.create(from, from + forward * reach, HitboxScript.SHOT_MASK)
 	query.exclude = [player.get_rid()]
 	var hit := player.get_world_3d().direct_space_state.intersect_ray(query)
 	if hit.is_empty():
@@ -399,7 +448,7 @@ func _on_health(data: Dictionary) -> void:
 		my_hp = hp
 		_update_bars()
 		if killed:
-			var cause: String = str({"fome": "de fome", "sede": "de sede", "zombie": "para os zumbis"}.get(str(data.get("w", "")), ""))
+			var cause: String = str({"fome": "de fome", "sede": "de sede", "zombie": "para os zumbis", "infection": "— a infecção venceu e você virou zumbi", "explosion": "na explosão do carro"}.get(str(data.get("w", "")), ""))
 			if cause.is_empty():
 				cause = "para " + str(names.get(by, "alguém"))
 			_feed("Você morreu %s." % cause)
@@ -407,7 +456,7 @@ func _on_health(data: Dictionary) -> void:
 	elif actors.has(id):
 		actors[id].call("set_hp", hp, killed)
 		if killed:
-			_feed("%s morreu." % names.get(id, "?"))
+			_feed(("%s virou zumbi." if str(data.get("w", "")) == "infection" else "%s morreu.") % names.get(id, "?"))
 	if killed and by == my_id and id != my_id:
 		player.get("sound_fx").call("kill_confirm")
 		_toast("ELIMINOU %s" % str(names.get(id, "")).to_upper())
@@ -416,6 +465,7 @@ func _on_local_death() -> void:
 	if driving_ctl != null:
 		driving_ctl.call("force_exit")
 	_set_action("", "")
+	_set_infected(0.0)
 	local_dead = true
 	_respawn_left = 8.0
 	inventory.call("close")
@@ -503,6 +553,17 @@ func _on_drop(item: String, _all: bool) -> void:
 
 func _on_use(item: String) -> void:
 	var entry := SurvivalData.item(item)
+	if item == "repair_kit":
+		var car := str(driving_ctl.call("repairable_near", player.global_position))
+		if car.is_empty():
+			_toast("CHEGUE PERTO DE UM CARRO BATIDO OU QUEBRADO")
+			return
+		inventory.call("close")
+		driving_ctl.call("request_repair", car)
+		return
+	if item == "vaccine" and infected_left <= 0.0:
+		_toast("VOCÊ NÃO ESTÁ INFECTADO")
+		return
 	if entry.has("use_time"):
 		var seconds := float(entry["use_time"])
 		if player.call("start_channel", SurvivalData.item_name(item).to_upper(), seconds, func(): Net.send({"t": "use", "item": item})):
@@ -590,6 +651,8 @@ func _interact() -> bool:
 	var id := str(_target["id"])
 	if _target["type"] == "vehicle":
 		driving_ctl.call("request_enter", id)
+	elif _target["type"] == "repair":
+		driving_ctl.call("request_repair", id)
 	elif _target["type"] == "container":
 		player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id}))
 	else:
@@ -699,8 +762,62 @@ func _update_daylight() -> void:
 
 var _scan_timer := 0.0
 
+## Alguma janela da sobrevivência precisa do cursor (mochila aberta ou tela de morte).
+func ui_open() -> bool:
+	return (inventory != null and inventory.visible) or (death_panel != null and death_panel.visible)
+
+## Infecção (mordida de zumbi): `left` segundos até virar zumbi; 0 = curado.
+func _set_infected(left: float) -> void:
+	var was := infected_left > 0.0
+	infected_left = maxf(0.0, left)
+	if infection_clock != null:
+		infection_clock.visible = infected_left > 0.0
+		infection_clock.queue_redraw()
+	if infected_left > 0.0 and not was:
+		_feed("Você foi mordido e está infectado! Use uma vacina em até 2 minutos.")
+		_toast("INFECTADO — ACHE UMA VACINA")
+	elif infected_left <= 0.0 and was and not local_dead:
+		_feed("A vacina fez efeito: infecção curada.")
+		_toast("INFECÇÃO CURADA")
+
+## Relógio da infecção (topo da tela): disco que esvazia em 2 minutos + tempo restante.
+func _draw_infection_clock() -> void:
+	if infected_left <= 0.0:
+		return
+	var c := Vector2(infection_clock.size.x * 0.5, 62.0)
+	var radius := 34.0
+	var fraction := clampf(infected_left / INFECTION_TIME, 0.0, 1.0)
+	var pulse := 0.6 + 0.4 * absf(sin(Time.get_ticks_msec() / (180.0 if infected_left < 30.0 else 420.0)))
+	infection_clock.draw_circle(c, radius + 4.0, Color(0, 0, 0, 0.6))
+	var points := PackedVector2Array([c])
+	var steps := maxi(2, int(64 * fraction))
+	for i in steps + 1:
+		var angle := -PI * 0.5 + TAU * fraction * float(i) / steps
+		points.append(c + Vector2(cos(angle), sin(angle)) * radius)
+	if fraction > 0.0:
+		infection_clock.draw_colored_polygon(points, Color(0.55, 0.85, 0.25, 0.85 * pulse).lerp(Color(0.9, 0.15, 0.1, 0.9 * pulse), 1.0 - fraction))
+	infection_clock.draw_arc(c, radius, 0.0, TAU, 48, Color(1, 1, 1, 0.9), 2.0, true)
+	# Ponteiro do relógio no tempo que falta.
+	var hand := -PI * 0.5 + TAU * fraction
+	infection_clock.draw_line(c, c + Vector2(cos(hand), sin(hand)) * radius * 0.85, Color(1, 1, 1), 2.5, true)
+	var font := ThemeDB.fallback_font
+	var secs := ceili(infected_left)
+	var title := "INFECTADO  %d:%02d" % [secs / 60, secs % 60]
+	var hint := "Use uma vacina (TAB) ou vira zumbi"
+	for spec in [[title, 20, c.y + radius + 26.0, Color("#ff7a5c")], [hint, 14, c.y + radius + 46.0, Color(1, 1, 1, 0.9)]]:
+		var w := font.get_string_size(spec[0], HORIZONTAL_ALIGNMENT_LEFT, -1, spec[1]).x
+		var at := Vector2(c.x - w * 0.5, spec[2])
+		infection_clock.draw_string(font, at + Vector2(1, 1), spec[0], HORIZONTAL_ALIGNMENT_LEFT, -1, spec[1], Color(0, 0, 0, 0.9))
+		infection_clock.draw_string(font, at, spec[0], HORIZONTAL_ALIGNMENT_LEFT, -1, spec[1], spec[3])
+
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 0.8)
+	if infected_left > 0.0 and not local_dead:
+		infected_left = maxf(0.0, infected_left - delta) # o servidor decide a hora exata
+		infection_clock.queue_redraw()
+	# Mochila aberta: o ponteiro tem que estar sempre visível para escolher os itens.
+	if ui_open() and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	# Procurar o que está perto percorre ~1500 coisas: 10 vezes por segundo basta.
 	_scan_timer -= delta
 	if _scan_timer > 0.0:
@@ -731,6 +848,19 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T and not local_dead:
 		if bool(driving_ctl.call("request_refuel")):
 			get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_M:
+		world_map.call("toggle")
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE and world_map.visible:
+		world_map.call("toggle")
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE and inventory.visible:
+		inventory.call("close")
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE # ESC também libera o mouse (botão de menu)
+		get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_TAB or event.physical_keycode == KEY_I):
 		if local_dead:
@@ -816,6 +946,16 @@ func _build_ui() -> void:
 	feed.position = Vector2(18, 212) # abaixo do minimapa
 	feed.custom_minimum_size.x = 520
 	ui.add_child(feed)
+	infection_clock = Control.new()
+	infection_clock.name = "InfectionClock"
+	infection_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	infection_clock.visible = false
+	ui.add_child(infection_clock)
+	infection_clock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	infection_clock.draw.connect(_draw_infection_clock)
+	world_map = MapScript.new()
+	world_map.call("setup", player, self)
+	ui.add_child(world_map)
 	inventory = InventoryUI.new()
 	ui.add_child(inventory)
 	inventory.connect("take_requested", _on_take)

@@ -61,6 +61,15 @@ const VEHICLE_MAX_STEP = 12; // metros entre dois pacotes (bem acima de 26 m/s �
 const RAM_MIN_SPEED = 6; // m/s para atropelar um zumbi
 const RAM_DAMAGE_PER_MS = 7; // dano = velocidade × 7 (60 km/h ≈ 115)
 const VEHICLES = catalog.vehicles;
+// Lataria: só batida forte tira (perda de velocidade acima de CRASH_MIN m/s, não um encostão).
+const CRASH_MIN = 4.5;
+const CRASH_DAMAGE_PER_MS = 5; // 60 km/h de frente num muro ≈ 60 de dano
+const RAM_CAR_DAMAGE = 3; // atropelar zumbi amassa um pouco
+const EXPLOSION_RADIUS = 8;
+const EXPLOSION_PLAYER_DAMAGE = 90;
+const EXPLOSION_ZOMBIE_DAMAGE = 160;
+// Mordida de zumbi infecta: sem vacina em 2 minutos, o jogador vira zumbi (e morre).
+export const INFECTION_MS = 2 * 60 * 1000;
 
 const ITEMS = catalog.items;
 const CONTAINERS = Object.fromEntries(world.containers.map((c) => [c.id, c]));
@@ -158,14 +167,52 @@ export async function handleSurvivalSocket(request, env, url) {
 	const session = await resolveSession(env, token);
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
 	const query = '&name=' + encodeURIComponent(session.name) + '&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
-	// Volta para o mundo onde o personagem ficou, se ainda houver vaga.
-	const order = [...Array(MAX_WORLDS).keys()].map((i) => 'world:' + (i + 1));
+	const order = WORLD_NAMES.slice();
+	// Mundo escolhido na lista: só ele (cada mundo guarda o seu próprio personagem).
+	const chosen = url.searchParams.get('world') || '';
+	if (chosen) {
+		if (!WORLD_NAMES.includes(chosen)) return noticeSocket({ t: 'party_error', message: 'Mundo não encontrado.' });
+		const stub = env.GODOT_SURVIVAL.get(env.GODOT_SURVIVAL.idFromName(chosen));
+		const response = await stub.fetch(new Request('https://internal/join?world=' + encodeURIComponent(chosen) + query, request));
+		if (response.status === 101) return response;
+		const reason = response.status === 409 ? await response.text() : '';
+		return noticeSocket({ t: 'party_error', message: reason === 'Conta já está neste mundo' ? 'Sua conta já está jogando neste mundo.' : 'Esse mundo está cheio. Escolha outro na lista.' });
+	}
+	// Sem escolha: volta para o mundo onde o personagem ficou dormindo (se houver vaga), senão o primeiro com vaga.
+	const home = (await worldInfos(env, session.account)).filter((w) => w.mine).sort((a, b) => b.savedAt - a.savedAt)[0];
+	if (home) order.unshift(...order.splice(order.indexOf(home.name), 1));
 	for (const name of order) {
 		const stub = env.GODOT_SURVIVAL.get(env.GODOT_SURVIVAL.idFromName(name));
 		const response = await stub.fetch(new Request('https://internal/join?world=' + encodeURIComponent(name) + query, request));
 		if (response.status === 101) return response;
 	}
 	return noticeSocket({ t: 'party_error', message: 'Todos os mundos estão cheios. Tente de novo em alguns minutos.' });
+}
+
+const WORLD_NAMES = [...Array(MAX_WORLDS).keys()].map((i) => 'world:' + (i + 1));
+
+/** Rota /godot/survival/worlds: lista dos mundos, quantos estão online e onde você tem personagem. */
+export async function handleSurvivalWorlds(request, env) {
+	const header = request.headers.get('Authorization') || '';
+	const session = await resolveSession(env, header.startsWith('Bearer ') ? header.slice(7).trim() : '');
+	if (!session) return Response.json({ error: 'Entre na sua conta para jogar online.' }, { status: 401 });
+	const worlds = (await worldInfos(env, session.account)).map(({ name, number, online, mine, day }) => ({ id: name, number, online, capacity: CAPACITY, mine, day }));
+	return Response.json({ worlds });
+}
+
+/** Situação de cada mundo (online, dia, personagem guardado desta conta). */
+async function worldInfos(env, account) {
+	return Promise.all(WORLD_NAMES.map(async (name, i) => {
+		const base = { name, number: i + 1, online: 0, savedAt: 0, mine: false, day: 1 };
+		try {
+			const stub = env.GODOT_SURVIVAL.get(env.GODOT_SURVIVAL.idFromName(name));
+			const res = await stub.fetch('https://internal/has?account=' + encodeURIComponent(account || ''));
+			const data = res.ok ? await res.json() : {};
+			return { ...base, online: data.online || 0, savedAt: data.savedAt || 0, mine: !!data.savedAt, day: data.day || 1 };
+		} catch {
+			return base;
+		}
+	}));
 }
 
 export class GodotSurvival {
@@ -200,13 +247,92 @@ export class GodotSurvival {
 		for (const spot of world.vehicles || []) {
 			if (s.vehicles[spot.id]) continue;
 			const fuel = Math.random() < 0.4 ? 0 : randInt(4, 22);
-			s.vehicles[spot.id] = { id: spot.id, kind: spot.kind, color: spot.color, p: [...spot.p], yaw: spot.yaw, fuel, driver: null, speed: 0 };
+			s.vehicles[spot.id] = { id: spot.id, kind: spot.kind, color: spot.color, p: [...spot.p], yaw: spot.yaw, fuel, driver: null, speed: 0, hp: 100, broken: false };
+		}
+		for (const v of Object.values(s.vehicles)) {
+			if (typeof v.hp !== 'number') v.hp = 100; // mundos salvos antes da lataria
+			if (typeof v.broken !== 'boolean') v.broken = false;
 		}
 		return s.vehicles;
 	}
 
 	vehiclePacket(v) {
-		return { id: v.id, kind: v.kind, color: v.color, p: v.p, yaw: v.yaw, fuel: round1(v.fuel), driver: v.driver };
+		return { id: v.id, kind: v.kind, color: v.color, p: v.p, yaw: v.yaw, fuel: round1(v.fuel), driver: v.driver, hp: Math.round(v.hp), broken: !!v.broken };
+	}
+
+	/** Batida relatada pelo motorista: `i` = velocidade perdida no choque (m/s). */
+	crash(me, d) {
+		const v = this.vehicles()[d.v];
+		if (!v || v.broken || v.driver !== me.id || me.vehicle !== v.id) return;
+		const impact = finite(d.i, 60) ? Math.abs(d.i) : 0;
+		if (impact < CRASH_MIN) return; // encostar não estraga
+		const now = Date.now();
+		if (now - (v.crashAt || 0) < 300) return;
+		v.crashAt = now;
+		this.damageVehicle(v, (impact - CRASH_MIN) * CRASH_DAMAGE_PER_MS + 4, me);
+	}
+
+	damageVehicle(v, amount, by = null) {
+		if (v.broken || !(amount > 0)) return;
+		v.hp = Math.max(0, round1(v.hp - amount));
+		if (v.hp <= 0) return this.explodeVehicle(v, by);
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		this.save();
+	}
+
+	/** Lataria zerada: explode, quem está perto se machuca, o carro fica quebrado. */
+	explodeVehicle(v, by = null) {
+		const s = this.state;
+		const driver = v.driver && s.players[v.driver];
+		v.hp = 0;
+		v.broken = true;
+		v.fuel = 0;
+		v.speed = 0;
+		if (driver) this.leaveVehicle(driver);
+		v.driver = null;
+		this.broadcast({ t: 'boom', id: v.id, p: v.p });
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		for (const target of Object.values(s.players)) {
+			if (target.dead || !this.sessions.has(target.id)) continue;
+			const d = Math.hypot(target.p[0] - v.p[0], target.p[2] - v.p[2]);
+			if (d < EXPLOSION_RADIUS) this.damagePlayer(target, EXPLOSION_PLAYER_DAMAGE * (1 - d / EXPLOSION_RADIUS), by?.id || v.id, 'explosion', 'chest', by && by.id !== target.id ? by : null);
+		}
+		for (const zombie of Object.values(s.zombies)) {
+			const d = flat(zombie.p, v.p);
+			if (d >= EXPLOSION_RADIUS) continue;
+			zombie.hp = Math.max(0, round1(zombie.hp - EXPLOSION_ZOMBIE_DAMAGE * (1 - d / EXPLOSION_RADIUS)));
+			if (zombie.hp > 0) {
+				this.broadcastNear(zombie.p, { t: 'zhp', id: zombie.id, hp: zombie.hp, by: by?.id || '', zone: 'chest' });
+				continue;
+			}
+			delete s.zombies[zombie.id];
+			if (by) {
+				by.zkills++;
+				this.credit(by, XP.zombie);
+			}
+			this.broadcast({ t: 'zdead', id: zombie.id, by: by?.id || '', zone: 'chest', w: 'explosion' });
+		}
+		this.save();
+	}
+
+	/** Kit de reparos perto do carro (depois de segurar 5 s): conserta a lataria e tira do "quebrado". */
+	repair(me, d, note) {
+		const v = this.vehicles()[d.v];
+		if (!v) return;
+		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
+		if (!me.inv.repair_kit) return note('Você precisa de um kit de reparos.');
+		if (!v.broken && v.hp >= 100) return note('O carro não precisa de conserto.');
+		const rule = ITEMS.repair_kit;
+		const waited = Date.now() - (me.useAt || 0);
+		if (me.useItem !== 'repair_kit' || waited < rule.use_time * 1000 - 300 || waited > rule.use_time * 1000 + 6000) return;
+		me.useAt = 0;
+		removeItems(me.inv, 'repair_kit', 1);
+		v.hp = v.broken ? rule.repair : Math.min(100, v.hp + rule.repair);
+		v.broken = false;
+		this.save();
+		this.sendInv(me);
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		note(`Carro consertado: lataria em ${Math.round(v.hp)}%.` + (v.fuel <= 0 ? ' Precisa de gasolina.' : ''));
 	}
 
 	/** Sai do carro (por vontade, morte ou desconexão); o carro fica onde parou. */
@@ -223,6 +349,7 @@ export class GodotSurvival {
 	enterVehicle(me, d, note) {
 		const v = this.vehicles()[d.v];
 		if (!v || me.vehicle) return;
+		if (v.broken) return note('Carro destruído. Conserte com um kit de reparos.');
 		if (v.driver && this.sessions.has(v.driver) && this.state.players[v.driver]?.vehicle === v.id) return note('Já tem alguém dirigindo.');
 		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
 		v.driver = me.id;
@@ -257,6 +384,7 @@ export class GodotSurvival {
 		const v = this.vehicles()[d.v];
 		if (!v) return;
 		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
+		if (v.broken) return note('Carro destruído: conserte antes de abastecer.');
 		if (!me.inv.gasoline) return note('Você precisa de um galão de gasolina.');
 		if (v.fuel >= 99) return note('Tanque cheio.');
 		removeItems(me.inv, 'gasoline', 1);
@@ -277,6 +405,7 @@ export class GodotSurvival {
 		if (now - (zombie.rammedAt || 0) < 500) return;
 		zombie.rammedAt = now;
 		this.applyHit(me, zombie.id, Math.min(200, v.speed * RAM_DAMAGE_PER_MS), 'car', 'chest', 6);
+		this.damageVehicle(v, RAM_CAR_DAMAGE, me);
 	}
 
 	save(now = false) {
@@ -334,6 +463,13 @@ export class GodotSurvival {
 
 	async fetch(request) {
 		const url = new URL(request.url);
+		if (url.pathname === '/has') {
+			// Só diz se a conta tem personagem guardado aqui (e quando saiu); nada de dados.
+			const saved = this.state.chars[url.searchParams.get('account') || ''];
+			const fresh = saved && Date.now() - saved.savedAt < CHAR_KEEP_MS;
+			const day = this.state.name ? Math.floor((Date.now() - this.state.createdAt) / DAY_MS) + 1 : 1;
+			return Response.json({ savedAt: fresh ? saved.savedAt : 0, online: this.sessions.size, day });
+		}
 		if (url.pathname !== '/join') return new Response('Not found', { status: 404 });
 		if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket required', { status: 426 });
 		const s = this.state;
@@ -353,10 +489,15 @@ export class GodotSurvival {
 		const saved = account ? s.chars[account] : null;
 		const player = {
 			id, account, name: url.searchParams.get('name') || 'Sobrevivente', rank: rankFor(totalXp).rank,
-			xpGain: 0, kills: 0, zkills: 0, useAt: 0, gatherAt: 0, gatherId: '', respawnAt: 0,
+			xpGain: 0, kills: 0, zkills: 0, useAt: 0, gatherAt: 0, gatherId: '', respawnAt: 0, y: 0,
 			...(saved && Date.now() - saved.savedAt < CHAR_KEEP_MS ? this.restore(saved) : this.newCharacter()),
 		};
 		s.players[id] = player;
+		if (saved) {
+			// Acordou: o corpo dormindo some para os outros (o jogador volta como ele mesmo).
+			delete s.chars[account];
+			if (saved.sid) this.broadcast({ t: 'wake', id: saved.sid });
+		}
 		if (!s.host || !this.sessions.has(s.host)) s.host = id;
 		this.save(true);
 		this.send(server, { t: 'welcome', id, room: s.name, survival: true, capacity: CAPACITY });
@@ -368,12 +509,29 @@ export class GodotSurvival {
 
 	newCharacter() {
 		const spawn = world.spawns[Math.floor(Math.random() * world.spawns.length)];
-		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', dead: false };
+		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', dead: false, infectedAt: 0 };
 	}
 
 	restore(saved) {
 		if (saved.dead) return { ...this.newCharacter(), inv: {}, dead: true, respawnAt: Date.now() };
-		return { p: saved.p, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', dead: false };
+		// A infecção fica "pausada" enquanto o jogador está fora do jogo.
+		const left = Math.max(0, Math.min(INFECTION_MS, Number(saved.infectedLeft) || 0));
+		return {
+			p: saved.p, y: saved.y || 0, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', dead: false,
+			infectedAt: left > 0 ? Date.now() - (INFECTION_MS - left) : 0,
+		};
+	}
+
+	/** Personagens de quem saiu: ficam deitados, dormindo, onde o jogador estava. */
+	sleepers() {
+		const now = Date.now();
+		return Object.values(this.state.chars)
+			.filter((c) => c.sid && !c.dead && Array.isArray(c.p) && now - c.savedAt < CHAR_KEEP_MS)
+			.map((c) => this.sleeperPacket(c));
+	}
+
+	sleeperPacket(c) {
+		return { id: c.sid, name: c.name || '', rank: c.rank || '', p: c.p, y: c.y || 0, bp: c.back || '' };
 	}
 
 	startPacket(me) {
@@ -386,13 +544,14 @@ export class GodotSurvival {
 			survival: true,
 			host: s.host,
 			clock: this.clock(),
-			you: { id: me.id, p: me.p, hp: me.hp, hunger: round1(me.hunger), thirst: round1(me.thirst), dead: me.dead, ...this.invPacket(me) },
+			you: { id: me.id, p: me.p, y: me.y || 0, infected: Math.round(this.infectionLeft(me, now) / 1000), hp: me.hp, hunger: round1(me.hunger), thirst: round1(me.thirst), dead: me.dead, ...this.invPacket(me) },
 			roster: Object.values(s.players)
 				.filter((p) => p.id !== me.id && this.sessions.has(p.id))
 				.map((p) => ({ id: p.id, name: p.name, rank: p.rank, p: p.p, dead: p.dead })),
 			zombies: Object.values(s.zombies),
 			vehicles: Object.values(this.vehicles()).map((v) => this.vehiclePacket(v)),
 			bags: Object.values(s.bags).map((b) => this.bagSummary(b)),
+			sleepers: this.sleepers(),
 			searched: Object.keys(s.containers).filter((k) => s.containers[k].refillAt > now && !Object.keys(s.containers[k].items).length),
 			depleted,
 		};
@@ -443,11 +602,12 @@ export class GodotSurvival {
 				const p = vec3(d.p, 600);
 				if (!p) return;
 				me.p = p;
+				if (finite(d.y, 1000)) me.y = d.y;
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '',
-					act: d.act === 'chop' || d.act === 'pry' ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
+					act: d.act === 'chop' || d.act === 'pry' || d.act === 'swing' ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
 				return;
@@ -479,6 +639,14 @@ export class GodotSurvival {
 			case 'drive': return this.driveVehicle(me, d);
 			case 'refuel': return this.refuel(me, d, note);
 			case 'ram': return this.ram(me, d);
+			case 'crash': return this.crash(me, d);
+			case 'repair_start': {
+				if (!me.inv.repair_kit) return;
+				me.useAt = Date.now();
+				me.useItem = 'repair_kit';
+				return;
+			}
+			case 'repair': return this.repair(me, d, note);
 			case 'equip': return this.equip(me, d, note);
 			case 'unequip': return this.unequip(me, note);
 			case 'gather_start': {
@@ -548,6 +716,7 @@ export class GodotSurvival {
 		}
 		const target = s.players[targetId];
 		if (!target || target.dead || target.id === attacker.id || !this.sessions.has(target.id)) return;
+		if (target.vehicle) return; // dentro do carro ninguém se machuca (o carro protege)
 		if (flat(attacker.p, target.p) > reach + 2) return;
 		this.damagePlayer(target, amount, attacker.id, weapon, zone, attacker);
 	}
@@ -563,6 +732,7 @@ export class GodotSurvival {
 	kill(target, attacker) {
 		this.leaveVehicle(target);
 		target.dead = true;
+		target.infectedAt = 0;
 		target.respawnAt = Date.now() + RESPAWN_MS;
 		if (attacker && attacker.id !== target.id) {
 			attacker.kills++;
@@ -638,11 +808,32 @@ export class GodotSurvival {
 		const zombie = s.zombies[d.z];
 		const target = s.players[d.target];
 		if (!zombie || !target || target.dead || !this.sessions.has(target.id)) return;
+		if (target.vehicle) return; // dentro do carro o zumbi não alcança
 		const now = Date.now();
 		if (now - (zombie.lastHit || 0) < ZOMBIE_ATTACK_MS) return;
 		if (Math.hypot(zombie.p[0] - target.p[0], zombie.p[2] - target.p[2]) > ZOMBIE_REACH + 1.5) return;
 		zombie.lastHit = now;
 		this.damagePlayer(target, ZOMBIE_KINDS[zombie.kind]?.damage || 9, zombie.id, 'zombie');
+		// Mordida infecta: começa o relógio de 2 minutos (só uma infecção por vez).
+		if (!target.dead && !target.infectedAt) {
+			target.infectedAt = now;
+			this.sendTo(target.id, { t: 'infected', left: INFECTION_MS / 1000 });
+			this.save();
+		}
+	}
+
+	infectionLeft(player, now = Date.now()) {
+		return player.infectedAt ? Math.max(0, INFECTION_MS - (now - player.infectedAt)) : 0;
+	}
+
+	/** Passou o tempo sem vacina: vira zumbi — o jogador morre e um zumbi nasce no lugar. */
+	turnIntoZombie(player) {
+		player.infectedAt = 0;
+		const p = [...player.p];
+		this.damagePlayer(player, player.hp + 1, player.id, 'infection');
+		const zombie = { id: 'z' + ++this.state.zSeq, kind: 'walker', hp: ZOMBIE_KINDS.walker.hp, p, from: player.name };
+		this.state.zombies[zombie.id] = zombie;
+		this.broadcast({ t: 'zspawn', l: [zombie] });
 	}
 
 	spawnZombies() {
@@ -788,7 +979,12 @@ export class GodotSurvival {
 		}
 		if (item.use.hp && !item.use.hunger && !item.use.thirst && me.hp >= 100) return note('Vida cheia.');
 		removeItems(me.inv, d.item, 1);
+		if (item.use.cure && !me.infectedAt) return note('Você não está infectado.');
 		const u = item.use;
+		if (u.cure) {
+			me.infectedAt = 0;
+			this.sendTo(me.id, { t: 'infected', left: 0 });
+		}
 		if (u.hp) me.hp = Math.min(100, me.hp + u.hp);
 		if (u.hunger) me.hunger = Math.max(0, Math.min(100, me.hunger + u.hunger));
 		if (u.thirst) me.thirst = Math.max(0, Math.min(100, me.thirst + u.thirst));
@@ -896,6 +1092,7 @@ export class GodotSurvival {
 			if (player.hunger <= 0 || player.thirst <= 0) {
 				this.damagePlayer(player, STARVE_DAMAGE * ((player.hunger <= 0) + (player.thirst <= 0)), player.id, player.thirst <= 0 ? 'sede' : 'fome');
 			}
+			if (!player.dead && player.infectedAt && this.infectionLeft(player, now) <= 0) this.turnIntoZombie(player);
 			if (!player.dead) this.sendStats(player);
 		}
 		for (const bag of Object.values(s.bags)) {
@@ -905,7 +1102,11 @@ export class GodotSurvival {
 			}
 		}
 		for (const [rid, until] of Object.entries(s.depleted)) if (until <= now) delete s.depleted[rid];
-		for (const [account, saved] of Object.entries(s.chars)) if (now - saved.savedAt > CHAR_KEEP_MS) delete s.chars[account];
+		for (const [account, saved] of Object.entries(s.chars)) {
+			if (now - saved.savedAt <= CHAR_KEEP_MS) continue;
+			delete s.chars[account];
+			if (saved.sid) this.broadcast({ t: 'wake', id: saved.sid });
+		}
 		this.spawnZombies();
 		this.broadcast({ t: 'clock', ...this.clock(), online: this.sessions.size, zombies: Object.keys(s.zombies).length });
 		this.save(true);
@@ -930,13 +1131,24 @@ export class GodotSurvival {
 		const player = s.players[meta.id];
 		if (player) {
 			this.leaveVehicle(player);
+			let sleeper = null;
 			if (player.account) {
-				s.chars[player.account] = { p: player.p, hp: player.hp, hunger: player.hunger, thirst: player.thirst, inv: player.inv, back: player.back || '', dead: player.dead, savedAt: Date.now() };
+				sleeper = {
+					sid: 'sl' + crypto.randomUUID().slice(0, 8), name: player.name, rank: player.rank,
+					p: player.p, y: player.y || 0, hp: player.hp, hunger: player.hunger, thirst: player.thirst,
+					inv: player.inv, back: player.back || '', dead: player.dead, savedAt: Date.now(),
+					infectedLeft: this.infectionLeft(player),
+				};
+				s.chars[player.account] = sleeper;
 			}
 			this.ctx.waitUntil(this.flushXp(player));
 			delete s.players[meta.id];
+			this.broadcast({ t: 'leave', id: meta.id });
+			// Quem saiu vivo fica deitado, dormindo, no lugar onde estava (os outros veem).
+			if (sleeper && !sleeper.dead) this.broadcast({ t: 'sleep', ...this.sleeperPacket(sleeper) });
+		} else {
+			this.broadcast({ t: 'leave', id: meta.id });
 		}
-		this.broadcast({ t: 'leave', id: meta.id });
 		if (s.host === meta.id) {
 			s.host = [...this.sessions.keys()][0] || null;
 			if (s.host) this.broadcast({ t: 'host', id: s.host });

@@ -1069,26 +1069,77 @@ func _show_survival_tab() -> void:
         return
     _online_tabs(2)
     _label("Mundo aberto infestado de zumbis, para até 16 jogadores. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",15,Color("#9bad9f"))
-    _label("Fome e sede caem com o tempo. Tiros atraem zumbis. De noite eles enxergam menos — e você também. Ao morrer, suas coisas ficam numa mochila no chão. Ao sair, seu personagem fica guardado no mundo.",14,Color("#d9b44a"))
+    _label("Fome e sede caem com o tempo. Tiros atraem zumbis. Mordida de zumbi infecta: sem vacina em 2 minutos você vira zumbi. Ao morrer, suas coisas ficam numa mochila no chão. Ao sair, seu personagem fica dormindo no mundo.",14,Color("#d9b44a"))
     _label("Jogando como %s (%s)" % [Net.profile.get("name",""), Net.profile.get("rank","")],16)
     var note := _label("",16)
     note.name = "MultiplayerStatus"
     status = note
-    _button("Entrar no mundo","JoinSurvivalButton",func():
-        _clear()
-        _label("Sobrevivência",28)
-        status = _label("Procurando um mundo com vaga...",17)
-        status.name = "MultiplayerStatus"
-        _button("Cancelar","CancelButton",func():
-            _disconnect_net()
-            Net.leave()
-            _show_survival_tab()
-        )
-        _connect_net()
-        if Net.find_survival(str(Net.profile.get("name",""))) != OK:
-            _on_connection_lost("Não foi possível conectar ao servidor.")
-    ,true).grab_focus()
+    _label("Mundos ativos — cada mundo guarda o seu próprio personagem",17)
+    var list := VBoxContainer.new()
+    list.name = "SurvivalWorlds"
+    list.add_theme_constant_override("separation",6)
+    content.add_child(list)
+    var loading := _label("Carregando mundos...",14,Color("#9bad9f"))
+    content.remove_child(loading)
+    list.add_child(loading)
+    _button("Atualizar lista","RefreshWorldsButton",_show_survival_tab)
     _button("Voltar","BackButton",_show_main)
+    _fill_survival_worlds(list)
+
+## Preenche a lista: mundos com gente online, o mundo do seu personagem e um mundo vazio para começar do zero.
+func _fill_survival_worlds(list: VBoxContainer) -> void:
+    var data: Dictionary = await Net.fetch_survival_worlds()
+    if not is_instance_valid(list):
+        return # saiu da tela enquanto carregava
+    for child in list.get_children():
+        child.queue_free()
+    var worlds: Array = data.get("worlds", [])
+    if worlds.is_empty():
+        var error := _label(str(data.get("error", "Nenhum mundo disponível agora.")),14,Color("#f0a08a"))
+        content.remove_child(error)
+        list.add_child(error)
+        _world_button(list, "Entrar num mundo com vaga", "", true, false)
+        return
+    var shown := 0
+    var fresh_shown := false
+    for w in worlds:
+        var online := int(w.get("online",0))
+        var mine := bool(w.get("mine",false))
+        var fresh := online == 0 and not mine
+        if fresh and fresh_shown:
+            continue # só um mundo vazio na lista
+        fresh_shown = fresh_shown or fresh
+        var text := "Mundo %d   •   %d/%d online   •   dia %d" % [int(w.get("number",0)), online, int(w.get("capacity",16)), int(w.get("day",1))]
+        if mine:
+            text += "   ★ seu personagem"
+        elif fresh:
+            text = "Mundo %d   •   vazio — começar do zero" % int(w.get("number",0))
+        var full := online >= int(w.get("capacity",16))
+        _world_button(list, text + ("   (cheio)" if full else ""), str(w.get("id","")), not full, mine)
+        shown += 1
+    if shown == 0:
+        _world_button(list, "Entrar num mundo com vaga", "", true, false)
+
+func _world_button(list: VBoxContainer, text: String, world_id: String, enabled: bool, primary: bool) -> void:
+    var b := _button(text, "World_" + world_id.replace(":", "_"), func(): _join_survival(world_id), primary)
+    content.remove_child(b)
+    b.disabled = not enabled
+    b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+    list.add_child(b)
+
+func _join_survival(world_id: String) -> void:
+    _clear()
+    _label("Sobrevivência",28)
+    status = _label("Entrando no mundo..." if not world_id.is_empty() else "Procurando um mundo com vaga...",17)
+    status.name = "MultiplayerStatus"
+    _button("Cancelar","CancelButton",func():
+        _disconnect_net()
+        Net.leave()
+        _show_survival_tab()
+    )
+    _connect_net()
+    if Net.find_survival(str(Net.profile.get("name","")), world_id) != OK:
+        _on_connection_lost("Não foi possível conectar ao servidor.")
 
 # ------------------------------------------------- custom team rooms ---
 

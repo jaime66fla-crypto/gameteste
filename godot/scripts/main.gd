@@ -22,7 +22,7 @@ var minimap: Control
 var ammo_hud: Control
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
-const HELP_TEXT := "WASD andar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  |  ESC liberar o mouse"
+const HELP_TEXT := "WASD andar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  M mapa  |  ESC liberar o mouse"
 
 func _ready() -> void:
     _register_inputs()
@@ -65,6 +65,59 @@ func _ready() -> void:
     else:
         _spawn_training_dummies()
     _build_hud(survival)
+    _build_quit_dialog(survival)
+    # O mouse não é recapturado enquanto a mochila ou a confirmação estão abertas.
+    player.set("ui_blocking", func() -> bool:
+        if quit_dialog != null and quit_dialog.visible:
+            return true
+        return match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open")))
+    # Fechar a janela (X / Alt+F4) também pergunta antes de sair da partida.
+    get_tree().set_auto_accept_quit(false)
+
+func _exit_tree() -> void:
+    get_tree().set_auto_accept_quit(true)
+
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_WM_CLOSE_REQUEST:
+        _ask_quit(true)
+
+var quit_dialog: ConfirmationDialog
+var _quit_to_desktop := false
+
+## "Tem certeza?" antes de sair da partida (menu principal ou fechar o jogo).
+func _build_quit_dialog(survival: bool) -> void:
+    quit_dialog = ConfirmationDialog.new()
+    quit_dialog.title = "Sair da partida"
+    if survival:
+        quit_dialog.dialog_text = "Tem certeza que quer sair?\n\nSeu personagem fica dormindo aqui no mundo e você volta neste mesmo lugar."
+    elif Net.in_match:
+        quit_dialog.dialog_text = "Tem certeza que quer sair da partida?\n\nSair conta como eliminação."
+    else:
+        quit_dialog.dialog_text = "Tem certeza que quer sair do treino?"
+    quit_dialog.ok_button_text = "Sair"
+    quit_dialog.cancel_button_text = "Continuar jogando"
+    quit_dialog.exclusive = true
+    add_child(quit_dialog)
+    quit_dialog.confirmed.connect(func():
+        if _quit_to_desktop:
+            Net.leave()
+            get_tree().quit()
+        else:
+            return_to_menu())
+    quit_dialog.canceled.connect(func():
+        var busy: bool = match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open"))
+        if not busy and not bool(match_controller != null and match_controller.get("local_dead")):
+            Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+
+func _ask_quit(to_desktop: bool) -> void:
+    if quit_dialog == null:
+        get_tree().quit()
+        return
+    _quit_to_desktop = to_desktop
+    Input.action_release("fire")
+    Input.action_release("aim")
+    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    quit_dialog.popup_centered()
 
 ## HUD enxuto: minimapa redondo (canto superior esquerdo) e munição (inferior
 ## direito). Os controles aparecem segurando F1.
@@ -218,7 +271,7 @@ func _build_ui() -> void:
     menu_button.offset_right = -20
     menu_button.offset_top = 16
     menu_button.offset_bottom = 56
-    menu_button.pressed.connect(return_to_menu)
+    menu_button.pressed.connect(func(): _ask_quit(false))
 
 ## Simple clock: dark disc, a sweep that fills clockwise, label and seconds left.
 func _draw_action_clock() -> void:
@@ -252,7 +305,7 @@ func return_to_menu() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
-        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE
+        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not quit_dialog.visible
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
         action_state = player.action_progress()

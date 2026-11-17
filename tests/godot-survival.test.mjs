@@ -259,6 +259,96 @@ test('zombie bites come only from the host, in reach, at most once a second', as
 	assert.equal(other.me().hp, 91, 'too far to bite');
 });
 
+test('a bite infects: 2 minutes to take a vaccine, otherwise the player turns into a zombie and dies', async () => {
+	const { room } = makeWorld();
+	const host = await join(room);
+	const p = await join(room);
+	at(host, [50, 0, 50]);
+	at(p, [0, 0, 0]);
+	room.state.zombies.z9 = { id: 'z9', kind: 'walker', hp: 60, p: [1, 0, 0] };
+	say(room, host, { t: 'zhit', z: 'z9', target: p.id });
+	assert.ok(p.me().infectedAt > 0);
+	assert.equal(p.ws.last('infected').left, 120);
+	// Vacina (2 s segurando) cura.
+	p.me().inv.vaccine = 1;
+	say(room, p, { t: 'use_start', item: 'vaccine' });
+	p.me().useAt -= 2000;
+	say(room, p, { t: 'use', item: 'vaccine' });
+	assert.equal(p.me().infectedAt, 0);
+	assert.equal(p.ws.last('infected').left, 0);
+	assert.equal(p.me().inv.vaccine, undefined);
+	// Mordido de novo e sem vacina: no fim do tempo vira zumbi.
+	room.state.zombies.z9.lastHit = 0;
+	say(room, host, { t: 'zhit', z: 'z9', target: p.id });
+	p.me().infectedAt -= 121000;
+	await room.alarm();
+	assert.equal(p.me().dead, true);
+	assert.equal(host.ws.last('hp').w, 'infection');
+	assert.ok(Object.values(room.state.zombies).some((z) => z.from === p.me().name), 'a zombie rises where the player died');
+});
+
+test('inside a car nobody gets hurt; crashes (not bumps) damage the car until it explodes; a repair kit fixes it', async () => {
+	const { room } = makeWorld();
+	const host = await join(room);
+	const driver = await join(room);
+	const bystander = await join(room);
+	const spot = world.vehicles[0];
+	const v = () => room.state.vehicles[spot.id];
+	room.vehicles()[spot.id].fuel = 50;
+	at(driver, spot.p);
+	at(host, [spot.p[0] + 40, 0, spot.p[2]]);
+	at(bystander, [spot.p[0] + 3, 0, spot.p[2]]);
+	say(room, driver, { t: 'enter', v: spot.id });
+	room.state.zombies.z1 = { id: 'z1', kind: 'walker', hp: 60, p: [...spot.p] };
+	say(room, host, { t: 'zhit', z: 'z1', target: driver.id });
+	assert.equal(driver.me().hp, 100, 'zombies cannot bite through the car');
+	assert.equal(driver.me().infectedAt || 0, 0);
+	driver.me().inv.w_pistol = 1;
+	host.me().inv.w_pistol = 1;
+	at(host, [spot.p[0] + 5, 0, spot.p[2]]);
+	say(room, host, { t: 'hit', target: driver.id, zone: 'head', w: 'pistol' });
+	assert.equal(driver.me().hp, 100, 'bullets do not hurt the driver');
+	at(host, [spot.p[0] + 40, 0, spot.p[2]]);
+	say(room, driver, { t: 'crash', v: spot.id, i: 3 });
+	assert.equal(v().hp, 100, 'a bump does nothing');
+	say(room, driver, { t: 'crash', v: spot.id, i: 12 });
+	assert.ok(v().hp < 100 && v().hp > 0, `crash damage ${v().hp}`);
+	v().crashAt = 0;
+	say(room, driver, { t: 'crash', v: spot.id, i: 40 });
+	assert.equal(v().broken, true, 'explodes at 0');
+	assert.equal(v().driver, null, 'the driver is thrown out');
+	assert.ok(bystander.ws.last('boom'));
+	assert.ok(bystander.me().hp < 100, 'the explosion hurts who is near');
+	assert.ok(driver.me().hp < 100 || driver.me().dead);
+	// Quebrado: não dirige; o kit de reparos conserta.
+	const fixer = bystander.me().dead ? host : bystander;
+	at(fixer, spot.p);
+	say(room, fixer, { t: 'enter', v: spot.id });
+	assert.match(fixer.ws.last('note').message, /destruído/);
+	fixer.me().inv.repair_kit = 1;
+	say(room, fixer, { t: 'repair_start', v: spot.id });
+	say(room, fixer, { t: 'repair', v: spot.id });
+	assert.equal(v().broken, true, 'needs the full 5 s');
+	fixer.me().useAt -= 5000;
+	say(room, fixer, { t: 'repair', v: spot.id });
+	assert.equal(v().broken, false);
+	assert.equal(v().hp, catalog.items.repair_kit.repair);
+	assert.equal(fixer.me().inv.repair_kit, undefined);
+});
+
+test('the world info route tells who is online and where the account has a character', async () => {
+	const { room } = makeWorld();
+	const p = await join(room, { account: 'mundo' });
+	await join(room);
+	let info = await (await room.fetch(new Request('https://internal/has?account=mundo'))).json();
+	assert.equal(info.online, 2);
+	assert.equal(info.savedAt, 0, 'playing now, not saved');
+	room.webSocketClose(p.ws);
+	info = await (await room.fetch(new Request('https://internal/has?account=mundo'))).json();
+	assert.equal(info.online, 1);
+	assert.ok(info.savedAt > 0);
+});
+
 test('death drops a bag with everything; respawn after the timer with the starter kit', async () => {
 	const { room } = makeWorld();
 	const p = await join(room);
@@ -287,6 +377,26 @@ test('leaving keeps the character for the next visit', async () => {
 	const again = await join(room, { account: 'volta' });
 	assert.deepEqual(again.me().p, [33, 0, -12]);
 	assert.deepEqual(again.me().inv, { scrap: 4 });
+});
+
+test('who leaves stays asleep where they were, seen by the others, and wakes on return', async () => {
+	const { room } = makeWorld();
+	const watcher = await join(room, { account: 'olha' });
+	const p = await join(room, { account: 'dorme' });
+	at(p, [40, 0, 8]);
+	room.webSocketClose(p.ws);
+	const slept = watcher.ws.last('sleep');
+	assert.ok(slept, 'others are told about the sleeping body');
+	assert.deepEqual(slept.p, [40, 0, 8]);
+	assert.equal(slept.account, undefined, 'the account is not exposed');
+	const late = await join(room, { account: 'chega' });
+	assert.equal(late.ws.last('start').sleepers.length, 1, 'late joiners also see it');
+	const back = await join(room, { account: 'dorme' });
+	assert.equal(watcher.ws.last('wake').id, slept.id);
+	assert.deepEqual(back.me().p, [40, 0, 8]);
+	assert.equal(room.state.chars.dorme, undefined);
+	const res = await room.fetch(new Request('https://internal/has?account=olha'));
+	assert.equal((await res.json()).savedAt, 0);
 });
 
 test('the tick drains hunger and thirst and spawns zombies away from players', async () => {

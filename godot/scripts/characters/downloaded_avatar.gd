@@ -246,7 +246,11 @@ const TOOL_LOOK := {
 	"improvised_axe": {"handle": 0.70, "color": Color("#6e5236"), "head": "stone"},
 	"crowbar": {"handle": 0.80, "color": Color("#2f3b52"), "head": "hook"},
 	"bat": {"handle": 0.82, "color": Color("#b08a5a"), "head": "bat"},
+	"long_bat": {"handle": 1.12, "color": Color("#7a5634"), "head": "bat"},
 }
+# Golpe de arma branca (Q): "swing" arma atrás do ombro direito e varre de lado
+# na frente do corpo, uma vez só (SWING_CYCLE segundos), girando o tronco.
+const SWING_CYCLE := 0.55
 var work_action := ""
 var work_tool := ""
 var _last_delta := 1.0 / 60.0
@@ -329,6 +333,9 @@ func _apply_work() -> void:
 	if hips < 0 or chest < 0 or right_arm < 0:
 		return
 	_work_time += _last_delta
+	if work_action == "swing":
+		_apply_swing(chest, spine, right_arm)
+		return
 	var t := fmod(_work_time, WORK_CYCLE) / WORK_CYCLE
 	var raised := -0.55 if work_action == "chop" else 0.7
 	var struck := 2.15 if work_action == "chop" else 2.5
@@ -371,6 +378,53 @@ func _apply_work() -> void:
 		var z := -swing
 		var x := y.cross(z).normalized()
 		_tool_node.transform = Transform3D(Basis(x, y, z), pivot + h * (reach - 0.24))
+
+## Golpe lateral com as duas mãos: 0–35% arma para trás do ombro direito,
+## 35–60% varre rápido da direita para a esquerda na altura do peito,
+## 60–100% termina o movimento do outro lado e relaxa.
+func _apply_swing(chest: int, spine: int, right_arm: int) -> void:
+	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
+	var wind := 1.35 # ângulo da arma para o lado direito (radianos, a partir da frente)
+	var follow := -1.25
+	var a := 0.0
+	var lift := 0.0
+	if t < 0.35:
+		var k := _ease_in_out(t / 0.35)
+		a = lerpf(0.3, wind, k)
+		lift = 0.45 * k
+	elif t < 0.6:
+		var k := (t - 0.35) / 0.25
+		a = lerpf(wind, follow, k * k * (3.0 - 2.0 * k))
+		lift = lerpf(0.45, 0.05, k)
+	else:
+		var k := (t - 0.6) / 0.4
+		a = lerpf(follow, follow * 0.7, k)
+		lift = lerpf(0.05, -0.25, k)
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	# O tronco gira junto com o golpe (dá peso ao movimento).
+	if spine >= 0:
+		Grip._set_global_rotation(skeleton, spine, Basis(up, a * 0.35 * signf(right.x)) * skeleton.get_bone_global_pose(spine).basis)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var pivot := torso + forward * 0.16 + up * 0.02
+	var h := (forward * cos(a) + right * sin(a) + up * lift).normalized()
+	var right_hand := pivot + h * 0.40
+	var left_hand := pivot + h * 0.27
+	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
+		var side: String = spec[0]
+		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.3 - up * 0.5
+		var hand := Grip._bone(skeleton, side + "Hand")
+		_two_bone_ik(Grip._bone(skeleton, side + "Arm"), Grip._bone(skeleton, side + "ForeArm"), hand, spec[1], pole)
+		if hand >= 0:
+			skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
+	if _tool_node != null:
+		var y := h
+		var z := y.cross(up).normalized()
+		if z.length_squared() < 0.01:
+			z = forward
+		var x := y.cross(z).normalized()
+		_tool_node.transform = Transform3D(Basis(x, y, z), left_hand - h * 0.12)
 
 # -------------------------------------------------------------- mochila ---
 ## Mochila nas costas (Sobrevivência): "" tira. Tamanho e cor pelo tipo.
