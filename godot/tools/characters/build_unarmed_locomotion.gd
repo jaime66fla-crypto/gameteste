@@ -14,11 +14,20 @@ const HUMAN := "res://assets/personagens/jaime/animacoes/Animations/Male/"
 const DEFAULT_OUT := "res://assets/personagens/downloaded/movements/"
 const TARGET_ROOT := "Skeleton3D:"
 const FPS := 30.0
-const SOURCES := {
-	"idle_unarmed": HUMAN + "Idles/HumanM@Idle01.fbx",
-	"walk_unarmed": HUMAN + "Movement/Walk/HumanM@Walk01_Forward.fbx",
-	"jog_unarmed": HUMAN + "Movement/Run/HumanM@Run01_Forward.fbx",
+## Directional cycles: "walk_unarmed"/"jog_unarmed" are forward, the others
+## get a suffix (walk_unarmed_left, jog_unarmed_backward_right, ...).
+const DIRECTIONS := {
+	"": "Forward", "_forward_left": "ForwardLeft", "_forward_right": "ForwardRight",
+	"_left": "Left", "_right": "Right",
+	"_backward": "Backward", "_backward_left": "BackwardLeft", "_backward_right": "BackwardRight",
 }
+
+static func sources() -> Dictionary:
+	var result := {"idle_unarmed": HUMAN + "Idles/HumanM@Idle01.fbx"}
+	for suffix in DIRECTIONS:
+		result["walk_unarmed" + suffix] = HUMAN + "Movement/Walk/HumanM@Walk01_%s.fbx" % DIRECTIONS[suffix]
+		result["jog_unarmed" + suffix] = HUMAN + "Movement/Run/HumanM@Run01_%s.fbx" % DIRECTIONS[suffix]
+	return result
 ## Ch31 bone suffix -> HumanM bone. Spine1 has no source: it takes half of the
 ## spine-to-chest motion. Finger/head/toe end bones keep their rest pose.
 const BONE_MAP := {
@@ -47,8 +56,9 @@ func _build() -> void:
 		quit(1)
 		return
 	var failed := false
-	for output_name in SOURCES:
-		failed = not _retarget(SOURCES[output_name], output_name, target) or failed
+	var all := sources()
+	for output_name in all:
+		failed = not _retarget(all[output_name], output_name, target) or failed
 	target_model.free()
 	print("UNARMED LOCOMOTION: ", "FAIL" if failed else "PASS")
 	quit(1 if failed else 0)
@@ -157,7 +167,7 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 	var source_hips := source.find_bone("B-hips")
 	var scale := _leg_length(target, "mixamorig9_LeftUpLeg", "mixamorig9_LeftFoot") / _leg_length(source, "B-thigh.L", "B-foot.L")
 	var previous_feet := []
-	var travel := 0.0
+	var travel := Vector2.ZERO
 	player.play(clip)
 	for frame in frames + 1:
 		var time := minf(frame / FPS, source_animation.length)
@@ -168,7 +178,8 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 		var feet := [source.get_bone_global_pose(source_feet[0]).origin - hips_origin, source.get_bone_global_pose(source_feet[1]).origin - hips_origin]
 		if not previous_feet.is_empty():
 			var planted := 0 if (previous_feet[0] as Vector3).y < (previous_feet[1] as Vector3).y else 1
-			travel += -((feet[planted] as Vector3).z - (previous_feet[planted] as Vector3).z)
+			var step: Vector3 = (feet[planted] as Vector3) - (previous_feet[planted] as Vector3)
+			travel -= Vector2(step.x, step.z) # any direction: forward, sideways, backward
 		previous_feet = feet
 		if frame == frames:
 			break # the last frame equals the first: only used for the speed
@@ -188,9 +199,11 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 		var toe_y := minf(target.get_bone_global_pose(toes[0]).origin.y, target.get_bone_global_pose(toes[1]).origin.y)
 		var hips_position := target.get_bone_rest(hips_bone).origin + Vector3.UP * (rest_toe_y - toe_y)
 		result.position_track_insert_key(hips_track, frame / FPS, hips_position)
-	var speed := maxf(0.0, travel * scale / source_animation.length)
+	var speed := travel.length() * scale / source_animation.length
 	result.set_meta("ground_speed", speed)
+	# Travel direction in the clip (x right, y forward), for checking the set.
+	result.set_meta("travel_direction", travel.normalized() if travel.length() > 0.01 else Vector2.ZERO)
 	var error := ResourceSaver.save(result, out_dir + output_name + ".tres")
-	print("RETARGET %s length=%.2fs speed=%.2f m/s save=%d" % [output_name, result.length, speed, error])
+	print("RETARGET %s length=%.2fs speed=%.2f m/s dir=%s save=%d" % [output_name, result.length, speed, result.get_meta("travel_direction"), error])
 	source_model.free()
 	return error == OK

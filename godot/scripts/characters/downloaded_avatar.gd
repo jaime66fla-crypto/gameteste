@@ -8,8 +8,12 @@ const ELBOW_PUNCH := preload("res://assets/personagens/downloaded/movements/elbo
 const IDLE_WITH_RIFLE := preload("res://assets/personagens/downloaded/movements/idle_with_rifle.tres")
 # Unarmed (GTA-style) locomotion, retargeted by tools/characters/build_unarmed_locomotion.gd.
 const IDLE_UNARMED := preload("res://assets/personagens/downloaded/movements/idle_unarmed.tres")
-const WALK_UNARMED := preload("res://assets/personagens/downloaded/movements/walk_unarmed.tres")
-const JOG_UNARMED := preload("res://assets/personagens/downloaded/movements/jog_unarmed.tres")
+const UNARMED_DIR := "res://assets/personagens/downloaded/movements/"
+## 8-way unarmed cycles, by movement angle (0 = forward, +90 = right): the
+## forward clip has no suffix ("walk_unarmed"), the others do ("walk_unarmed_left").
+const DIRECTION_SUFFIXES := ["", "_forward_right", "_right", "_backward_right", "_backward", "_backward_left", "_left", "_forward_left"]
+## Extra degrees past a sector edge before switching (stops flicker on diagonals).
+const DIRECTION_HYSTERESIS := 8.0
 ## Unarmed: below this speed (m/s) the character walks, above it jogs.
 const UNARMED_JOG_SPEED := 2.3
 ## Playback rate limits: past them the stride slides a little instead of the
@@ -17,7 +21,10 @@ const UNARMED_JOG_SPEED := 2.3
 const UNARMED_RATE_MIN := 0.75
 const UNARMED_RATE_MAX := 1.45
 ## Clips whose own arm swing is kept (no procedural "relaxed arms" on top).
-const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed", "walk_unarmed", "jog_unarmed"]
+const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed"]
+
+static func _has_natural_arms(clip: String) -> bool:
+	return clip in NATURAL_ARM_CLIPS or clip.begins_with("walk_unarmed") or clip.begins_with("jog_unarmed")
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
 const SOURCE_HEIGHT := 1.782
@@ -70,7 +77,12 @@ func _ready() -> void:
 	_make_in_place(run, hip_anchor)
 	library.remove_animation("mixamo_com")
 	library.add_animation("run_in_place", run)
-	var clips := {"idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED, "walk_unarmed": WALK_UNARMED, "jog_unarmed": JOG_UNARMED}
+	var clips := {"idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED}
+	for gait in ["walk_unarmed", "jog_unarmed"]:
+		for suffix in DIRECTION_SUFFIXES:
+			var unarmed_clip := load(UNARMED_DIR + gait + suffix + ".tres") as Animation
+			if unarmed_clip != null:
+				clips[gait + suffix] = unarmed_clip
 	for clip_name in clips:
 		# Duplicate: the preloaded resources are shared between avatars.
 		var clip := (clips[clip_name] as Animation).duplicate() as Animation
@@ -169,14 +181,45 @@ func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> voi
 		# Stopping from a sprint plays the brake clip first (handled in animate()).
 		_play_clip("run_to_stop" if current_clip == "run_in_place" else "idle_unarmed", 1.0)
 		return
-	if running and crouch_weight < 0.5:
+	# Movement angle in the character's frame (forward is -Z): 0 forward, +90 right.
+	var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
+	_direction_sector = _pick_sector(angle)
+	var suffix: String = DIRECTION_SUFFIXES[_direction_sector]
+	# The sprint clip only runs forward; sideways/backward sprints jog that way.
+	if running and crouch_weight < 0.5 and absf(angle) <= 60.0:
 		_play_clip("run_in_place", clampf(speed / 4.0, 0.75, 2.2))
 		return
 	# Hysteresis so the gait does not flicker around the threshold.
-	var jog_threshold := UNARMED_JOG_SPEED - (0.3 if current_clip == "jog_unarmed" else 0.0)
-	var clip := "jog_unarmed" if speed > jog_threshold and crouch_weight < 0.5 else "walk_unarmed"
+	var jog_threshold := UNARMED_JOG_SPEED - (0.3 if current_clip.begins_with("jog_unarmed") else 0.0)
+	var gait := "jog_unarmed" if speed > jog_threshold and crouch_weight < 0.5 else "walk_unarmed"
+	var clip := gait + suffix
+	if not animation_player.has_animation(clip):
+		clip = gait
 	var ground := float(animation_player.get_animation(clip).get_meta("ground_speed", 1.5))
-	_play_clip(clip, clampf(speed / maxf(ground, 0.1), UNARMED_RATE_MIN, UNARMED_RATE_MAX))
+	_play_cycle(clip, clampf(speed / maxf(ground, 0.1), UNARMED_RATE_MIN, UNARMED_RATE_MAX))
+
+var _direction_sector := 0
+
+## 45° sector for the movement angle, kept until the angle is clearly past it.
+func _pick_sector(angle: float) -> int:
+	var centre := _direction_sector * 45.0
+	if absf(wrapf(angle - centre, -180.0, 180.0)) <= 22.5 + DIRECTION_HYSTERESIS:
+		return _direction_sector
+	return posmod(int(round(angle / 45.0)), 8)
+
+## Switches between cycles of the same gait at the same phase of the step, so
+## changing direction does not restart the stride (no foot pop).
+func _play_cycle(clip: String, rate: float) -> void:
+	if current_clip != clip:
+		var same_gait := current_clip.get_slice("_", 0) == clip.get_slice("_", 0) and _has_natural_arms(current_clip) and current_clip != "idle_unarmed"
+		var phase := 0.0
+		if same_gait and animation_player.current_animation_length > 0.0:
+			phase = animation_player.current_animation_position / animation_player.current_animation_length
+		current_clip = clip
+		animation_player.play(clip, 0.2)
+		if same_gait:
+			animation_player.seek(phase * animation_player.current_animation_length, false)
+	animation_player.speed_scale = rate
 
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
@@ -189,7 +232,7 @@ func _finish_pose() -> void:
 	_update_weapon_mount()
 	# Correndo desarmado, o próprio clipe de corrida já balança os braços
 	# naturalmente: só andando/parado os braços descem para o lado do corpo.
-	var running_clip := current_clip in NATURAL_ARM_CLIPS
+	var running_clip := _has_natural_arms(current_clip)
 	_run_arms = move_toward(_run_arms, 1.0 if running_clip else 0.0, _last_delta * 5.0)
 	if prone_weight > 0.01 and unarmed_weight > 0.01:
 		_prone_arms(unarmed_weight)
