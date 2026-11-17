@@ -61,16 +61,24 @@ function bearer(request, url) {
 	return url.searchParams.get('token') || '';
 }
 
-/** Public routes: POST /godot/register, POST /godot/login, GET /godot/me. */
+/**
+ * Public routes: POST /godot/register, POST /godot/login, GET /godot/me and the
+ * friends API under /godot/friends (list + presence, add, accept, decline,
+ * remove, invite).
+ */
 export async function handleGodotAccount(request, env, url) {
 	const accounts = env.GODOT_ACCOUNTS.get(env.GODOT_ACCOUNTS.idFromName('godot-accounts'));
-	const route = url.pathname.slice('/godot'.length); // /register, /login, /me
+	const route = url.pathname.slice('/godot'.length); // /register, /login, /me, /friends...
 	const headers = { 'content-type': 'application/json' };
 	const token = bearer(request, url);
 	if (token) headers.Authorization = 'Bearer ' + token;
 	const body = request.method === 'POST' ? await request.text() : undefined;
-	return accounts.fetch(new Request('https://internal' + route, { method: request.method, headers, body }));
+	return accounts.fetch(new Request('https://internal' + route + url.search, { method: request.method, headers, body }));
 }
+
+const MAX_FRIENDS = 100;
+const ONLINE_MS = 25000; // a client polls every ~8 s while the game is open
+const INVITE_MS = 120000;
 
 /** Resolve a session token to {account, name, xp} (used by the match socket route). */
 export async function resolveSession(env, token) {
@@ -84,6 +92,9 @@ export class GodotAccounts {
 	constructor(ctx, env) {
 		this.ctx = ctx;
 		this.env = env;
+		// Presence and invites are short-lived: kept in memory, refreshed by polling.
+		this.presence = new Map(); // account key -> {seen, status, code}
+		this.invites = new Map(); // account key -> [{from, code, at}]
 	}
 
 	async fetch(request) {
@@ -100,6 +111,15 @@ export class GodotAccounts {
 					return this.session(bearer(request, url));
 				case '/internal/xp':
 					return this.addXp(await request.json());
+				case '/friends':
+					return this.friends(bearer(request, url), url);
+				case '/friends/add':
+				case '/friends/accept':
+				case '/friends/decline':
+				case '/friends/remove':
+				case '/friends/invite':
+					if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
+					return this.friendAction(bearer(request, url), url.pathname.slice('/friends/'.length), await request.json());
 			}
 		} catch {
 			return json({ error: 'Pedido inválido.' }, 400);
@@ -175,6 +195,106 @@ export class GodotAccounts {
 	async session(token) {
 		const found = await this.accountFor(token);
 		return found ? json({ account: found.key, name: found.account.name, xp: found.account.xp }) : json({ error: 'invalid' }, 401);
+	}
+
+	// ------------------------------------------------------------ friends ---
+
+	/**
+	 * GET /friends?status=menu|room|match&code=XXXXX — records the caller's
+	 * presence and returns friends (with online status), pending requests and
+	 * room invites (each invite is delivered once).
+	 */
+	async friends(token, url) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const status = ['menu', 'room', 'match'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'menu';
+		const code = /^[A-Z0-9]{5}$/.test(url.searchParams.get('code') || '') ? url.searchParams.get('code') : '';
+		const now = Date.now();
+		this.presence.set(found.key, { seen: now, status, code: status === 'room' ? code : '' });
+		const friends = [];
+		for (const key of found.account.friends || []) {
+			const friend = await this.ctx.storage.get(key);
+			if (!friend) continue;
+			const seen = this.presence.get(key);
+			const online = !!seen && now - seen.seen < ONLINE_MS;
+			friends.push({ name: friend.name, rank: rankFor(friend.xp).rank, online, status: online ? seen.status : 'offline', code: online ? seen.code : '' });
+		}
+		friends.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
+		const requests = [];
+		for (const key of found.account.requests || []) {
+			const other = await this.ctx.storage.get(key);
+			if (other) requests.push(other.name);
+		}
+		const invites = (this.invites.get(found.key) || []).filter((invite) => now - invite.at < INVITE_MS);
+		this.invites.delete(found.key);
+		return json({ friends, requests, invites: invites.map(({ from, code }) => ({ from, code })) });
+	}
+
+	/** POST /friends/<add|accept|decline|remove|invite> with {name} (and {code} for invite). */
+	async friendAction(token, action, body) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const me = found.account;
+		const meKey = found.key;
+		const name = String(body?.name || '').trim();
+		const otherKey = this.key(name);
+		if (!NAME_RULE.test(name)) return json({ error: 'Nome inválido.' }, 400);
+		if (otherKey === meKey) return json({ error: 'Esse é você.' }, 400);
+		const other = await this.ctx.storage.get(otherKey);
+		if (!other) return json({ error: `Jogador ${name} não encontrado.` }, 404);
+		me.friends = me.friends || [];
+		me.requests = me.requests || [];
+		other.friends = other.friends || [];
+		other.requests = other.requests || [];
+		const drop = (list, key) => list.filter((k) => k !== key);
+		const save = async () => this.ctx.storage.put({ [meKey]: me, [otherKey]: other });
+		switch (action) {
+			case 'add': {
+				if (me.friends.includes(otherKey)) return json({ message: `${other.name} já é seu amigo.` });
+				if (me.friends.length >= MAX_FRIENDS) return json({ error: `Limite de ${MAX_FRIENDS} amigos.` }, 400);
+				if (me.requests.includes(otherKey)) {
+					// They already asked: accept right away.
+					me.requests = drop(me.requests, otherKey);
+					me.friends.push(otherKey);
+					if (!other.friends.includes(meKey)) other.friends.push(meKey);
+					await save();
+					return json({ message: `Agora você e ${other.name} são amigos.` });
+				}
+				if (!other.requests.includes(meKey)) other.requests.push(meKey);
+				await save();
+				return json({ message: `Pedido de amizade enviado para ${other.name}.` });
+			}
+			case 'accept': {
+				if (!me.requests.includes(otherKey)) return json({ error: 'Não há pedido desse jogador.' }, 400);
+				me.requests = drop(me.requests, otherKey);
+				if (!me.friends.includes(otherKey)) me.friends.push(otherKey);
+				if (!other.friends.includes(meKey)) other.friends.push(meKey);
+				other.requests = drop(other.requests, meKey);
+				await save();
+				return json({ message: `Agora você e ${other.name} são amigos.` });
+			}
+			case 'decline': {
+				me.requests = drop(me.requests, otherKey);
+				await save();
+				return json({ message: 'Pedido recusado.' });
+			}
+			case 'remove': {
+				me.friends = drop(me.friends, otherKey);
+				other.friends = drop(other.friends, meKey);
+				await save();
+				return json({ message: `${other.name} foi removido dos amigos.` });
+			}
+			case 'invite': {
+				const code = String(body?.code || '').toUpperCase();
+				if (!/^[A-Z0-9]{5}$/.test(code)) return json({ error: 'Entre numa sala personalizada para convidar.' }, 400);
+				if (!me.friends.includes(otherKey)) return json({ error: 'Só dá para convidar amigos.' }, 400);
+				const list = (this.invites.get(otherKey) || []).filter((invite) => invite.from !== me.name);
+				list.push({ from: me.name, code, at: Date.now() });
+				this.invites.set(otherKey, list.slice(-5));
+				return json({ message: `Convite enviado para ${other.name}.` });
+			}
+		}
+		return json({ error: 'Ação desconhecida.' }, 400);
 	}
 
 	/** Called by match rooms only: add XP and stats earned in one match. */

@@ -3,6 +3,9 @@
 *.log
 .env
 itch/
+# Microsoft Store packages built by tools/build_msix.ps1
+store/
+tools/store_identity.json
 
 # Old export outputs (current exports go to itch/)
 /Campo de Fogo - Prototipo Godot.*

@@ -17,6 +17,14 @@ var current_clip := ""
 var armed := true
 var ready_ok := false
 var locomotion_active := false
+# Aim: the rifle clips hold the gun ~20° right and ~17° down from the body's
+# facing (low ready), so the barrel never matched the crosshair. The owner sets
+# the world point under the crosshair; the mount turns the barrel onto it
+# (pivoting on the trigger hand) and the arm IK follows.
+const MAX_AIM_CORRECTION := deg_to_rad(70.0)
+var aim_target := Vector3.ZERO
+var aim_active := false
+var aim_weight := 0.0
 
 func _ready() -> void:
 	var model := AVATAR_SCENE.instantiate() as Node3D
@@ -91,9 +99,15 @@ func bind_weapon(model: Node3D) -> void:
 func set_armed(value: bool) -> void:
 	armed = value
 
+## World point the barrel should point at; inactive while sprinting/reloading.
+func set_aim_target(point: Vector3, active: bool) -> void:
+	aim_target = point
+	aim_active = active
+
 func animate(delta: float, move_amount: float, running: bool, _crouched: bool, _aiming: bool, airborne: bool, _reloading: bool, _movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
 	if not ready_ok:
 		return
+	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
 	animation_player.advance(delta)
 	var moving := move_amount > 0.08 and not airborne
 	locomotion_active = moving
@@ -144,6 +158,8 @@ func _update_weapon_mount() -> void:
 		weapon_mount.transform = chest * Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, -0.08, -0.08))
 	if not armed or not is_instance_valid(bound_weapon):
 		return
+	if aim_weight > 0.001 and current_clip not in ["punch", "elbow_punch"]:
+		_aim_mount()
 	for side in ["Right", "Left"]:
 		var source := bound_weapon.get_node_or_null(side + "Grip") as Marker3D
 		if source:
@@ -195,10 +211,36 @@ func _update_weapon_mount() -> void:
 				moved = true
 		if not moved:
 			break
+	# The hand anchoring above only translates; re-aim from the final grip spot.
+	if aim_weight > 0.001 and current_clip not in ["punch", "elbow_punch"]:
+		_aim_mount()
 	for side in grip_sides:
 		Grip.solve(skeleton, weapon_mount, side, true)
 	if is_pistol:
 		_relax_left_arm()
+
+## Turn the mount so the barrel (-Z of the weapon model) points from the muzzle
+## to the aim target, pivoting on the trigger grip so the hand stays put.
+func _aim_mount() -> void:
+	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
+	var grip := bound_weapon.get_node_or_null("RightGrip") as Marker3D
+	if muzzle == null or grip == null:
+		return
+	# Two passes: turning the gun moves the muzzle a little.
+	for pass_index in 2:
+		var axis := -bound_weapon.global_basis.z
+		var wanted := aim_target - muzzle.global_position
+		if axis.length_squared() < 0.000001 or wanted.length_squared() < 0.25:
+			return
+		var turn := Quaternion(axis.normalized(), wanted.normalized())
+		var angle := turn.get_angle()
+		var limit := minf(1.0, MAX_AIM_CORRECTION / maxf(angle, 0.0001)) * aim_weight
+		turn = Quaternion.IDENTITY.slerp(turn, limit)
+		var pivot := grip.global_position
+		var frame := weapon_mount.global_transform
+		frame.basis = Basis(turn) * frame.basis
+		frame.origin = pivot + Basis(turn) * (frame.origin - pivot)
+		weapon_mount.global_transform = frame
 
 func _relax_left_arm() -> void:
 	var upper := Grip._bone(skeleton, "LeftArm")

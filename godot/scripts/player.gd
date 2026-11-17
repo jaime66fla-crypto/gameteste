@@ -35,8 +35,35 @@ var hit_shake := 0.0 # camera jolt when this player takes damage
 ## Online matches: weapons must be found in loot crates. Offline practice keeps all five.
 var loadout_limited := false
 var owned_weapons: Dictionary = {}
+## Online loot: keys 1-5 follow pickup order (first weapon found is 1, the next 2...).
+var slot_order: Array[String] = []
 ## Set by the online match: returns true when E was used to open a crate.
 var interact_handler: Callable
+var heal_handler: Callable # F: use a carried medkit (online matches)
+## G: grenade. Online the match controller decides (inventory); offline it is
+## unlimited with a short cooldown.
+var grenade_handler: Callable
+## Online: returns false (and warns) when there is no grenade to throw.
+var grenade_check: Callable
+var _grenade_cooldown := 0.0
+## Hold G to aim (arc + blast circle preview), release to throw, Esc cancels.
+var grenade_aiming := false
+var _grenade_preview: Node3D
+var _grenade_dots: MultiMeshInstance3D
+var _grenade_ring: MeshInstance3D
+var _grenade_impact: MeshInstance3D
+const GRENADE_PREVIEW_DOTS := 64
+const GrenadeScript = preload("res://scripts/weapons/grenade.gd")
+## Lean (peek) while aiming: hold Q (left) / E (right) with the right mouse button.
+const LEAN_DISTANCE := 0.42
+const LEAN_ROLL := 0.2
+var lean := 0.0 # -1 left .. 1 right
+## Reload and medkit both take 3 s, shown as a clock under the crosshair.
+const ACTION_TIME := 3.0
+var channel_label := ""
+var channel_total := 0.0
+var channel_left := 0.0
+var _channel_done: Callable
 var last_shot_origin := Vector3.ZERO
 @export var character_id: String = ""
 var requested_character_id := ""
@@ -311,6 +338,12 @@ func _unhandled_input(event: InputEvent) -> void:
             scope_zoom = clampf(scope_zoom - 1.0, 4.0, 8.0)
             return
     if event is InputEventKey and event.pressed and not event.echo:
+        if event.physical_keycode in [KEY_Q, KEY_E] and aiming:
+            return # while aiming, Q / E lean (handled every physics frame)
+        if event.physical_keycode == KEY_G:
+            if not grenade_aiming and _can_start_grenade_aim():
+                grenade_aiming = true
+            return
         if event.physical_keycode == KEY_Q and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
             humanoid_avatar.call("play_action", "punch")
             return
@@ -321,6 +354,10 @@ func _unhandled_input(event: InputEvent) -> void:
             if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
                 humanoid_avatar.call("play_action", "elbow_punch")
             return
+        if event.physical_keycode == KEY_F:
+            if heal_handler.is_valid():
+                heal_handler.call()
+            return
         if event.physical_keycode == KEY_H:
             if not loadout_limited or not owned_weapons.is_empty():
                 _toggle_weapon_holster()
@@ -328,12 +365,19 @@ func _unhandled_input(event: InputEvent) -> void:
         var key_slots := {KEY_1: "rifle", KEY_2: "sniper", KEY_3: "pistol", KEY_4: "shotgun", KEY_5: "smg"}
         if key_slots.has(event.physical_keycode):
             var slot: String = key_slots[event.physical_keycode]
-            if loadout_limited and not owned_weapons.has(slot):
-                return
+            if loadout_limited:
+                var index: int = event.physical_keycode - KEY_1
+                if index >= slot_order.size():
+                    return
+                slot = slot_order[index]
             _equip_weapon(slot)
             if weapon_holstered:
                 _toggle_weapon_holster()
+    if event is InputEventKey and not event.pressed and event.physical_keycode == KEY_G and grenade_aiming:
+        _release_grenade()
+        return
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+        cancel_grenade_aim()
         Input.action_release("aim")
         aiming = false
         Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -370,6 +414,16 @@ func _physics_process(delta: float) -> void:
     _update_crouch(delta)
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
+    _grenade_cooldown = maxf(0.0, _grenade_cooldown - delta)
+    _update_lean(delta)
+    if channel_left > 0.0:
+        channel_left -= delta
+        if channel_left <= 0.0:
+            channel_left = 0.0
+            var done := _channel_done
+            _channel_done = Callable()
+            if done.is_valid():
+                done.call()
     var scoped := is_scope_active()
     var wants_first_person := aiming and not scoped
     var desired_fov := FIRST_PERSON_FOV if wants_first_person else 72.0
@@ -447,8 +501,13 @@ func _physics_process(delta: float) -> void:
             reloading = false
     if not weapon_holstered and Input.is_action_just_pressed("reload") and ammo < int(WeaponData.stats(current_weapon)["mag"]) and not reloading and int(reserve_ammo[current_weapon]) > 0:
         _reload()
-    if not weapon_holstered and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading:
+    if not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading and channel_left <= 0.0:
         _shoot()
+    if grenade_aiming:
+        if not Input.is_physical_key_pressed(KEY_G):
+            cancel_grenade_aim() # the release was lost (focus change, menu); never throw by accident
+        else:
+            _update_grenade_preview()
 
 func _toggle_weapon_holster() -> void:
     weapon_holstered = not weapon_holstered
@@ -470,6 +529,168 @@ func _toggle_weapon_holster() -> void:
         humanoid_avatar.call("set_armed", not weapon_holstered)
         if not weapon_holstered and humanoid_avatar.has_method("refresh_weapon_grip"):
             humanoid_avatar.call("refresh_weapon_grip")
+
+## Throw a grenade from the eye along the view; returns it (caller wires online/offline).
+func throw_grenade(grenade_id: String) -> RigidBody3D:
+    var grenade: RigidBody3D = GrenadeScript.new()
+    grenade.set("grenade_id", grenade_id)
+    var forward := -camera.global_basis.z
+    get_tree().current_scene.add_child(grenade)
+    grenade.global_position = grenade_launch_origin()
+    grenade.linear_velocity = GrenadeScript.throw_velocity(forward, velocity)
+    grenade.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6))
+    if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+        humanoid_avatar.call("play_action", "elbow_punch") # quick throwing arm swing
+    return grenade
+
+func grenade_launch_origin() -> Vector3:
+    return camera.global_position - camera.global_basis.z * 0.6
+
+func _can_start_grenade_aim() -> bool:
+    if grenade_check.is_valid():
+        return bool(grenade_check.call())
+    return grenade_handler.is_valid() or _grenade_cooldown <= 0.0
+
+func _release_grenade() -> void:
+    cancel_grenade_aim()
+    if grenade_handler.is_valid():
+        grenade_handler.call()
+    elif _grenade_cooldown <= 0.0:
+        _grenade_cooldown = 1.0
+        var grenade := throw_grenade("")
+        grenade.set("offline_damage", true)
+
+func cancel_grenade_aim() -> void:
+    grenade_aiming = false
+    if _grenade_preview != null:
+        _grenade_preview.visible = false
+
+func _exit_tree() -> void:
+    if _grenade_preview != null and is_instance_valid(_grenade_preview):
+        _grenade_preview.queue_free()
+
+## Draws the predicted arc (dots), where it first touches something (small mark) and
+## the blast circle (GrenadeScript.RADIUS) where it will explode when the fuse ends.
+func _update_grenade_preview() -> void:
+    if _grenade_preview == null or not is_instance_valid(_grenade_preview):
+        _build_grenade_preview()
+    var forward := -camera.global_basis.z
+    var result := GrenadeScript.predict_path(get_world_3d().direct_space_state, grenade_launch_origin(), GrenadeScript.throw_velocity(forward, velocity), [get_rid()])
+    var points: PackedVector3Array = result["points"]
+    var multimesh := _grenade_dots.multimesh
+    var stride := maxi(1, int(ceil(float(points.size()) / GRENADE_PREVIEW_DOTS)))
+    var shown := 0
+    var index := 2 # skip the first points: they sit right in front of the camera
+    while index < points.size() and shown < GRENADE_PREVIEW_DOTS:
+        multimesh.set_instance_transform(shown, Transform3D(Basis(), points[index]))
+        shown += 1
+        index += stride
+    multimesh.visible_instance_count = shown
+    _grenade_impact.visible = bool(result["has_hit"])
+    _grenade_impact.global_position = result["first_hit"]
+    var end: Vector3 = result["end"]
+    var normal: Vector3 = result["end_normal"]
+    _grenade_ring.global_transform = Transform3D(_basis_from_up(normal), end + normal * 0.06)
+    _grenade_preview.visible = true
+
+static func _basis_from_up(up: Vector3) -> Basis:
+    var y := up.normalized()
+    var side := Vector3.RIGHT if absf(y.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD
+    var z := side.cross(y).normalized()
+    var x := y.cross(z).normalized()
+    return Basis(x, y, z)
+
+func _build_grenade_preview() -> void:
+    _grenade_preview = Node3D.new()
+    _grenade_preview.name = "GrenadeAimPreview"
+    _grenade_preview.top_level = true
+    get_tree().current_scene.add_child(_grenade_preview)
+    var dot_material := StandardMaterial3D.new()
+    dot_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    dot_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    dot_material.no_depth_test = true
+    dot_material.albedo_color = Color(1.0, 0.82, 0.35, 0.85)
+    var dot_mesh := SphereMesh.new()
+    dot_mesh.radius = 0.045
+    dot_mesh.height = 0.09
+    dot_mesh.radial_segments = 8
+    dot_mesh.rings = 4
+    dot_mesh.material = dot_material
+    var multimesh := MultiMesh.new()
+    multimesh.transform_format = MultiMesh.TRANSFORM_3D
+    multimesh.mesh = dot_mesh
+    multimesh.instance_count = GRENADE_PREVIEW_DOTS
+    multimesh.visible_instance_count = 0
+    _grenade_dots = MultiMeshInstance3D.new()
+    _grenade_dots.multimesh = multimesh
+    _grenade_dots.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    _grenade_preview.add_child(_grenade_dots)
+    var impact_mesh := SphereMesh.new()
+    impact_mesh.radius = 0.12
+    impact_mesh.height = 0.24
+    impact_mesh.material = dot_material
+    _grenade_impact = MeshInstance3D.new()
+    _grenade_impact.mesh = impact_mesh
+    _grenade_impact.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    _grenade_preview.add_child(_grenade_impact)
+    var ring_material := StandardMaterial3D.new()
+    ring_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+    ring_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+    ring_material.no_depth_test = true
+    ring_material.albedo_color = Color(1.0, 0.3, 0.2, 0.75)
+    var ring_mesh := TorusMesh.new()
+    ring_mesh.outer_radius = GrenadeScript.RADIUS
+    ring_mesh.inner_radius = GrenadeScript.RADIUS - 0.12
+    ring_mesh.rings = 64
+    ring_mesh.ring_segments = 4
+    ring_mesh.material = ring_material
+    _grenade_ring = MeshInstance3D.new()
+    _grenade_ring.mesh = ring_mesh
+    _grenade_ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    _grenade_preview.add_child(_grenade_ring)
+    var center_mesh := CylinderMesh.new()
+    center_mesh.top_radius = 0.35
+    center_mesh.bottom_radius = 0.35
+    center_mesh.height = 0.02
+    center_mesh.material = ring_material
+    var center := MeshInstance3D.new()
+    center.mesh = center_mesh
+    center.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    _grenade_ring.add_child(center)
+
+## Lean: slide the view sideways and roll it, limited by walls beside the head.
+func _update_lean(delta: float) -> void:
+    var target := 0.0
+    if aiming and not reloading and not weapon_holstered:
+        if Input.is_physical_key_pressed(KEY_Q):
+            target -= 1.0
+        if Input.is_physical_key_pressed(KEY_E):
+            target += 1.0
+    lean = move_toward(lean, target, delta * 5.0)
+    var reach := LEAN_DISTANCE
+    if absf(lean) > 0.01:
+        var eye := global_position + Vector3(0, arm_pivot.position.y, 0)
+        var side := global_basis.x * signf(lean)
+        var query := PhysicsRayQueryParameters3D.create(eye, eye + side * (LEAN_DISTANCE + 0.25), HitboxScript.LAYER_WORLD)
+        query.exclude = [get_rid()]
+        var hit := get_world_3d().direct_space_state.intersect_ray(query)
+        if not hit.is_empty():
+            reach = clampf(eye.distance_to(hit["position"]) - 0.25, 0.0, LEAN_DISTANCE)
+    arm_pivot.position.x = lean * reach
+    arm_pivot.rotation.z = -lean * LEAN_ROLL
+
+## World point under the crosshair (same ray as the shot, without spread).
+func crosshair_point() -> Vector3:
+    var origin := camera.global_position
+    var forward := -camera.global_transform.basis.z
+    if not first_person_view and not is_scope_active():
+        var chest := global_position + Vector3(0, height * 0.75, 0)
+        origin += forward * maxf(0.0, (chest - origin).dot(forward))
+    var far := origin + forward * 120.0
+    var query := PhysicsRayQueryParameters3D.create(origin, far, HitboxScript.SHOT_MASK)
+    query.exclude = [get_rid()]
+    var hit := get_world_3d().direct_space_state.intersect_ray(query)
+    return hit["position"] if not hit.is_empty() else far
 
 func _shoot() -> void:
     if ammo <= 0:
@@ -558,6 +779,7 @@ func _shoot() -> void:
 func start_unarmed() -> void:
     loadout_limited = true
     owned_weapons.clear()
+    slot_order.clear()
     for weapon_id in reserve_ammo.keys():
         reserve_ammo[weapon_id] = 0
         magazines[weapon_id] = 0
@@ -573,6 +795,8 @@ func give_weapon(weapon_id: String, reserve: int) -> void:
     var first := owned_weapons.is_empty()
     var new_weapon := not owned_weapons.has(weapon_id)
     owned_weapons[weapon_id] = true
+    if new_weapon:
+        slot_order.append(weapon_id)
     reserve_ammo[weapon_id] = int(reserve_ammo.get(weapon_id, 0)) + reserve
     if new_weapon:
         magazines[weapon_id] = int(WeaponData.stats(weapon_id)["mag"])
@@ -638,6 +862,10 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
     if humanoid_avatar != null:
         if humanoid_avatar.has_method("set_aim_pitch"):
             humanoid_avatar.call("set_aim_pitch", pitch)
+        if humanoid_avatar.has_method("set_aim_target"):
+            # Third-person barrel follows the crosshair (not while sprinting/reloading).
+            var aim_ready := not weapon_holstered and not reloading and not sprinting
+            humanoid_avatar.call("set_aim_target", crosshair_point(), aim_ready)
         var running := sprinting
         humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
         return
@@ -818,13 +1046,36 @@ func _rebuild_legacy_weapon_model() -> void:
     muzzle_flare.position.z = gun_flash.position.z - 0.035
 
 func _reload() -> void:
-    if reloading:
+    if reloading or channel_left > 0.0:
         return
     if int(reserve_ammo[current_weapon]) <= 0 or ammo >= int(WeaponData.stats(current_weapon)["mag"]):
         return
     reloading = true
-    reload_timer = float(WeaponData.stats(current_weapon)["reload"])
+    reload_timer = ACTION_TIME # every weapon reloads in 3 s (on-screen clock)
     sound_fx.reload()
+
+## Timed action with the on-screen clock (medkit): `done` runs after `seconds`.
+func start_channel(label: String, seconds: float, done: Callable) -> bool:
+    if channel_left > 0.0 or reloading:
+        return false
+    channel_label = label
+    channel_total = seconds
+    channel_left = seconds
+    _channel_done = done
+    Input.action_release("fire")
+    return true
+
+func cancel_channel() -> void:
+    channel_left = 0.0
+    _channel_done = Callable()
+
+## For the HUD clock: {label, fraction 0..1, seconds left}, or {} when idle.
+func action_progress() -> Dictionary:
+    if reloading:
+        return {"label": "RECARREGANDO", "fraction": clampf(1.0 - reload_timer / ACTION_TIME, 0.0, 1.0), "left": maxf(reload_timer, 0.0)}
+    if channel_left > 0.0:
+        return {"label": channel_label, "fraction": clampf(1.0 - channel_left / channel_total, 0.0, 1.0), "left": channel_left}
+    return {}
 
 func status_text() -> String:
     if loadout_limited and owned_weapons.is_empty():
@@ -838,4 +1089,11 @@ func status_text() -> String:
     var definition := CharacterRegistry.definition(character_id)
     var character_name: String = definition.display_name if definition != null else "Jaime Original"
     var notice := "\n" + character_fallback_reason if not character_fallback_reason.is_empty() else ""
+    if loadout_limited:
+        # Pickup-order slots, e.g. "[1] PISTOLA  2 FUZIL" (current one in brackets).
+        var slots: Array[String] = []
+        for i in slot_order.size():
+            var weapon_name := str(WeaponData.stats(slot_order[i])["name"])
+            slots.append(("[%d] %s" if slot_order[i] == current_weapon else "%d %s") % [i + 1, weapon_name])
+        notice += "\n" + "  ".join(slots)
     return "PERSONAGEM: %s%s\n" % [character_name, notice] + "ARMA: %s  %s/%s +%s  |  TIROS: %s  |  %s" % [stats["name"], ammo, stats["mag"], reserve_ammo[current_weapon], shots, "RECARREGANDO" if reloading else state]

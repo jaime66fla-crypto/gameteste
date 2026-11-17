@@ -1,8 +1,9 @@
 // Multiplayer for the Godot build (itch.io web + Windows download).
 // One Durable Object instance acts as the matchmaker ("godot-matchmaker");
-// every other instance is an 8-player elimination match ("match:<code>").
-// The lobby starts 20 s after the first player joins (or at 8 players) and
-// empty slots are filled with bots. Bots are simulated by one human client
+// every other instance is an 8-player elimination match ("match:<code>") or a
+// custom team room created with a shareable code ("party:<code>", 2x2 or 4x4).
+// Rooms never start on a timer: players confirm "ready" and the first player
+// in the room (the leader) starts the match; empty slots are filled with bots. Bots are simulated by one human client
 // (the "host") so they respect the Godot map collision; the server owns
 // every health value and decides the winner.
 
@@ -14,8 +15,18 @@ const CAPACITY = 8;
 // Loot: everyone starts unarmed; crates hold one weapon plus reserve ammo.
 const LOOT_WEIGHTS = [['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
 const RESERVE_AMMO = { pistol: 45, smg: 90, rifle: 90, shotgun: 18, sniper: 15 };
+const MEDKIT_HEAL = 50; // health restored by a medkit (max 100)
+const MAX_MEDKITS = 5; // medkits a player can carry
+const MEDKIT_USE_MS = 3000; // using a medkit takes 3 s (heal_start -> heal)
+// Grenades: found in crates (G throws). The thrower's client simulates the
+// flight and reports where it exploded; the server checks it and deals
+// distance-based damage to everyone in the blast.
+const MAX_NADES = 3;
+const GRENADE_RADIUS = 7; // metres
+const GRENADE_MAX_DAMAGE = 100; // at the centre, falling to 0 at the radius
+const GRENADE_RANGE = 45; // max ground distance from the throw to the blast
+const GRENADE_FUSE_MS = [1200, 8000]; // accepted time between throw and blast
 const LOOT_RANGE = 3.5; // metres between the looter's last known position and the crate
-const LOBBY_MS = 20000;
 const MAX_MATCH_MS = 8 * 60 * 1000;
 const CLOSE_AFTER_END_MS = 15000;
 // Per-hit damage caps (one pellet). Matches godot/scripts/weapon_data.gd.
@@ -25,6 +36,25 @@ const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7
 const BOT_DAMAGE = 14;
 const MAX_HITS_PER_SECOND = 18; // shotgun fires 8 pellets per shot
 const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cabo Nunes', 'Sgt. Prado', 'Soldado Reis', 'Cabo Vidal'];
+// Custom rooms ("party:<code>"): two teams of 2 or 4, created by a leader who
+// shares the code with friends. Teams spawn far apart, two per building:
+// Alfa in MERCADO/OFICINA (south-west), Bravo in GALPAO/ESCRITORIO (north-east).
+const TEAM_NAMES = ['Alfa', 'Bravo'];
+const TEAM_BUILDINGS = [[4, 5], [6, 7]];
+const TEAM_SIZES = [2, 4];
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function newPartyCode() {
+	let code = '';
+	for (const byte of crypto.getRandomValues(new Uint8Array(5))) code += CODE_CHARS[byte % CODE_CHARS.length];
+	return code;
+}
+
+/** Spawn for the k-th member of a team: two per building, side by side. */
+function teamSpawn(team, k) {
+	const building = layout.buildings[TEAM_BUILDINGS[team][Math.floor(k / 2) % 2]];
+	return [building.spawn[0] + (k % 2 ? 1.2 : -1.2), 0, building.spawn[1]];
+}
 
 function rollWeapon() {
 	const total = LOOT_WEIGHTS.reduce((sum, [, weight]) => sum + weight, 0);
@@ -37,6 +67,16 @@ function rollWeapon() {
 }
 
 const flatDistance = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]);
+
+/** Uniform shuffle (Fisher–Yates). sort(() => Math.random() - 0.5) is heavily
+ * biased on small arrays and kept the first player in the first house. */
+function shuffle(list) {
+	for (let i = list.length - 1; i > 0; i--) {
+		const j = Math.floor(Math.random() * (i + 1));
+		[list[i], list[j]] = [list[j], list[i]];
+	}
+	return list;
+}
 
 function json(data, status = 200) {
 	return new Response(JSON.stringify(data), {
@@ -65,6 +105,7 @@ function cleanState(d) {
 		f: !!d.f,
 		rl: !!d.rl,
 		h: !!d.h, // holstered / no weapon yet
+		l: finite(d.l, 1) ? Math.round(d.l * 100) / 100 : 0, // lean (Q/E while aiming): -1 left .. 1 right
 		v,
 	};
 }
@@ -110,6 +151,8 @@ export async function handleGodotSocket(request, env, url) {
 	const token = header.startsWith('Bearer ') ? header.slice(7).trim() : url.searchParams.get('token') || '';
 	const session = await resolveSession(env, token);
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
+	const party = (url.searchParams.get('party') || '').trim().toUpperCase();
+	if (party) return joinParty(request, env, session, party);
 	const matchmaker = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('godot-matchmaker'));
 	const name = session.name;
 	let full = '';
@@ -125,6 +168,24 @@ export async function handleGodotSocket(request, env, url) {
 		full = room; // started or full in the meantime: ask for a fresh room
 	}
 	return new Response('Nenhuma sala disponível. Tente novamente.', { status: 503 });
+}
+
+/** Custom room: party=NEW creates one with a fresh code, party=<code> joins it. */
+async function joinParty(request, env, session, party) {
+	const creating = party === 'NEW';
+	if (!creating && !/^[A-Z0-9]{5}$/.test(party)) return noticeSocket({ t: 'party_error', message: 'Código inválido. Ele tem 5 letras/números.' });
+	for (let attempt = 0; attempt < (creating ? 4 : 1); attempt++) {
+		const code = creating ? newPartyCode() : party;
+		const stub = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('party:' + code));
+		const target =
+			'https://internal/join?party=1' + (creating ? '&create=1' : '') + '&room=' + code + '&name=' + encodeURIComponent(session.name) +
+			'&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
+		const response = await stub.fetch(new Request(target, request));
+		if (response.status === 101) return response;
+		if (creating && response.status === 409) continue; // code in use: draw another
+		return noticeSocket({ t: 'party_error', message: await response.text() });
+	}
+	return noticeSocket({ t: 'party_error', message: 'Não foi possível criar a sala. Tente novamente.' });
 }
 
 export class GodotMatch {
@@ -145,7 +206,19 @@ export class GodotMatch {
 	}
 
 	fresh(room) {
-		return { room, phase: 'waiting', deadline: 0, startedAt: 0, players: {}, order: [], host: null, winner: null, crates: {}, dropSeq: 0 };
+		return {
+			room, phase: 'waiting', deadline: 0, startedAt: 0, players: {}, order: [], host: null, winner: null, crates: {}, dropSeq: 0,
+			// Custom rooms only.
+			party: false, leader: null, size: 2, bots: true, winnerTeam: null, grenades: {},
+		};
+	}
+
+	capacity() {
+		return this.match.party ? this.match.size * 2 : CAPACITY;
+	}
+
+	teamCount(team) {
+		return this.humans().filter((p) => p.team === team).length;
 	}
 
 	save() {
@@ -181,11 +254,19 @@ export class GodotMatch {
 		if (url.pathname === '/assign') return this.assign(url);
 		if (url.pathname !== '/join') return new Response('Not found', { status: 404 });
 		if (request.headers.get('Upgrade') !== 'websocket') return new Response('WebSocket required', { status: 426 });
+		const isParty = url.searchParams.get('party') === '1';
+		if (isParty && url.searchParams.get('create') === '1') {
+			if (this.sessions.size) return new Response('Código em uso', { status: 409 });
+			this.match = this.fresh(url.searchParams.get('room') || '');
+			this.match.party = true;
+		} else if (isParty && (!this.match.party || !this.sessions.size)) {
+			return new Response('Sala não encontrada. Confira o código com quem criou.', { status: 404 });
+		}
 		const m = this.match;
-		if (m.phase !== 'waiting') return new Response('Partida em andamento', { status: 409 });
-		if (this.sessions.size >= CAPACITY) return new Response('Sala cheia', { status: 409 });
+		if (m.phase !== 'waiting') return new Response(m.party ? 'A partida desta sala já começou.' : 'Partida em andamento', { status: 409 });
+		if (this.sessions.size >= this.capacity()) return new Response(m.party ? 'A sala está cheia.' : 'Sala cheia', { status: 409 });
 		const account = url.searchParams.get('account') || '';
-		if (account && Object.values(m.players).some((p) => p.account === account)) return new Response('Conta já está nesta sala', { status: 409 });
+		if (account && Object.values(m.players).some((p) => p.account === account)) return new Response(m.party ? 'Sua conta já está nesta sala.' : 'Conta já está nesta sala', { status: 409 });
 		if (!m.room) m.room = url.searchParams.get('room') || '';
 
 		const pair = new WebSocketPair();
@@ -194,47 +275,95 @@ export class GodotMatch {
 		this.ctx.acceptWebSocket(server);
 		server.serializeAttachment({ id });
 		this.sessions.set(id, server);
-		const now = Date.now();
-		if (!m.deadline) m.deadline = now + LOBBY_MS;
 		const totalXp = Math.max(0, Number(url.searchParams.get('xp')) || 0);
 		m.players[id] = {
 			id, name: url.searchParams.get('name') || 'Operador', bot: false, hp: 100, dead: false, kills: 0, spawn: 0,
-			account, totalXp, rank: rankFor(totalXp).rank, xpGain: 0, playerKills: 0, botKills: 0, flushed: false,
+			account, totalXp, rank: rankFor(totalXp).rank, xpGain: 0, playerKills: 0, botKills: 0, flushed: false, ready: false,
 		};
+		// No countdown in any room: players confirm "ready" and the first player
+		// in the room (the leader) starts the match. Team rooms: join the smaller team.
+		if (!m.leader) m.leader = id;
+		if (m.party) m.players[id].team = this.teamCount(0) <= this.teamCount(1) ? 0 : 1;
 		this.save();
-		this.send(server, { t: 'welcome', id, room: m.room, capacity: CAPACITY, seconds: Math.ceil((m.deadline - now) / 1000) });
-		if (this.sessions.size >= CAPACITY) this.start();
-		else {
-			this.broadcastLobby();
-			await this.ctx.storage.setAlarm(Math.min(m.deadline, now + 1000));
-		}
+		this.send(server, { t: 'welcome', id, room: m.room, party: m.party, lobby: true, code: m.party ? m.room : '', capacity: this.capacity() });
+		this.broadcastParty();
 		return new Response(null, { status: 101, webSocket: client });
 	}
 
-	/** Matchmaker: hand out the current open room, opening a new one when needed. */
+	/**
+	 * Matchmaker: hand out the current open public room. A room stays open until
+	 * its leader starts it or it fills up; the join then answers 409 and the
+	 * caller asks again with full=<room>, which opens a new one.
+	 */
 	async assign(url) {
-		const now = Date.now();
 		let mm = await this.ctx.storage.get('mm');
 		const full = url.searchParams.get('full');
-		// Stop filling a room shortly before its countdown ends.
-		if (!mm || mm.count >= CAPACITY || now - mm.openedAt > LOBBY_MS - 2500 || (full && full === mm.room)) {
-			mm = { room: crypto.randomUUID().slice(0, 6), openedAt: now, count: 0 };
-		}
-		mm.count++;
+		if (!mm || (full && full === mm.room)) mm = { room: crypto.randomUUID().slice(0, 6), openedAt: Date.now() };
 		await this.ctx.storage.put('mm', mm);
 		return json({ room: mm.room });
 	}
 
-	broadcastLobby() {
+	/** Not ready yet: everyone except the leader (whose "start" is the confirmation). */
+	waitingOn() {
+		return this.humans().filter((p) => p.id !== this.match.leader && !p.ready);
+	}
+
+	/** Room lobby (public elimination or team room): settings, players and who is ready. */
+	broadcastParty() {
 		const m = this.match;
 		this.broadcast({
-			t: 'lobby',
-			count: this.sessions.size,
-			capacity: CAPACITY,
-			seconds: Math.max(0, Math.ceil((m.deadline - Date.now()) / 1000)),
-			names: this.humans().map((p) => p.name),
-			players: this.humans().map((p) => ({ name: p.name, rank: p.rank })),
+			t: 'party',
+			party: m.party,
+			code: m.party ? m.room : '',
+			leader: m.leader,
+			size: m.size,
+			bots: m.bots,
+			capacity: this.capacity(),
+			teams: TEAM_NAMES,
+			allReady: this.waitingOn().length === 0,
+			players: this.humans().map((p) => ({ id: p.id, name: p.name, rank: p.rank, team: p.team, ready: !!p.ready || p.id === m.leader })),
 		});
+	}
+
+	/** Lobby actions: ready up, pick a team (team rooms); the leader sets the mode and starts. */
+	partyMessage(id, d, ws) {
+		const m = this.match;
+		const me = m.players[id];
+		const note = (message) => this.send(ws, { t: 'party_note', message });
+		switch (d.t) {
+			case 'ready': {
+				me.ready = d.ready !== false;
+				break;
+			}
+			case 'team': {
+				if (!m.party) return;
+				const team = d.team === 1 ? 1 : 0;
+				if (me.team === team) return;
+				if (this.teamCount(team) >= m.size) return note(`A equipe ${TEAM_NAMES[team]} está cheia.`);
+				me.team = team;
+				me.ready = false; // confirm again on the new team
+				break;
+			}
+			case 'config': {
+				if (id !== m.leader || !m.party) return;
+				const size = TEAM_SIZES.includes(d.size) ? d.size : m.size;
+				if (this.teamCount(0) > size || this.teamCount(1) > size) return note(`Cada equipe pode ter no máximo ${size} jogadores em ${size}x${size}. Alguém precisa sair ou trocar de equipe.`);
+				m.size = size;
+				if (typeof d.bots === 'boolean') m.bots = d.bots;
+				break;
+			}
+			case 'start': {
+				if (id !== m.leader) return;
+				const waiting = this.waitingOn();
+				if (waiting.length) return note(`Aguardando ${waiting.map((p) => p.name).join(', ')} confirmar pronto.`);
+				if (m.party && !m.bots && (!this.teamCount(0) || !this.teamCount(1))) return note('Sem bots, as duas equipes precisam ter pelo menos um jogador.');
+				return this.start();
+			}
+			default:
+				return;
+		}
+		this.save();
+		this.broadcastParty();
 	}
 
 	start() {
@@ -242,35 +371,77 @@ export class GodotMatch {
 		if (m.phase !== 'waiting') return;
 		const humans = this.humans().map((p) => p.id);
 		if (!humans.length) return this.reset();
-		for (let n = 0; humans.length + n < CAPACITY; n++) {
-			const id = 'bot' + (n + 1);
-			m.players[id] = { id, name: BOT_NAMES[n % BOT_NAMES.length], bot: true, hp: 100, dead: false, kills: 0, spawn: 0 };
+		if (m.party) {
+			// Teams: fill each side with bots up to the team size (when enabled).
+			let n = 0;
+			for (const team of [0, 1]) {
+				for (let k = this.teamCount(team); m.bots && k < m.size; k++, n++) {
+					const id = 'bot' + (n + 1);
+					m.players[id] = { id, name: BOT_NAMES[n % BOT_NAMES.length], bot: true, hp: 100, dead: false, kills: 0, spawn: 0, team };
+				}
+			}
+			m.order = Object.keys(m.players);
+			// Random side of the map for each team, random spot inside it.
+			const sides = Math.random() < 0.5 ? [0, 1] : [1, 0];
+			const slots = [0, 1].map(() => shuffle([0, 1, 2, 3]));
+			const seen = [0, 0];
+			for (const id of m.order) {
+				const player = m.players[id];
+				const side = sides[player.team];
+				const k = slots[player.team][seen[player.team]++ % 4];
+				player.spawn = TEAM_BUILDINGS[side][Math.floor(k / 2) % 2];
+				player.p = teamSpawn(side, k);
+				player.inv = {};
+			}
+		} else {
+			for (let n = 0; humans.length + n < CAPACITY; n++) {
+				const id = 'bot' + (n + 1);
+				m.players[id] = { id, name: BOT_NAMES[n % BOT_NAMES.length], bot: true, hp: 100, dead: false, kills: 0, spawn: 0 };
+			}
+			m.order = Object.keys(m.players);
+			// One building each, shuffled; everyone starts indoors and unarmed.
+			const spawns = shuffle([...Array(layout.buildings.length).keys()]);
+			m.order.forEach((id, i) => {
+				const player = m.players[id];
+				player.spawn = spawns[i];
+				const at = layout.buildings[spawns[i] % layout.buildings.length].spawn;
+				player.p = [at[0], 0, at[1]];
+				player.inv = {};
+			});
 		}
-		m.order = Object.keys(m.players);
-		// One building each, shuffled; everyone starts indoors and unarmed.
-		const spawns = [...Array(m.order.length).keys()].sort(() => Math.random() - 0.5);
-		m.order.forEach((id, i) => {
-			const player = m.players[id];
-			player.spawn = spawns[i];
-			const at = layout.buildings[spawns[i] % layout.buildings.length].spawn;
-			player.p = [at[0], 0, at[1]];
-			player.inv = {};
-		});
+		for (const id of m.order) Object.assign(m.players[id], { medkits: 0, nades: 0 });
+		m.grenades = {};
 		const spots = [...layout.buildings.map((b) => b.loot), ...layout.outdoor_loot];
 		m.crates = {};
 		spots.forEach((spot, i) => {
 			const weapon = rollWeapon();
-			m.crates['c' + i] = { id: 'c' + i, p: [spot[0], 0, spot[1]], items: { [weapon]: RESERVE_AMMO[weapon] }, open: false, drop: false };
+			// Half of the weapon crates also hold a grenade.
+			m.crates['c' + i] = { id: 'c' + i, p: [spot[0], 0, spot[1]], items: { [weapon]: RESERVE_AMMO[weapon] }, nades: Math.random() < 0.5 ? 1 : 0, open: false, drop: false };
+		});
+		// Sniper crate on top of the watchtower (reached by its ramp).
+		if (layout.tower?.loot) {
+			const [x, y, z] = layout.tower.loot;
+			m.crates.t0 = { id: 't0', p: [x, y, z], items: { sniper: RESERVE_AMMO.sniper }, nades: 1, open: false, drop: false, tower: true };
+		}
+		(layout.medkits || []).forEach((spot, i) => {
+			m.crates['m' + i] = { id: 'm' + i, p: [spot[0], 0, spot[1]], items: {}, med: true, heal: MEDKIT_HEAL, open: false, drop: false };
 		});
 		m.phase = 'running';
 		m.startedAt = Date.now();
-		m.host = humans[0];
+		m.host = m.party && m.leader && this.sessions.has(m.leader) ? m.leader : humans[0];
 		this.save();
 		this.broadcast({
 			t: 'start',
 			host: m.host,
 			alive: m.order.length,
-			roster: m.order.map((id) => ({ id, name: m.players[id].name, bot: m.players[id].bot, spawn: m.players[id].spawn, rank: m.players[id].rank || '' })),
+			party: m.party,
+			teams: m.party ? TEAM_NAMES : undefined,
+			roster: m.order.map((id) => {
+				const p = m.players[id];
+				const entry = { id, name: p.name, bot: p.bot, spawn: p.spawn, rank: p.rank || '' };
+				if (m.party) Object.assign(entry, { team: p.team, sp: [p.p[0], p.p[2]] });
+				return entry;
+			}),
 			crates: Object.values(m.crates),
 		});
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS));
@@ -287,7 +458,9 @@ export class GodotMatch {
 		} catch {
 			return;
 		}
-		if (!d || typeof d !== 'object' || m.phase !== 'running') return;
+		if (!d || typeof d !== 'object') return;
+		if (m.phase === 'waiting') return this.partyMessage(meta.id, d, ws);
+		if (m.phase !== 'running') return;
 		const isHost = meta.id === m.host;
 		switch (d.t) {
 			case 's': {
@@ -327,11 +500,70 @@ export class GodotMatch {
 				if (!looter || looter.dead || (d.bot && (!isHost || !looter.bot))) return;
 				const crate = m.crates[d.crate];
 				if (!crate || crate.open || !looter.p || flatDistance(looter.p, crate.p) > LOOT_RANGE) return;
+				if (Math.abs((looter.p[1] || 0) - (crate.p[1] || 0)) > 2.5) return; // e.g. under the tower platform
+				// Medkits are carried (up to MAX_MEDKITS) and used later with F ("heal").
+				const kits = crate.med ? 1 : crate.medkits || 0;
+				if (crate.med && (looter.medkits || 0) >= MAX_MEDKITS) return this.send(ws, { t: 'loot_denied', crate: crate.id, by: looter.id, message: 'Limite de kits' });
 				crate.open = true;
 				looter.inv = looter.inv || {};
 				for (const weapon of Object.keys(crate.items)) looter.inv[weapon] = true;
+				if (kits) looter.medkits = Math.min(MAX_MEDKITS, (looter.medkits || 0) + kits);
+				const nades = crate.nades || 0;
+				if (nades) looter.nades = Math.min(MAX_NADES, (looter.nades || 0) + nades);
 				this.save();
-				this.broadcast({ t: 'looted', crate: crate.id, by: looter.id, items: crate.items });
+				this.broadcast({ t: 'looted', crate: crate.id, by: looter.id, items: crate.items, med: !!crate.med, kits, nades });
+				if (kits) this.broadcast({ t: 'medkits', id: looter.id, count: looter.medkits });
+				if (nades) this.broadcast({ t: 'nades', id: looter.id, count: looter.nades });
+				return;
+			}
+			case 'throw': {
+				// Grenade thrown by a player (bots do not throw): {id, o, v}.
+				if (me.dead || !me.nades || typeof d.id !== 'string' || !/^[a-z0-9]{4,10}$/.test(d.id)) return;
+				const o = vec3(d.o, 500);
+				const v = vec3(d.v, 40);
+				if (!o || !v || (me.p && flatDistance(o, me.p) > 4)) return;
+				const key = meta.id + ':' + d.id;
+				if (m.grenades[key]) return;
+				me.nades--;
+				m.grenades[key] = { by: meta.id, o, at: Date.now() };
+				this.save();
+				this.broadcast({ t: 'nade', id: d.id, by: meta.id, o, v }, meta.id);
+				this.broadcast({ t: 'nades', id: meta.id, count: me.nades });
+				return;
+			}
+			case 'boom': {
+				// The thrower's client reports where its grenade exploded.
+				const key = meta.id + ':' + d.id;
+				const grenade = m.grenades[key];
+				const p = vec3(d.p, 500);
+				if (!grenade || !p) return;
+				delete m.grenades[key];
+				const elapsed = Date.now() - grenade.at;
+				if (elapsed < GRENADE_FUSE_MS[0] || elapsed > GRENADE_FUSE_MS[1] || flatDistance(p, grenade.o) > GRENADE_RANGE) return this.save();
+				this.broadcast({ t: 'boom', id: d.id, by: meta.id, p });
+				this.explode(me, p);
+				return;
+			}
+			case 'heal_start': {
+				// Using a medkit takes 3 s: remember when it started.
+				const user = d.bot ? m.players[d.bot] : me;
+				if (!user || user.dead || (d.bot && (!isHost || !user.bot)) || !user.medkits) return;
+				user.healAt = Date.now();
+				return;
+			}
+			case 'heal': {
+				// Use one carried medkit (bots: only from the client that runs them).
+				const user = d.bot ? m.players[d.bot] : me;
+				if (!user || user.dead || (d.bot && (!isHost || !user.bot))) return;
+				if (!user.medkits || user.hp >= 100) return;
+				const waited = Date.now() - (user.healAt || 0);
+				user.healAt = 0;
+				if (waited < MEDKIT_USE_MS - 300 || waited > MEDKIT_USE_MS + 6000) return; // must take the 3 s
+				user.medkits--;
+				user.hp = Math.min(100, user.hp + MEDKIT_HEAL);
+				this.save();
+				this.broadcast({ t: 'medkits', id: user.id, count: user.medkits, healed: MEDKIT_HEAL });
+				this.broadcast({ t: 'hp', id: user.id, hp: user.hp, by: user.id, w: '', zone: null, killed: false, kills: user.kills, alive: this.alive().length });
 				return;
 			}
 			case 'hit': {
@@ -342,6 +574,7 @@ export class GodotMatch {
 				if (attacker.bot ? !Object.keys(owned).length : !owned[d.w]) return;
 				const target = m.players[d.target];
 				if (!target || target.dead || target.id === attacker.id) return;
+				if (m.party && target.team === attacker.team) return; // no friendly fire
 				let damage = 0;
 				const zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
 				if (attacker.bot) damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), BOT_DAMAGE) : 0;
@@ -353,6 +586,22 @@ export class GodotMatch {
 				return;
 			}
 		}
+	}
+
+	/** Blast damage: linear falloff from the centre (chest height), no friendly fire in teams. */
+	explode(thrower, p) {
+		const m = this.match;
+		for (const id of [...m.order]) {
+			if (this.match !== m || m.phase !== 'running') return; // the blast ended the match
+			const target = m.players[id];
+			if (!target || target.dead || !target.p) continue;
+			if (m.party && target.id !== thrower.id && target.team === thrower.team) continue;
+			const distance = Math.hypot(target.p[0] - p[0], target.p[1] + 1.0 - p[1], target.p[2] - p[2]);
+			if (distance >= GRENADE_RADIUS) continue;
+			const amount = Math.round(GRENADE_MAX_DAMAGE * (1 - distance / GRENADE_RADIUS));
+			if (amount > 0) this.damage(thrower, target, amount, 'grenade', null);
+		}
+		if (this.match === m) this.save();
 	}
 
 	allowHit(attackerId) {
@@ -367,15 +616,16 @@ export class GodotMatch {
 	damage(attacker, target, amount, weapon, zone = null) {
 		target.hp = Math.max(0, Math.round((target.hp - amount) * 10) / 10);
 		const killed = target.hp === 0;
+		const self = attacker.id === target.id; // own grenade: no kill, no XP
 		if (killed) {
 			target.dead = true;
-			attacker.kills++;
+			if (!self) attacker.kills++;
 		}
 		this.save();
 		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length });
 		if (killed) {
 			// XP: a real player is worth much more than a bot.
-			if (!attacker.bot) {
+			if (!attacker.bot && !self) {
 				if (target.bot) {
 					attacker.botKills++;
 					this.credit(attacker, XP_REWARDS.kill_bot, 'kill_bot', target.name);
@@ -423,13 +673,17 @@ export class GodotMatch {
 	dropCrate(player) {
 		const m = this.match;
 		const weapons = Object.keys(player.inv || {});
-		if (!player.p || !weapons.length) return;
+		const medkits = player.medkits || 0;
+		const nades = player.nades || 0;
+		if (!player.p || (!weapons.length && !medkits && !nades)) return;
 		const id = 'd' + ++m.dropSeq;
 		const items = {};
 		for (const weapon of weapons) items[weapon] = RESERVE_AMMO[weapon] || 0;
-		const crate = { id, p: [...player.p], items, open: false, drop: true, name: player.name };
+		const crate = { id, p: [...player.p], items, medkits, nades, open: false, drop: true, name: player.name };
 		m.crates[id] = crate;
 		player.inv = {};
+		player.medkits = 0;
+		player.nades = 0;
 		this.save();
 		this.broadcast({ t: 'crate', crate });
 	}
@@ -437,6 +691,7 @@ export class GodotMatch {
 	checkEnd(force = false) {
 		const m = this.match;
 		if (m.phase !== 'running') return;
+		if (m.party) return this.checkTeamEnd(force);
 		const alive = this.alive();
 		if (alive.length > 1 && !force) return;
 		// On timeout the survivor with most kills (then most health) wins.
@@ -465,16 +720,75 @@ export class GodotMatch {
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
 	}
 
+	/** Team match: ends when one side is wiped out; on timeout, most kills (then most alive) wins. */
+	checkTeamEnd(force) {
+		const m = this.match;
+		const alive = this.alive();
+		const aliveBy = [0, 1].map((team) => alive.filter((id) => m.players[id].team === team).length);
+		if (aliveBy[0] && aliveBy[1] && !force) return;
+		const killsBy = [0, 1].map((team) => m.order.reduce((sum, id) => sum + (m.players[id].team === team ? m.players[id].kills : 0), 0));
+		let winnerTeam = null;
+		if (!aliveBy[0] !== !aliveBy[1]) winnerTeam = aliveBy[0] ? 0 : 1;
+		else if (killsBy[0] !== killsBy[1]) winnerTeam = killsBy[0] > killsBy[1] ? 0 : 1;
+		else if (aliveBy[0] !== aliveBy[1]) winnerTeam = aliveBy[0] > aliveBy[1] ? 0 : 1;
+		m.phase = 'finished';
+		m.winner = null;
+		m.winnerTeam = winnerTeam;
+		this.save();
+		for (const id of m.order) {
+			const player = m.players[id];
+			if (player.bot || player.flushed) continue;
+			this.credit(player, XP_REWARDS.match, 'match');
+			if (player.team === winnerTeam) this.credit(player, XP_REWARDS.win, 'win');
+		}
+		this.broadcast({
+			t: 'end',
+			winner: null,
+			team: winnerTeam,
+			name: winnerTeam === null ? 'Empate' : 'Equipe ' + TEAM_NAMES[winnerTeam],
+			reason: force ? 'tempo' : 'eliminacao',
+			score: killsBy,
+			board: m.order
+				.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, bot: m.players[id].bot, rank: m.players[id].rank || '', xp: m.players[id].xpGain || 0, team: m.players[id].team }))
+				.sort((a, b) => a.team - b.team || b.kills - a.kills),
+		});
+		this.ctx.waitUntil(Promise.all(m.order.map((id) => this.flush(m.players[id], winnerTeam !== null && m.players[id].team === winnerTeam))));
+		// Custom rooms survive the match: everyone goes back to the same lobby.
+		if (m.party) return this.returnToRoom();
+		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
+	}
+
+	/**
+	 * After a custom-room match: same code, teams, leader, mode and bots option;
+	 * bots and players who left are dropped, and everyone confirms "ready" again.
+	 */
+	returnToRoom() {
+		const m = this.match;
+		const players = {};
+		for (const p of Object.values(m.players)) {
+			if (p.bot || !this.sessions.has(p.id)) continue;
+			const totalXp = (p.totalXp || 0) + (p.xpGain || 0);
+			players[p.id] = {
+				id: p.id, name: p.name, bot: false, hp: 100, dead: false, kills: 0, spawn: 0, account: p.account,
+				totalXp, rank: rankFor(totalXp).rank, xpGain: 0, playerKills: 0, botKills: 0, flushed: false, ready: false, team: p.team,
+			};
+		}
+		if (!Object.keys(players).length) return this.reset();
+		const room = this.fresh(m.room);
+		Object.assign(room, { party: true, size: m.size, bots: m.bots, players });
+		room.leader = players[m.leader] ? m.leader : Object.keys(players)[0];
+		this.match = room;
+		this.hitLog.clear();
+		this.save();
+		this.broadcastParty();
+	}
+
 	async alarm() {
 		const m = this.match;
 		const now = Date.now();
 		if (!this.sessions.size) return this.reset();
 		if (m.phase === 'waiting') {
-			if (now >= m.deadline) this.start();
-			else {
-				this.broadcastLobby();
-				await this.ctx.storage.setAlarm(Math.min(m.deadline, now + 1000));
-			}
+			return; // rooms start only when the leader confirms
 		} else if (m.phase === 'running') {
 			if (now >= m.startedAt + MAX_MATCH_MS) this.checkEnd(true);
 			else await this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS);
@@ -516,8 +830,10 @@ export class GodotMatch {
 		}
 		if (m.phase === 'waiting') {
 			delete m.players[meta.id];
+			// The next player in the room becomes leader.
+			if (m.leader === meta.id) m.leader = this.humans().find((p) => this.sessions.has(p.id))?.id || null;
 			this.save();
-			this.broadcastLobby();
+			this.broadcastParty();
 			return;
 		}
 		this.broadcast({ t: 'leave', id: meta.id });

@@ -28,6 +28,8 @@ func _run() -> void:
     query.transform = Transform3D(Basis.IDENTITY, Vector3(player.position.x, 0.95, player.position.z))
     if not space.intersect_shape(query, 1).is_empty():
         failures.append("Player spawn obstructed")
+    if get_nodes_in_group("cover_wall").size() < 10:
+        failures.append("Map needs cover walls in the open areas")
     var buildings := get_nodes_in_group("map_building")
     if buildings.size() < 8:
         failures.append("Map needs identifiable buildings with entrances")

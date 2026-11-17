@@ -7,9 +7,12 @@ const WorldPolishScript = preload("res://scripts/world_polish.gd")
 const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
+const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
 var player: CharacterBody3D
 var hud: Label
-var crosshair: Label
+var crosshair: Control
+var action_clock: Control
+var action_state: Dictionary = {}
 var scope_overlay: Control
 var menu_button: Button
 var match_controller: Node3D # online matches only
@@ -41,6 +44,20 @@ func _ready() -> void:
         match_controller.set_script(MatchControllerScript)
         match_controller.call("setup", self, player)
         add_child(match_controller)
+    else:
+        _spawn_training_dummies()
+
+## Offline practice: dummies in front of the spawn (two close, one at 20 m)
+## that show the damage of every weapon and body zone.
+func _spawn_training_dummies() -> void:
+    for spot in [[Vector3(8, 0, -16), "BONECO 1"], [Vector3(16, 0, -16), "BONECO 2"], [Vector3(12, 0, -30), "BONECO DISTANTE (20 m)"]]:
+        var dummy := Node3D.new()
+        dummy.name = "TrainingDummy"
+        dummy.set_script(TrainingDummyScript)
+        dummy.set("title", spot[1])
+        dummy.set("sound_fx", player.get("sound_fx"))
+        dummy.position = spot[0]
+        add_child(dummy)
 
 func _register_inputs() -> void:
     var keys := {
@@ -118,12 +135,33 @@ func _build_ui() -> void:
     hud.add_theme_constant_override("shadow_offset_x", 1)
     hud.add_theme_constant_override("shadow_offset_y", 2)
     layer.add_child(hud)
-    crosshair = Label.new()
-    crosshair.text = "+"
-    crosshair.add_theme_font_size_override("font_size", 25)
-    crosshair.set_anchors_preset(Control.PRESET_CENTER)
-    crosshair.position = Vector2(-8,-15)
+    # Drawn "+" exactly on the screen centre, where the shot ray goes (a "+"
+    # text label sat a few pixels low and left of it).
+    crosshair = Control.new()
+    crosshair.name = "Crosshair"
+    crosshair.mouse_filter = Control.MOUSE_FILTER_IGNORE
     layer.add_child(crosshair)
+    crosshair.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    crosshair.draw.connect(func():
+        var c := crosshair.size * 0.5
+        for pass_index in 2:
+            var color := Color(0, 0, 0, 0.75) if pass_index == 0 else Color(1, 1, 1, 0.95)
+            var width := 4.0 if pass_index == 0 else 2.0
+            var arm := 9.0 if pass_index == 0 else 8.0
+            crosshair.draw_line(c + Vector2(-arm, 0), c + Vector2(-2.5, 0), color, width)
+            crosshair.draw_line(c + Vector2(2.5, 0), c + Vector2(arm, 0), color, width)
+            crosshair.draw_line(c + Vector2(0, -arm), c + Vector2(0, -2.5), color, width)
+            crosshair.draw_line(c + Vector2(0, 2.5), c + Vector2(0, arm), color, width)
+        crosshair.draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.95)))
+    crosshair.resized.connect(crosshair.queue_redraw)
+    # Action clock under the crosshair: reload / medkit progress (3 s).
+    action_clock = Control.new()
+    action_clock.name = "ActionClock"
+    action_clock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    action_clock.visible = false
+    layer.add_child(action_clock)
+    action_clock.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    action_clock.draw.connect(_draw_action_clock)
     menu_button = Button.new()
     menu_button.name = "ReturnToMenuButton"
     menu_button.text = "Menu principal"
@@ -135,6 +173,29 @@ func _build_ui() -> void:
     menu_button.offset_top = 16
     menu_button.offset_bottom = 56
     menu_button.pressed.connect(return_to_menu)
+
+## Simple clock: dark disc, a sweep that fills clockwise, label and seconds left.
+func _draw_action_clock() -> void:
+    if action_state.is_empty():
+        return
+    var c := action_clock.size * 0.5 + Vector2(0, 70)
+    var radius := 22.0
+    var fraction := float(action_state.get("fraction", 0.0))
+    action_clock.draw_circle(c, radius + 3.0, Color(0, 0, 0, 0.55))
+    if fraction > 0.0:
+        var points := PackedVector2Array([c])
+        var steps := maxi(2, int(48 * fraction))
+        for i in steps + 1:
+            var angle := -PI * 0.5 + TAU * fraction * float(i) / steps
+            points.append(c + Vector2(cos(angle), sin(angle)) * radius)
+        action_clock.draw_colored_polygon(points, Color(1.0, 0.85, 0.35, 0.85))
+    action_clock.draw_arc(c, radius, 0.0, TAU, 40, Color(1, 1, 1, 0.9), 2.0)
+    action_clock.draw_line(c, c + Vector2(0, -radius * 0.8), Color(1, 1, 1, 0.9), 2.0) # clock hand at 12
+    var font := ThemeDB.fallback_font
+    var text := "%s  %.1f s" % [action_state.get("label", ""), float(action_state.get("left", 0.0))]
+    var width := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16).x
+    action_clock.draw_string(font, c + Vector2(-width * 0.5 + 1, radius + 23), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0, 0, 0, 0.9))
+    action_clock.draw_string(font, c + Vector2(-width * 0.5, radius + 22), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1))
 
 func return_to_menu() -> void:
     Input.action_release("fire")
@@ -148,12 +209,16 @@ func _process(_delta: float) -> void:
         menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
+        action_state = player.action_progress()
+        action_clock.visible = not action_state.is_empty()
+        if action_clock.visible:
+            action_clock.queue_redraw()
         crosshair.visible = not scoped
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)
         if match_controller != null:
             var out: bool = match_controller.get("local_dead") or match_controller.get("finished")
             crosshair.visible = crosshair.visible and not out
-            hud.text = "" if out else player.status_text() + "\n1-5 armas  R recarregar  Direito mirar  |  ESC: cursor"
+            hud.text = "" if out else player.status_text() + "\n1-5 armas (ordem em que pegou)  E coletar  F kit médico  G granada (segure p/ mirar)  R recarregar  Direito mirar (+Q/E inclinar)  |  ESC: sair da partida"
             return
-        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() +"\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\nQ soco  E cotovelada\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"
+        hud.text = "CAMPO DE FOGO  |  REBUILD\n" + player.status_text() +"\nWASD andar  SHIFT correr  CTRL agachar  ESPACO pular\nQ soco  E cotovelada  G granada (segure p/ mirar)  |  mirando: Q/E inclinar\n1 FUZIL  2 SNIPER  3 PISTOLA  |  4 Escopeta  5 SMG\nR recarregar  Direito mirar  Esquerdo atirar  |  ESC: liberar cursor"

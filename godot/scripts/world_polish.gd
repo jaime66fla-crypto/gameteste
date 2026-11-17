@@ -10,6 +10,8 @@ func _ready() -> void:
     _commercial()
     _industrial()
     _parks()
+    _watchtower()
+    _cover_walls()
     _perimeter()
 
 func _mat(hex_color: String) -> StandardMaterial3D:
@@ -246,6 +248,95 @@ func _parks() -> void:
         _bench(Vector2(30, z))
     _surface(Vector2(24, 5), Vector2(2.5, 2), "#b4ae9c", 0.04)
     _surface(Vector2(5, 24), Vector2(2, 2.5), "#b4ae9c", 0.04)
+
+## Watchtower at the east edge of the park: a 5 x 5 m platform 6 m up with a
+## parapet, reached by a 12 m walkable ramp (26.6°) from the west. The sniper
+## crate sits on the roof (data/match_layout.json "tower"; tests/tower_climb.gd).
+const TOWER_CENTER := Vector2(40, 18)
+const TOWER_HEIGHT := 6.0
+const TOWER_SIZE := 5.0
+const RAMP_RUN := 12.0
+const RAMP_WIDTH := 2.5
+
+func _watchtower() -> void:
+    var tower := Node3D.new()
+    tower.name = "Watchtower"
+    tower.add_to_group("watchtower")
+    add_child(tower)
+    var c := TOWER_CENTER
+    var half := TOWER_SIZE * 0.5
+    var top := TOWER_HEIGHT
+    var concrete := "#a9aaa1"
+    var steel := "#58646a"
+    # Platform (walk surface exactly at `top`) and four corner pillars.
+    _box(Vector3(c.x, top - 0.15, c.y), Vector3(TOWER_SIZE, 0.3, TOWER_SIZE), concrete, true, tower)
+    for sx in [-1.0, 1.0]:
+        for sz in [-1.0, 1.0]:
+            _box(Vector3(c.x + sx * (half - 0.3), (top - 0.3) * 0.5, c.y + sz * (half - 0.3)), Vector3(0.4, top - 0.3, 0.4), steel, true, tower)
+    # Parapet (1.1 m): cover for the sniper; open on the west where the ramp arrives.
+    var wall_h := 1.1
+    var y := top + wall_h * 0.5
+    _box(Vector3(c.x, y, c.y - half + 0.1), Vector3(TOWER_SIZE, wall_h, 0.2), concrete, true, tower)
+    _box(Vector3(c.x, y, c.y + half - 0.1), Vector3(TOWER_SIZE, wall_h, 0.2), concrete, true, tower)
+    _box(Vector3(c.x + half - 0.1, y, c.y), Vector3(0.2, wall_h, TOWER_SIZE), concrete, true, tower)
+    var gap := RAMP_WIDTH * 0.5 + 0.05
+    var side_len := half - gap
+    for sz in [-1.0, 1.0]:
+        _box(Vector3(c.x - half + 0.1, y, c.y + sz * (gap + side_len * 0.5)), Vector3(0.2, wall_h, side_len), concrete, true, tower)
+    # Ramp: its top surface runs from the ground at the west to the platform edge.
+    var thickness := 0.3
+    var angle := atan2(top, RAMP_RUN)
+    var along := Vector3(cos(angle), sin(angle), 0)
+    var normal := Vector3(-sin(angle), cos(angle), 0)
+    var start := Vector3(c.x - half - RAMP_RUN, 0, c.y) # bottom of the walk surface
+    var length := Vector2(RAMP_RUN, top).length()
+    var extra := 0.5 # dug into the ground at the bottom end
+    var mid := start + along * (length - extra) * 0.5 - normal * (thickness * 0.5)
+    var ramp := _box(mid, Vector3(length + extra, thickness, RAMP_WIDTH), "#8f918a", true, tower)
+    ramp.name = "TowerRamp"
+    ramp.rotation.z = angle
+    # Railings start 1 m up the ramp: a rail end at ground level snagged walkers.
+    var rail_from := 1.0
+    var rail_mid := start + along * (length + rail_from) * 0.5 + normal * 0.5
+    for sz in [-1.0, 1.0]:
+        var rail := _box(rail_mid + Vector3(0, 0, sz * (RAMP_WIDTH * 0.5 + 0.06)), Vector3(length - rail_from, 1.0, 0.1), steel, true, tower)
+        rail.rotation.z = angle
+    var tower_sign := Label3D.new()
+    tower_sign.text = "TORRE"
+    tower_sign.font_size = 48
+    tower_sign.pixel_size = 0.006
+    tower_sign.modulate = Color("#eee5c7")
+    tower_sign.position = Vector3(c.x - half - 0.05, top - 0.9, c.y)
+    tower_sign.rotation.y = -PI * 0.5
+    tower.add_child(tower_sign)
+
+## Concrete cover in the open areas: low walls (1.2 m, cover when crouched,
+## shoot over them) and tall walls (2.2 m, full cover). All stay clear of the
+## main avenues, doorways, loot spots and medkits (tests/map_layout.gd and
+## tests/match_layout.gd check roads, entrances and crate spots).
+const COVER_WALLS := [
+    # [x, z, length, along_x, height]
+    # Houses (north-west): between the rows and toward the avenue.
+    [-25.0, -34.0, 4.0, false, 2.2], [-25.0, -16.0, 3.5, false, 1.2], [-25.0, -7.0, 4.0, true, 1.2], [-7.0, -34.0, 4.0, false, 1.2],
+    # Market / workshop (south-west): gap between the shops, front yards, plaza.
+    [-24.5, 13.0, 4.0, false, 2.2], [-34.0, 7.5, 4.0, true, 1.2], [-16.0, 7.5, 4.0, true, 1.2], [-31.0, 34.5, 3.5, true, 1.2], [-19.0, 39.5, 3.5, true, 1.2],
+    # Park (south-east).
+    [12.0, 18.0, 4.0, false, 1.2], [36.0, 30.0, 4.0, false, 1.2], [20.0, 28.5, 3.5, true, 2.2],
+    # Industrial (north-east): parking lot, beside the plaza, west of the office.
+    [32.0, -12.0, 3.5, true, 1.2], [24.0, -10.0, 3.5, false, 2.2], [6.5, -28.0, 4.0, false, 1.2],
+]
+
+func _cover_walls() -> void:
+    for spec in COVER_WALLS:
+        var length: float = spec[2]
+        var height: float = spec[4]
+        var thickness := 0.45
+        var size := Vector3(length, height, thickness) if spec[3] else Vector3(thickness, height, length)
+        var wall := _box(Vector3(spec[0], height * 0.5, spec[1]), size, "#a9aaa1", true)
+        wall.name = "CoverWall"
+        wall.add_to_group("cover_wall")
+        # Darker coping on top so the wall reads at a distance.
+        _box(Vector3(0, height * 0.5 + 0.04, 0), size + Vector3(0.08, -height + 0.08, 0.08), "#7d7f78", false, wall)
 
 func _perimeter() -> void:
     # Planted border follows the ring road; no random blocks inside plots.

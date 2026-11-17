@@ -5,8 +5,10 @@
   "compatibility_date": "2026-11-10",
   // Godot online: minimum client build (0.1.0 = 100) and where to download updates.
   // 300 = 0.3.0: online play needs an account (login + XP); older builds are told to update.
+  // 400 = 0.4.0: rooms start by ready/leader (no timer), team rooms, medkits.
+  // 500 = 0.5.0: grenades, 3 s medkit (heal_start), watchtower crate, lean, friends.
   "vars": {
-    "GODOT_MIN_BUILD": "300",
+    "GODOT_MIN_BUILD": "500",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {

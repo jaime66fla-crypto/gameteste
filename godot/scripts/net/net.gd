@@ -12,6 +12,23 @@ signal connection_lost(reason: String)
 signal update_required(message: String, url: String)
 ## Online play needs a valid session (it expired or was never made).
 signal login_required(message: String)
+## Custom team room (2x2 / 4x4): lobby state, refusals and leader notes.
+signal party_updated(info: Dictionary)
+signal party_error(message: String)
+signal party_notice(message: String)
+
+## Friends list (polled over HTTP while logged in) and room invites.
+signal friends_updated(data: Dictionary)
+signal friend_invite(from: String, code: String)
+const FRIENDS_POLL := 8.0
+var friends_data: Dictionary = {} # friends, requests
+var pending_invite: Dictionary = {} # last invite not yet answered: {from, code}
+var _friends_timer := 1.0
+var _friends_busy := false
+
+var party_code := "" # code of the custom room this client is in
+var party_info: Dictionary = {}
+var my_team := -1 # 0 Alfa, 1 Bravo; -1 outside team matches
 
 const SESSION_FILE := "user://session.cfg"
 var session_token := ""
@@ -99,10 +116,37 @@ func refresh_profile() -> String:
 		logout()
 	return str(response["data"].get("error", "Não foi possível carregar o perfil."))
 
+## Refresh friends + presence (menu / in a room with its code / in a match).
+func poll_friends() -> void:
+	_friends_timer = FRIENDS_POLL
+	if _friends_busy or not is_logged_in():
+		return
+	_friends_busy = true
+	var status := "match" if in_match else ("room" if is_online() and not party_code.is_empty() else "menu")
+	var path := "/friends?status=" + status + ("&code=" + party_code if status == "room" else "")
+	var response := await _api(path, {}, HTTPClient.METHOD_GET)
+	_friends_busy = false
+	if response["status"] != 200:
+		return
+	friends_data = response["data"]
+	for invite in friends_data.get("invites", []):
+		pending_invite = {"from": str(invite.get("from", "")), "code": str(invite.get("code", ""))}
+		friend_invite.emit(pending_invite["from"], pending_invite["code"])
+	friends_updated.emit(friends_data)
+
+## add / accept / decline / remove {name}, invite {name, code}. Returns the server's message.
+func friend_action(action: String, friend_name: String, code: String = "") -> String:
+	var response := await _api("/friends/" + action, {"name": friend_name.strip_edges(), "code": code})
+	_friends_timer = 0.3 # refresh the list right after
+	var data: Dictionary = response["data"]
+	return str(data.get("message", data.get("error", "Não foi possível falar com o servidor.")))
+
 func logout() -> void:
 	leave()
 	session_token = ""
 	profile = {}
+	friends_data = {}
+	pending_invite = {}
 	var config := ConfigFile.new()
 	config.set_value("account", "token", "")
 	config.save(SESSION_FILE)
@@ -140,6 +184,44 @@ func save_name(value: String) -> void:
 	config.save(NAME_FILE)
 
 func find_match(player_name: String) -> Error:
+	return _open(player_name, "")
+
+## New custom team room; the server answers with its code.
+func create_party() -> Error:
+	return _open("", "NEW")
+
+## Join a friend's custom room by its 5-character code.
+func join_party(code: String) -> Error:
+	return _open("", code.strip_edges().to_upper())
+
+## Custom room lobby: choose a team (0/1); the leader sets mode/bots and starts.
+func party_choose_team(team: int) -> void:
+	send({"t": "team", "team": team})
+
+func party_configure(team_size: int, bots: bool) -> void:
+	send({"t": "config", "size": team_size, "bots": bots})
+
+func party_start() -> void:
+	send({"t": "start"})
+
+## Room lobby (elimination or teams): confirm or take back "ready".
+func party_ready(ready: bool) -> void:
+	send({"t": "ready", "ready": ready})
+
+func is_ready() -> bool:
+	for entry in party_info.get("players", []):
+		if str(entry.get("id", "")) == my_id:
+			return bool(entry.get("ready", false))
+	return false
+
+## Still connected to a custom room after its match ended (menu reopens its lobby).
+func in_room_lobby() -> bool:
+	return is_online() and not party_code.is_empty()
+
+func is_party_leader() -> bool:
+	return not my_id.is_empty() and str(party_info.get("leader", "")) == my_id
+
+func _open(player_name: String, party: String) -> Error:
 	leave()
 	socket = WebSocketPeer.new()
 	_opened = false
@@ -149,7 +231,10 @@ func find_match(player_name: String) -> Error:
 		clean = "Operador"
 	# The session token identifies the account (name and XP come from the server).
 	socket.handshake_headers = PackedStringArray(["Authorization: Bearer " + session_token])
-	return socket.connect_to_url(server_url + "?name=" + clean.uri_encode() + "&v=" + str(build_number()))
+	var query := "?name=" + clean.uri_encode() + "&v=" + str(build_number())
+	if not party.is_empty():
+		query += "&party=" + party.uri_encode()
+	return socket.connect_to_url(server_url + query)
 
 func is_online() -> bool:
 	return socket != null and socket.get_ready_state() == WebSocketPeer.STATE_OPEN
@@ -167,6 +252,9 @@ func leave() -> void:
 	host_id = ""
 	in_match = false
 	start_info = {}
+	party_code = ""
+	party_info = {}
+	my_team = -1
 	_consumer_ready = false
 	_pending.clear()
 
@@ -178,7 +266,11 @@ func attach_consumer() -> void:
 	for data in queued:
 		message.emit(data)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
+	if is_logged_in():
+		_friends_timer -= delta
+		if _friends_timer <= 0.0:
+			poll_friends()
 	if socket == null:
 		return
 	socket.poll()
@@ -215,9 +307,28 @@ func _handle(data: Dictionary) -> void:
 			return
 		"profile":
 			profile = data.get("profile", profile)
+		"party_error":
+			_outdated = true # the server closes right after; the menu shows the message
+			party_error.emit(str(data.get("message", "Não foi possível entrar na sala.")))
+			return
+		"party_note":
+			party_notice.emit(str(data.get("message", "")))
+			return
+		"party":
+			# Also sent when a custom-room match ends: back in the same lobby.
+			in_match = false
+			party_info = data
+			party_code = str(data.get("code", ""))
+			for entry in data.get("players", []):
+				if str(entry.get("id", "")) == my_id and entry.get("team") != null:
+					my_team = int(entry["team"])
+			party_updated.emit(data)
+			return
 		"welcome":
 			my_id = str(data["id"])
 			room = str(data.get("room", ""))
+			if bool(data.get("party", false)):
+				party_code = str(data.get("code", room))
 			lobby_joined.emit(data)
 			return
 		"lobby":
@@ -226,6 +337,11 @@ func _handle(data: Dictionary) -> void:
 		"start":
 			start_info = data
 			host_id = str(data.get("host", ""))
+			party_info = {} # the lobby is rebuilt by the server after the match
+			my_team = -1
+			for entry in data.get("roster", []):
+				if str(entry.get("id", "")) == my_id and entry.has("team"):
+					my_team = int(entry["team"])
 			in_match = true
 			_consumer_ready = false
 			match_started.emit(data)

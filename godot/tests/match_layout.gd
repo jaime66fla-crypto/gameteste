@@ -55,7 +55,8 @@ func _run() -> void:
 		query.transform = Transform3D(Basis.IDENTITY, loot + Vector3(0, 0.48, 0))
 		_check(space.intersect_shape(query, 1).is_empty(), name + ": loot crate overlaps geometry")
 	query.shape = crate
-	for spot in layout["outdoor_loot"]:
+	_check(layout.get("medkits", []).size() > 0, "Map has medkits")
+	for spot in layout["outdoor_loot"] + layout.get("medkits", []):
 		var p := Vector3(spot[0], 0.48, spot[1]) # above the 4 cm pavement slabs
 		query.transform = Transform3D(Basis.IDENTITY, p)
 		_check(space.intersect_shape(query, 1).is_empty(), "Outdoor loot overlaps geometry at %s" % p)

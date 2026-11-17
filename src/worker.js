@@ -75,8 +75,8 @@ export default {
   }
   // Godot build (itch.io): quick-match 8-player elimination rooms.
   if (url.pathname === "/godot/ws") return handleGodotSocket(request, env, url);
-  // Godot accounts: register, login and profile (XP / rank).
-  if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me") return handleGodotAccount(request, env, url);
+  // Godot accounts: register, login, profile (XP / rank) and friends list.
+  if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me" || url.pathname === "/godot/friends" || url.pathname.startsWith("/godot/friends/")) return handleGodotAccount(request, env, url);
   if (url.pathname === "/ws") {
    const room = (url.searchParams.get("room") || "cidade-1").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cidade-1";
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);

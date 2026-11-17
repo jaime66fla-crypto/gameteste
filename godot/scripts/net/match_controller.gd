@@ -9,6 +9,7 @@ const STATE_RATE := 1.0 / 15.0
 const BOT_RATE := 1.0 / 10.0
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const LootCrateScript = preload("res://scripts/net/loot_crate.gd")
+const BotNav = preload("res://scripts/net/bot_nav.gd")
 const LOOT_REACH := 2.4 # metres; the server allows a little more for latency
 const LABEL_RANGE := 9.0
 
@@ -22,6 +23,11 @@ var names: Dictionary = {} # id -> display name
 var my_id := ""
 var alive_count := 8
 var my_hp := 100.0
+var my_medkits := 0 # carried; F uses one (the server confirms)
+const MAX_MEDKITS := 5
+var my_nades := 0 # grenades carried; G throws one
+var remote_nades: Dictionary = {} # "by:id" -> grenade copy flying on this client
+const GrenadeScript = preload("res://scripts/weapons/grenade.gd")
 var my_kills := 0
 var local_dead := false
 var finished := false
@@ -32,6 +38,11 @@ var spectate_camera: Camera3D
 var spectate_id := "" # who the eliminated player is watching (starts with the killer)
 var bots: Dictionary = {} # id -> true for bots
 var ranks: Dictionary = {} # id -> rank name (players)
+# Team matches (custom 2x2 / 4x4 rooms).
+var team_mode := false
+var my_team := -1
+var teams: Dictionary = {} # id -> 0/1
+var team_names: Array = ["Alfa", "Bravo"]
 var match_xp := 0
 var killer_panel: PanelContainer
 var killer_title: Label
@@ -46,6 +57,9 @@ var center_panel: PanelContainer
 var center_title: Label
 var center_body: Label
 var damage_flash: ColorRect
+var leave_panel: PanelContainer
+var room_button: Button
+var leave_text: Label
 var combat_feedback: Control
 
 func setup(main: Node, local_player: CharacterBody3D) -> void:
@@ -62,6 +76,15 @@ func _ready() -> void:
 		_add_crate(crate_data)
 	player.call("start_unarmed")
 	player.set("interact_handler", _try_loot)
+	player.set("heal_handler", _use_medkit)
+	player.set("grenade_handler", _throw_grenade)
+	player.set("grenade_check", _can_throw_grenade)
+	team_mode = bool(info.get("party", false))
+	if info.get("teams") is Array:
+		team_names = info["teams"]
+	for entry in info.get("roster", []):
+		teams[str(entry["id"])] = int(entry.get("team", -1))
+	my_team = int(teams.get(my_id, -1))
 	for entry in info.get("roster", []):
 		var id := str(entry["id"])
 		names[id] = str(entry["name"])
@@ -69,6 +92,9 @@ func _ready() -> void:
 		ranks[id] = str(entry.get("rank", ""))
 		# Everyone starts inside a building, facing its door (+Z).
 		var spawn: Vector3 = MatchLayout.spawn_point(int(entry.get("spawn", 0)))
+		var sp = entry.get("sp")
+		if sp is Array and sp.size() == 2:
+			spawn = Vector3(float(sp[0]), 0, float(sp[1])) # team matches: exact spot from the server
 		var facing := PI
 		if id == my_id:
 			player.global_position = spawn + Vector3(0, 0.1, 0)
@@ -78,6 +104,8 @@ func _ready() -> void:
 		var actor: CharacterBody3D = NetActorScript.new()
 		actor.call("setup", id, str(entry["name"]), bool(entry.get("bot", false)))
 		actor.set("tag_subtitle", "BOT" if bots[id] else ranks[id])
+		actor.set("team", teams[id])
+		actor.set("ally", team_mode and teams[id] == my_team)
 		actor.position = spawn + Vector3(0, 0.1, 0)
 		actor.rotation.y = facing
 		actor.set("combatants", _combatants)
@@ -86,14 +114,23 @@ func _ready() -> void:
 		actor.connect("bot_fired", _on_bot_fired)
 		actor.connect("bot_hit", _on_bot_hit)
 		actor.connect("bot_loot", _on_bot_loot)
+		actor.connect("bot_heal", _on_bot_heal)
 		main_node.add_child(actor)
 		actors[id] = actor
+	# Bot navigation grid (~0.2 s): build it while the match loads, not on the
+	# first bot step (any client may become the bot host later).
+	BotNav.grid_for(main_node.get_world_3d())
 	player.connect("shot_fired", _on_local_shot)
 	Net.message.connect(_on_message)
 	Net.connection_lost.connect(_on_connection_lost)
 	_apply_host()
 	Net.attach_consumer()
-	_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
+	if team_mode:
+		var team_size := int(alive_count / 2.0)
+		_feed("Partida em equipes %dx%d! Você está na equipe %s — elimine a equipe adversária." % [team_size, team_size, _team_name(my_team)])
+		_feed("Aliados têm o nome em azul (visível através das paredes). Não há fogo amigo.")
+	else:
+		_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
 	_feed("Você começa sem arma: procure as caixas de suprimento (E para coletar).")
 
 func _exit_tree() -> void:
@@ -113,12 +150,26 @@ func _apply_host() -> void:
 func _combatants() -> Array:
 	var list: Array = []
 	if not local_dead:
-		list.append({"id": my_id, "node": player})
+		list.append({"id": my_id, "node": player, "team": my_team})
 	for id in actors:
 		var actor = actors[id]
 		if not actor.dead:
-			list.append({"id": id, "node": actor})
+			list.append({"id": id, "node": actor, "team": teams.get(id, -1)})
 	return list
+
+func _team_name(team: int) -> String:
+	return str(team_names[team]) if team >= 0 and team < team_names.size() else "?"
+
+func is_ally(id: String) -> bool:
+	return team_mode and int(teams.get(id, -2)) == my_team
+
+## Living combatants per side: [allies, enemies] (local player included in allies).
+func _team_alive() -> Array:
+	var counts := [0 if local_dead else 1, 0]
+	for id in actors:
+		if not actors[id].dead:
+			counts[0 if is_ally(id) else 1] += 1
+	return counts
 
 # ------------------------------------------------------------ networking ---
 
@@ -134,7 +185,7 @@ func _physics_process(delta: float) -> void:
 		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": move, "r": player.get("sprinting"),
 			"c": player.get("crouching"), "a": player.get("aiming"), "f": not player.is_on_floor(),
-			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z]})
+			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean")})
 	_bot_timer -= delta
 	if _bot_timer <= 0.0 and is_host():
 		_bot_timer = BOT_RATE
@@ -178,6 +229,19 @@ func _on_message(data: Dictionary) -> void:
 			_on_end(data)
 		"looted":
 			_on_looted(data)
+		"loot_denied":
+			if str(data.get("by", "")) == my_id:
+				_toast(str(data.get("message", "")).to_upper())
+				_pending_loot = ""
+		"medkits":
+			_on_medkits(data)
+		"nades":
+			if str(data.get("id", "")) == my_id:
+				my_nades = int(data.get("count", 0))
+		"nade":
+			_on_remote_nade(data)
+		"boom":
+			_on_boom(data)
 		"xp":
 			_on_xp(data)
 		"profile":
@@ -208,8 +272,9 @@ func _crate_targets() -> Array:
 	var list: Array = []
 	for id in crates:
 		var crate = crates[id]
-		if not crate.opened:
-			list.append({"id": id, "pos": crate.global_position})
+		# Bots walk on the ground only: the tower roof crate is for players.
+		if not crate.opened and crate.global_position.y < 1.5:
+			list.append({"id": id, "pos": crate.global_position, "med": crate.is_med})
 	return list
 
 func _closest_crate(reach: float) -> Node3D:
@@ -232,6 +297,9 @@ func _try_loot() -> bool:
 	var crate := _closest_crate(LOOT_REACH)
 	if crate == null:
 		return false
+	if crate.is_med and my_medkits >= MAX_MEDKITS:
+		_toast("LIMITE DE %d KITS" % MAX_MEDKITS)
+		return true
 	_pending_loot = crate.get("crate_id")
 	Net.send({"t": "loot", "crate": _pending_loot})
 	return true
@@ -239,6 +307,94 @@ func _try_loot() -> bool:
 func _on_bot_loot(actor_id: String, crate_id: String) -> void:
 	if is_host():
 		Net.send({"t": "loot", "crate": crate_id, "bot": actor_id})
+
+## F: use one carried medkit (+50 health, server-confirmed).
+func _use_medkit() -> void:
+	if local_dead or finished:
+		return
+	if my_medkits <= 0:
+		_toast("SEM KIT MÉDICO")
+	elif my_hp >= 100.0:
+		_toast("VIDA CHEIA")
+	elif float(player.get("channel_left")) <= 0.0:
+		# 3 s with the on-screen clock; the server checks the time too.
+		if player.call("start_channel", "KIT MÉDICO", 3.0, func(): Net.send({"t": "heal"})):
+			Net.send({"t": "heal_start"})
+
+## Holding G only shows the aim preview when there is a grenade to throw.
+func _can_throw_grenade() -> bool:
+	if local_dead or finished:
+		return false
+	if my_nades <= 0:
+		_toast("SEM GRANADA")
+		return false
+	return true
+
+## G released: throw a grenade. This client flies it and reports the blast position.
+func _throw_grenade() -> void:
+	if local_dead or finished:
+		return
+	if my_nades <= 0:
+		_toast("SEM GRANADA")
+		return
+	my_nades -= 1 # the server confirms with "nades"
+	var chars := "abcdefghijklmnopqrstuvwxyz0123456789"
+	var grenade_id := ""
+	for i in 6:
+		grenade_id += chars[randi() % chars.length()]
+	var grenade: RigidBody3D = player.call("throw_grenade", grenade_id)
+	grenade.connect("exploded", _on_my_grenade_exploded)
+	var o := grenade.global_position
+	var v := grenade.linear_velocity
+	Net.send({"t": "throw", "id": grenade_id, "o": [o.x, o.y, o.z], "v": [v.x, v.y, v.z]})
+
+func _on_my_grenade_exploded(grenade_id: String, at: Vector3) -> void:
+	Net.send({"t": "boom", "id": grenade_id, "p": [at.x, at.y, at.z]})
+
+## Someone else's grenade: fly a copy until the server reports the blast.
+func _on_remote_nade(data: Dictionary) -> void:
+	var o = _vec(data.get("o"))
+	var v = _vec(data.get("v"))
+	if o == null or v == null:
+		return
+	var grenade: RigidBody3D = GrenadeScript.new()
+	grenade.set("live", false)
+	main_node.add_child(grenade)
+	grenade.global_position = o
+	grenade.linear_velocity = v
+	remote_nades[str(data.get("by", "")) + ":" + str(data.get("id", ""))] = grenade
+
+func _on_boom(data: Dictionary) -> void:
+	var by := str(data.get("by", ""))
+	var at = _vec(data.get("p"))
+	if by == my_id or at == null:
+		return # our own grenade already exploded here
+	var key := by + ":" + str(data.get("id", ""))
+	var copy = remote_nades.get(key)
+	remote_nades.erase(key)
+	if copy != null and is_instance_valid(copy):
+		copy.call("explode", at)
+	else:
+		GrenadeScript.spawn_explosion(main_node, at)
+
+func _on_bot_heal(actor_id: String) -> void:
+	if not is_host():
+		return
+	Net.send({"t": "heal_start", "bot": actor_id})
+	get_tree().create_timer(3.05).timeout.connect(func():
+		if is_host() and not finished:
+			Net.send({"t": "heal", "bot": actor_id}))
+
+func _on_medkits(data: Dictionary) -> void:
+	var id := str(data.get("id", ""))
+	var count := int(data.get("count", 0))
+	if id == my_id:
+		my_medkits = count
+		if data.has("healed"):
+			player.get("sound_fx").call("reload")
+			_toast("VIDA +%d  (KITS: %d)" % [int(data["healed"]), count])
+	elif actors.has(id):
+		actors[id].set("medkits", count)
 
 func _on_looted(data: Dictionary) -> void:
 	var crate_id := str(data.get("crate", ""))
@@ -251,6 +407,10 @@ func _on_looted(data: Dictionary) -> void:
 		for weapon_id in items:
 			player.call("give_weapon", weapon_id, int(items[weapon_id]))
 			picked.append("%s +%d" % [WeaponData.stats(weapon_id)["name"], int(items[weapon_id])])
+		if int(data.get("kits", 0)) > 0:
+			picked.append("KIT MÉDICO +%d (F usar)" % int(data["kits"]))
+		if int(data.get("nades", 0)) > 0:
+			picked.append("GRANADA +%d (G lançar)" % int(data["nades"]))
 		player.get("sound_fx").call("reload")
 		_toast("PEGOU " + ", ".join(picked))
 	elif actors.has(by):
@@ -306,12 +466,16 @@ func _on_health(data: Dictionary) -> void:
 		else:
 			var weapon := str(data.get("w", ""))
 			var weapon_name := str(WeaponData.stats(weapon)["name"]) if not weapon.is_empty() else "BOT"
+			if weapon == "grenade":
+				weapon_name = "GRANADA"
 			var head_tag := "  (CABEÇA)" if str(data.get("zone", "")) == "head" else ""
 			_feed("%s  [%s]  %s%s" % [killer, weapon_name, victim, head_tag])
 
 func _on_actor_damaged(actor_id: String, zone: String, point: Vector3, normal: Vector3, weapon: String) -> void:
 	if local_dead or finished:
 		return
+	if is_ally(actor_id):
+		return # no friendly fire (the server ignores it too)
 	if weapon.is_empty():
 		weapon = str(player.get("current_weapon"))
 	var base := float(WeaponData.stats(weapon)["damage"])
@@ -441,15 +605,20 @@ func _on_connection_lost(reason: String) -> void:
 
 ## "jogador • Cabo" or "bot", for the killer banner and spectator label.
 func _describe(id: String) -> String:
+	var side := ""
+	if team_mode:
+		side = ("aliado" if is_ally(id) else "inimigo") + "  •  "
 	if bots.get(id, false):
-		return "bot"
+		return side + "bot"
 	var rank: String = ranks.get(id, "")
-	return "jogador" + ("  •  " + rank if not rank.is_empty() else "")
+	return side + "jogador" + ("  •  " + rank if not rank.is_empty() else "")
 
 func _on_local_death(killer_id: String) -> void:
 	if local_dead:
 		return
 	local_dead = true
+	player.call("cancel_channel")
+	player.call("cancel_grenade_aim")
 	player.set("aiming", false)
 	Input.action_release("aim")
 	Input.action_release("fire")
@@ -469,7 +638,7 @@ func _on_local_death(killer_id: String) -> void:
 		_killer_banner("VOCÊ FOI ELIMINADO", "")
 	else:
 		_killer_banner("ELIMINADO POR %s" % str(names[killer_id]).to_upper(), _describe(killer_id))
-	_feed("Assistindo quem te eliminou. Clique para trocar de câmera.")
+	_feed("Assistindo quem te eliminou. Clique para trocar de câmera  •  ESC: sair da partida.")
 
 func _killer_banner(title: String, subtitle: String) -> void:
 	killer_title.text = title
@@ -503,9 +672,16 @@ func _process(delta: float) -> void:
 		if target != null:
 			var id: String = target.get("actor_id")
 			watched = "%s (%s)" % [names.get(id, "?"), _describe(id)]
-		status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, watched]
+		if team_mode:
+			var sides := _team_alive()
+			status_label.text = "ELIMINADO  |  ALIADOS: %d  x  INIMIGOS: %d  |  ASSISTINDO: %s" % [sides[0], sides[1], watched]
+		else:
+			status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, watched]
+	elif team_mode:
+		var sides := _team_alive()
+		status_label.text = "%s (%s)  |  ALIADOS: %d  x  INIMIGOS: %d  |  ABATES: %d  |  KITS: %d [F]  |  GRANADAS: %d [G]  |  +%d XP" % [my_name, _team_name(my_team).to_upper(), sides[0], sides[1], my_kills, my_medkits, my_nades, match_xp]
 	else:
-		status_label.text = "%s  |  VIVOS: %d  |  ABATES: %d  |  +%d XP" % [my_name, alive_count, my_kills, match_xp]
+		status_label.text = "%s  |  VIVOS: %d  |  ABATES: %d  |  KITS: %d [F]  |  GRANADAS: %d [G]  |  +%d XP" % [my_name, alive_count, my_kills, my_medkits, my_nades, match_xp]
 	health_bar.value = my_hp
 	health_bar.visible = not local_dead and not finished
 	if local_dead and spectate_camera != null:
@@ -516,11 +692,17 @@ func _process(delta: float) -> void:
 			spectate_camera.global_position = spectate_camera.global_position.lerp(goal, minf(1.0, delta * 5.0))
 			spectate_camera.look_at(target.global_position + Vector3(0, 1.4, 0))
 
+## Who an eliminated player can watch. In team matches, teammates come first.
 func _living_ids() -> Array:
 	var ids: Array = []
+	var allies: Array = []
 	for id in actors:
 		if not actors[id].dead:
 			ids.append(id)
+			if is_ally(id):
+				allies.append(id)
+	if not allies.is_empty():
+		ids = allies
 	ids.sort()
 	return ids
 
@@ -534,6 +716,20 @@ func _spectate_target() -> Node3D:
 	return actors[spectate_id]
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Esc: leave the match at any time (alive or spectating). The player node
+	# is disabled after death, so its own Esc handler no longer runs.
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE and not finished:
+		if leave_panel.visible:
+			_close_leave_panel()
+		else:
+			_open_leave_panel()
+		get_viewport().set_input_as_handled()
+		return
+	if leave_panel.visible:
+		# Clicks outside the panel must not recapture the mouse or fire.
+		if event is InputEventMouseButton:
+			get_viewport().set_input_as_handled()
+		return
 	if local_dead and not finished and event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		var ids := _living_ids()
 		if not ids.is_empty():
@@ -565,6 +761,9 @@ func _on_end(data: Dictionary) -> void:
 	Input.action_release("fire")
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.process_mode = Node.PROCESS_MODE_DISABLED
+	if team_mode:
+		_on_team_end(data)
+		return
 	var won := str(data.get("winner", "")) == my_id
 	var lines: Array[String] = []
 	if str(data.get("reason", "")) == "tempo":
@@ -576,6 +775,33 @@ func _on_end(data: Dictionary) -> void:
 		lines.append("%d. %s (%s) — %d abate(s)%s" % [position_number, row["name"], who, int(row["kills"]), xp_text])
 		position_number += 1
 	_show_center("VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper(), "\n".join(lines))
+
+## Team scoreboard: one block per team with each member's kills.
+func _on_team_end(data: Dictionary) -> void:
+	var winner = data.get("team")
+	var lines: Array[String] = []
+	if str(data.get("reason", "")) == "tempo":
+		lines.append("Tempo esgotado: venceu a equipe com mais abates.")
+	var score: Array = data.get("score", [0, 0])
+	var current := -1
+	for row in data.get("board", []):
+		var team := int(row.get("team", 0))
+		if team != current:
+			current = team
+			var tag := "  — VENCEDORA" if winner != null and int(winner) == team else ""
+			lines.append("\nEQUIPE %s  (%d abates)%s" % [_team_name(team).to_upper(), int(score[team]) if team < score.size() else 0, tag])
+		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
+		var xp_text := "  +%d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
+		var me := "  (você)" if str(row.get("id", "")) == my_id else ""
+		lines.append("   %s (%s) — %d abate(s)%s%s" % [row["name"], who, int(row["kills"]), xp_text, me])
+	var title := "EMPATE"
+	if winner != null:
+		title = "VITÓRIA DA EQUIPE!" if int(winner) == my_team else "DERROTA — EQUIPE %s VENCEU" % _team_name(int(winner)).to_upper()
+	_show_center(title, "\n".join(lines).strip_edges())
+	if not Net.party_code.is_empty():
+		room_button.visible = true
+		room_button.text = "Voltar para a sala %s" % Net.party_code
+		room_button.grab_focus()
 
 
 # -------------------------------------------------------------------- UI ---
@@ -706,6 +932,77 @@ func _build_ui() -> void:
 	back_button.custom_minimum_size = Vector2(220, 46)
 	back_button.pressed.connect(_back_to_menu)
 	column.add_child(back_button)
+	# Custom rooms survive the match: back to the same lobby and code.
+	room_button = Button.new()
+	room_button.name = "BackToRoomButton"
+	room_button.text = "Voltar para a sala"
+	room_button.custom_minimum_size = Vector2(220, 46)
+	room_button.visible = false
+	room_button.pressed.connect(_back_to_room)
+	column.add_child(room_button)
+	column.move_child(room_button, back_button.get_index())
+	_build_leave_panel()
+
+## "Sair da partida?" panel: leave now (counts as elimination, earned XP is
+## kept) or keep playing.
+func _build_leave_panel() -> void:
+	leave_panel = PanelContainer.new()
+	leave_panel.name = "LeavePanel"
+	leave_panel.visible = false
+	var box := StyleBoxFlat.new()
+	box.bg_color = Color(0.06, 0.1, 0.11, 0.94)
+	box.border_color = Color("#49615b")
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(12)
+	for side in ["left", "right", "top", "bottom"]:
+		box.set("content_margin_" + side, 26)
+	leave_panel.add_theme_stylebox_override("panel", box)
+	ui.add_child(leave_panel)
+	leave_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	leave_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	leave_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 12)
+	leave_panel.add_child(column)
+	var title := Label.new()
+	title.text = "SAIR DA PARTIDA?"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 28)
+	column.add_child(title)
+	leave_text = Label.new()
+	leave_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	leave_text.add_theme_font_size_override("font_size", 16)
+	leave_text.add_theme_color_override("font_color", Color("#c9d3cc"))
+	column.add_child(leave_text)
+	var leave_button := Button.new()
+	leave_button.name = "LeaveMatchButton"
+	leave_button.text = "Sair para o menu"
+	leave_button.custom_minimum_size = Vector2(260, 46)
+	leave_button.pressed.connect(_back_to_menu)
+	column.add_child(leave_button)
+	var stay := Button.new()
+	stay.name = "StayInMatchButton"
+	stay.text = "Continuar na partida"
+	stay.custom_minimum_size = Vector2(260, 46)
+	stay.pressed.connect(_close_leave_panel)
+	column.add_child(stay)
+
+func _open_leave_panel() -> void:
+	var lines := "Você volta ao menu e o XP já ganho fica salvo."
+	if not local_dead:
+		lines = "Você será eliminado desta partida.\n" + lines
+		if team_mode:
+			lines += "\nSua equipe continua sem você."
+	leave_text.text = lines
+	leave_panel.visible = true
+	Input.action_release("fire")
+	Input.action_release("aim")
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	(leave_panel.find_child("StayInMatchButton", true, false) as Button).grab_focus()
+
+func _close_leave_panel() -> void:
+	leave_panel.visible = false
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 func _show_center(title: String, body: String) -> void:
 	center_title.text = title
@@ -715,6 +1012,11 @@ func _show_center(title: String, body: String) -> void:
 
 func _back_to_menu() -> void:
 	Net.leave()
+	get_tree().change_scene_to_file("res://scenes/menu.tscn")
+
+## Keep the connection: the menu reopens the same custom room's lobby.
+func _back_to_room() -> void:
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 func _feed(text: String) -> void:

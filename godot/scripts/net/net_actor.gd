@@ -7,12 +7,14 @@ signal damaged(actor_id: String, zone: String, point: Vector3, normal: Vector3, 
 signal bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vector3)
 signal bot_hit(actor_id: String, target_id: String, damage: float)
 signal bot_loot(actor_id: String, crate_id: String)
+signal bot_heal(actor_id: String) # use a carried medkit
 
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
+const BotNav = preload("res://scripts/net/bot_nav.gd")
 # Bots prefer the strongest weapon they have picked up.
 const WEAPON_PREFERENCE := ["rifle", "smg", "shotgun", "sniper", "pistol"]
 # Body-part volumes: [from bone, to bone, zone, radius in metres].
@@ -45,6 +47,8 @@ var actor_id := ""
 var display_name := ""
 var tag_subtitle := "" # rank for players, "BOT" for bots
 var is_bot := false
+var team := -1 # team matches: 0/1; -1 in free-for-all
+var ally := false # same team as the local player: blue tag, seen through walls
 var controlled := false # true when this client simulates the bot
 var hp := 100.0
 var dead := false
@@ -75,6 +79,8 @@ var hitboxes: Array[StaticBody3D] = []
 # Loot: everyone starts unarmed in online matches.
 var armed := false
 var owned_weapons: Dictionary = {}
+var medkits := 0 # carried (server count)
+var _heal_cooldown := 0.0
 var crate_targets: Callable # returns Array of {id, pos} for unopened crates
 var _goal_crate := ""
 var _loot_cooldown := 0.0
@@ -82,6 +88,11 @@ var _wander_goal := Vector3.ZERO
 var _detour_until := 0
 var _flinch := 0.0
 var _flinch_side := 0.0
+var _lean := 0.0
+var _approach_point := Vector3.INF # nav waypoint toward a visible target behind an obstacle
+const HEARING_RANGE := 30.0 # enemies closer than this are "heard" and checked out
+const WANDER_PATIENCE := 25.0 # seconds before giving up on a roaming spot
+var _wander_timer := 0.0
 
 func setup(id: String, label: String, bot: bool) -> void:
 	actor_id = id
@@ -115,7 +126,8 @@ func _ready() -> void:
 	name_tag.font_size = 44
 	name_tag.outline_size = 10
 	name_tag.pixel_size = 0.004
-	name_tag.modulate = Color("#ff8f7a")
+	name_tag.modulate = Color("#7cc8ff") if ally else Color("#ff8f7a")
+	name_tag.no_depth_test = ally
 	name_tag.position.y = 2.15
 	add_child(name_tag)
 	target_position = global_position
@@ -284,12 +296,34 @@ func _physics_process(delta: float) -> void:
 		_run_bot(delta)
 	else:
 		_follow_remote(delta)
+	_update_aim()
 	# Hit reaction: a quick lean away from the shot that settles back.
 	_flinch = move_toward(_flinch, 0.0, delta * 5.0)
+	# Peeking (Q/E while aiming): the whole body tilts, hitboxes included.
+	var target_lean := 0.0 if controlled else clampf(float(remote_state.get("l", 0.0)), -1.0, 1.0)
+	_lean = move_toward(_lean, target_lean, delta * 6.0)
 	if visual != null:
 		var kick := sin(_flinch * PI * 0.5)
 		visual.rotation.x = -0.16 * kick
-		visual.rotation.z = _flinch_side * 0.18 * kick
+		visual.rotation.z = _flinch_side * 0.18 * kick - _lean * 0.24
+
+## Point the held weapon where this combatant looks: its target for a bot this
+## client runs, otherwise the yaw/pitch it reported (rifle clips alone hold the
+## barrel ~20° off to the side).
+func _update_aim() -> void:
+	if visual == null or not visual.has_method("set_aim_target"):
+		return
+	var eye := global_position + Vector3(0, 1.45, 0)
+	var point: Vector3
+	if controlled and _ai_target != null and _sees_target:
+		point = _ai_target.global_position + Vector3(0, 1.3, 0)
+	else:
+		var look_pitch := float(remote_state.get("pi", 0.0)) if not controlled else 0.0
+		var yaw := rotation.y
+		point = eye + Vector3(-sin(yaw) * cos(look_pitch), sin(look_pitch), -cos(yaw) * cos(look_pitch)) * 30.0
+	var running := _move_amount > 0.8 if controlled else bool(remote_state.get("r", false))
+	var reloading := false if controlled else bool(remote_state.get("rl", false))
+	visual.call("set_aim_target", point, armed and not running and not reloading)
 
 func _follow_remote(delta: float) -> void:
 	var blend := minf(1.0, delta * 12.0)
@@ -329,8 +363,20 @@ func _run_bot(delta: float) -> void:
 		rotation.y = lerp_angle(rotation.y, atan2(-forward.x, -forward.z), minf(1.0, delta * 8.0))
 		_strafe_phase += delta * 1.3
 		var side := forward.cross(Vector3.UP) * sin(_strafe_phase)
-		if distance > 16.0:
-			desired = forward + side * 0.3
+		if Time.get_ticks_msec() < _detour_until:
+			# Stuck while fighting (e.g. against a low wall it can see over): side-step.
+			var away := _waypoint - global_position
+			away.y = 0.0
+			desired = away.normalized() if away.length() > 0.2 else Vector3.ZERO
+		elif distance > 16.0:
+			# Approach: straight when walkable, otherwise along the nav route.
+			var approach := forward
+			if _approach_point != Vector3.INF:
+				var to_point := _approach_point - global_position
+				to_point.y = 0.0
+				if to_point.length() > 0.4:
+					approach = to_point.normalized()
+			desired = approach + side * 0.3
 		elif distance < 7.0:
 			desired = -forward + side * 0.5
 		else:
@@ -373,9 +419,17 @@ func _run_bot(delta: float) -> void:
 
 ## Decide what to do: fight a visible enemy, grab loot, or move toward people.
 func _think() -> void:
+	_heal_cooldown -= 0.35
+	if medkits > 0 and hp < 45.0 and _heal_cooldown <= 0.0:
+		_heal_cooldown = 2.0
+		bot_heal.emit(actor_id)
 	var fallback := _pick_target()
 	if armed and _sees_target:
+		# Seeing a target does not mean the way is clear (low walls, rails).
+		var target_ground := Vector3(_ai_target.global_position.x, global_position.y, _ai_target.global_position.z)
+		_approach_point = Vector3.INF if _clear_path(target_ground) else _route_to(target_ground)
 		return
+	_approach_point = Vector3.INF
 	if Time.get_ticks_msec() < _detour_until:
 		return
 	var goal := Vector3.ZERO
@@ -389,12 +443,17 @@ func _think() -> void:
 		if _flat_distance(goal, global_position) < 1.7 and _loot_cooldown <= 0.0:
 			_loot_cooldown = 1.0
 			bot_loot.emit(actor_id, _goal_crate)
-	elif armed and not fallback.is_empty():
+	elif armed and not fallback.is_empty() and _flat_distance((fallback["node"] as Node3D).global_position, global_position) < HEARING_RANGE:
+		# Heard someone close by (not in sight): go check.
 		goal = (fallback["node"] as Node3D).global_position
 		has_goal = true
 	if not has_goal:
-		if _flat_distance(_wander_goal, global_position) < 3.0 or _wander_goal == Vector3.ZERO:
-			_wander_goal = _nearest_road_point(Vector3(randf_range(-45, 45), 0, randf_range(-45, 45)))
+		# Nobody seen or heard: roam to random walkable spots across the whole map
+		# (streets, yards and building interiors), picking a new one on arrival.
+		_wander_timer -= 0.35
+		if _wander_goal == Vector3.ZERO or _flat_distance(_wander_goal, global_position) < 2.0 or _wander_timer <= 0.0:
+			_wander_goal = BotNav.random_point(get_world_3d())
+			_wander_timer = WANDER_PATIENCE
 		goal = _wander_goal
 	_waypoint = _waypoint_for(goal)
 
@@ -407,14 +466,21 @@ func _nearest_crate() -> Dictionary:
 	var best: Dictionary = {}
 	var best_distance := INF
 	for entry in crate_targets.call():
+		# Medkits once armed (weapons first), keeping a couple in reserve.
+		if bool(entry.get("med", false)) and (not armed or medkits >= 2):
+			continue
 		var distance := _flat_distance(entry["pos"], global_position)
 		if distance < best_distance:
 			best_distance = distance
 			best = entry
 	return best
 
-## Next point to walk to: through doors when leaving or entering a building,
-## straight when the way is clear, otherwise along the main roads.
+## Next point to walk to: straight when the way is clear, otherwise along an
+## A* path over the map's real collision (doors, crates and building corners
+## included), taking the farthest path point that is in plain sight.
+## Buildings have a fixed exit line through the door: door_in (inside, facing
+## the door) -> door_out (outside). Bots leaving line up on door_in and walk
+## straight out; bots entering line up on door_out and walk straight in.
 func _waypoint_for(goal: Vector3) -> Vector3:
 	var here := MatchLayout.building_at(global_position)
 	var there := MatchLayout.building_at(goal)
@@ -422,15 +488,25 @@ func _waypoint_for(goal: Vector3) -> Vector3:
 	var there_name: String = there.get("name", "")
 	if not here_name.is_empty() and here_name != there_name:
 		var door_in: Vector3 = here["door_in"]
-		if global_position.z < door_in.z - 0.4 and _flat_distance(global_position, door_in) > 0.7:
-			return door_in
-		return here["door_out"]
+		# (0.7 m: waypoints count as reached at 0.6 m, so this never loops in place)
+		var lined_up := _flat_distance(global_position, door_in) < 0.7 or (absf(global_position.x - door_in.x) < 0.45 and global_position.z > door_in.z - 0.5)
+		return here["door_out"] if lined_up else _route_to(door_in)
 	if not there_name.is_empty() and there_name != here_name:
 		var door_out: Vector3 = there["door_out"]
-		if _flat_distance(global_position, door_out) < 1.2:
-			return there["door_in"]
-		return door_out if _clear_path(door_out) else _next_road_point(door_out)
-	return goal if _clear_path(goal) else _next_road_point(goal)
+		var at_door := _flat_distance(global_position, door_out) < 1.0
+		return there["door_in"] if at_door else _route_to(door_out)
+	return _route_to(goal)
+
+func _route_to(goal: Vector3) -> Vector3:
+	if _clear_path(goal):
+		return goal
+	var route := BotNav.path(get_world_3d(), global_position, goal)
+	if route.is_empty():
+		return _nearest_road_point(goal)
+	for index in [16, 10, 6, 3, 1]:
+		if index < route.size() and _clear_path(route[index]):
+			return route[index]
+	return route[mini(1, route.size() - 1)]
 
 func _clear_path(target: Vector3) -> bool:
 	var query := PhysicsShapeQueryParameters3D.new()
@@ -443,6 +519,7 @@ func _clear_path(target: Vector3) -> bool:
 	return get_world_3d().direct_space_state.cast_motion(query)[0] >= 0.999
 
 ## Closest visible enemy (fights only when armed); returns the closest enemy overall.
+## In team matches, teammates are never targets.
 func _pick_target() -> Dictionary:
 	var previous_target := _ai_target_id
 	_ai_target = null
@@ -456,6 +533,8 @@ func _pick_target() -> Dictionary:
 	for entry in combatants.call():
 		if entry["id"] == actor_id:
 			continue
+		if team >= 0 and int(entry.get("team", -1)) == team:
+			continue # teammate
 		var node: Node3D = entry["node"]
 		var distance := global_position.distance_to(node.global_position)
 		if distance < fallback_distance:
@@ -508,23 +587,3 @@ func _nearest_road_point(point: Vector3) -> Vector3:
 				best_distance = distance
 				best = candidate
 	return best
-
-func _next_road_point(goal: Vector3) -> Vector3:
-	# Stay on the road we are on, moving along it toward the goal; when the goal
-	# lies on a crossing road, go to the intersection first.
-	var here := _nearest_road_point(global_position)
-	var there := _nearest_road_point(goal)
-	if absf(here.x - there.x) < 0.5 or absf(here.z - there.z) < 0.5:
-		return there
-	var on_vertical := false
-	for line in ROAD_LINES:
-		if absf(here.x - line) < 0.5:
-			on_vertical = true
-	var corner_line := 0.0
-	var best := INF
-	for line in ROAD_LINES:
-		var value: float = (there.z if on_vertical else there.x)
-		if absf(line - value) < best:
-			best = absf(line - value)
-			corner_line = line
-	return Vector3(here.x, 0, corner_line) if on_vertical else Vector3(corner_line, 0, here.z)
