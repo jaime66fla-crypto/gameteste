@@ -45,26 +45,42 @@ func _run() -> void:
         # Camera has a clear line above the low barrier beside the muzzle.
         camera.global_transform = Transform3D(Basis.IDENTITY,muzzle.global_position+Vector3(0,1,0.5))
         var target := _box(scene,camera.global_position+Vector3(0,0,-12),Vector3(2,2,0.6))
-        var wall := _box(scene,muzzle.global_position+Vector3(0,0,-0.3),Vector3(0.6,0.4,0.12))
+        # 1) Hugging low cover: its lip right past the barrel does not eat the
+        #    shot; the head sees over it, so the round clears it.
+        var lip := _box(scene,muzzle.global_position+Vector3(0,0,-0.3),Vector3(0.6,0.4,0.12))
         await physics_frame
         await physics_frame
         player.call("_shoot")
-        _check(wall.damage > 0, "Barrel obstruction ignored: "+weapon)
-        _check(target.damage == 0, "Shot penetrated nearby obstruction: "+weapon)
-        wall.queue_free()
+        _check(lip.damage == 0, "Cover lip in front of the barrel ate the shot: "+weapon)
+        _check(target.damage > 0, "Shot over low cover did not reach the target: "+weapon)
+        lip.queue_free()
         await process_frame
         await physics_frame
         await physics_frame
-        player.call("_shoot")
-        _check(target.damage > 0, "Clear barrel cannot reach camera target: "+weapon)
         var before: float = target.damage
-        var grip: Marker3D = player.get("weapon_model").get_node("Grip")
-        var inside := _box(scene,grip.global_position.lerp(muzzle.global_position,0.5),Vector3(0.3,0.3,0.035))
+        player.call("_shoot")
+        _check(target.damage > before, "Clear barrel cannot reach camera target: "+weapon)
+        # 2) A tall wall right in front (no seeing over it) still stops the round,
+        #    even though the aim ray now starts at the barrel's depth.
+        before = target.damage
+        var wall := _box(scene,muzzle.global_position+Vector3(0,0,-0.3),Vector3(3,6,0.12))
         await physics_frame
         await physics_frame
         player.call("_shoot")
-        _check(inside.damage > 0 and target.damage == before,"Protruding barrel bypasses grip-to-muzzle wall: "+weapon)
-        inside.queue_free()
+        _check(wall.damage > 0 and target.damage == before, "Shot went through a tall wall in front: "+weapon)
+        wall.queue_free()
+        await process_frame
+        # 3) A low obstacle farther ahead on the barrel line (camera sees over it)
+        #    still blocks: only the lip right past the barrel is cleared.
+        before = target.damage
+        # 0.8 m tall: covers the rising barrel line (+0.2 m there), still well under the camera line (+1 m).
+        # 3 m wide so no shotgun pellet slips around it.
+        var low := _box(scene,muzzle.global_position+Vector3(0,0,-2.5),Vector3(3,0.8,0.12))
+        await physics_frame
+        await physics_frame
+        player.call("_shoot")
+        _check(low.damage > 0 and target.damage == before, "Barrel obstruction farther ahead ignored: "+weapon)
+        low.queue_free()
         target.queue_free()
         await process_frame
     scene.queue_free()

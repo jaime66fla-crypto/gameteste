@@ -98,8 +98,13 @@ func shot(weapon_id: String = "pistol") -> void:
 	_gun_variant = (_gun_variant + 1) % SfxBank.GUN_VARIANTS
 	var p := _gun_player(id, _gun_variant)
 	p.pitch_scale = randf_range(0.97, 1.03)
-	p.volume_db = {"pistol": -3.0, "smg": -4.0, "rifle": -2.0, "shotgun": 0.0, "sniper": 1.0}.get(id, -3.0)
+	p.volume_db = float(SHOT_GAIN.get(id, -3.0))
 	p.play()
+	last_shot_player = p
+
+## Volume de cada arma (dB). Exposto para os testes.
+const SHOT_GAIN := {"pistol": -3.0, "smg": -4.0, "rifle": -2.0, "shotgun": 0.0, "sniper": 1.0}
+var last_shot_player: Node # o tocador do último tiro (há um por som de arma)
 
 ## Um tocador por som de arma (trocar o stream cortaria a cauda do tiro anterior).
 var _gun_players: Dictionary = {}

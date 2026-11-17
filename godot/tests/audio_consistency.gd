@@ -32,8 +32,10 @@ func _run() -> void:
             _check(source is AudioStreamPlayer, "Local " + source_name + " remains distance-attenuated at " + str(point))
         for weapon_id in ["pistol", "smg", "rifle", "shotgun", "sniper"]:
             fx.shot(weapon_id)
-            var shot: Node = fx.get("shot_player")
-            _check(is_equal_approx(shot.volume_db, 0.0 if weapon_id in ["shotgun", "sniper"] else -4.0), "Weapon gain changed")
+            # One player per weapon sound (so bursts keep their tails): check the one that fired.
+            var shot: Node = fx.get("last_shot_player")
+            _check(shot is AudioStreamPlayer, "Local shot became distance-attenuated: " + weapon_id)
+            _check(is_equal_approx(shot.volume_db, float(fx.SHOT_GAIN[weapon_id])), "Weapon gain changed")
             _check(shot.playing, "Shot did not start")
             shot.stop()
         for crouched in [false, true]:
