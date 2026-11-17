@@ -267,7 +267,9 @@ func _process(_delta: float) -> void:
             out = match_controller.get("local_dead") or match_controller.get("finished")
             crosshair.visible = crosshair.visible and not out
         if ammo_hud != null:
-            ammo_hud.visible = not out and not scoped
+            var in_car: bool = match_controller != null and match_controller.has_method("is_driving") and match_controller.call("is_driving")
+            ammo_hud.set("suppressed", out or scoped or in_car)
+            crosshair.visible = crosshair.visible and not in_car
         # Sem textos fixos na tela: controles só segurando F1 (dica nos primeiros segundos).
         _hint_time += _delta
         if Input.is_physical_key_pressed(KEY_F1):

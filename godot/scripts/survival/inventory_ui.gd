@@ -10,8 +10,8 @@ signal equip_requested(item: String)
 signal unequip_requested()
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
-const CAT_ORDER := ["weapon", "ammo", "melee", "medical", "food", "drink", "gear", "material"]
-const CAT_NAME := {"weapon": "Arma", "ammo": "Munição", "melee": "Arma branca", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "material": "Material"}
+const CAT_ORDER := ["weapon", "ammo", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
+const CAT_NAME := {"weapon": "Arma", "ammo": "Munição", "melee": "Arma branca", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "fuel": "Combustível (T perto do carro)", "material": "Material"}
 
 var inv: Dictionary = {}
 var weight := 0.0

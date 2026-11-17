@@ -32,6 +32,7 @@ func _run() -> void:
 		"roster": [{"id": "p2", "name": "Amigo", "rank": "Recruta", "p": [spawn[0] + 4, 0.2, spawn[1]], "dead": false}],
 		"zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [spawn[0] + 15, 0.2, spawn[1]]}],
 		"bags": [], "searched": [], "depleted": {},
+		"vehicles": [{"id": "v0", "kind": "sedan", "color": "#8c1d18", "p": [spawn[0] + 6, 0, spawn[1]], "yaw": 0.0, "fuel": 30, "driver": null}],
 	}
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main)
@@ -79,6 +80,44 @@ func _run() -> void:
 	var hud: CanvasLayer = main.get_node_or_null("Hud")
 	check(hud != null and hud.get_node_or_null("Minimap") != null and hud.get_node_or_null("AmmoHud") != null, "HUD com minimapa e munição")
 	check(str(main.get("hud").text).find("ARMA:") < 0, "sem o bloco de texto antigo na tela")
+	# Carro: entra (servidor confirma), dirige com W, sai.
+	var driving: Node = controller.driving_ctl
+	check(driving.vehicles.has("v0"), "carro do servidor aparece no mapa")
+	player.global_position = driving.vehicles["v0"].global_position + Vector3(2, 0.1, 0)
+	await _frames(2)
+	check(str(controller.call("_find_target").get("type", "")) == "vehicle", "E perto do carro: dirigir")
+	driving.call("request_enter", "v0")
+	var vp: Vector3 = driving.vehicles["v0"].global_position
+	Net.message.emit({"t": "veh", "id": "v0", "kind": "sedan", "color": "#8c1d18", "p": [vp.x, vp.y, vp.z], "yaw": 0.0, "fuel": 30, "driver": "me"})
+	await _frames(2)
+	check(controller.call("is_driving") and not player.visible, "dirigindo: personagem entra no carro")
+	var car: Node3D = driving.vehicles["v0"]
+	var start := car.global_position
+	Input.action_press("move_forward")
+	await _frames(90)
+	Input.action_release("move_forward")
+	check(car.global_position.distance_to(start) > 3.0, "W acelera o carro (andou %.1f m)" % car.global_position.distance_to(start))
+	check(player.global_position.distance_to(car.global_position) < 1.0, "o jogador viaja junto com o carro")
+	car.set("fuel", 0.0)
+	var parked := car.global_position
+	car.set("speed", 0.0)
+	Input.action_press("move_forward")
+	await _frames(60)
+	Input.action_release("move_forward")
+	check(car.global_position.distance_to(parked) < 0.5, "sem gasolina o carro não anda")
+	var exit_key := InputEventKey.new()
+	exit_key.physical_keycode = KEY_E
+	exit_key.pressed = true
+	controller.call("_unhandled_input", exit_key)
+	await _frames(2)
+	check(not controller.call("is_driving") and player.visible, "E sai do carro")
+	# Golpe de machado: a ferramenta aparece na mão do personagem.
+	player.call("start_channel", "CORTANDO", 3.0, func(): pass) # o golpe dura enquanto a coleta corre
+	controller.call("_set_action", "chop", "axe")
+	await _frames(5)
+	var av = player.get("humanoid_avatar")
+	check(av != null and str(av.get("work_action")) == "chop" and av.get("_tool_node") != null, "machado na mão golpeando")
+	controller.call("_set_action", "", "")
 	print("FALHAS: %d" % failures)
 	Net.in_match = false
 	get_tree().quit(1 if failures else 0)

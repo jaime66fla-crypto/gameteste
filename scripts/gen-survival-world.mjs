@@ -96,13 +96,13 @@ town('Bairro Novo', 40, -170, 4, 2, [
 	{ name: 'Mercadinho Bom Preço', kind: 'shop', x: 40 + 8.5, z: -170, w: 14, d: 10, h: 3.8, color: '#c8a46a', inside: [['shelf', -5, -4.2], ['shelf', 0, -4.2], ['shelf', 5, -4.2], ['fridge', -6, 0], ['cabinet', 6, 0]] },
 ]);
 // Posto: loja de conveniência e oficina, mais duas casas.
-addBuilding('Posto Rodovia — Conveniência', 'shop', 168, -38, 12, 9, 3.6, '#e2d7b3', [['shelf', -4.5, -3.7], ['shelf', 0, -3.7], ['fridge', 4.6, -3.7], ['cabinet', 4.6, 0]]);
-addBuilding('Posto Rodovia — Oficina', 'garage', 186, -38, 12, 10, 4.5, '#9a9488', [['toolbox', -4.6, -4.2], ['toolbox', 0, -4.2], ['car_trunk', 4.2, -2.5]]);
+addBuilding('Posto Rodovia — Conveniência', 'shop', 168, -38, 12, 9, 3.6, '#e2d7b3', [['shelf', -4.5, -3.7], ['shelf', 0, -3.7], ['fridge', 4.6, -3.7], ['cabinet', 4.6, 0], ['fuel', -4.8, 0.2]]);
+addBuilding('Posto Rodovia — Oficina', 'garage', 186, -38, 12, 10, 4.5, '#9a9488', [['toolbox', -4.6, -4.2], ['toolbox', 0, -4.2], ['car_trunk', 4.2, -2.5], ['fuel', -4.8, 1.0], ['fuel', 4.8, 1.6]]);
 house('Posto Rodovia — Casa 1', 152, -14);
 house('Posto Rodovia — Casa 2', 172, -10);
 // Fazenda: sede, dois celeiros.
 addBuilding('Fazenda Boa Vista — Sede', 'house', -165, 140, 14, 10, 3.6, '#c9a97c', [['fridge', -6, -4.2], ['cabinet', -2, -4.2], ['wardrobe', 6, -4.2], ['medcab', 6, 0]]);
-addBuilding('Fazenda Boa Vista — Celeiro', 'barn', -145, 160, 16, 12, 6, '#8e3b2e', [['toolbox', -6.5, -5.2], ['toolbox', 6.5, -5.2], ['wardrobe', 0, -5.2]]);
+addBuilding('Fazenda Boa Vista — Celeiro', 'barn', -145, 160, 16, 12, 6, '#8e3b2e', [['toolbox', -6.5, -5.2], ['toolbox', 6.5, -5.2], ['wardrobe', 0, -5.2], ['fuel', -6.8, 0]]);
 addBuilding('Fazenda Boa Vista — Galpão', 'barn', -185, 162, 12, 10, 5, '#7c6650', [['toolbox', -4.5, -4.2], ['car_trunk', 3.5, -2]]);
 // Base militar: alojamentos com caixas militares e armário de armas.
 for (let i = 0; i < 3; i++) {
@@ -112,7 +112,7 @@ for (let i = 0; i < 3; i++) {
 		['medcab', 4.6, -4.2],
 	]);
 }
-addBuilding('Base Militar — Arsenal', 'military', 170, 184, 10, 8, 3.6, '#5d6650', [['gun_locker', -3.6, -3.2], ['gun_locker', 0, -3.2], ['military', 3.6, -3.2]]);
+addBuilding('Base Militar — Arsenal', 'military', 170, 184, 10, 8, 3.6, '#5d6650', [['gun_locker', -3.6, -3.2], ['gun_locker', 0, -3.2], ['military', 3.6, -3.2], ['fuel', -3.8, 0.4]]);
 town('Vila Pesqueira', -20, 172, 3, 2, [
 	{ name: 'Delegacia', kind: 'police', x: -20 + 17, z: 172 - 8.5, w: 12, d: 10, h: 3.6, color: '#7f93a8', inside: [['gun_locker', -4.6, -4.2], ['gun_locker', 0, -4.2], ['cabinet', 4.6, -4.2], ['medcab', 4.8, 0]] },
 ]);
@@ -155,11 +155,31 @@ function blocked(x, z, margin) {
 	}
 	for (const r of roads) if (segmentDistance(x, z, r.from, r.to) < r.width / 2 + margin) return true;
 	for (const res of resources) if (Math.hypot(res.p[0] - x, res.p[2] - z) < margin + 1.2) return true;
+	for (const v of vehicles) if (Math.hypot(v.p[0] - x, v.p[2] - z) < margin + 4) return true;
 	return false;
 }
 function addResource(kind, x, z, yaw = 0) {
 	resources.push({ id: 'r' + resourceSeq++, kind, p: [r1(x), 0, r1(z)], yaw: r1(yaw) });
 }
+
+// Carros que funcionam (precisam de gasolina): no acostamento, perto das cidades,
+// alinhados com a estrada. Dois por estrada que sai da cidade do meio.
+const vehicles = [];
+const VEHICLE_KINDS = ['sedan', 'pickup', 'hatch'];
+const VEHICLE_COLORS = ['#8c1d18', '#1f3d6b', '#d8d4cc', '#2b2b2b', '#4f6a3c', '#b8892f', '#5d6770'];
+towns.forEach((t, ti) => {
+	const r = roads[ti]; // estradas do centro até cada cidade, na mesma ordem
+	const length = Math.hypot(r.to[0] - r.from[0], r.to[1] - r.from[1]);
+	const nx = -(r.to[1] - r.from[1]) / length;
+	const nz = (r.to[0] - r.from[0]) / length;
+	for (const [t0, side] of [[0.12, 1], [0.78, -1]]) {
+		const x = r.from[0] + (r.to[0] - r.from[0]) * t0 + nx * side * (r.width / 2 + 1.6);
+		const z = r.from[1] + (r.to[1] - r.from[1]) * t0 + nz * side * (r.width / 2 + 1.6);
+		if (buildings.some((b) => Math.abs(x - b.center[0]) < b.size[0] / 2 + 4 && Math.abs(z - b.center[1]) < b.size[1] / 2 + 6)) continue;
+		const yaw = Math.atan2(-(r.to[0] - r.from[0]), -(r.to[1] - r.from[1])); // frente (-Z) para a cidade
+		vehicles.push({ id: 'v' + vehicles.length, kind: VEHICLE_KINDS[vehicles.length % 3], color: VEHICLE_COLORS[vehicles.length % VEHICLE_COLORS.length], p: [r1(x), 0, r1(z)], yaw: Math.round(yaw * 100) / 100 });
+	}
+});
 
 // Carros abandonados ao longo das estradas (sucata); um em cada três tem porta-malas.
 for (const r of roads) {
@@ -174,6 +194,7 @@ for (const r of roads) {
 		const z = r.from[1] + (r.to[1] - r.from[1]) * t + nz * side * (r.width / 2 + 2.2);
 		if (Math.abs(x) < CENTER_CLEAR + 4 && Math.abs(z) < CENTER_CLEAR + 4) continue;
 		if (buildings.some((b) => Math.abs(x - b.center[0]) < b.size[0] / 2 + 4 && Math.abs(z - b.center[1]) < b.size[1] / 2 + 6)) continue;
+		if (vehicles.some((v) => Math.hypot(v.p[0] - x, v.p[2] - z) < 9)) continue;
 		const yaw = Math.atan2(r.to[0] - r.from[0], r.to[1] - r.from[1]) + between(-0.5, 0.5);
 		addResource('car', x, z, yaw);
 		if (resources.length % 3 === 0) addContainer('car_trunk', x - Math.sin(yaw) * 2.6, z - Math.cos(yaw) * 2.6);
@@ -278,6 +299,7 @@ const world = {
 	spawns,
 	zombie_zones,
 	grass,
+	vehicles,
 };
 writeFileSync(new URL('../godot/data/survival_world.json', import.meta.url), JSON.stringify(world, null, 1) + '\n');
-console.log(`${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos (${resources.filter((r) => r.kind === 'tree').length} árvores), ${grass.length} manchas de grama alta, ${spawns.length} nascimentos, ${roads.length} estradas`);
+console.log(`${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos (${resources.filter((r) => r.kind === 'tree').length} árvores), ${grass.length} manchas de grama alta, ${vehicles.length} carros que funcionam, ${spawns.length} nascimentos, ${roads.length} estradas`);

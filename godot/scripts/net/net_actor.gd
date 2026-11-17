@@ -259,6 +259,11 @@ func apply_state(state: Dictionary) -> void:
 		armed = now_armed
 		_apply_armed()
 
+## Sobrevivência: golpe de trabalho (machado/pé de cabra) visto pelos outros.
+func set_action(act: String, tool: String) -> void:
+	if visual != null and visual.has_method("set_action"):
+		visual.call("set_action", act, tool)
+
 func set_controlled(value: bool) -> void:
 	controlled = value and is_bot and not dead
 	velocity = Vector3.ZERO

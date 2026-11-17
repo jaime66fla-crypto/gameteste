@@ -10,6 +10,8 @@ const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
+const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
+var driving_ctl: Node # carros (survival_driving.gd)
 const STATE_RATE := 1.0 / 10.0
 const ZOMBIE_RATE := 1.0 / 6.0
 const REACH := 2.8 # interação (o servidor aceita um pouco mais)
@@ -90,6 +92,10 @@ func _ready() -> void:
 	for entry in info.get("roster", []):
 		_add_actor(entry)
 	_spawn_zombies(info.get("zombies", []))
+	driving_ctl = DrivingScript.new()
+	driving_ctl.call("setup", self, main_node, player)
+	add_child(driving_ctl)
+	driving_ctl.call("spawn_all", info.get("vehicles", []))
 	for bag in info.get("bags", []):
 		_set_bag(bag)
 	for k in info.get("searched", []):
@@ -106,7 +112,7 @@ func _ready() -> void:
 	if bool(you.get("dead", false)):
 		_on_local_death()
 	_feed("Bem-vindo ao mundo aberto. Sobreviva: ache comida, água e armas.")
-	_feed("E revistar/coletar  •  TAB inventário  •  Q golpe  •  F curativo rápido")
+	_feed("E revistar/coletar/dirigir  •  TAB inventário  •  Q golpe  •  F curativo  •  T abastecer")
 	_feed("Zumbis ouvem tiros. De noite enxergam menos — e você também.")
 
 func _exit_tree() -> void:
@@ -147,15 +153,19 @@ func _physics_process(delta: float) -> void:
 		respawn_button.text = "Renascer" if _respawn_left <= 0.0 else "Renascer em %d s" % ceili(_respawn_left)
 		return
 	_sync_ammo()
+	# Saiu do lugar ou cancelou: para de golpear.
+	if not action.is_empty() and float(player.get("channel_left")) <= 0.0:
+		_set_action("", "")
 	_state_timer -= delta
 	if _state_timer <= 0.0:
 		_state_timer = STATE_RATE
 		var p := player.global_position
-		var v := player.get_real_velocity()
+		var v := player.get_real_velocity() if not is_driving() else Vector3.ZERO
 		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching"), "a": player.get("aiming"),
-			"f": not player.is_on_floor(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z]})
+			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
+			"act": action, "tool": action_tool})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -166,12 +176,20 @@ func _physics_process(delta: float) -> void:
 		if not list.is_empty():
 			Net.send({"t": "z", "l": list})
 
+func is_driving() -> bool:
+	return driving_ctl != null and bool(driving_ctl.call("is_driving"))
+
 func _on_message(data: Dictionary) -> void:
+	if driving_ctl != null and bool(driving_ctl.call("on_message", data)):
+		return
 	match str(data.get("t", "")):
 		"s":
 			var actor = actors.get(str(data.get("id", "")))
 			if actor != null:
 				actor.call("apply_state", data)
+				# Dirigindo: o corpo some (está dentro do carro).
+				actor.visible = str(data.get("dv", "")).is_empty()
+				actor.call("set_action", str(data.get("act", "")), str(data.get("tool", "")))
 				var visual = actor.get("visual")
 				if visual != null and visual.has_method("set_backpack"):
 					visual.call("set_backpack", str(data.get("bp", "")))
@@ -385,6 +403,9 @@ func _on_health(data: Dictionary) -> void:
 		_toast("ELIMINOU %s" % str(names.get(id, "")).to_upper())
 
 func _on_local_death() -> void:
+	if driving_ctl != null:
+		driving_ctl.call("force_exit")
+	_set_action("", "")
 	local_dead = true
 	_respawn_left = 8.0
 	inventory.call("close")
@@ -527,7 +548,27 @@ func _find_target() -> Dictionary:
 			best_d = d
 			var rule := SurvivalData.resource_rule(str(entry["kind"]))
 			var verb: String = str({"tree": "Cortar", "rock": "Quebrar", "car": "Desmontar", "bush": "Colher"}.get(str(entry["kind"]), "Coletar"))
-			best = {"type": "resource", "id": id, "time": float(rule.get("time", 2.5)), "label": "[E] %s %s (%s)" % [verb, str(rule.get("name", "")), SurvivalData.item_name(str(rule.get("gives", "")))]}
+			var tool := _tool_for(str(rule.get("tool", "")))
+			var tool_note := ("  —  com " + SurvivalData.item_name(tool)) if not tool.is_empty() else ("  —  sem ferramenta rende pouco" if rule.has("tool") else "")
+			best = {"type": "resource", "id": id, "kind": str(entry["kind"]), "pos": pos, "tool": tool, "time": float(rule.get("time", 2.5)), "label": "[E] %s %s (%s)%s" % [verb, str(rule.get("name", "")), SurvivalData.item_name(str(rule.get("gives", ""))), tool_note]}
+	# Carro que funciona: só se não houver nada mais perto.
+	if driving_ctl != null and (best.is_empty() or best["type"] == "resource"):
+		var car: Dictionary = driving_ctl.call("target_near", me)
+		if not car.is_empty():
+			best = car
+	return best
+
+## Melhor ferramenta da mochila para o recurso ("wood" = machado, "scrap" = pé de cabra).
+func _tool_for(kind: String) -> String:
+	if kind.is_empty():
+		return ""
+	var best := ""
+	var best_dmg := -1
+	for item in inv:
+		var entry := SurvivalData.item(str(item))
+		if str(entry.get("tool", "")) == kind and int(entry.get("melee", 0)) > best_dmg:
+			best = str(item)
+			best_dmg = int(entry.get("melee", 0))
 	return best
 
 func _interact() -> bool:
@@ -537,13 +578,42 @@ func _interact() -> bool:
 	if _target.is_empty():
 		return false
 	var id := str(_target["id"])
-	if _target["type"] == "container":
+	if _target["type"] == "vehicle":
+		driving_ctl.call("request_enter", id)
+	elif _target["type"] == "container":
 		player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id}))
 	else:
 		var seconds := float(_target["time"])
-		if player.call("start_channel", "COLETANDO", seconds, func(): Net.send({"t": "gather", "r": id})):
+		var kind := str(_target["kind"])
+		var label: String = str({"tree": "CORTANDO", "rock": "QUEBRANDO", "car": "DESMONTANDO", "bush": "COLHENDO"}.get(kind, "COLETANDO"))
+		var done := func():
+			Net.send({"t": "gather", "r": id})
+			_set_action("", "")
+		if player.call("start_channel", label, seconds, done):
 			Net.send({"t": "gather_start", "r": id})
+			# Vira para o recurso e golpeia com a ferramenta (machado na árvore, pé de cabra na pedra/carro).
+			var to: Vector3 = (_target["pos"] as Vector3) - player.global_position
+			to.y = 0.0
+			player.set("yaw", atan2(-to.x, -to.z))
+			# Chega perto do tronco para o golpe acertar (árvore: ~1,1 m do centro).
+			var wanted := {"tree": 1.15, "rock": 1.3, "car": 1.9}.get(kind, 0.0) as float
+			if wanted > 0.0 and to.length() > wanted + 0.15:
+				var spot: Vector3 = (_target["pos"] as Vector3) - to.normalized() * wanted
+				spot.y = player.global_position.y
+				create_tween().tween_property(player, "global_position", spot, 0.25)
+			if kind != "bush":
+				_set_action("chop" if kind == "tree" else "pry", str(_target["tool"]))
 	return true
+
+## Ação de trabalho do personagem (vista por todos): "chop"/"pry" com a ferramenta, "" para.
+var action := ""
+var action_tool := ""
+func _set_action(act: String, tool: String) -> void:
+	action = act
+	action_tool = tool
+	var avatar = player.get("humanoid_avatar")
+	if avatar != null and avatar.has_method("set_action"):
+		avatar.call("set_action", act, tool)
 
 func _deplete(rid: String, seconds: float) -> void:
 	world.call("set_depleted", rid, true)
@@ -619,7 +689,7 @@ func _update_daylight() -> void:
 
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 0.8)
-	if not local_dead:
+	if not local_dead and not is_driving():
 		var target := _find_target()
 		prompt.visible = not target.is_empty() and not inventory.visible
 		if prompt.visible:
@@ -638,6 +708,13 @@ func _process(delta: float) -> void:
 	clock_label.text = "Dia %d  •  %02d:%02d\n%d/16 online" % [day, int(hour), int(fmod(hour, 1.0) * 60.0), online]
 
 func _unhandled_input(event: InputEvent) -> void:
+	if driving_ctl != null and bool(driving_ctl.call("handle_input", event)):
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T and not local_dead:
+		if bool(driving_ctl.call("request_refuel")):
+			get_viewport().set_input_as_handled()
+		return
 	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_TAB or event.physical_keycode == KEY_I):
 		if local_dead:
 			return

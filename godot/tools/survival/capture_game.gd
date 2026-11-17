@@ -36,7 +36,8 @@ func _run() -> void:
 	Net.start_info = {"t": "start", "survival": true, "host": "me", "clock": {"day_ms": 1440000, "time": 260000},
 		"you": {"id": "me", "p": [spot.x, spot.y, spot.z], "hp": 82, "hunger": 64, "thirst": 47,
 			"inv": {"w_rifle": 1, "a_556": 60, "canned_beans": 2, "water_bottle": 1, "bandage": 3, "wood": 2, "cloth": 4}, "back": "backpack", "weight": 9.4, "cap": 34},
-		"roster": [], "zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [float(patch["x"]), 0.2, float(patch["z"])]}], "bags": [], "searched": [], "depleted": {}}
+		"roster": [], "zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [float(patch["x"]), 0.2, float(patch["z"])]}], "bags": [], "searched": [], "depleted": {},
+		"vehicles": [{"id": "v0", "kind": "pickup", "color": "#8c1d18", "p": [spot.x + 4.0, 0, spot.z + 3.0], "yaw": face, "fuel": 60, "driver": null}]}
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main)
 	await _frames(30)
@@ -58,6 +59,18 @@ func _run() -> void:
 	await _frames(70)
 	get_viewport().get_texture().get_image().save_png(out.path_join("survival_crouch.png"))
 	Input.action_release("crouch")
+	# Dirigindo a caminhonete (câmera de perseguição, velocímetro e gasolina).
+	var car: Node3D = controller.driving_ctl.vehicles["v0"]
+	var cp := car.global_position
+	controller.driving_ctl.call("request_enter", "v0")
+	Net.message.emit({"t": "veh", "id": "v0", "kind": "pickup", "color": "#8c1d18", "p": [cp.x, cp.y, cp.z], "yaw": face, "fuel": 60, "driver": "me"})
+	Input.action_press("move_forward")
+	Input.action_press("move_left")
+	await _frames(70)
+	Input.action_release("move_left")
+	await _frames(20)
+	get_viewport().get_texture().get_image().save_png(out.path_join("survival_driving.png"))
+	Input.action_release("move_forward")
 	print("fotos salvas em " + out)
 	Net.in_match = false
 	get_tree().quit(0)

@@ -1,0 +1,207 @@
+extends CharacterBody3D
+## Carro que funciona (Sobrevivência). Física arcade simples: acelera, freia,
+## dá ré, esterça pela velocidade e bate nas paredes. Quem dirige é o jogo do
+## motorista (`controlled`); os outros só seguem a posição que o servidor repassa.
+## Sem gasolina o motor não liga. Atropelar zumbis: `rammed` avisa o controlador.
+signal rammed(zombie_id: String, speed: float)
+
+const CarModel = preload("res://scripts/survival/car_model.gd")
+const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const GRAVITY := 22.0
+const MAX_STEER := 0.55
+const REVERSE_SPEED := 6.0
+const BRAKE := 14.0
+const HANDBRAKE := 20.0
+const DRAG := 2.2
+
+var vehicle_id := ""
+var kind := "sedan"
+var color_hex := "#8c1d18"
+var fuel := 0.0
+var driver := ""
+var controlled := false
+## Devolve os zumbis (id -> nó) para checar atropelamento.
+var zombies: Callable
+
+var speed := 0.0 # m/s, positivo para a frente (-Z)
+var steer := 0.0
+var engine_on := false
+var _spec: Dictionary = {}
+var _model: Node3D
+var _wheels: Array[Node3D] = []
+var _front_wheels: Array[Node3D] = []
+var _spin := 0.0
+var _remote_pos := Vector3.ZERO
+var _remote_yaw := 0.0
+var _remote_speed := 0.0
+var _rammed: Dictionary = {}
+var _engine_audio: AudioStreamPlayer3D
+
+func setup(data: Dictionary) -> void:
+	vehicle_id = str(data.get("id", ""))
+	kind = str(data.get("kind", "sedan"))
+	color_hex = str(data.get("color", "#8c1d18"))
+	fuel = float(data.get("fuel", 0.0))
+	driver = str(data.get("driver", "")) if data.get("driver") != null else ""
+	name = "Vehicle_" + vehicle_id
+
+func display_name() -> String:
+	return str(SurvivalData.catalog().get("vehicles", {}).get(kind, {}).get("name", "Carro"))
+
+func _ready() -> void:
+	_spec = SurvivalData.catalog().get("vehicles", {}).get(kind, {"max_speed": 24, "accel": 7})
+	collision_layer = HitboxScript.LAYER_WORLD # dá cobertura e bloqueia quem anda
+	collision_mask = HitboxScript.LAYER_WORLD
+	floor_snap_length = 0.6
+	_model = CarModel.build(kind, color_hex, false, int(vehicle_id.substr(1)))
+	add_child(_model)
+	for child in _model.get_children():
+		if str(child.name).begins_with("Wheel_"):
+			_wheels.append(child)
+			if str(child.name).begins_with("Wheel_F"):
+				_front_wheels.append(child)
+	var size := CarModel.size_of(kind)
+	# Corpo (acima das rodas) + duas esferas embaixo que deslizam sobre meio-fios.
+	var body := BoxShape3D.new()
+	body.size = Vector3(size.x, size.y - 0.45, size.z)
+	var body_col := CollisionShape3D.new()
+	body_col.shape = body
+	body_col.position.y = 0.45 + body.size.y * 0.5
+	add_child(body_col)
+	for z in [-size.z * 0.3, size.z * 0.3]:
+		var ball := SphereShape3D.new()
+		ball.radius = 0.42
+		var col := CollisionShape3D.new()
+		col.shape = ball
+		col.position = Vector3(0, 0.42, z)
+		add_child(col)
+	_engine_audio = AudioStreamPlayer3D.new()
+	_engine_audio.max_distance = 60.0
+	add_child(_engine_audio)
+	_engine_audio.stream = _engine_sound()
+	_remote_pos = global_position
+	_remote_yaw = rotation.y
+
+## Ronco de motor sintético (onda em loop), tom pela velocidade.
+func _engine_sound() -> AudioStreamWAV:
+	var rate := 22050
+	var samples := rate / 2
+	var data := PackedByteArray()
+	data.resize(samples * 2)
+	for i in samples:
+		var t := float(i) / rate
+		var v := sin(TAU * 55.0 * t) * 0.45 + sin(TAU * 110.0 * t + sin(TAU * 7.0 * t)) * 0.25 + (randf() - 0.5) * 0.12
+		var s := int(clampf(v, -1.0, 1.0) * 9000)
+		data.encode_s16(i * 2, s)
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = rate
+	wav.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	wav.loop_end = samples
+	wav.data = data
+	return wav
+
+func set_engine(on: bool) -> void:
+	engine_on = on
+	var body := _model.get_node_or_null("Body") as MeshInstance3D
+	if body != null:
+		for i in body.mesh.get_surface_count():
+			var surface: String = body.mesh.surface_get_name(i)
+			if surface == "headlight":
+				body.set_surface_override_material(i, CarModel.headlight_material(on))
+			elif surface == "taillight":
+				body.set_surface_override_material(i, CarModel.taillight_material(on))
+	if on and not _engine_audio.playing:
+		_engine_audio.play()
+	elif not on:
+		_engine_audio.stop()
+
+## Posição vinda do servidor (outros motoristas, ou correção do nosso).
+func apply_remote(p: Vector3, yaw: float, remote_speed: float, snap: bool = false) -> void:
+	_remote_pos = p
+	_remote_yaw = yaw
+	_remote_speed = remote_speed
+	if snap or controlled:
+		global_position = p
+		rotation.y = yaw
+		if controlled:
+			speed = 0.0
+
+func set_controlled(value: bool) -> void:
+	controlled = value
+	speed = 0.0
+	set_engine(value and fuel > 0.0)
+
+func _physics_process(delta: float) -> void:
+	if controlled:
+		_drive(delta)
+	else:
+		var blend := minf(1.0, delta * 8.0)
+		global_position = global_position.lerp(_remote_pos, blend)
+		rotation.y = lerp_angle(rotation.y, _remote_yaw, blend)
+		speed = lerpf(speed, _remote_speed, blend)
+		if engine_on != (not driver.is_empty() and fuel > 0.0):
+			set_engine(not driver.is_empty() and fuel > 0.0)
+	_spin += speed * delta / 0.34
+	for wheel in _wheels:
+		wheel.rotation.x = -_spin
+	for wheel in _front_wheels:
+		wheel.rotation.y = steer
+	if _engine_audio.playing:
+		_engine_audio.pitch_scale = 0.7 + absf(speed) / float(_spec.get("max_speed", 24)) * 1.3
+
+func _drive(delta: float) -> void:
+	var max_speed := float(_spec.get("max_speed", 24))
+	var accel := float(_spec.get("accel", 7))
+	var throttle := Input.get_action_strength("move_forward") - Input.get_action_strength("move_back")
+	var turn := Input.get_action_strength("move_left") - Input.get_action_strength("move_right")
+	var handbrake := Input.is_action_pressed("jump")
+	if fuel <= 0.0:
+		throttle = 0.0
+		if engine_on:
+			set_engine(false)
+	if throttle > 0.0:
+		speed = move_toward(speed, max_speed, (accel if speed >= 0.0 else BRAKE) * throttle * delta)
+	elif throttle < 0.0:
+		speed = move_toward(speed, -REVERSE_SPEED, (BRAKE if speed > 0.0 else accel * 0.6) * -throttle * delta)
+	else:
+		speed = move_toward(speed, 0.0, DRAG * delta)
+	if handbrake:
+		speed = move_toward(speed, 0.0, HANDBRAKE * delta)
+	# Menos esterço em alta velocidade.
+	var steer_limit := MAX_STEER * (1.0 - clampf(absf(speed) / max_speed, 0.0, 1.0) * 0.55)
+	steer = move_toward(steer, turn * steer_limit, delta * 2.5)
+	var wheelbase := float(CarModel.KINDS.get(kind, CarModel.KINDS["sedan"])["wb"])
+	rotation.y += speed / wheelbase * tan(steer) * delta
+	var forward := -global_basis.z
+	velocity.x = forward.x * speed
+	velocity.z = forward.z * speed
+	velocity.y = velocity.y - GRAVITY * delta if not is_on_floor() else -0.5
+	move_and_slide()
+	# Bateu: a velocidade cai para o que de fato andou.
+	var real := get_real_velocity()
+	var along := real.dot(forward)
+	if absf(along) < absf(speed) - 0.5:
+		speed = along
+	_check_ram()
+
+func _check_ram() -> void:
+	if absf(speed) < 6.0 or not zombies.is_valid():
+		return
+	var now := Time.get_ticks_msec()
+	var forward := -global_basis.z * signf(speed)
+	var size := CarModel.size_of(kind)
+	var list: Dictionary = zombies.call()
+	for id in list:
+		var z: Node3D = list[id]
+		if not is_instance_valid(z) or bool(z.get("dead")):
+			continue
+		var offset := z.global_position - global_position
+		offset.y = 0.0
+		var ahead := offset.dot(forward)
+		var side := absf(offset.dot(global_basis.x))
+		if ahead > 0.0 and ahead < size.z * 0.5 + 0.9 and side < size.x * 0.5 + 0.3:
+			if now - int(_rammed.get(id, 0)) > 600:
+				_rammed[id] = now
+				rammed.emit(str(id), absf(speed))

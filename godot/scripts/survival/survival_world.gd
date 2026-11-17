@@ -9,6 +9,7 @@ extends Node3D
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const CarModel = preload("res://scripts/survival/car_model.gd")
 const CENTER_HALF := 60.0
 
 var containers: Dictionary = {} # id -> {node, type, pos}
@@ -413,21 +414,20 @@ func _resource(res: Dictionary) -> void:
 			parts.append(rock)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.35 * s, 0), 1.0 * s, 0.0)
 		"car":
-			var colors := ["#7a2e28", "#2e4b6a", "#6b6b5e", "#3d5a3a", "#8a7a52"]
-			var paint := _mat("metal", colors[seed_value % colors.size()])
-			parts.append(_part(body, Vector3(0, 0.75, 0), Vector3(1.8, 0.7, 4.2), paint))
-			parts.append(_part(body, Vector3(0, 1.35, -0.2), Vector3(1.6, 0.55, 2.0), paint))
-			_part(body, Vector3(0, 1.36, -0.2), Vector3(1.62, 0.4, 1.7), _flat("#22292d"))
-			for wx in [-0.85, 0.85]:
-				for wz in [-1.35, 1.35]:
-					_cylinder(body, Vector3(wx, 0.35, wz), 0.35, 0.35, 0.25, _flat("#1c1c1c"), Vector3(0, 0, PI * 0.5))
+			# Carro abandonado realista (ferrugem, vidro sujo, pneu murcho às vezes).
+			var colors := ["#7a2e28", "#2e4b6a", "#8a8a80", "#3d5a3a", "#8a7a52", "#c9c4b8", "#2b2b2b"]
+			var car_kind: String = ["sedan", "hatch", "pickup"][seed_value % 3]
+			var model := CarModel.build(car_kind, colors[seed_value % colors.size()], true, seed_value)
+			body.add_child(model)
+			parts.append(model)
+			var size := CarModel.size_of(car_kind)
 			var shape := BoxShape3D.new()
-			shape.size = Vector3(1.8, 1.6, 4.2)
+			shape.size = Vector3(size.x, size.y - 0.2, size.z)
 			var col := CollisionShape3D.new()
 			col.shape = shape
-			col.position.y = 0.8
+			col.position.y = 0.2 + shape.size.y * 0.5
 			body.add_child(col)
-			body.rotation.z = 0.04 * float(seed_value % 3 - 1)
+			body.rotation.z = 0.03 * float(seed_value % 3 - 1)
 		"bush":
 			var bush := MeshInstance3D.new()
 			var sphere := SphereMesh.new()

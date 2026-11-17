@@ -55,6 +55,12 @@ const ZOMBIE_SPAWN_MAX = 130;
 const ZOMBIE_DESPAWN = 210;
 const ZOMBIE_SPAWN_BATCH = 6;
 const XP = { zombie: 5, player: 60 };
+// Carros: entrar/abastecer a até 4 m; o motorista manda a posição (10 por segundo).
+const VEHICLE_REACH = 4.2;
+const VEHICLE_MAX_STEP = 12; // metros entre dois pacotes (bem acima de 26 m/s × 0,1 s)
+const RAM_MIN_SPEED = 6; // m/s para atropelar um zumbi
+const RAM_DAMAGE_PER_MS = 7; // dano = velocidade × 7 (60 km/h ≈ 115)
+const VEHICLES = catalog.vehicles;
 
 const ITEMS = catalog.items;
 const CONTAINERS = Object.fromEntries(world.containers.map((c) => [c.id, c]));
@@ -182,8 +188,94 @@ export class GodotSurvival {
 	fresh() {
 		return {
 			name: '', createdAt: Date.now(), players: {}, chars: {}, host: null,
-			zombies: {}, zSeq: 0, containers: {}, bags: {}, bagSeq: 0, depleted: {},
+			zombies: {}, zSeq: 0, containers: {}, bags: {}, bagSeq: 0, depleted: {}, vehicles: {},
 		};
+	}
+
+	/** Carros do mapa (criados na primeira vez, com pouca ou nenhuma gasolina). */
+	vehicles() {
+		const s = this.state;
+		if (!s.vehicles) s.vehicles = {};
+		for (const spot of world.vehicles || []) {
+			if (s.vehicles[spot.id]) continue;
+			const fuel = Math.random() < 0.4 ? 0 : randInt(4, 22);
+			s.vehicles[spot.id] = { id: spot.id, kind: spot.kind, color: spot.color, p: [...spot.p], yaw: spot.yaw, fuel, driver: null, speed: 0 };
+		}
+		return s.vehicles;
+	}
+
+	vehiclePacket(v) {
+		return { id: v.id, kind: v.kind, color: v.color, p: v.p, yaw: v.yaw, fuel: round1(v.fuel), driver: v.driver };
+	}
+
+	/** Sai do carro (por vontade, morte ou desconexão); o carro fica onde parou. */
+	leaveVehicle(player) {
+		const v = player?.vehicle && this.vehicles()[player.vehicle];
+		if (player) player.vehicle = null;
+		if (!v || v.driver !== player.id) return;
+		v.driver = null;
+		v.speed = 0;
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		this.save();
+	}
+
+	enterVehicle(me, d, note) {
+		const v = this.vehicles()[d.v];
+		if (!v || me.vehicle) return;
+		if (v.driver && this.sessions.has(v.driver) && this.state.players[v.driver]?.vehicle === v.id) return note('Já tem alguém dirigindo.');
+		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
+		v.driver = me.id;
+		me.vehicle = v.id;
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		if (v.fuel <= 0) note('Tanque vazio. Abasteça com um galão de gasolina (E fora do carro).');
+		this.save();
+	}
+
+	/** Posição do carro vinda do motorista; gasta combustível pela distância. */
+	driveVehicle(me, d) {
+		const v = this.vehicles()[d.v];
+		if (!v || v.driver !== me.id || me.vehicle !== v.id) return;
+		const p = vec3(d.p, 600);
+		if (!p) return;
+		const step = flat(v.p, p);
+		if (step > VEHICLE_MAX_STEP) return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
+		if (v.fuel <= 0 && step > 0.6) return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
+		const rule = VEHICLES[v.kind] || VEHICLES.sedan;
+		const before = v.fuel;
+		v.fuel = Math.max(0, v.fuel - (step / 1000) * rule.per_km);
+		v.p = p;
+		v.yaw = finite(d.y, 100) ? d.y : v.yaw;
+		v.speed = finite(d.s, 60) ? Math.abs(d.s) : 0;
+		me.p = p;
+		if (Math.floor(before) !== Math.floor(v.fuel)) this.sendTo(me.id, { t: 'fuel', v: v.id, fuel: round1(v.fuel) });
+		if (before > 0 && v.fuel <= 0) this.sendTo(me.id, { t: 'note', message: 'Acabou a gasolina.' });
+		this.broadcastNear(p, { t: 'vs', id: v.id, p, y: v.yaw, s: round1(v.speed) }, me.id);
+	}
+
+	refuel(me, d, note) {
+		const v = this.vehicles()[d.v];
+		if (!v) return;
+		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
+		if (!me.inv.gasoline) return note('Você precisa de um galão de gasolina.');
+		if (v.fuel >= 99) return note('Tanque cheio.');
+		removeItems(me.inv, 'gasoline', 1);
+		v.fuel = Math.min(100, v.fuel + (ITEMS.gasoline.fuel || 35));
+		this.save();
+		this.sendInv(me);
+		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
+		note(`Abasteceu: tanque em ${Math.round(v.fuel)}%.`);
+	}
+
+	/** O motorista atropelou um zumbi: dano pela velocidade do carro. */
+	ram(me, d) {
+		const v = this.vehicles()[me.vehicle];
+		const zombie = this.state.zombies[d.z];
+		if (!v || v.driver !== me.id || !zombie) return;
+		if (v.speed < RAM_MIN_SPEED || flat(v.p, zombie.p) > 5) return;
+		const now = Date.now();
+		if (now - (zombie.rammedAt || 0) < 500) return;
+		zombie.rammedAt = now;
+		this.applyHit(me, zombie.id, Math.min(200, v.speed * RAM_DAMAGE_PER_MS), 'car', 'chest', 6);
 	}
 
 	save(now = false) {
@@ -298,6 +390,7 @@ export class GodotSurvival {
 				.filter((p) => p.id !== me.id && this.sessions.has(p.id))
 				.map((p) => ({ id: p.id, name: p.name, rank: p.rank, p: p.p, dead: p.dead })),
 			zombies: Object.values(s.zombies),
+			vehicles: Object.values(this.vehicles()).map((v) => this.vehiclePacket(v)),
 			bags: Object.values(s.bags).map((b) => this.bagSummary(b)),
 			searched: Object.keys(s.containers).filter((k) => s.containers[k].refillAt > now && !Object.keys(s.containers[k].items).length),
 			depleted,
@@ -352,7 +445,8 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '',
+					r: !!d.r, c: !!d.c, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '',
+					act: d.act === 'chop' || d.act === 'pry' ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
 				return;
@@ -379,6 +473,11 @@ export class GodotSurvival {
 			}
 			case 'use': return this.use(me, d, note);
 			case 'craft': return this.craft(me, d, note);
+			case 'enter': return this.enterVehicle(me, d, note);
+			case 'exit': return this.leaveVehicle(me);
+			case 'drive': return this.driveVehicle(me, d);
+			case 'refuel': return this.refuel(me, d, note);
+			case 'ram': return this.ram(me, d);
 			case 'equip': return this.equip(me, d, note);
 			case 'unequip': return this.unequip(me, note);
 			case 'gather_start': {
@@ -461,6 +560,7 @@ export class GodotSurvival {
 	}
 
 	kill(target, attacker) {
+		this.leaveVehicle(target);
 		target.dead = true;
 		target.respawnAt = Date.now() + RESPAWN_MS;
 		if (attacker && attacker.id !== target.id) {
@@ -828,6 +928,7 @@ export class GodotSurvival {
 		const s = this.state;
 		const player = s.players[meta.id];
 		if (player) {
+			this.leaveVehicle(player);
 			if (player.account) {
 				s.chars[player.account] = { p: player.p, hp: player.hp, hunger: player.hunger, thirst: player.thirst, inv: player.inv, back: player.back || '', dead: player.dead, savedAt: Date.now() };
 			}

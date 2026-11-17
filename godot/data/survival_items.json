@@ -20,6 +20,7 @@
     "scrap":          {"name": "Sucata",                "weight": 0.6,  "cat": "material"},
     "nails":          {"name": "Pregos",                "weight": 0.2,  "cat": "material"},
     "gunpowder":      {"name": "Pólvora",               "weight": 0.1,  "cat": "material"},
+    "gasoline":       {"name": "Galão de gasolina",     "weight": 4.0,  "cat": "fuel", "fuel": 35},
     "bat":            {"name": "Taco de beisebol",      "weight": 1.2,  "cat": "melee",    "melee": 26},
     "crowbar":        {"name": "Pé de cabra",           "weight": 1.5,  "cat": "melee",    "melee": 30, "tool": "scrap"},
     "axe":            {"name": "Machado",               "weight": 2.0,  "cat": "melee",    "melee": 38, "tool": "wood"},
@@ -42,10 +43,11 @@
     "fridge":   {"name": "Geladeira",        "rolls": [1, 3], "table": [["water_bottle", 30, 1, 2], ["soda", 25, 1, 2], ["apple", 20, 1, 3], ["canned_tuna", 10, 1, 1]]},
     "cabinet":  {"name": "Armário",          "rolls": [1, 3], "table": [["canned_beans", 22, 1, 2], ["canned_tuna", 14, 1, 2], ["cereal_bar", 20, 1, 3], ["chips", 16, 1, 2], ["cloth", 14, 1, 3], ["bandage", 8, 1, 1], ["painkillers", 6, 1, 1]]},
     "wardrobe": {"name": "Guarda-roupa",     "rolls": [1, 3], "table": [["cloth", 40, 2, 4], ["rope", 14, 1, 1], ["school_bag", 8, 1, 1], ["bandage", 6, 1, 1], ["w_pistol", 3, 1, 1], ["a_9mm", 6, 6, 15]]},
-    "toolbox":  {"name": "Caixa de ferramentas", "rolls": [1, 3], "table": [["nails", 25, 2, 6], ["scrap", 22, 1, 3], ["rope", 12, 1, 1], ["gunpowder", 10, 1, 2], ["crowbar", 8, 1, 1], ["bat", 8, 1, 1], ["axe", 5, 1, 1]]},
+    "toolbox":  {"name": "Caixa de ferramentas", "rolls": [1, 3], "table": [["nails", 25, 2, 6], ["scrap", 22, 1, 3], ["rope", 12, 1, 1], ["gunpowder", 10, 1, 2], ["crowbar", 8, 1, 1], ["bat", 8, 1, 1], ["gasoline", 6, 1, 1], ["axe", 5, 1, 1]]},
     "medcab":   {"name": "Armário de remédios", "rolls": [1, 2], "table": [["bandage", 40, 1, 3], ["painkillers", 35, 1, 2], ["medkit", 10, 1, 1]]},
     "shelf":    {"name": "Prateleira",       "rolls": [2, 4], "table": [["canned_beans", 18, 1, 2], ["canned_tuna", 14, 1, 2], ["cereal_bar", 16, 1, 3], ["chips", 16, 1, 3], ["water_bottle", 18, 1, 2], ["soda", 14, 1, 2], ["bandage", 6, 1, 2]]},
-    "car_trunk":{"name": "Porta-malas",      "rolls": [1, 2], "table": [["scrap", 20, 1, 2], ["water_bottle", 16, 1, 1], ["rope", 12, 1, 1], ["bat", 8, 1, 1], ["crowbar", 6, 1, 1], ["a_9mm", 10, 8, 20], ["a_12g", 6, 3, 8], ["w_shotgun", 3, 1, 1]]},
+    "car_trunk":{"name": "Porta-malas",      "rolls": [1, 2], "table": [["scrap", 20, 1, 2], ["water_bottle", 16, 1, 1], ["rope", 12, 1, 1], ["gasoline", 12, 1, 1], ["bat", 8, 1, 1], ["crowbar", 6, 1, 1], ["a_9mm", 10, 8, 20], ["a_12g", 6, 3, 8], ["w_shotgun", 3, 1, 1]]},
+    "fuel":     {"name": "Tambor de combustível", "rolls": [1, 2], "table": [["gasoline", 70, 1, 1], ["scrap", 15, 1, 2], ["rope", 15, 1, 1]]},
     "gun_locker":{"name": "Armário de armas","rolls": [1, 3], "table": [["w_pistol", 14, 1, 1], ["w_shotgun", 10, 1, 1], ["w_smg", 8, 1, 1], ["w_rifle", 5, 1, 1], ["a_9mm", 24, 15, 40], ["a_12g", 16, 6, 14], ["a_556", 12, 15, 40]]},
     "military": {"name": "Caixa militar",    "rolls": [2, 4], "table": [["w_rifle", 12, 1, 1], ["w_smg", 10, 1, 1], ["w_sniper", 5, 1, 1], ["a_556", 24, 30, 60], ["a_9mm", 16, 20, 45], ["a_308", 10, 8, 15], ["medkit", 12, 1, 1], ["backpack", 7, 1, 1], ["gunpowder", 8, 2, 4]]}
   },
@@ -65,5 +67,11 @@
     {"id": "ammo_12g",       "name": "Cartucho calibre 12 ×4", "needs": {"scrap": 2, "gunpowder": 2},         "gives": ["a_12g", 4]},
     {"id": "ammo_556",       "name": "Munição 5.56 ×10",       "needs": {"scrap": 3, "gunpowder": 2},         "gives": ["a_556", 10]}
   ],
+  "_vehicles_comment": "Carros que funcionam: tanque de 0-100; 'per_km' = combustível gasto por km; um galão põe 'fuel' do item.",
+  "vehicles": {
+    "sedan":  {"name": "Sedã",        "max_speed": 26, "accel": 7.0, "per_km": 14, "seats": 4},
+    "pickup": {"name": "Caminhonete", "max_speed": 22, "accel": 6.0, "per_km": 18, "seats": 2},
+    "hatch":  {"name": "Hatch",       "max_speed": 24, "accel": 7.5, "per_km": 11, "seats": 4}
+  },
   "starter_kit": {"water_bottle": 1, "cereal_bar": 2, "bandage": 1}
 }

@@ -296,6 +296,56 @@ test('the tick drains hunger and thirst and spawns zombies away from players', a
 	assert.ok(p.ws.last('stats'));
 });
 
+test('cars: enter, need gasoline, burn fuel by distance, one driver, run zombies over', async () => {
+	const { room } = makeWorld();
+	const driver = await join(room);
+	const other = await join(room);
+	const spot = world.vehicles[0];
+	const v = () => room.state.vehicles[spot.id];
+	assert.ok(driver.ws.last('start').vehicles.some((x) => x.id === spot.id), 'cars in the start packet');
+	room.vehicles()[spot.id].fuel = 0;
+	at(driver, spot.p);
+	at(other, spot.p);
+	say(room, driver, { t: 'enter', v: spot.id });
+	assert.equal(v().driver, driver.id);
+	assert.match(driver.ws.last('note').message, /Tanque vazio/);
+	say(room, other, { t: 'enter', v: spot.id });
+	assert.match(other.ws.last('note').message, /dirigindo/);
+	// Sem gasolina o carro não anda.
+	say(room, driver, { t: 'drive', v: spot.id, p: [spot.p[0] + 3, 0, spot.p[2]], y: 0, s: 10 });
+	assert.deepEqual(v().p, spot.p);
+	assert.equal(driver.ws.last('veh').snap, true);
+	say(room, driver, { t: 'exit' });
+	assert.equal(v().driver, null);
+	say(room, driver, { t: 'refuel', v: spot.id });
+	assert.match(driver.ws.last('note').message, /galão/);
+	driver.me().inv.gasoline = 1;
+	say(room, driver, { t: 'refuel', v: spot.id });
+	assert.equal(v().fuel, catalog.items.gasoline.fuel);
+	assert.equal(driver.me().inv.gasoline, undefined);
+	say(room, driver, { t: 'enter', v: spot.id });
+	// Anda 1 km em passos de 10 m: gasta per_km do modelo.
+	let x = spot.p[0];
+	for (let i = 0; i < 100; i++) {
+		x += i % 20 < 10 ? 10 : -10; // vai e volta (fica dentro do mapa)
+		say(room, driver, { t: 'drive', v: spot.id, p: [x, 0, spot.p[2]], y: 0, s: 20 });
+	}
+	const perKm = catalog.vehicles[spot.kind].per_km;
+	assert.ok(Math.abs(v().fuel - (catalog.items.gasoline.fuel - perKm)) < 0.5, `fuel ${v().fuel}`);
+	assert.deepEqual(driver.me().p, v().p, 'driver moves with the car');
+	assert.ok(other.ws.last('vs'), 'others see the car move');
+	// Teletransporte não vale.
+	say(room, driver, { t: 'drive', v: spot.id, p: [x + 80, 0, spot.p[2]], y: 0, s: 20 });
+	assert.equal(v().p[0], x);
+	// Atropelar um zumbi.
+	room.state.zombies.z5 = { id: 'z5', kind: 'walker', hp: 60, p: [x + 2, 0, spot.p[2]] };
+	say(room, driver, { t: 'ram', z: 'z5' });
+	assert.equal(room.state.zombies.z5, undefined, 'run over at 20 m/s');
+	// Morrer tira do carro.
+	room.damagePlayer(driver.me(), 500, 'z1', 'zombie');
+	assert.equal(v().driver, null);
+});
+
 test('loot rolls only produce known items', () => {
 	for (const type of Object.keys(catalog.loot)) {
 		for (let i = 0; i < 50; i++) for (const item of Object.keys(rollLoot(type))) assert.ok(catalog.items[item], item);

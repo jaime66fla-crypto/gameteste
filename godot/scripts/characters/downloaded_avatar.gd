@@ -7,6 +7,7 @@ const PUNCH := preload("res://assets/personagens/downloaded/movements/punch.tres
 const ELBOW_PUNCH := preload("res://assets/personagens/downloaded/movements/elbow_punch.tres")
 const IDLE_WITH_RIFLE := preload("res://assets/personagens/downloaded/movements/idle_with_rifle.tres")
 const Grip = preload("res://scripts/characters/swat_grip.gd")
+const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
 const SOURCE_HEIGHT := 1.782
 var skeleton: Skeleton3D
 var animation_player: AnimationPlayer
@@ -108,6 +109,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	if not ready_ok:
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
+	_last_delta = delta
 	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne else 0.0, delta * 6.0)
 	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
 	animation_player.advance(delta)
@@ -138,10 +140,150 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
 	_apply_crouch()
+	if not work_action.is_empty():
+		_apply_work()
+		_update_backpack()
+		return
 	_update_weapon_mount()
 	if unarmed_weight > 0.01:
 		_relax_arms()
 	_update_backpack()
+
+# ------------------------------------------------- trabalho (machado etc.) ---
+# Golpes com as duas mãos no cabo: levanta devagar por cima do ombro direito e
+# desce rápido na frente (machado na árvore); "pry" é um golpe mais baixo
+# (pé de cabra na pedra ou no carro). As mãos seguem o cabo por IK.
+const WORK_CYCLE := 0.95
+const TOOL_LOOK := {
+	"axe": {"handle": 0.78, "color": Color("#8a6238"), "head": "axe"},
+	"improvised_axe": {"handle": 0.70, "color": Color("#6e5236"), "head": "stone"},
+	"crowbar": {"handle": 0.80, "color": Color("#2f3b52"), "head": "hook"},
+	"bat": {"handle": 0.82, "color": Color("#b08a5a"), "head": "bat"},
+}
+var work_action := ""
+var work_tool := ""
+var _last_delta := 1.0 / 60.0
+var _work_time := 0.0
+var _tool_node: Node3D
+
+func set_action(act: String, tool: String) -> void:
+	if act == work_action and tool == work_tool:
+		return
+	work_action = act
+	work_tool = tool
+	_work_time = 0.0
+	if _tool_node != null:
+		_tool_node.queue_free()
+		_tool_node = null
+	if is_instance_valid(bound_weapon):
+		bound_weapon.visible = act.is_empty() and armed
+	if not act.is_empty() and TOOL_LOOK.has(tool) and skeleton != null:
+		_tool_node = _build_tool(tool)
+		skeleton.add_child(_tool_node)
+
+func _tool_mat(color: Color, metal: bool) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.metallic = 0.85 if metal else 0.0
+	m.roughness = 0.3 if metal else 0.8
+	return m
+
+func _tool_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, rot: Vector3 = Vector3.ZERO) -> void:
+	var mesh := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = size
+	mesh.mesh = box
+	mesh.position = pos
+	mesh.rotation = rot
+	mesh.material_override = mat
+	parent.add_child(mesh)
+
+## Ferramenta com o cabo ao longo de +Y (base em 0) e a lâmina para -Z.
+func _build_tool(tool: String) -> Node3D:
+	var look: Dictionary = TOOL_LOOK[tool]
+	var node := Node3D.new()
+	node.name = "WorkTool"
+	var length := float(look["handle"])
+	var handle := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = 0.018
+	cyl.bottom_radius = 0.022
+	cyl.height = length
+	cyl.radial_segments = 8
+	handle.mesh = cyl
+	handle.position.y = length * 0.5
+	handle.material_override = _tool_mat(look["color"], tool == "crowbar")
+	node.add_child(handle)
+	var steel := _tool_mat(Color("#9aa0a4"), true)
+	match str(look["head"]):
+		"axe":
+			_tool_box(node, Vector3(0, length - 0.05, -0.05), Vector3(0.03, 0.09, 0.16), steel)
+			_tool_box(node, Vector3(0, length - 0.05, -0.15), Vector3(0.012, 0.17, 0.06), steel) # gume
+			_tool_box(node, Vector3(0, length - 0.05, 0.05), Vector3(0.04, 0.06, 0.05), steel) # olho/martelo
+		"stone":
+			_tool_box(node, Vector3(0, length - 0.06, -0.07), Vector3(0.05, 0.1, 0.16), _tool_mat(Color("#77746c"), false), Vector3(0.2, 0, 0))
+			_tool_box(node, Vector3(0, length - 0.06, 0.0), Vector3(0.06, 0.07, 0.06), _tool_mat(Color("#c9b98a"), false)) # amarração de corda
+		"hook":
+			_tool_box(node, Vector3(0, length + 0.03, -0.04), Vector3(0.022, 0.022, 0.1), handle.material_override)
+			_tool_box(node, Vector3(0, -0.02, -0.03), Vector3(0.02, 0.02, 0.07), handle.material_override, Vector3(0.6, 0, 0))
+		"bat":
+			handle.mesh = cyl.duplicate()
+			(handle.mesh as CylinderMesh).top_radius = 0.035
+	return node
+
+func _ease_in_out(t: float) -> float:
+	return t * t * (3.0 - 2.0 * t)
+
+func _apply_work() -> void:
+	var hips := Grip._bone(skeleton, "Hips")
+	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	var spine := Grip._bone(skeleton, "Spine")
+	var right_arm := Grip._bone(skeleton, "RightArm")
+	if hips < 0 or chest < 0 or right_arm < 0:
+		return
+	_work_time += _last_delta
+	var t := fmod(_work_time, WORK_CYCLE) / WORK_CYCLE
+	var raised := -0.55 if work_action == "chop" else 0.7
+	var struck := 2.15 if work_action == "chop" else 2.5
+	# 0–55%: levanta devagar; 55–70%: desce rápido; 70–100%: segura no impacto e volta.
+	var theta := 0.0
+	var lean := 0.0
+	if t < 0.55:
+		theta = lerpf(struck, raised, _ease_in_out(t / 0.55))
+	elif t < 0.7:
+		var k := (t - 0.55) / 0.15
+		theta = lerpf(raised, struck, k * k)
+		lean = k
+	else:
+		theta = struck
+		lean = 1.0 - (t - 0.7) / 0.3
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1) # frente do modelo no espaço do esqueleto
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	if spine >= 0:
+		var spine_basis := skeleton.get_bone_global_pose(spine).basis
+		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, 0.3 * lean) * spine_basis)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var pivot := torso + right * 0.12 + up * 0.02 + forward * 0.14
+	var h := (up * cos(theta) + forward * sin(theta)).normalized()
+	var swing := (forward * cos(theta) - up * sin(theta)).normalized()
+	# Na descida os braços esticam (mãos mais longe do peito); no alto ficam junto à cabeça.
+	var reach := lerpf(0.28, 0.46, clampf((theta - raised) / (struck - raised), 0.0, 1.0))
+	var right_hand := pivot + h * reach
+	var left_hand := pivot + h * (reach - 0.17)
+	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
+		var side: String = spec[0]
+		var upper := Grip._bone(skeleton, side + "Arm")
+		var lower := Grip._bone(skeleton, side + "ForeArm")
+		var hand := Grip._bone(skeleton, side + "Hand")
+		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.3 - up * 0.4
+		_two_bone_ik(upper, lower, hand, spec[1], pole)
+		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
+	if _tool_node != null:
+		var y := h
+		var z := -swing
+		var x := y.cross(z).normalized()
+		_tool_node.transform = Transform3D(Basis(x, y, z), pivot + h * (reach - 0.24))
 
 # -------------------------------------------------------------- mochila ---
 ## Mochila nas costas (Sobrevivência): "" tira. Tamanho e cor pelo tipo.
@@ -163,32 +305,8 @@ func set_backpack(item_id: String) -> void:
 	if not BACKPACK_LOOK.has(item_id):
 		return
 	var look: Array = BACKPACK_LOOK[item_id]
-	var size: Vector3 = look[0]
-	_backpack = Node3D.new()
-	_backpack.name = "Backpack"
+	_backpack = BackpackModel.build(item_id, look[0], look[1])
 	skeleton.add_child(_backpack)
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = look[1]
-	mat.roughness = 0.9
-	var strap_mat := StandardMaterial3D.new()
-	strap_mat.albedo_color = Color("#1f2320")
-	# Corpo, bolso da frente e alças (atrás do tronco: -Z no espaço do esqueleto).
-	for spec in [[Vector3(0, 0, -size.z * 0.5), size, mat], [Vector3(0, -size.y * 0.18, -size.z - 0.03), Vector3(size.x * 0.75, size.y * 0.38, 0.06), mat]]:
-		var part := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = spec[1]
-		part.mesh = box
-		part.position = spec[0]
-		part.material_override = spec[2]
-		_backpack.add_child(part)
-	for x in [-0.09, 0.09]:
-		var strap := MeshInstance3D.new()
-		var box := BoxMesh.new()
-		box.size = Vector3(0.045, size.y * 0.9, 0.24)
-		strap.mesh = box
-		strap.position = Vector3(x, 0.02, 0.06)
-		strap.material_override = strap_mat
-		_backpack.add_child(strap)
 	_update_backpack()
 
 func _update_backpack() -> void:

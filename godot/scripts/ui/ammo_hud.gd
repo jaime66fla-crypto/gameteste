@@ -51,8 +51,10 @@ func _ready() -> void:
 	_reserve.size_flags_vertical = Control.SIZE_SHRINK_END
 	row.add_child(_reserve)
 
+var suppressed := false # dirigindo, morto, luneta: some
+
 func _process(_delta: float) -> void:
-	if player == null or not is_instance_valid(player):
+	if suppressed or player == null or not is_instance_valid(player):
 		visible = false
 		return
 	visible = true
