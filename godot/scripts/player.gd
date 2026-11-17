@@ -690,7 +690,7 @@ func crosshair_point() -> Vector3:
     if not first_person_view and not is_scope_active():
         var chest := global_position + Vector3(0, height * 0.75, 0)
         origin += forward * maxf(0.0, (chest - origin).dot(forward))
-    var far := origin + forward * 120.0
+    var far := origin + forward * 700.0
     var query := PhysicsRayQueryParameters3D.create(origin, far, HitboxScript.SHOT_MASK)
     query.exclude = [get_rid()]
     var hit := get_world_3d().direct_space_state.intersect_ray(query)
@@ -726,7 +726,9 @@ func _shoot() -> void:
         last_shot_origin = viewmodel.call("muzzle_position")
     # Accuracy: tighter when aiming, wider when running or airborne.
     var planar_speed := Vector2(velocity.x, velocity.z).length()
-    var spread := float(stats["spread"]) * (0.4 if aiming else 1.0)
+    var spread := float(stats["spread"]) * (WeaponData.AIM_SPREAD if aiming else 1.0)
+    if crouching:
+        spread *= WeaponData.CROUCH_SPREAD
     spread *= 1.0 + clampf(planar_speed / speed, 0.0, 1.6) * 0.6
     if not is_on_floor():
         spread *= 1.8

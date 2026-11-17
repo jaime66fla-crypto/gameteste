@@ -27,10 +27,13 @@ const DAY_MS = 24 * 60 * 1000; // um dia inteiro (dia + noite) dura 24 minutos
 const RESPAWN_MS = 8000;
 const REACH = 3.6; // metros entre o jogador e o recipiente/recurso
 const MELEE_REACH = 3.2;
+const GUN_REACH = 700; // alcance da sniper (scripts/weapon_data.gd)
 const CONTAINER_REFILL_MS = 20 * 60 * 1000;
 const BAG_LIFETIME_MS = 25 * 60 * 1000;
 const CHAR_KEEP_MS = 3 * 24 * 3600 * 1000; // personagem guardado de quem saiu
-const INTEREST_RANGE = 170; // só recebe posições de quem está até essa distância
+// Só recebe posições de quem está até essa distância. Precisa cobrir o alcance
+// útil da sniper/fuzil, senão o alvo distante fica "congelado" e o tiro erra.
+const INTEREST_RANGE = 360;
 // Armas de fogo: mesmo dano por acerto do mata-mata (scripts/weapon_data.gd).
 const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
@@ -356,7 +359,7 @@ export class GodotSurvival {
 				const o = vec3(d.o, 600);
 				const e = vec3(d.e, 1200);
 				if (!o || !e) return;
-				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e }, me.id, 220);
+				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e }, me.id, INTEREST_RANGE);
 				return;
 			}
 			case 'hit': return this.gunHit(me, d);
@@ -409,7 +412,7 @@ export class GodotSurvival {
 		const weapon = WEAPON_DAMAGE[d.w] ? d.w : null;
 		if (!weapon || !me.inv['w_' + weapon] || !this.allowHit(me.id)) return;
 		const zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
-		this.applyHit(me, d.target, WEAPON_DAMAGE[weapon] * ZONE_MULTIPLIER[zone], weapon, zone, 250);
+		this.applyHit(me, d.target, WEAPON_DAMAGE[weapon] * ZONE_MULTIPLIER[zone], weapon, zone, GUN_REACH);
 	}
 
 	/** Soco (Q) ou arma branca da mochila; alcance curto. */
