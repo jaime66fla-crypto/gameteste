@@ -8,6 +8,7 @@ var _hit_kill := false
 var _hit_scale := 1.0
 # Each entry: {angle (radians, 0 = straight ahead, clockwise), alpha}
 var _damage_arcs: Array[Dictionary] = []
+var _drawn := false
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -27,6 +28,12 @@ func show_damage_from(angle: float) -> void:
 	_damage_arcs.append({"angle": angle, "alpha": 1.0})
 
 func _process(delta: float) -> void:
+	if _hit_alpha <= 0.0 and _damage_arcs.is_empty():
+		if _drawn:
+			_drawn = false
+			queue_redraw() # apaga o último quadro
+		return # nada na tela: não redesenha
+	_drawn = true
 	_hit_alpha = move_toward(_hit_alpha, 0.0, delta * (1.8 if _hit_kill else 3.2))
 	_hit_scale = move_toward(_hit_scale, 1.0, delta * 3.0)
 	if _hit_alpha <= 0.0:

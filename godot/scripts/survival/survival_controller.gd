@@ -166,7 +166,12 @@ func _targets() -> Array:
 func _physics_process(delta: float) -> void:
 	_melee_timer = maxf(0.0, _melee_timer - delta)
 	_clock_ms += delta * 1000.0
-	_update_daylight()
+	# O sol anda devagar: mexer na luz e no ambiente 4 vezes por segundo basta
+	# (cada mudança no Environment é repassada ao servidor de renderização).
+	_daylight_timer -= delta
+	if _daylight_timer <= 0.0:
+		_daylight_timer = 0.25
+		_update_daylight()
 	if local_dead:
 		_respawn_left = maxf(0.0, _respawn_left - delta)
 		respawn_button.disabled = _respawn_left > 0.0
@@ -782,6 +787,7 @@ func _update_daylight() -> void:
 # --------------------------------------------------------------------- HUD ---
 
 var _scan_timer := 0.0
+var _daylight_timer := 0.0
 
 ## Alguma janela da sobrevivência precisa do cursor (mochila aberta ou tela de morte).
 func ui_open() -> bool:

@@ -153,7 +153,8 @@ func _play(clip: String, rate: float) -> void:
 	player.speed_scale = rate
 
 ## Chamado pelo zumbi a cada quadro. `lod`: 0 perto (tudo), 1 médio (sem pose extra, 1 a cada 3 quadros), 2 longe (parado).
-func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
+## `frozen`: fora da tela — mantém a pose atual sem avançar o esqueleto.
+func animate(delta: float, state: int, move_rate: float, lod: int, frozen: bool = false) -> void:
 	if player == null:
 		return
 	match state:
@@ -169,7 +170,7 @@ func animate(delta: float, state: int, move_rate: float, lod: int) -> void:
 		_last_lod = lod
 		# Sombra só de perto (de longe ninguém nota e custa redesenhar o corpo).
 		_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if lod == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	if lod >= 2:
+	if lod >= 2 or frozen:
 		return
 	_lod_accum += delta
 	_frame += 1

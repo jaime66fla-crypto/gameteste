@@ -18,7 +18,7 @@ const KINDS := {
 }
 const ZombieAvatar = preload("res://scripts/survival/zombie_avatar.gd")
 const ZombieHull = preload("res://scripts/survival/zombie_hull.gd")
-var _avatar: Node3D
+var _avatar: ZombieAvatar
 const SIGHT := 15.0 # metros; de noite cai pela metade
 const VIEW_CONE := 0.5 # cos(60°): só enxerga num cone de 120° à frente...
 const NOTICE_CLOSE := 3.5 # ...a não ser bem de perto (sente quem encosta por trás)
@@ -67,6 +67,8 @@ var _attack_timer := 0.0
 var _lost_timer := 0.0
 var _avoid_side := 1.0
 var _avoid_timer := 0.0
+var _avoid_check := randf() * 0.1
+var _avoid_blocked := false
 var _remote_pos := Vector3.ZERO
 var _remote_yaw := 0.0
 var _has_remote := false
@@ -376,8 +378,7 @@ func _update_groan(delta: float) -> void:
 	var now := Time.get_ticks_msec()
 	if now - _last_groan_ms < 1500 or (_voice != null and _voice.playing):
 		return
-	var camera := get_viewport().get_camera_3d()
-	if camera == null or camera.global_position.distance_to(global_position) > 34.0:
+	if _camera() == null or _cam_pos.distance_to(global_position) > 34.0:
 		return
 	_last_groan_ms = now
 	var chasing := anim == Anim.RUN or anim == Anim.ATTACK or (controlled and _target != null)
@@ -403,18 +404,46 @@ func _physics_process(delta: float) -> void:
 	_update_groan(delta)
 	_animate(delta)
 
+# Câmera e frustum lidos uma vez por passo de física e divididos entre todos
+# os zumbis (antes cada um pedia a câmera ao viewport duas vezes por quadro).
+static var _cam_frame := -1
+static var _cam: Camera3D
+static var _cam_pos := Vector3.ZERO
+static var _frustum: Array[Plane] = []
+
+func _camera() -> Camera3D:
+	var frame := Engine.get_physics_frames()
+	if frame != _cam_frame or (_cam != null and not is_instance_valid(_cam)):
+		_cam_frame = frame
+		_cam = get_viewport().get_camera_3d()
+		if _cam != null:
+			_cam_pos = _cam.global_position
+			_frustum = _cam.get_frustum()
+	return _cam
+
+## Esfera do corpo (≈2 m) dentro da visão da câmera.
+func _on_screen() -> bool:
+	var center := global_position + Vector3(0, 1.0, 0)
+	for plane in _frustum:
+		if plane.distance_to(center) > 1.4:
+			return false
+	return true
+
 func _animate(delta: float) -> void:
 	if _avatar != null:
 		# Distância da câmera decide o detalhe da animação.
-		var camera := get_viewport().get_camera_3d()
-		var d := camera.global_position.distance_to(global_position) if camera != null else 0.0
+		var camera := _camera()
+		var d := _cam_pos.distance_to(global_position) if camera != null else 0.0
 		var lod := 0 if d < 35.0 else (1 if d < 90.0 else 2)
 		_lod = lod
+		# Fora da tela (e não colado no jogador): o esqueleto não precisa andar.
+		# Ninguém vê a pose nem consegue acertar o tiro nele (o tiro sai da câmera).
+		var frozen := camera != null and d > 6.0 and not _on_screen()
 		_flinch = move_toward(_flinch, 0.0, delta * 4.0)
-		_avatar.set("flinch", maxf(float(_avatar.get("flinch")), _flinch))
-		_avatar.set("strike", strike_t / STRIKE_TIME if strike_t >= 0.0 else -1.0)
+		_avatar.flinch = maxf(_avatar.flinch, _flinch)
+		_avatar.strike = strike_t / STRIKE_TIME if strike_t >= 0.0 else -1.0
 		var rate := clampf(velocity.length() / 2.4, 0.6, 1.6) if anim == Anim.WALK else clampf(velocity.length() / 5.0, 0.7, 1.4)
-		_avatar.call("animate", delta, int(anim), rate if controlled else 1.0, lod)
+		_avatar.animate(delta, int(anim), rate if controlled else 1.0, lod, frozen)
 		return
 	var speed: float = float({Anim.IDLE: 0.0, Anim.WALK: 5.0, Anim.RUN: 11.0, Anim.ATTACK: 3.0}[anim])
 	_phase += delta * speed
@@ -609,10 +638,14 @@ func _apply_gravity(delta: float) -> void:
 ## Contorna paredes, carros e árvores: se a frente está bloqueada, desvia para um lado por um tempo.
 func _avoid(dir: Vector3, delta: float) -> Vector3:
 	_avoid_timer = maxf(0.0, _avoid_timer - delta)
-	var from := global_position + Vector3(0, 0.6, 0)
-	var query := PhysicsRayQueryParameters3D.create(from, from + dir * 1.4, HitboxScript.LAYER_WORLD)
-	var blocked := not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
-	if blocked:
+	# O raio à frente sai ~8 vezes por segundo, não a cada passo de física.
+	_avoid_check -= delta
+	if _avoid_check <= 0.0:
+		_avoid_check = 0.11 + randf() * 0.04
+		var from := global_position + Vector3(0, 0.6, 0)
+		var query := PhysicsRayQueryParameters3D.create(from, from + dir * 1.4, HitboxScript.LAYER_WORLD)
+		_avoid_blocked = not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+	if _avoid_blocked:
 		if _avoid_timer <= 0.0 and randf() < 0.15:
 			_avoid_side = -_avoid_side
 		_avoid_timer = 0.8

@@ -16,6 +16,8 @@ var _grass: Array = [] # [center Vector2, r]
 var _trees: PackedVector2Array = PackedVector2Array()
 var _half := 60.0
 var _canvas: Control
+var _last_view := Vector3.INF
+var _warmup := 10
 
 func setup(local_player: Node3D, survival: bool) -> void:
 	player = local_player
@@ -169,9 +171,18 @@ func _paint_map(ci: Control) -> void:
 		ci.draw_rect(Rect2(b[0] - s * 0.5, s), Color(0.25, 0.22, 0.18, 1.0), false, 0.6)
 
 func _process(_delta: float) -> void:
+	# Só redesenha quando o jogador anda ou gira (ou há aliados se mexendo).
+	if player != null and is_instance_valid(player):
+		var yaw := float(player.get("yaw")) if player.get("yaw") != null else player.rotation.y
+		var key := Vector3(player.global_position.x, player.global_position.z, yaw)
+		if key.is_equal_approx(_last_view) and not allies.is_valid() and _warmup <= 0:
+			return
+		_warmup -= 1 # primeiros quadros: a textura do mapa ainda está sendo assada
+		if not is_equal_approx(yaw, _last_view.z):
+			queue_redraw() # aro e "N" giram com a câmera
+		_last_view = key
 	if _canvas != null:
 		_canvas.queue_redraw()
-	queue_redraw()
 	_update_coords()
 
 ## Mapa no espaço do mundo, girado e escalado em volta do jogador.
