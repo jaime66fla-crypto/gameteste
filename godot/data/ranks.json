@@ -1,5 +1,5 @@
 {
-  "_comment": "Ranks and XP rewards shared by the Godot client and the Cloudflare server (src/godot-accounts.js, src/godot-match.js). A rank is reached at its xp total.",
+  "_comment": "Ranks and XP rewards shared by the Godot client and the Cloudflare server (src/godot-accounts.js, src/godot-match.js). A rank is reached at its xp total. Negative rewards are penalties (match modes only; survival does not use them).",
   "ranks": [
     {"name": "Recruta", "xp": 0},
     {"name": "Soldado", "xp": 300},
@@ -8,17 +8,25 @@
     {"name": "2º Sargento", "xp": 2500},
     {"name": "1º Sargento", "xp": 4000},
     {"name": "Subtenente", "xp": 6000},
-    {"name": "Tenente", "xp": 8500},
+    {"name": "Aspirante", "xp": 7200},
+    {"name": "2º Tenente", "xp": 8500},
+    {"name": "1º Tenente", "xp": 10200},
     {"name": "Capitão", "xp": 12000},
     {"name": "Major", "xp": 16500},
+    {"name": "Tenente-Coronel", "xp": 19000},
     {"name": "Coronel", "xp": 22000},
-    {"name": "General", "xp": 30000}
+    {"name": "General de Brigada", "xp": 30000},
+    {"name": "General de Divisão", "xp": 40000},
+    {"name": "General de Exército", "xp": 52000},
+    {"name": "Marechal", "xp": 70000}
   ],
   "xp": {
     "kill_player": 100,
     "kill_bot": 25,
     "headshot_bonus": 15,
     "win": 150,
-    "match": 20
+    "match": 20,
+    "death": -40,
+    "quit": -100
   }
 }

@@ -31,6 +31,22 @@ async function register(accounts, name) {
 	return r.data.token;
 }
 
+test('match XP can be negative (death/quit penalties): total never goes below 0 and rank can drop', async () => {
+	const accounts = service();
+	await register(accounts, 'Dani');
+	let r = await call(accounts, '/internal/xp', { body: { account: 'acct:dani', xp: 350 } });
+	assert.equal(r.data.profile.rank, 'Soldado');
+	r = await call(accounts, '/internal/xp', { body: { account: 'acct:dani', xp: -100 } });
+	assert.equal(r.data.profile.xp, 250);
+	assert.equal(r.data.profile.rank, 'Recruta');
+	assert.equal(r.data.rankDown, true);
+	r = await call(accounts, '/internal/xp', { body: { account: 'acct:dani', xp: -900 } });
+	assert.equal(r.data.profile.xp, 0, 'never below zero');
+	// Patentes novas acima de General.
+	r = await call(accounts, '/internal/xp', { body: { account: 'acct:dani', xp: 2000 } });
+	assert.equal(r.data.profile.nextRank, '2º Sargento');
+});
+
 test('leaderboard orders by XP, then wins, and follows match results', async () => {
 	const accounts = service();
 	const ana = await register(accounts, 'Ana');

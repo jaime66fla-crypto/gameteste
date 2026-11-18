@@ -72,6 +72,31 @@ async function join(match, { create = false, code = 'ABCDE', name = 'P' } = {}) 
 }
 const say = (match, player, data) => match.webSocketMessage(player.ws, JSON.stringify(data));
 
+test('XP penalties: dying costs XP and quitting a running match while alive costs more (once)', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	const c = await join(match, { name: 'C' });
+	say(match, b, { t: 'ready' });
+	say(match, c, { t: 'ready' });
+	say(match, a, { t: 'start' });
+	const m = match.match;
+	assert.equal(m.phase, 'running');
+	const bot = Object.values(m.players).find((p) => p.bot);
+	// A morre para um bot: -40 XP, avisado na hora.
+	match.damage(bot, m.players[a.id], 999, 'rifle', 'chest');
+	assert.equal(a.ws.last('xp').amount, -40);
+	assert.equal(a.ws.last('xp').reason, 'death');
+	assert.equal(m.players[a.id].xpGain, -40);
+	// A, já morto, sai: sem penalidade de saída (estava só assistindo).
+	match.webSocketClose(a.ws);
+	assert.equal(m.players[a.id].xpGain, -40);
+	// C sai vivo no meio da partida: -100, e a eliminação por sair não cobra a morte de novo.
+	match.webSocketClose(c.ws);
+	assert.equal(m.players[c.id].xpGain, -100);
+	assert.equal(m.players[c.id].dead, true);
+});
+
 test('joining a code that was never created is refused', async () => {
 	const match = room();
 	const r = await join(match);

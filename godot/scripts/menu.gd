@@ -728,17 +728,17 @@ func _offline_panel(parent: Node) -> void:
 
 # --------------------------------------------------------- leaderboard ---
 
-const LEADERBOARD_ROWS := 8
+const LEADERBOARD_ROWS := 10
 const MEDALS := [Color("#f0c24b"), Color("#c9d1d6"), Color("#d08a52")]
 var leaderboard_cache: Dictionary = {}
 var leaderboard_compact := false
 var leaderboard_rows := LEADERBOARD_ROWS
 
 ## Top players by XP, loaded from the server; last result shown while it refreshes.
-## Short screens show 5 single-line rows so the whole menu fits without scrolling.
+## Sempre o top 10; telas baixas usam linhas finas (uma linha só) para caber sem rolar.
 func _leaderboard_panel(parent: Node) -> void:
     leaderboard_compact = get_viewport_rect().size.y < 860.0
-    leaderboard_rows = 5 if leaderboard_compact else LEADERBOARD_ROWS
+    leaderboard_rows = LEADERBOARD_ROWS
     var stack := _side_panel(parent, "LeaderboardPanel")
     stack.add_theme_constant_override("separation", 8)
     var head := HBoxContainer.new()
@@ -804,8 +804,8 @@ func _leaderboard_row(entry: Dictionary, mine: bool) -> PanelContainer:
     var box := _box(Color(ACCENT, 0.14) if mine else Color(1, 1, 1, 0.025), ACCENT if mine else Color.TRANSPARENT, 1 if mine else 0, 3)
     box.content_margin_left = 10
     box.content_margin_right = 12
-    box.content_margin_top = 3 if leaderboard_compact else 5
-    box.content_margin_bottom = 3 if leaderboard_compact else 5
+    box.content_margin_top = 1 if leaderboard_compact else 5
+    box.content_margin_bottom = 1 if leaderboard_compact else 5
     row.add_theme_stylebox_override("panel", box)
     var line := HBoxContainer.new()
     line.add_theme_constant_override("separation", 10)
@@ -814,7 +814,7 @@ func _leaderboard_row(entry: Dictionary, mine: bool) -> PanelContainer:
     var place := int(board_position) if board_position != null else 0
     var place_text := "#%d" % place if place > 0 else "100+"
     var place_color: Color = MEDALS[place - 1] if place >= 1 and place <= 3 else DIM
-    var place_label := _plain(place_text, 15, place_color, title_font)
+    var place_label := _plain(place_text, 13 if leaderboard_compact else 15, place_color, title_font)
     place_label.custom_minimum_size.x = 44
     line.add_child(place_label)
     var names := VBoxContainer.new()
@@ -822,13 +822,13 @@ func _leaderboard_row(entry: Dictionary, mine: bool) -> PanelContainer:
     names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     line.add_child(names)
     names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-    var player := _plain(str(entry.get("name", "")) + ("  (você)" if mine else ""), 15, ACCENT if mine else TEXT, title_font)
+    var player := _plain(str(entry.get("name", "")) + ("  (você)" if mine else ""), 13 if leaderboard_compact else 15, ACCENT if mine else TEXT, title_font)
     player.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     player.clip_text = true
     names.add_child(player)
     if not leaderboard_compact:
         names.add_child(_plain("%s  •  %d vitória%s" % [str(entry.get("rank", "")).to_upper(), int(entry.get("wins", 0)), "" if int(entry.get("wins", 0)) == 1 else "s"], 10, DIM, caps_font))
-    var xp := _plain(_thousands(int(entry.get("xp", 0))) + " XP", 14, TEXT if place >= 1 and place <= 3 else MUTED, title_font)
+    var xp := _plain(_thousands(int(entry.get("xp", 0))) + " XP", 12 if leaderboard_compact else 14, TEXT if place >= 1 and place <= 3 else MUTED, title_font)
     xp.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     line.add_child(xp)
     return row

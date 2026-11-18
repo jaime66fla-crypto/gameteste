@@ -566,12 +566,12 @@ func _damage_number(point: Vector3, damage: float, headshot: bool) -> void:
 	tween.tween_property(label, "modulate:a", 0.0, 0.7).set_delay(0.25)
 	tween.chain().tween_callback(label.queue_free)
 
-func _xp_toast(text: String) -> void:
+func _xp_toast(text: String, loss: bool = false) -> void:
 	var label := Label.new()
 	label.text = text
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	label.add_theme_font_size_override("font_size", 20)
-	label.add_theme_color_override("font_color", Color("#ffd24a"))
+	label.add_theme_color_override("font_color", Color("#ff6a55") if loss else Color("#ffd24a")) # perda em vermelho
 	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
 	label.add_theme_constant_override("shadow_offset_y", 2)
 	xp_feed.add_child(label)
@@ -753,21 +753,24 @@ func _unhandled_input(event: InputEvent) -> void:
 func _on_xp(data: Dictionary) -> void:
 	var amount := int(data.get("amount", 0))
 	match_xp = int(data.get("total", match_xp + amount))
-	var reasons := {"kill_player": "abate de jogador", "kill_bot": "abate de bot", "headshot": "na cabeça", "win": "vitória", "match": "partida"}
-	var text := "+%d XP  %s" % [amount, reasons.get(str(data.get("reason", "")), "")]
+	var reasons := {"kill_player": "abate de jogador", "kill_bot": "abate de bot", "headshot": "na cabeça", "win": "vitória", "match": "partida", "death": "você morreu", "quit": "saiu da partida"}
+	var reason := str(data.get("reason", ""))
+	var text := "%+d XP  %s" % [amount, reasons.get(reason, "")]
 	var victim := str(data.get("victim", ""))
-	if not victim.is_empty() and str(data.get("reason", "")) != "headshot":
-		text += " (%s)" % victim
-	_xp_toast(text)
+	if not victim.is_empty() and reason != "headshot":
+		text += (" (por %s)" if reason == "death" else " (%s)") % victim
+	_xp_toast(text, amount < 0)
 
 func _on_profile(data: Dictionary) -> void:
 	var profile: Dictionary = data.get("profile", {})
-	var lines := "\nXP da partida: +%d   •   Total: %d XP\nPatente: %s" % [int(data.get("gained", 0)), int(profile.get("xp", 0)), profile.get("rank", "")]
+	var lines := "\nXP da partida: %+d   •   Total: %d XP\nPatente: %s" % [int(data.get("gained", 0)), int(profile.get("xp", 0)), profile.get("rank", "")]
 	if profile.get("nextRankXp") != null:
 		lines += "   (faltam %d XP para %s)" % [int(profile["nextRankXp"]) - int(profile.get("xp", 0)), profile.get("nextRank", "")]
 	if bool(data.get("rankUp", false)):
 		lines += "\nPROMOVIDO A %s!" % str(profile.get("rank", "")).to_upper()
 		player.get("sound_fx").call("kill_confirm")
+	elif bool(data.get("rankDown", false)):
+		lines += "\nRebaixado para %s." % str(profile.get("rank", ""))
 	center_body.text += lines
 
 func _on_end(data: Dictionary) -> void:
@@ -786,7 +789,7 @@ func _on_end(data: Dictionary) -> void:
 	var position_number := 1
 	for row in data.get("board", []):
 		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
-		var xp_text := "  +%d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
+		var xp_text := "  %+d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
 		lines.append("%d. %s (%s) — %d abate(s)%s" % [position_number, row["name"], who, int(row["kills"]), xp_text])
 		position_number += 1
 	_show_center("VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper(), "\n".join(lines))
@@ -806,7 +809,7 @@ func _on_team_end(data: Dictionary) -> void:
 			var tag := "  — VENCEDORA" if winner != null and int(winner) == team else ""
 			lines.append("\nEQUIPE %s  (%d abates)%s" % [_team_name(team).to_upper(), int(score[team]) if team < score.size() else 0, tag])
 		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
-		var xp_text := "  +%d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
+		var xp_text := "  %+d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
 		var me := "  (você)" if str(row.get("id", "")) == my_id else ""
 		lines.append("   %s (%s) — %d abate(s)%s%s" % [row["name"], who, int(row["kills"]), xp_text, me])
 	var title := "EMPATE"
@@ -1005,7 +1008,7 @@ func _build_leave_panel() -> void:
 func _open_leave_panel() -> void:
 	var lines := "Você volta ao menu e o XP já ganho fica salvo."
 	if not local_dead:
-		lines = "Você será eliminado desta partida.\n" + lines
+		lines = "Você será eliminado desta partida e perde %d XP por sair.\n" % absi(int(Net.rank_table().get("xp", {}).get("quit", -100))) + lines
 		if team_mode:
 			lines += "\nSua equipe continua sem você."
 	leave_text.text = lines

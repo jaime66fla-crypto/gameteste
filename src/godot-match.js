@@ -636,6 +636,8 @@ export class GodotMatch {
 				}
 				if (zone === 'head') this.credit(attacker, XP_REWARDS.headshot_bonus, 'headshot', target.name);
 			}
+			// Morrer custa XP (inclusive na própria granada).
+			if (!target.bot) this.credit(target, XP_REWARDS.death, 'death', self ? '' : attacker.name);
 			this.dropCrate(target);
 			this.checkEnd();
 		}
@@ -824,6 +826,8 @@ export class GodotMatch {
 		this.sessions.delete(meta.id);
 		const m = this.match;
 		const player = m.players[meta.id];
+		// Sair de uma partida em andamento ainda vivo custa XP (quem já morreu só está assistindo).
+		if (m.phase === 'running' && player && !player.dead) this.credit(player, XP_REWARDS.quit, 'quit');
 		if (!this.sessions.size) {
 			// Last one out: still save the XP this player earned, then close the room.
 			if (m.phase === 'running' && player) this.ctx.waitUntil(this.flush(player, false));
@@ -839,7 +843,7 @@ export class GodotMatch {
 		}
 		this.broadcast({ t: 'leave', id: meta.id });
 		if (m.phase !== 'running' || !player) return;
-		// Leaving keeps the XP already earned (no match/win bonus).
+		// Leaving keeps the XP already earned (no match/win bonus), minus the quit penalty.
 		this.ctx.waitUntil(this.flush(player, false));
 		if (m.host === meta.id) {
 			// Hand bot simulation to the next connected human.

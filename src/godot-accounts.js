@@ -320,14 +320,17 @@ export class GodotAccounts {
 		if (!account) return json({ error: 'unknown account' }, 404);
 		const before = rankFor(account.xp);
 		const count = (value) => Math.max(0, Math.min(2000, Math.floor(Number(value) || 0)));
-		account.xp += count(body.xp);
+		// XP da partida pode ser negativo (morrer, sair no meio); o total nunca fica abaixo de 0.
+		const delta = Math.max(-2000, Math.min(2000, Math.floor(Number(body.xp) || 0)));
+		account.xp = Math.max(0, account.xp + delta);
 		account.kills += count(body.kills);
 		account.botKills += count(body.botKills);
 		account.wins += body.win ? 1 : 0;
 		account.matches += 1;
 		await this.ctx.storage.put(key, account);
 		await this.updateBoard(key, account);
-		return json({ profile: profile(account), rankUp: rankFor(account.xp).rankIndex > before.rankIndex });
+		const after = rankFor(account.xp).rankIndex;
+		return json({ profile: profile(account), rankUp: after > before.rankIndex, rankDown: after < before.rankIndex });
 	}
 
 	// --------------------------------------------------------- leaderboard ---
