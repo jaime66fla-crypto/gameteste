@@ -201,7 +201,7 @@ func _physics_process(delta: float) -> void:
 		var p := player.global_position
 		var v := player.get_real_velocity()
 		var move := clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0)
-		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
+		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": move, "r": player.get("sprinting"),
 			"c": player.get("crouching"), "pr": player.get("prone"), "a": player.get("aiming"), "f": not player.is_on_floor(),
 			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean")})

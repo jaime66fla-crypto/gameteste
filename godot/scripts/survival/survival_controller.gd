@@ -182,7 +182,7 @@ func _physics_process(delta: float) -> void:
 		_state_timer = STATE_RATE
 		var p := player.global_position
 		var v := player.get_real_velocity() if not is_driving() else Vector3.ZERO
-		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.get("yaw"), "pi": player.get("pitch"),
+		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],

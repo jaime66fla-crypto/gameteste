@@ -376,6 +376,7 @@ func _unhandled_input(event: InputEvent) -> void:
                 grenade_aiming = true
             return
         if event.is_action("melee") and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+            face_aim(0.6) # o soco sai para a mira, mesmo correndo para outro lado
             humanoid_avatar.call("play_action", "punch")
             # Sobrevivência: o soco (ou a arma branca da mochila) acerta zumbis.
             if melee_handler.is_valid():
@@ -386,6 +387,7 @@ func _unhandled_input(event: InputEvent) -> void:
             if interact_handler.is_valid() and bool(interact_handler.call()):
                 return
             if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+                face_aim(0.6)
                 humanoid_avatar.call("play_action", "elbow_punch")
             return
         if event.is_action("heal"):
@@ -598,11 +600,19 @@ var _face_aim_left := 0.0
 func face_aim(seconds: float) -> void:
     _face_aim_left = maxf(_face_aim_left, seconds)
 
+## Para onde o corpo olha (vai para a rede: os outros veem o corpo de frente
+## para onde ele corre, não andando de lado).
+func network_yaw() -> float:
+    return _body_yaw
+
 func _update_body_facing(delta: float, planar_velocity: Vector3) -> void:
     if avatar == null:
         return
     _face_aim_left = maxf(0.0, _face_aim_left - delta)
-    if melee_weapon.is_empty() or aiming:
+    # Livre com arma branca ou de mãos vazias (arma guardada); com arma de
+    # fogo na mão ou mirando, o corpo segue a câmera.
+    var free_facing := (not melee_weapon.is_empty() or weapon_holstered) and not aiming and not prone and not grenade_aiming
+    if not free_facing:
         _body_yaw = yaw
         avatar.rotation.y = 0.0
         return
