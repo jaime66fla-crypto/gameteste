@@ -40,6 +40,7 @@ const ADS_ZOOM := {"pistol": 1.10, "shotgun": 1.10, "smg": 1.20, "rifle": 1.30}
 var _look_delta := Vector2.ZERO
 const FIRST_PERSON_CUTOFF := 0.45 # spring length below which the body is hidden
 const BARREL_CLEARANCE := 0.75 # cover lip right past the barrel does not eat the shot (the head sees over it)
+const AIM_BLOCK_MARGIN := 0.6 # the round stops this much short of the crosshair point = show "blocked"
 var viewmodel: Node3D
 var first_person_view := false
 var hit_shake := 0.0 # camera jolt when this player takes damage
@@ -818,6 +819,101 @@ func ads_amount() -> float:
 func ads_optic() -> bool:
     return first_person_view and viewmodel != null and bool(viewmodel.call("has_optic"))
 
+## Where a shot starts this frame: the aim-ray origin and direction, the
+## barrel (third-person muzzle, viewmodel muzzle in first person) and a wall
+## between the head and the aim start, if any. Shared by _shoot() and the
+## crosshair prediction, so the HUD never disagrees with the real round.
+func _aim_setup() -> Dictionary:
+    var origin := camera.global_position
+    var forward := -camera.global_transform.basis.z
+    var muzzle := weapon_model.get_node_or_null("Muzzle") as Marker3D if weapon_model != null else null
+    var barrel: Vector3 = muzzle.global_position if muzzle else gun_flash.global_position
+    if first_person_view:
+        # CS-style: the round leaves the eye/crosshair axis; the tracer starts at
+        # the visible viewmodel barrel, and the hidden third-person gun is ignored.
+        muzzle = null
+        barrel = viewmodel.call("muzzle_position")
+    # Something solid between the shooter's head and where the shot really starts
+    # (a wall you are pressed against): the round stops on it.
+    var wall_block := {}
+    if not first_person_view and not is_scope_active():
+        # Shoulder camera: start the aim ray at the depth of the gun barrel, not
+        # at the camera. Hugging cover, the camera (behind and beside the
+        # shoulder) would otherwise hit the cover's corner a few cm away and the
+        # round would leave the barrel sideways toward that point.
+        var chest := global_position + Vector3(0, height * (0.25 if prone else 0.75), 0)
+        var depth := (chest - origin).dot(forward)
+        if muzzle:
+            depth = maxf(depth, (barrel - origin).dot(forward))
+        origin += forward * maxf(0.0, depth)
+        # Skipping that stretch must not let anyone shoot through a wall: the
+        # head has to see the new start point. Over a low cover it does.
+        var eye := global_position + Vector3(0, height * (0.25 if prone else 0.9), 0)
+        var guard := PhysicsRayQueryParameters3D.create(eye, origin, HitboxScript.LAYER_WORLD)
+        guard.exclude = [get_rid()]
+        guard.hit_from_inside = true
+        wall_block = get_world_3d().direct_space_state.intersect_ray(guard)
+    return {"origin": origin, "forward": forward, "barrel": barrel, "use_barrel": muzzle != null, "wall_block": wall_block}
+
+## One round along `direction`: {hit, endpoint}. The camera picks the aim
+## point; the round itself leaves the barrel and stops on what is in its way.
+func _shot_path(aim: Dictionary, direction: Vector3, shot_range: float) -> Dictionary:
+    var origin: Vector3 = aim["origin"]
+    var barrel: Vector3 = aim["barrel"]
+    var wall_block: Dictionary = aim["wall_block"]
+    var target := origin + direction * shot_range
+    var hit := _shot_ray(origin, target)
+    var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
+    if not wall_block.is_empty():
+        return {"hit": wall_block, "endpoint": wall_block["position"]}
+    if bool(aim["use_barrel"]):
+        # A wall between the barrel and the target still blocks it, but not the
+        # lip of the cover right in front of the gun (the first
+        # BARREL_CLEARANCE m): the head already sees over it, like in any cover
+        # shooter, and the round clears it.
+        var barrel_direction := (endpoint - barrel).normalized()
+        var barrel_length := barrel.distance_to(endpoint)
+        if barrel_length > BARREL_CLEARANCE:
+            var barrel_start := barrel + barrel_direction * BARREL_CLEARANCE
+            var barrel_hit := _shot_ray(barrel_start, endpoint + barrel_direction * 0.02, true)
+            # Retain a camera hit if numerical rounding at its surface misses it.
+            if not barrel_hit.is_empty():
+                hit = barrel_hit
+        if not hit.is_empty():
+            endpoint = hit["position"]
+    return {"hit": hit, "endpoint": endpoint}
+
+## Crosshair honesty: where the round would really stop if fired now, when
+## that is short of what the camera shows at the crosshair (a wall the
+## camera sees past, the cover in front of the gun). {} = the shot is clear.
+## The HUD turns the crosshair red and marks this point.
+var _aim_block_cache := {}
+var _aim_block_frame := -1
+func predict_shot_block() -> Dictionary:
+    var frame := Engine.get_process_frames()
+    if frame == _aim_block_frame:
+        return _aim_block_cache
+    _aim_block_frame = frame
+    _aim_block_cache = {}
+    if weapon_holstered or first_person_view or is_scope_active() or camera == null or weapon_model == null:
+        return _aim_block_cache
+    var aim := _aim_setup()
+    var range_value := float(WeaponData.stats(current_weapon)["range"])
+    var forward: Vector3 = aim["forward"]
+    var origin: Vector3 = aim["origin"]
+    var path := _shot_path(aim, forward, range_value)
+    var endpoint: Vector3 = path["endpoint"]
+    # What the camera itself shows under the crosshair: first thing the view
+    # ray meets past the barrel depth (the cover corner beside the camera does
+    # not count, the round ignores it too).
+    var view_hit := _shot_ray(origin, origin + forward * range_value)
+    var view_point: Vector3 = view_hit["position"] if not view_hit.is_empty() else origin + forward * range_value
+    var eye := camera.global_position
+    var shortfall := view_point.distance_to(eye) - endpoint.distance_to(eye)
+    if shortfall > AIM_BLOCK_MARGIN:
+        _aim_block_cache = {"point": endpoint, "normal": (path["hit"] as Dictionary).get("normal", -forward)}
+    return _aim_block_cache
+
 func _shoot() -> void:
     if ammo <= 0:
         _reload()
@@ -832,63 +928,19 @@ func _shoot() -> void:
     sound_fx.shot(current_weapon)
     if humanoid_avatar != null and humanoid_avatar.has_method("notify_shot"):
         humanoid_avatar.call("notify_shot")
-    var origin := camera.global_position
-    var forward := -camera.global_transform.basis.z
-    var muzzle := weapon_model.get_node_or_null("Muzzle") as Marker3D
-    last_shot_origin = muzzle.global_position if muzzle else gun_flash.global_position
-    if first_person_view:
-        # CS-style: the round leaves the eye/crosshair axis; the tracer starts at
-        # the visible viewmodel barrel, and the hidden third-person gun is ignored.
-        muzzle = null
-        last_shot_origin = viewmodel.call("muzzle_position")
-    # Something solid between the shooter's head and where the shot really starts
-    # (a wall you are pressed against): the round stops on it.
-    var wall_block := {}
-    if not first_person_view and not is_scope_active():
-        # Shoulder camera: start the aim ray at the depth of the gun barrel, not
-        # at the camera. Hugging cover, the camera (behind and beside the
-        # shoulder) would otherwise hit the cover's corner a few cm away and the
-        # round would leave the barrel sideways toward that point.
-        var chest := global_position + Vector3(0, height * (0.25 if prone else 0.75), 0)
-        var depth := (chest - origin).dot(forward)
-        if muzzle:
-            depth = maxf(depth, (last_shot_origin - origin).dot(forward))
-        origin += forward * maxf(0.0, depth)
-        # Skipping that stretch must not let anyone shoot through a wall: the
-        # head has to see the new start point. Over a low cover it does.
-        var eye := global_position + Vector3(0, height * (0.25 if prone else 0.9), 0)
-        var guard := PhysicsRayQueryParameters3D.create(eye, origin, HitboxScript.LAYER_WORLD)
-        guard.exclude = [get_rid()]
-        guard.hit_from_inside = true
-        wall_block = get_world_3d().direct_space_state.intersect_ray(guard)
+    var aim := _aim_setup()
+    var origin: Vector3 = aim["origin"]
+    var forward: Vector3 = aim["forward"]
+    last_shot_origin = aim["barrel"]
     var spread := current_spread()
     for pellet in range(int(stats["pellets"])):
         # Uniform disc (not a square) around the crosshair.
         var angle := randf() * TAU
         var radius := sqrt(randf()) * spread
         var direction := (forward + camera.global_transform.basis.x * cos(angle) * radius + camera.global_transform.basis.y * sin(angle) * radius).normalized()
-        var target := origin + direction * float(stats["range"])
-        var hit := _shot_ray(origin, target)
-        var endpoint: Vector3 = hit["position"] if not hit.is_empty() else target
-        if not wall_block.is_empty():
-            hit = wall_block
-            endpoint = wall_block["position"]
-        elif muzzle:
-            # Camera chooses the aim point; the actual shot starts at the barrel.
-            # A wall between the barrel and the target still blocks it, but not
-            # the lip of the cover right in front of the gun (the first
-            # BARREL_CLEARANCE m): the head already sees over it, like in any
-            # cover shooter, and the round clears it.
-            var barrel_direction := (endpoint - last_shot_origin).normalized()
-            var barrel_length := last_shot_origin.distance_to(endpoint)
-            if barrel_length > BARREL_CLEARANCE:
-                var barrel_start := last_shot_origin + barrel_direction * BARREL_CLEARANCE
-                var barrel_hit := _shot_ray(barrel_start, endpoint + barrel_direction * 0.02, true)
-                # Retain a camera hit if numerical rounding at its surface misses it.
-                if not barrel_hit.is_empty():
-                    hit = barrel_hit
-            if not hit.is_empty():
-                endpoint = hit["position"]
+        var path := _shot_path(aim, direction, float(stats["range"]))
+        var hit: Dictionary = path["hit"]
+        var endpoint: Vector3 = path["endpoint"]
         if pellet == 0:
             var tracer_origin := last_shot_origin
             if is_scope_active():

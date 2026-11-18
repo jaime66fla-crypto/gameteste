@@ -19,6 +19,9 @@ var crosshair_gap := 2.5
 var crosshair_arm_alpha := 1.0
 ## 0 = white centre dot, 1 = red-dot reticle (aiming through an optic).
 var crosshair_red_dot := 0.0
+var crosshair_blocked := 0.0 # 0..1: o tiro para antes do que a mira mostra
+var crosshair_block_screen := Vector2.ZERO
+var crosshair_block_on_screen := false
 const CROSSHAIR_MIN_GAP := 2.5
 const CROSSHAIR_MAX_GAP := 70.0
 const CROSSHAIR_ARM_LENGTH := 6.0
@@ -256,7 +259,7 @@ func _build_ui() -> void:
         var gap := crosshair_gap
         if crosshair_arm_alpha > 0.01:
             for pass_index in 2:
-                var color := Color(0, 0, 0, 0.75) if pass_index == 0 else Color(1, 1, 1, 0.95)
+                var color := Color(0, 0, 0, 0.75) if pass_index == 0 else Color(1, 1, 1, 0.95).lerp(Color(1.0, 0.32, 0.24, 0.95), crosshair_blocked)
                 color.a *= crosshair_arm_alpha
                 var width := 4.0 if pass_index == 0 else 2.0
                 var arm := gap + CROSSHAIR_ARM_LENGTH + (1.0 if pass_index == 0 else 0.0)
@@ -270,10 +273,12 @@ func _build_ui() -> void:
             crosshair.draw_circle(c, 4.5, Color(1.0, 0.1, 0.05, 0.22 * red))
             crosshair.draw_circle(c, 2.6, Color(1.0, 0.15, 0.08, 0.55 * red))
             crosshair.draw_circle(c, 1.5, Color(1.0, 0.35, 0.25, red))
-        if crosshair_red_dot < 0.99:
+        if crosshair_red_dot < 0.99 and crosshair_blocked < 0.5:
             var white := 1.0 - crosshair_red_dot
             crosshair.draw_rect(Rect2(c - Vector2(1.5, 1.5), Vector2(3, 3)), Color(0, 0, 0, 0.6 * white))
-            crosshair.draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.95 * white)))
+            crosshair.draw_rect(Rect2(c - Vector2(1, 1), Vector2(2, 2)), Color(1, 1, 1, 0.95 * white))
+        if crosshair_blocked > 0.01:
+            _draw_blocked_aim(c))
     crosshair.resized.connect(crosshair.queue_redraw)
     # Action clock under the crosshair: reload / medkit progress (3 s).
     action_clock = Control.new()
@@ -318,9 +323,46 @@ func _draw_action_clock() -> void:
     action_clock.draw_string(font, c + Vector2(-width * 0.5 + 1, radius + 23), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0, 0, 0, 0.9))
     action_clock.draw_string(font, c + Vector2(-width * 0.5, radius + 22), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(1, 1, 1))
 
+## Tiro bloqueado: X vermelho no centro da mira e um marcador no ponto onde a
+## bala vai parar de verdade (a parede ou a borda da cobertura na frente da
+## arma que a câmera, por cima do ombro, não deixa ver).
+func _draw_blocked_aim(c: Vector2) -> void:
+    var a := crosshair_blocked
+    var red := Color(1.0, 0.27, 0.2, 0.95 * a)
+    var shadow := Color(0, 0, 0, 0.7 * a)
+    var r := 5.0
+    for pass_index in 2:
+        var color := shadow if pass_index == 0 else red
+        var width := 4.0 if pass_index == 0 else 2.0
+        crosshair.draw_line(c + Vector2(-r, -r), c + Vector2(r, r), color, width)
+        crosshair.draw_line(c + Vector2(-r, r), c + Vector2(r, -r), color, width)
+    if crosshair_block_on_screen:
+        var p := crosshair_block_screen
+        # Ligação discreta da mira até onde o tiro bate, e o marcador do impacto.
+        if p.distance_to(c) > 14.0:
+            var dir := (p - c).normalized()
+            crosshair.draw_dashed_line(c + dir * 9.0, p - dir * 9.0, Color(1.0, 0.35, 0.25, 0.45 * a), 1.5, 5.0)
+        crosshair.draw_arc(p, 7.5, 0.0, TAU, 24, shadow, 4.0)
+        crosshair.draw_arc(p, 7.5, 0.0, TAU, 24, red, 2.0)
+        crosshair.draw_circle(p, 2.0, red)
+
 ## Spread (tangent of the cone half-angle) -> pixels at the current vertical FOV.
 func _update_crosshair(delta: float) -> void:
     var camera: Camera3D = player.get("camera")
+    # Onde o tiro vai bater de verdade, se for antes do que a mira mostra.
+    var block: Dictionary = player.call("predict_shot_block") if player.has_method("predict_shot_block") else {}
+    var target_blocked := 0.0 if block.is_empty() else 1.0
+    var was_on_screen := crosshair_block_on_screen
+    var old_screen := crosshair_block_screen
+    crosshair_block_on_screen = false
+    if not block.is_empty() and camera != null and not camera.is_position_behind(block["point"]):
+        crosshair_block_screen = camera.unproject_position(block["point"])
+        crosshair_block_on_screen = true
+    var blocked := move_toward(crosshair_blocked, target_blocked, delta * 10.0)
+    if not is_equal_approx(blocked, crosshair_blocked) or was_on_screen != crosshair_block_on_screen \
+            or (crosshair_block_on_screen and old_screen.distance_to(crosshair_block_screen) > 0.5):
+        crosshair_blocked = blocked
+        crosshair.queue_redraw()
     var spread: float = player.call("current_spread")
     var half_height := crosshair.size.y * 0.5
     var target_gap := spread * half_height / tan(deg_to_rad(camera.fov) * 0.5) if camera != null else CROSSHAIR_MIN_GAP

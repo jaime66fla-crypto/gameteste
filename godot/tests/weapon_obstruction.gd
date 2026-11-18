@@ -50,6 +50,7 @@ func _run() -> void:
         var lip := _box(scene,muzzle.global_position+Vector3(0,0,-0.3),Vector3(0.6,0.4,0.12))
         await physics_frame
         await physics_frame
+        _check((player.call("predict_shot_block") as Dictionary).is_empty(), "Crosshair shows blocked over low cover: "+weapon)
         player.call("_shoot")
         _check(lip.damage == 0, "Cover lip in front of the barrel ate the shot: "+weapon)
         _check(target.damage > 0, "Shot over low cover did not reach the target: "+weapon)
@@ -58,6 +59,8 @@ func _run() -> void:
         await physics_frame
         await physics_frame
         var before: float = target.damage
+        await process_frame
+        _check((player.call("predict_shot_block") as Dictionary).is_empty(), "Crosshair shows blocked with a clear shot: "+weapon)
         player.call("_shoot")
         _check(target.damage > before, "Clear barrel cannot reach camera target: "+weapon)
         # 2) A tall wall right in front (no seeing over it) still stops the round,
@@ -78,6 +81,11 @@ func _run() -> void:
         var low := _box(scene,muzzle.global_position+Vector3(0,0,-2.5),Vector3(3,0.8,0.12))
         await physics_frame
         await physics_frame
+        await process_frame # nova leitura da previsão (cache por quadro)
+        # The camera sees over it, the round does not: the crosshair must say so,
+        # marking the point on the obstacle.
+        var block: Dictionary = player.call("predict_shot_block")
+        _check(not block.is_empty() and absf((block["point"] as Vector3).z - low.global_position.z) < 0.3, "Crosshair does not warn about the wall the camera sees past: "+weapon)
         player.call("_shoot")
         _check(low.damage > 0 and target.damage == before, "Barrel obstruction farther ahead ignored: "+weapon)
         low.queue_free()
