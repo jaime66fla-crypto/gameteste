@@ -218,6 +218,9 @@ func _stop_driving(tell_server: bool = true) -> void:
 		return
 	var v := driving
 	driving = null
+	# Sem motorista já aqui: senão, até a resposta do servidor chegar, o carro
+	# via "ainda tem motorista" e religava o motor (que ficava roncando).
+	v.set("driver", "")
 	v.call("set_controlled", false)
 	if tell_server:
 		Net.send({"t": "exit"})

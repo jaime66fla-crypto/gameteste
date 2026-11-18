@@ -116,12 +116,18 @@ func _run() -> void:
 	await _frames(60)
 	Input.action_release("move_forward")
 	check(car.global_position.distance_to(parked) < 0.5, "sem gasolina o carro não anda")
+	car.set("fuel", 30.0) # motor ligado ao sair (o caso do bug)
+	car.call("set_engine", true)
 	var exit_key := InputEventKey.new()
 	exit_key.physical_keycode = KEY_E
 	exit_key.pressed = true
 	controller.call("_unhandled_input", exit_key)
 	await _frames(2)
 	check(not controller.call("is_driving") and player.visible, "E sai do carro")
+	# Sem a resposta do servidor ainda: o motor desliga e não religa sozinho.
+	await _frames(60)
+	var car_audio: Node = car.get("_audio")
+	check(not bool(car.get("engine_on")) and car_audio != null and not bool(car_audio.get("running")), "ao sair, o motor desliga e não fica roncando")
 	# Golpe de machado: a ferramenta aparece na mão do personagem.
 	player.call("start_channel", "CORTANDO", 3.0, func(): pass) # o golpe dura enquanto a coleta corre
 	controller.call("_set_action", "chop", "axe")
