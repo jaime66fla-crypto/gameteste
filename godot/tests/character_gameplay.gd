@@ -12,7 +12,9 @@ func _frames(count: int) -> void:
 func _run() -> void:
     var registry = load("res://scripts/characters/character_registry.gd")
     registry.storage_path = "user://character_gameplay_%s.cfg" % OS.get_process_id()
-    for id in ["jaime_original", "jaime_swat"]:
+    # Os personagens do catálogo atual (hoje só o avatar_ch31).
+    var ids: Array = registry.all_characters().map(func(entry): return entry.id)
+    for id in ids:
         _check(registry.select_character(id) == OK, "Cannot select " + id)
         var scene: Node3D = load("res://scenes/main.tscn").instantiate()
         root.add_child(scene)
@@ -45,8 +47,15 @@ func _run() -> void:
             _check(visual.call("is_visual_ready"), "SWAT did not initialize")
             var sk: Skeleton3D = visual.get("skeleton")
             for foot in ["Left", "Right"]:
-                var point := sk.to_global(sk.get_bone_global_pose(sk.find_bone("mixamorig" + foot + "ToeBase")).origin)
-                _check(point.y >= player.position.y - 0.035, "SWAT foot penetrates floor")
+                # Ossos do Mixamo com prefixo variável (mixamorig_, mixamorig9_...).
+                var toe := -1
+                for b in sk.get_bone_count():
+                    if sk.get_bone_name(b).ends_with(foot + "ToeBase"):
+                        toe = b
+                _check(toe >= 0, "SWAT toe bone missing: " + foot)
+                if toe >= 0:
+                    var point := sk.to_global(sk.get_bone_global_pose(toe).origin)
+                    _check(point.y >= player.position.y - 0.035, "SWAT foot penetrates floor")
         Input.action_release("crouch")
         await _frames(30)
         for weapon in ["pistol", "rifle", "sniper", "shotgun", "smg"]:
@@ -57,7 +66,8 @@ func _run() -> void:
             var shots: int = player.get("shots")
             player.call("_shoot")
             _check(player.get("ammo") == ammo - 1 and player.get("shots") == shots + 1, "Combat changed for " + id + "/" + weapon)
-            if id == "jaime_swat":
+            # Só o visual SWAT antigo media o erro da pegada; o avatar atual não tem grip_error.
+            if id == "jaime_swat" and player.get("humanoid_avatar").has_method("grip_error"):
                 var visual: Node3D = player.get("humanoid_avatar")
                 for side in ["Left", "Right"]:
                     _check(float(visual.call("grip_error", side)) < 0.045, "SWAT grip too far: " + weapon + "/" + side + " error=" + str(visual.call("grip_error", side)))
@@ -72,18 +82,20 @@ func _run() -> void:
         await _frames(3)
     # Resource failure must not mutate the saved preference or remove the Original.
     var definition: Resource = registry.definition("jaime_swat")
-    var original_path: String = definition.visual_scene
-    registry.select_character("jaime_swat")
-    definition.visual_scene = "res://missing_character_visual.tscn"
-    var fallback: Node3D = load("res://scenes/main.tscn").instantiate()
-    root.add_child(fallback)
-    current_scene = fallback
-    _check(fallback.get_node("Jaime").get("character_id") == "jaime_original", "Missing SWAT did not fall back")
-    _check(registry.load_selection() == "jaime_swat", "Fallback destroyed saved preference")
-    definition.visual_scene = original_path
-    fallback.queue_free()
-    await _frames(3)
-    registry.select_character("jaime_original")
+    # O catálogo atual pode não ter mais o SWAT: aí não há o que testar no fallback.
+    if definition != null:
+        var original_path: String = definition.visual_scene
+        registry.select_character("jaime_swat")
+        definition.visual_scene = "res://missing_character_visual.tscn"
+        var fallback: Node3D = load("res://scenes/main.tscn").instantiate()
+        root.add_child(fallback)
+        current_scene = fallback
+        _check(fallback.get_node("Jaime").get("character_id") == "jaime_original", "Missing SWAT did not fall back")
+        _check(registry.load_selection() == "jaime_swat", "Fallback destroyed saved preference")
+        definition.visual_scene = original_path
+        fallback.queue_free()
+        await _frames(3)
+    registry.select_character(registry.DEFAULT_ID)
     DirAccess.remove_absolute(ProjectSettings.globalize_path(registry.storage_path))
     for failure in failures.slice(0, 20):
         printerr(failure)

@@ -9,7 +9,7 @@ const WeaponData = preload("res://scripts/weapon_data.gd")
 const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
-const TrainingArena = preload("res://scripts/training_arena.gd")
+const Melee = preload("res://scripts/melee.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 var driving_ctl: Node # carros (survival_driving.gd)
@@ -423,7 +423,7 @@ func _melee() -> void:
 	var forward := -camera.global_basis.z
 	var from := camera.global_position
 	# Pela mira (câmera no ombro), no alcance a partir do jogador; vale colado num zumbi largo.
-	var hit := TrainingArena.melee_ray(player, camera, reach)
+	var hit := Melee.ray(player, camera, reach)
 	if hit.is_empty():
 		return
 	var body: Object = hit["collider"]

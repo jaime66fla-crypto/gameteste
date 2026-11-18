@@ -1,4 +1,6 @@
 extends SceneTree
+## Só o que o jogador pisa/esbarra (os degraus da camada dos pés não contam).
+const WALK_MASK := 1
 ## Bairro de parkour: confere em cada lote que as rotas sobem em degraus que
 ## o pulo alcança (<= 1,5 m; o pulo sobe ~1,64 m) e que o jogador cabe em pé
 ## em cada degrau, pela colisão real.
@@ -38,6 +40,7 @@ func _run() -> void:
 	capsule.height = 1.7
 	var shape_query := PhysicsShapeQueryParameters3D.new()
 	shape_query.shape = capsule
+	shape_query.collision_mask = WALK_MASK
 	var lots := District.lots()
 	if lots.size() < 40:
 		failures.append("Bairro precisa de 40+ lotes, tem %d" % lots.size())
@@ -52,7 +55,7 @@ func _run() -> void:
 				var world := origin + basis * Vector3(point[0], 0, point[1])
 				# O raio parte logo acima do alcance do pulo (não do telhado, em pontos internos).
 				var from_y := 12.0 if last < 0.0 else last + 1.9
-				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, from_y, 0), world + Vector3(0, -1, 0)))
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, from_y, 0), world + Vector3(0, -1, 0), WALK_MASK))
 				var top: float = hit["position"].y if not hit.is_empty() else 0.0
 				# Telhado/andar acima do ponto: desce até achar onde o jogador cabe.
 				shape_query.transform = Transform3D(Basis.IDENTITY, Vector3(world.x, top + 0.9, world.z))
@@ -80,7 +83,7 @@ func _run() -> void:
 			var z: float = s[1]
 			while z >= float(s[2]) - 0.01:
 				var world := origin + basis * Vector3(float(s[0]), 0, z)
-				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, last + 1.0, 0), world + Vector3(0, -1, 0)))
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, last + 1.0, 0), world + Vector3(0, -1, 0), WALK_MASK))
 				var top: float = hit["position"].y if not hit.is_empty() else 0.0
 				if top - last > 0.5: # mais íngreme que 45° (o limite de piso do CharacterBody)
 					failures.append("%s %d: escada trava em z=%.1f (%.2f -> %.2f)" % [lot["kind"], lot["index"], z, last, top])
@@ -94,7 +97,7 @@ func _run() -> void:
 				failures.append("%s %d: escada não chega a %.1f (%.2f)" % [lot["kind"], lot["index"], s[3], last])
 			var exit: Vector2 = s[4]
 			var landing := origin + basis * Vector3(exit.x, 0, exit.y)
-			var hit2 := space.intersect_ray(PhysicsRayQueryParameters3D.create(landing + Vector3(0, last + 1.0, 0), landing + Vector3(0, -1, 0)))
+			var hit2 := space.intersect_ray(PhysicsRayQueryParameters3D.create(landing + Vector3(0, last + 1.0, 0), landing + Vector3(0, -1, 0), WALK_MASK))
 			if hit2.is_empty() or absf(hit2["position"].y - float(s[3])) > 0.35:
 				failures.append("%s %d: saída da escada sem piso em %s" % [lot["kind"], lot["index"], exit])
 	# Caminhada de verdade: o próprio Jaime (cápsula e física do jogo) anda
@@ -140,7 +143,7 @@ func _run() -> void:
 		for point in BASE_ROUTE:
 			var world := origin + basis * Vector3(point[0], 0, point[1])
 			var from_y := 12.0 if last < 0.0 else last + 1.9
-			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, from_y, 0), world + Vector3(0, -1, 0)))
+			var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(world + Vector3(0, from_y, 0), world + Vector3(0, -1, 0), WALK_MASK))
 			var top: float = hit["position"].y if not hit.is_empty() else 0.0
 			shape_query.transform = Transform3D(Basis.IDENTITY, Vector3(world.x, top + 0.9, world.z))
 			if not space.intersect_shape(shape_query, 1).is_empty():

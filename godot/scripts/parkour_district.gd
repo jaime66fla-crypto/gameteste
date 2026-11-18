@@ -13,6 +13,7 @@ extends Node3D
 ##   térrea: caçamba 1,3 > caixote 2,4 > laje 3,6.
 ## Cada lote vira um StaticBody3D com uma malha por material (poucas draw calls).
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+const HitboxScript = preload("res://scripts/net/hitbox.gd")
 
 const RING := 66.0 # eixo do anel de rua
 const ROAD_W := 6.0
@@ -211,11 +212,24 @@ func _stairs(base: Vector3, dir: Vector3, run: float, rise: float, width: float,
 	var tread := run / n
 	var step := rise / n
 	var turn := Basis(Vector3.UP, atan2(dir.x, dir.z))
+	# Degraus para os pés (camada própria): o IK dos pés pisa neles, o corpo segue a rampa.
+	var probe := StaticBody3D.new()
+	probe.name = "StairSteps"
+	probe.collision_layer = HitboxScript.LAYER_FOOT_PROBE
+	probe.collision_mask = 0
+	_body.add_child(probe)
 	for k in n:
 		var top := (k + 1) * step
 		# Cada degrau desce até o chão nos primeiros e vira uma laje fina no alto.
 		var height := minf(top, 0.45)
-		_add(base + dir * ((k + 0.5) * tread) + Vector3(0, top - height * 0.5, 0), Vector3(width, height, tread + 0.01), color, "concrete", false, turn)
+		var center := base + dir * ((k + 0.5) * tread) + Vector3(0, top - height * 0.5, 0)
+		_add(center, Vector3(width, height, tread + 0.01), color, "concrete", false, turn)
+		var shape := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = Vector3(width, height, tread + 0.01)
+		shape.shape = box
+		shape.transform = Transform3D(turn, center)
+		probe.add_child(shape)
 	# Viga inclinada por baixo dos degraus (só visual) e corrimão do lado de fora.
 	var foot := base
 	var head := base + dir * run + Vector3(0, rise, 0)
@@ -353,8 +367,13 @@ func _two_story(lot: Dictionary) -> void:
 	_add(Vector3((hole_x + hx - WALL) * 0.5, FLOOR_H - 0.1, 0), Vector3(hx - WALL - hole_x, 0.2, d - WALL * 2), "#a49e8c", "concrete")
 	_add(Vector3((-hx + WALL + hole_x) * 0.5, FLOOR_H - 0.1, (1.5 + inner_z) * 0.5), Vector3(1.3, 0.2, inner_z - 1.5), "#a49e8c", "concrete")
 	_add(Vector3(0, 0.035, 0), Vector3(w - 0.5, 0.02, d - 0.5), "#a49e8c", "concrete", false)
-	# Escada interna (33°) subindo da frente para o fundo.
-	_stairs(Vector3(-hx + WALL + 0.6, 0, 1.5), Vector3(0, 0, -1), 1.5 + inner_z, FLOOR_H, 1.2, "#8f918a")
+	# Escada interna (~38°) subindo da frente para o fundo. Termina num patamar
+	# de 0,9 m na altura do piso, antes da parede do fundo: dali se sai para o
+	# lado direto no 1º andar (antes a escada batia na parede e sobrava uma
+	# borda de ~15 cm até o piso, que o personagem não sobe).
+	var landing := 0.9
+	_stairs(Vector3(-hx + WALL + 0.6, 0, 1.5), Vector3(0, 0, -1), 1.5 + inner_z - landing, FLOOR_H, 1.2, "#8f918a")
+	_add(Vector3(-hx + WALL + 0.65, FLOOR_H - 0.1, -inner_z + landing * 0.5), Vector3(1.3, 0.2, landing), "#a49e8c", "concrete")
 	# Metade dos sobrados tem escada externa até a laje, pelo lado esquerdo
 	# (passa pela janela lateral do 1º andar).
 	if i % 2 == 0:

@@ -27,6 +27,7 @@ static func _has_natural_arms(clip: String) -> bool:
 	return clip in NATURAL_ARM_CLIPS or clip.begins_with("walk_unarmed") or clip.begins_with("jog_unarmed")
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
+const StaffModel = preload("res://scripts/weapons/staff_model.gd")
 const SOURCE_HEIGHT := 1.782
 var skeleton: Skeleton3D
 var animation_player: AnimationPlayer
@@ -134,6 +135,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
 	_last_delta = delta
+	_airborne = airborne
 	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
 	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne and prone_weight < 0.01 and not prone_requested else 0.0, delta * 6.0)
 	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
@@ -369,6 +371,10 @@ func _tool_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, rot: 
 
 ## Ferramenta com o cabo ao longo de +Y (base em 0) e a lâmina para -Z.
 func _build_tool(tool: String) -> Node3D:
+	if tool == "long_bat":
+		var staff := StaffModel.build(float(TOOL_LOOK[tool]["handle"]))
+		staff.name = "WorkTool"
+		return staff
 	var look: Dictionary = TOOL_LOOK[tool]
 	var node := Node3D.new()
 	node.name = "WorkTool"
@@ -414,6 +420,9 @@ func _apply_work() -> void:
 	if work_action == "swing":
 		_apply_swing(chest, spine, right_arm)
 		return
+	if work_action == "hold":
+		_apply_hold(chest, right_arm)
+		return
 	var t := fmod(_work_time, WORK_CYCLE) / WORK_CYCLE
 	var raised := -0.55 if work_action == "chop" else 0.7
 	var struck := 2.15 if work_action == "chop" else 2.5
@@ -457,6 +466,74 @@ func _apply_work() -> void:
 		var x := y.cross(z).normalized()
 		_tool_node.transform = Transform3D(Basis(x, y, z), pivot + h * (reach - 0.24))
 
+## Carregando a arma branca ("hold"): as duas mãos no cabo na frente do quadril
+## direito e a arma deitada para trás por cima do ombro direito.
+func _apply_hold(chest: int, right_arm: int) -> void:
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var h := (up * 0.85 - forward * 0.35 + right * 0.15).normalized()
+	var right_hand := torso + right * 0.17 - up * 0.30 + forward * 0.22
+	var left_hand := right_hand + h * 0.17
+	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
+		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.4 - up * 0.3
+		_grip_on_staff(spec[0], spec[1], h, forward, pole)
+	if _tool_node != null:
+		var y := h
+		var z := (forward - h * forward.dot(h)).normalized()
+		var x := y.cross(z).normalized()
+		_tool_node.transform = Transform3D(Basis(x, y, z), right_hand - h * 0.1)
+
+## Mão fechada no cabo: o meio da palma fica em `grip_point` (no eixo do
+## cabo), os dedos dão a volta no cabo partindo de `fingers_dir` (só a parte
+## perpendicular ao cabo vale) e o indicador aponta para a ponta da arma.
+const STAFF_GRIP_RADIUS := 0.035 # do eixo do cabo até a palma (raio da empunhadura + palma)
+
+func _grip_on_staff(side: String, grip_point: Vector3, axis: Vector3, fingers_dir: Vector3, pole: Vector3) -> void:
+	var upper := Grip._bone(skeleton, side + "Arm")
+	var lower := Grip._bone(skeleton, side + "ForeArm")
+	var hand := Grip._bone(skeleton, side + "Hand")
+	var middle := Grip._bone(skeleton, side + "HandMiddle1")
+	var index := Grip._bone(skeleton, side + "HandIndex1")
+	var pinky := Grip._bone(skeleton, side + "HandPinky1")
+	if hand < 0 or middle < 0 or index < 0 or pinky < 0:
+		_two_bone_ik(upper, lower, hand, grip_point, pole)
+		return
+	var rest_fingers := skeleton.get_bone_rest(middle).origin.normalized()
+	var rest_across := skeleton.get_bone_rest(index).origin - skeleton.get_bone_rest(pinky).origin
+	var rest_x := (rest_across - rest_fingers * rest_across.dot(rest_fingers)).normalized()
+	var rest_frame := Basis(rest_x, rest_fingers, rest_x.cross(rest_fingers).normalized())
+	var fingers := (fingers_dir - axis * fingers_dir.dot(axis)).normalized()
+	var x := (axis - fingers * axis.dot(fingers)).normalized()
+	var hand_basis := Basis(x, fingers, x.cross(fingers).normalized()) * rest_frame.inverse()
+	# Lado da palma: para onde os dedos dobram ao fechar (Grip._close_fingers gira
+	# em volta do eixo indicador–mindinho). O cabo fica desse lado, a um raio da
+	# palma, para os dedos fecharem em volta dele (e não na frente dele).
+	var hinge := (rest_across - rest_fingers * rest_across.dot(rest_fingers)).normalized()
+	var palm_side := (hand_basis * hinge.cross(rest_fingers)).normalized()
+	# Pegada de força: o eixo do cabo passa na linha dos nós dos dedos, um raio
+	# para o lado da palma; os dedos saem dali e dão a volta no cabo.
+	var knuckles := hand_basis * skeleton.get_bone_rest(middle).origin
+	var wrist := grip_point - knuckles - palm_side * STAFF_GRIP_RADIUS
+	_two_bone_ik(upper, lower, hand, wrist, pole)
+	Grip._set_global_rotation(skeleton, hand, hand_basis)
+	# Todos os dedos fechados no cabo (o indicador também: não é gatilho).
+	for finger in ["Index", "Middle", "Ring", "Pinky", "Thumb"]:
+		for segment in range(1, 4):
+			var bone := Grip._bone(skeleton, side + "Hand" + finger + str(segment))
+			if bone < 0:
+				continue
+			var angle: float = [1.0, 1.15, 0.8][segment - 1]
+			var rotation := Quaternion(hinge, angle)
+			if finger == "Thumb":
+				# Polegar por cima dos dedos, do outro lado do cabo.
+				angle = [0.35, 0.6, 0.5][segment - 1]
+				rotation = Quaternion(hinge, angle)
+				if segment == 1:
+					rotation = Quaternion(hinge.cross(rest_fingers).normalized(), -0.75) * rotation
+			skeleton.set_bone_pose_rotation(bone, rotation)
+
 ## Golpe lateral com as duas mãos: 0–35% arma para trás do ombro direito,
 ## 35–60% varre rápido da direita para a esquerda na altura do peito,
 ## 60–100% termina o movimento do outro lado e relaxa.
@@ -490,8 +567,11 @@ func _apply_swing(chest: int, spine: int, right_arm: int) -> void:
 	var right_hand := pivot + h * 0.40
 	var left_hand := pivot + h * 0.27
 	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
-		var side: String = spec[0]
 		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.3 - up * 0.5
+		if work_tool == "long_bat":
+			_grip_on_staff(spec[0], spec[1], h, up, pole)
+			continue
+		var side: String = spec[0]
 		var hand := Grip._bone(skeleton, side + "Hand")
 		_two_bone_ik(Grip._bone(skeleton, side + "Arm"), Grip._bone(skeleton, side + "ForeArm"), hand, spec[1], pole)
 		if hand >= 0:
@@ -594,13 +674,29 @@ func _apply_crouch() -> void:
 		Grip._set_global_rotation(skeleton, Grip._bone(skeleton, side + "Foot"), (feet[side] as Transform3D).basis)
 
 # ------------------------------------------------------------- degraus ---
-# Pés no degrau (desligado por padrão; a cena de escada liga). O corpo segue a
-# rampa invisível que passa pelo meio dos degraus; cada pé procura o chão
-# embaixo dele por raio (camada do mundo), o quadril desce o necessário para o
-# pé mais baixo alcançar o degrau dele e o outro pé sobe por IK.
+# Pés no degrau. O corpo segue a rampa invisível que passa pelo meio dos
+# degraus; cada pé procura o chão embaixo dele por raio, primeiro nos degraus
+# (camada LAYER_FOOT_PROBE, parkour_district._stairs) e depois no mundo. O
+# quadril desce o necessário para o pé mais baixo alcançar o degrau dele e o
+# outro pé sobe por IK. No ar os pés voltam ao clipe.
 const FOOT_PROBE := 0.6 # alcance do raio acima/abaixo da origem do personagem (m)
-var foot_ik_enabled := false
+const FOOT_STEP_LAYER := 8 # hitbox.gd LAYER_FOOT_PROBE
+var foot_ik_enabled := true
 var _foot_offsets := {"Left": 0.0, "Right": 0.0}
+var _airborne := false
+
+const FOOT_SWING_HEIGHT := 0.17 # tornozelo acima disto (m, sobre a origem) = pé no ar
+
+## Altura do chão embaixo de `point` em relação à origem: degraus primeiro, depois o mundo.
+func _ground_offset(space: PhysicsDirectSpaceState3D, point: Vector3, base_y: float) -> float:
+	var from := Vector3(point.x, base_y + FOOT_PROBE, point.z)
+	var to := Vector3(point.x, base_y - FOOT_PROBE, point.z)
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, FOOT_STEP_LAYER))
+	if hit.is_empty():
+		hit = space.intersect_ray(PhysicsRayQueryParameters3D.create(from, to, 1))
+	if hit.is_empty():
+		return 0.0
+	return clampf((hit["position"] as Vector3).y - base_y, -FOOT_PROBE, FOOT_PROBE)
 
 func set_foot_ik(value: bool) -> void:
 	foot_ik_enabled = value
@@ -609,6 +705,9 @@ func set_foot_ik(value: bool) -> void:
 
 func _apply_foot_ik() -> void:
 	if not foot_ik_enabled or prone_weight > 0.01 or not is_inside_tree():
+		return
+	if _airborne:
+		_foot_offsets = {"Left": 0.0, "Right": 0.0}
 		return
 	var hips := Grip._bone(skeleton, "Hips")
 	if hips < 0:
@@ -625,12 +724,18 @@ func _apply_foot_ik() -> void:
 			return
 		var pose := skeleton.get_bone_global_pose(foot)
 		var world := to_world * pose.origin
-		var query := PhysicsRayQueryParameters3D.create(Vector3(world.x, base_y + FOOT_PROBE, world.z), Vector3(world.x, base_y - FOOT_PROBE, world.z), 1)
-		var hit := space.intersect_ray(query)
-		var target := 0.0
-		if not hit.is_empty():
-			target = clampf((hit["position"] as Vector3).y - base_y, -FOOT_PROBE, FOOT_PROBE)
-		_foot_offsets[side] = lerpf(float(_foot_offsets[side]), target, minf(1.0, _last_delta * 18.0))
+		var target := _ground_offset(space, world, base_y)
+		# Pé no ar (o clipe levantou o tornozelo): olha também embaixo da ponta
+		# do pé e sobe rápido, para não atravessar a quina do próximo degrau.
+		# Pé apoiado: só o tornozelo, suave.
+		var rate := 18.0
+		if world.y - base_y > FOOT_SWING_HEIGHT:
+			var toe := Grip._bone(skeleton, side + "ToeBase")
+			if toe >= 0:
+				target = maxf(target, _ground_offset(space, to_world * skeleton.get_bone_global_pose(toe).origin, base_y))
+			if target > float(_foot_offsets[side]):
+				rate = 45.0
+		_foot_offsets[side] = lerpf(float(_foot_offsets[side]), target, minf(1.0, _last_delta * rate))
 		feet[side] = [foot, pose]
 		lowest = minf(lowest, float(_foot_offsets[side]))
 	var drop := to_local * Vector3(0, lowest, 0)

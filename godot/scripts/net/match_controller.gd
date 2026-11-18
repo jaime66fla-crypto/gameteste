@@ -4,6 +4,7 @@ extends Node3D
 const NetActorScript = preload("res://scripts/net/net_actor.gd")
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const Melee = preload("res://scripts/melee.gd")
 const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const STATE_RATE := 1.0 / 15.0
 const BOT_RATE := 1.0 / 10.0
@@ -546,11 +547,8 @@ func _punch() -> void:
 	var camera := get_viewport().get_camera_3d()
 	if camera == null:
 		return
-	var forward := -camera.global_basis.z
-	var from := player.global_position + Vector3(0, 1.35, 0)
-	var query := PhysicsRayQueryParameters3D.create(from, from + forward * PUNCH_REACH, HitboxScript.SHOT_MASK)
-	query.exclude = [player.get_rid()]
-	var hit := player.get_world_3d().direct_space_state.intersect_ray(query)
+	# Pela mira (a câmera fica no ombro), valendo só no alcance a partir do jogador.
+	var hit := Melee.ray(player, camera, PUNCH_REACH)
 	if hit.is_empty():
 		return
 	var body: Object = hit["collider"]

@@ -54,6 +54,9 @@ var slot_order: Array[String] = []
 var interact_handler: Callable
 var heal_handler: Callable # F: use a carried medkit (online matches)
 var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
+## Arma branca na mão (ex.: "long_bat" na arena do treino): a arma de fogo fica
+## guardada e o clique esquerdo golpeia (melee_handler). Trocar de arma (1-5) larga.
+var melee_weapon := ""
 var ui_blocking: Callable # true enquanto uma janela (mochila, confirmação) precisa do cursor
 ## G: grenade. Online the match controller decides (inventory); offline it is
 ## unlimited with a short cooldown.
@@ -402,6 +405,7 @@ func _unhandled_input(event: InputEvent) -> void:
                 if index >= slot_order.size():
                     return
                 slot = slot_order[index]
+            melee_weapon = "" # pegou a arma de fogo: larga a arma branca
             _equip_weapon(slot)
             if weapon_holstered:
                 _toggle_weapon_holster()
@@ -568,7 +572,11 @@ func _physics_process(delta: float) -> void:
             reloading = false
     if not weapon_holstered and Input.is_action_just_pressed("reload") and ammo < int(WeaponData.stats(current_weapon)["mag"]) and not reloading and int(reserve_ammo[current_weapon]) > 0:
         _reload()
-    if not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading and channel_left <= 0.0:
+    if not melee_weapon.is_empty():
+        # Bastão na mão: clique esquerdo golpeia (um golpe por clique).
+        if not grenade_aiming and Input.is_action_just_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and channel_left <= 0.0 and melee_handler.is_valid():
+            melee_handler.call()
+    elif not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading and channel_left <= 0.0:
         _shoot()
     if grenade_aiming:
         if not Input.is_action_pressed("grenade"):
@@ -578,6 +586,8 @@ func _physics_process(delta: float) -> void:
 
 func _toggle_weapon_holster() -> void:
     weapon_holstered = not weapon_holstered
+    if not weapon_holstered:
+        melee_weapon = "" # sacou a arma de fogo: larga a arma branca
     aiming = false
     Input.action_release("aim")
     if weapon_holstered:

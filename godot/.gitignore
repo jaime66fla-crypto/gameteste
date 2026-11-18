@@ -19,3 +19,6 @@ tools/store_identity.json
 /assets/personagens/downloaded/movements/*.fbx.import
 /assets/personagens/downloaded/movements/*.png
 /assets/personagens/downloaded/movements/*.png.import
+
+# Saidas com data do teste de fumaca do MCP do Godot (geradas a cada rodada).
+tools/mcp-godot/.tmp-smoke-project/generation_jobs/

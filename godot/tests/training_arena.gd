@@ -76,6 +76,58 @@ func _run() -> void:
 	await _frames(5)
 	check(bool(arena.call("_interact")), "E perto do suporte pega o bastão")
 	check(bool(arena.get("holding")), "segurando o bastão")
+	await _frames(3)
+	var avatar: Node3D = player.get("humanoid_avatar")
+	check(bool(player.get("weapon_holstered")), "ao pegar o bastão a arma de fogo é guardada")
+	check(str(avatar.get("work_action")) == "hold" and avatar.get("_tool_node") != null, "o bastão aparece na mão (pose de carregar no ombro)")
+	var sk: Skeleton3D = avatar.get("skeleton")
+	var tool: Node3D = avatar.get("_tool_node")
+	for side in ["Left", "Right"]:
+		var hb := -1
+		for b in sk.get_bone_count():
+			if sk.get_bone_name(b).ends_with("_" + side + "Hand"):
+				hb = b
+		var hand := sk.global_transform * sk.get_bone_global_pose(hb).origin
+		# Distância da mão ao eixo do cabo do bastão.
+		var base := tool.global_position
+		var axis := tool.global_basis.y.normalized()
+		var along := clampf((hand - base).dot(axis), 0.0, 1.12)
+		var gap := hand.distance_to(base + axis * along)
+		print("mão %s a %.2f m do cabo (%.2f m do pé do cabo)" % [side, gap, along])
+		check(gap < 0.12, "segurando: mão %s no cabo (%.2f m)" % [side, gap])
+	if not _capture_folder().is_empty():
+		var side_cam := Camera3D.new()
+		main.add_child(side_cam)
+		side_cam.global_position = player.global_position + Vector3(2.2, 1.5, -1.6)
+		side_cam.look_at(player.global_position + Vector3(0, 1.1, 0))
+		side_cam.current = true
+		await _frames(5)
+		get_viewport().get_texture().get_image().save_png(_capture_folder().path_join("arena_segurando.png"))
+		var fwd := -player.global_basis.z
+		var left := -player.global_basis.x
+		side_cam.global_position = player.global_position + Vector3(0, 1.3, 0) + fwd * 1.2 + left * 0.9
+		side_cam.look_at(player.global_position + Vector3(0, 1.15, 0))
+		await _frames(5)
+		get_viewport().get_texture().get_image().save_png(_capture_folder().path_join("arena_segurando_2.png"))
+		side_cam.current = false
+		side_cam.queue_free()
+		await _frames(2)
+	# Clique esquerdo com o bastão: golpeia (não atira).
+	var ammo_before := int(player.get("ammo"))
+	var swing_before := float(arena.get("_swing_left"))
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	await _frames(2)
+	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+		arena.set("_cooldown", 0.0)
+		Input.action_press("fire")
+		await _frames(2)
+		Input.action_release("fire")
+		check(float(arena.get("_swing_left")) > swing_before and str(avatar.get("work_action")) == "swing", "clique esquerdo com o bastão faz o golpe")
+		check(int(player.get("ammo")) == ammo_before, "clique esquerdo com o bastão não atira")
+		await _frames(45)
+		check(str(avatar.get("work_action")) == "hold", "depois do golpe volta a carregar o bastão")
+	else:
+		print("aviso: sem captura do mouse aqui (headless); clique esquerdo não testado")
 	# Golpeia até matar (60 de vida: 2 golpes de 34).
 	var hp_before := float(zombie.get("hp"))
 	var swings := 0
@@ -117,6 +169,16 @@ func _run() -> void:
 	await _frames(3)
 	arena.call("_interact")
 	check(not bool(arena.get("holding")), "E de novo larga o bastão")
+	# Pegar de novo e sacar a pistola (tecla 3): o bastão volta para o suporte.
+	arena.call("_interact")
+	await _frames(2)
+	var key := InputEventKey.new()
+	key.physical_keycode = KEY_3
+	key.keycode = KEY_3
+	key.pressed = true
+	Input.parse_input_event(key)
+	await _frames(3)
+	check(str(player.get("melee_weapon")) == "" and not bool(arena.get("holding")), "sacar uma arma larga o bastão")
 	# Zumbi preso: mesmo empurrado para fora, volta para dentro.
 	fresh.global_position = Arena.CENTER + Vector3(0, 0.05, -Arena.HALF - 2.0)
 	await _frames(3)

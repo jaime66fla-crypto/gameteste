@@ -1,14 +1,18 @@
 extends Node3D
-## Treino offline: arena pequena (8 x 8 m, cercada) no parque com um zumbi preso
+## Treino offline: arena pequena (6,6 x 6,6 m, cercada) no parque com um zumbi preso
 ## dentro e um suporte com o bastão longo na entrada.
-## E perto do suporte pega/larga o bastão. Q golpeia: com o bastão, o golpe
-## lateral (dano 34, alcance 3,2 m); sem ele, soco (dano 12, alcance 2,4 m).
-## Mesmas regras da Sobrevivência: raio do peito para a frente da câmera,
+## E perto do suporte pega/larga o bastão. Com o bastão na mão a arma de fogo
+## fica guardada e o clique esquerdo (ou Q) faz o golpe lateral (dano 34,
+## alcance 3,2 m); sem ele, Q é soco (dano 12, alcance 2,4 m). Sacar uma arma
+## (1-5 ou H) larga o bastão, que volta para o suporte.
+## Mesmas regras da Sobrevivência: golpe pela mira (scripts/melee.gd),
 ## ×1,5 na cabeça, o zumbi recua ao levar golpe de perto e fica parado um
 ## instante depois de cada bote (a brecha). O zumbi só caça quem está na arena
 ## e volta 4 s depois de morrer. Mordidas não tiram vida no treino: são contadas.
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const Melee = preload("res://scripts/melee.gd")
+const StaffModel = preload("res://scripts/weapons/staff_model.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 # Parque (world_polish._parks): entre a parede de cobertura alta (x 18,3–21,8 em
@@ -100,18 +104,9 @@ func _build_walls() -> void:
 ## Suporte de madeira com o bastão em pé.
 func _build_rack() -> void:
 	_block(RACK + Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.3), "#6e5236", "bark")
-	_rack_staff = Node3D.new()
-	var handle := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.035
-	cyl.bottom_radius = 0.022
-	cyl.height = 1.12
-	handle.mesh = cyl
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("#7a5634")
-	handle.material_override = mat
-	_rack_staff.add_child(handle)
-	_rack_staff.position = RACK + Vector3(0, 1.2, 0)
+	# Em pé no suporte, ponta com pregos para cima.
+	_rack_staff = StaffModel.build()
+	_rack_staff.position = RACK + Vector3(0, 0.62, 0)
 	_rack_staff.rotation.z = 0.12
 	add_child(_rack_staff)
 	var tag := Label3D.new()
@@ -153,6 +148,7 @@ func _on_bite(_zid: String, _tid: String) -> void:
 
 func _process(delta: float) -> void:
 	_cooldown = maxf(0.0, _cooldown - delta)
+	_sync_holding()
 	# O zumbi não sai pela entrada: fica preso dentro do muro.
 	if is_instance_valid(zombie) and not bool(zombie.get("dead")):
 		var limit := HALF - 0.45
@@ -163,7 +159,8 @@ func _process(delta: float) -> void:
 	if _swing_left > 0.0:
 		_swing_left -= delta
 		if _swing_left <= 0.0:
-			_set_action("", "")
+			# Depois do golpe volta a carregar o bastão no ombro (ou mãos livres).
+			_set_action("hold" if holding else "", STAFF if holding else "")
 	if _respawn_left > 0.0:
 		_respawn_left -= delta
 		if _respawn_left <= 0.0:
@@ -171,12 +168,29 @@ func _process(delta: float) -> void:
 				zombie.queue_free()
 			_spawn_zombie()
 
+## O bastão está na mão do jogador? (player.melee_weapon; sacar arma larga.)
+func _sync_holding() -> void:
+	var now := player != null and str(player.get("melee_weapon")) == STAFF
+	if now == holding:
+		return
+	holding = now
+	_rack_staff.visible = not holding
+	if _swing_left <= 0.0:
+		_set_action("hold" if holding else "", STAFF if holding else "")
+	_update_board()
+
 ## E: pega ou larga o bastão perto do suporte. Devolve true se tratou a tecla.
 func _interact() -> bool:
 	if player == null or _flat(player.global_position, RACK) > PICK_REACH:
 		return false
-	holding = not holding
-	_rack_staff.visible = not holding
+	if player.get("melee_weapon") == STAFF:
+		player.set("melee_weapon", "")
+	else:
+		# Guarda a arma de fogo antes: o clique esquerdo passa a golpear com o bastão.
+		if not bool(player.get("weapon_holstered")):
+			player.call("_toggle_weapon_holster")
+		player.set("melee_weapon", STAFF)
+	_sync_holding()
 	_update_board()
 	return true
 
@@ -204,7 +218,7 @@ func _melee() -> void:
 	if camera == null:
 		return
 	var forward := -camera.global_basis.z
-	var hit := melee_ray(player, camera, reach)
+	var hit := Melee.ray(player, camera, reach)
 	if hit.is_empty():
 		return
 	var from := camera.global_position
@@ -269,25 +283,8 @@ func _update_board() -> void:
 		return
 	var hp := 0.0 if zombie == null or bool(zombie.get("dead")) else float(zombie.get("hp"))
 	board.text = "ARENA DO ZUMBI\n%s  •  [Q] golpear\nzumbi: %d/%d de vida   acertos: %d   mordidas: %d   abates: %d" % [
-		"COM BASTÃO (dano 34, alcance 3,2 m)" if holding else "SOCO (dano 12)  •  pegue o bastão no suporte [E]",
+		"COM BASTÃO: clique esquerdo golpeia (dano 34, alcance 3,2 m)" if holding else "SOCO (dano 12)  •  pegue o bastão no suporte [E]",
 		roundi(hp), roundi(ZOMBIE_HP), hits, bites, kills]
-
-## Raio do golpe pela mira: sai da câmera (a câmera fica no ombro; um raio do
-## peito na direção da câmera passava ao lado do alvo de perto) e só vale se o
-## ponto atingido estiver no alcance a partir do jogador. Também usado pela
-## Sobrevivência (survival_controller._melee).
-static func melee_ray(who: CharacterBody3D, camera: Camera3D, reach: float) -> Dictionary:
-	var forward := -camera.global_basis.z
-	var from := camera.global_position
-	var length := from.distance_to(who.global_position + Vector3(0, 1.35, 0)) + reach
-	var query := PhysicsRayQueryParameters3D.create(from, from + forward * length, HitboxScript.SHOT_MASK)
-	query.exclude = [who.get_rid()]
-	# Colado num zumbi largo a câmera pode estar dentro da casca de acerto: vale.
-	query.hit_from_inside = true
-	var hit := who.get_world_3d().direct_space_state.intersect_ray(query)
-	if hit.is_empty() or _flat(hit["position"], who.global_position) > reach + 0.35:
-		return {}
-	return hit
 
 static func _flat(a: Vector3, b: Vector3) -> float:
 	return Vector2(a.x - b.x, a.z - b.z).length()

@@ -29,6 +29,7 @@ var _clock := 0.0
 var _struck := false
 var _paused := false
 var last_result := ""
+var _camera_locked := false # fotos de perto
 
 func _ready() -> void:
 	camera = Stage.build(self)
@@ -69,9 +70,10 @@ func _process(delta: float) -> void:
 		_orbit -= delta * 1.5
 	if Input.is_physical_key_pressed(KEY_RIGHT):
 		_orbit += delta * 1.5
-	var focus := Vector3(0, 1.1, -distance * 0.5)
-	camera.position = focus + Vector3(sin(_orbit) * 4.4, 0.6, cos(_orbit) * 4.4)
-	camera.look_at(focus)
+	if not _camera_locked:
+		var focus := Vector3(0, 1.1, -distance * 0.5)
+		camera.position = focus + Vector3(sin(_orbit) * 4.4, 0.6, cos(_orbit) * 4.4)
+		camera.look_at(focus)
 	if avatar == null or not avatar.has_method("animate"):
 		return
 	var step := 0.0 if _paused else delta
@@ -137,6 +139,28 @@ func _capture(folder: String) -> void:
 		while _clock < float(shot[0]):
 			await get_tree().process_frame
 		Stage.save_shot(get_viewport(), folder, str(shot[1]))
+	# Close das mãos: carregando no ombro (frente e lado) e no meio do golpe.
+	_paused = true
+	_camera_locked = true
+	avatar.call("set_action", "", "")
+	avatar.call("set_action", "hold", weapon)
+	for view in [["maos_carregando_frente", Vector3(0.0, 1.25, -1.1)], ["maos_carregando_lado", Vector3(-1.0, 1.3, -0.5)], ["maos_carregando_tras", Vector3(0.5, 1.4, 0.9)]]:
+		avatar.call("animate", 1.0 / 60.0, 0.0, false, false, false, false, false)
+		camera.position = view[1]
+		camera.look_at(Vector3(0.05, 1.05, -0.1))
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Stage.save_shot(get_viewport(), folder, str(view[0]))
+	avatar.call("set_action", "", "")
+	avatar.call("set_action", "swing", weapon)
+	for k in 3:
+		avatar.set("_work_time", SWING_CYCLE * [0.2, 0.45, 0.7][k])
+		avatar.call("animate", 0.0, 0.0, false, false, false, false, false)
+		camera.position = Vector3(0.9, 1.5, -1.4)
+		camera.look_at(Vector3(0, 1.15, -0.2))
+		await get_tree().process_frame
+		await get_tree().process_frame
+		Stage.save_shot(get_viewport(), folder, "maos_golpe_%d" % (k + 1))
 	print("resultado: " + last_result)
 	print("fotos salvas em " + folder)
 	get_tree().quit(0)

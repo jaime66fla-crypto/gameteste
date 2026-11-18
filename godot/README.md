@@ -4,7 +4,7 @@ Protótipo experimental em Godot 4. A versão web permanece preservada na branch
 
 ## Abrir no Godot
 
-Clone ou baixe a branch `feature/campo-de-fogo-rebuild` e importe `godot/project.godot` no editor. Execute com F5.
+Clone ou baixe a branch `feature/direcao-suave-e-sons` (a versão publicada no itch) e importe `godot/project.godot` no editor. Execute com F5.
 
 ## Controles
 
@@ -92,7 +92,7 @@ No editor, abra Projeto > Exportar > **Web** > Exportar Projeto. A saída vai pa
 ## Menu principal
 Tela cheia com fundo animado (fumaça, brilho quente e brasas, shader em `BACKGROUND_SHADER` de `scripts/menu.gd`). À esquerda: logo, título e navegação (**Jogar online** / **Entrar**, **Treino offline**, **Amigos**, **Personagens**, **Configurações**, sair). À direita: perfil (patente, barra de XP, abates, bots, vitórias, partidas) e o ranking dos jogadores. Em janelas estreitas as colunas ficam empilhadas. Fotos: `godot --path godot --script res://tools/capture_menu.gd -- --out=<pasta>` (dados de exemplo só na memória).
 
-F5 abre o menu com **Iniciar partida teste**, **Multiplayer**, **Configurações** e **Sair**. A primeira opção carrega o mapa jogável, com três bonecos de treino à frente (dois perto e um a 20 m) que mostram o dano de cada acerto (arma e parte do corpo), quantos acertos matariam e o total da sequência; granadas offline também acertam os bonecos. No parque (sudeste) fica a **arena do zumbi**: cercado de 6,6 m com um zumbi preso dentro e o bastão longo num suporte na entrada (**E** pega/larga, **Q** golpeia: bastão 34 de dano e 3,2 m de alcance, soco 12). O zumbi recua a cada golpe, fica parado um instante depois de cada bote e volta 4 s depois de morrer; mordidas só são contadas no placar (`scripts/training_arena.gd`, teste `godot --headless --path godot res://tests/training_arena.tscn`). Multiplayer abre a eliminatória online e as salas personalizadas em equipes.
+F5 abre o menu com **Iniciar partida teste**, **Multiplayer**, **Configurações** e **Sair**. A primeira opção carrega o mapa jogável, com três bonecos de treino à frente (dois perto e um a 20 m) que mostram o dano de cada acerto (arma e parte do corpo), quantos acertos matariam e o total da sequência; granadas offline também acertam os bonecos. No parque (sudeste) fica a **arena do zumbi**: cercado de 6,6 m com um zumbi preso dentro e o bastão longo num suporte na entrada (**E** pega/larga; com o bastão na mão a arma fica guardada e o **clique esquerdo** golpeia: 34 de dano e 3,2 m de alcance; sem ele, **Q** é soco de 12). Sacar uma arma (1–5 ou H) larga o bastão. O zumbi recua a cada golpe, fica parado um instante depois de cada bote e volta 4 s depois de morrer; mordidas só são contadas no placar (`scripts/training_arena.gd`, teste `godot --headless --path godot res://tests/training_arena.tscn`). Multiplayer abre a eliminatória online e as salas personalizadas em equipes.
 
 Configurações permitem salvar sensibilidade do mouse, volume, suavização de bordas (desligada/2×/4×) e tela cheia no armazenamento local do jogo. Durante a partida, pressione Esc para liberar o cursor e clique em **Menu principal** no canto superior direito. Ao iniciar uma partida nova, o clique do menu não dispara a arma.
 
