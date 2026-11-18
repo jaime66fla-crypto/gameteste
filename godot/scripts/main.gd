@@ -43,12 +43,13 @@ func _ready() -> void:
     Input.action_release("aim")
     var settings := GameSettings.load_settings()
     GameSettings.apply(settings,get_viewport())
-    _build_world()
     var survival := Net.in_match and bool(Net.start_info.get("survival", false))
+    _build_world(survival)
     var world_polish := Node3D.new()
     world_polish.name = "WorldPolish"
     world_polish.set_script(WorldPolishScript)
     world_polish.set("open_world", survival)
+    world_polish.set("parkour_district", not Net.in_match) # bairro de parkour só no treino offline
     add_child(world_polish)
     var survival_world: Node3D = null
     if survival:
@@ -175,7 +176,7 @@ func _spawn_training_dummies() -> void:
 func _register_inputs() -> void:
     Controls.load_and_apply()
 
-func _build_world() -> void:
+func _build_world(survival: bool = false) -> void:
     var world_environment := WorldEnvironment.new()
     world_environment.name = "WorldEnvironment"
     var env := Environment.new()
@@ -192,7 +193,10 @@ func _build_world() -> void:
     sun.light_energy = 1.3
     sun.shadow_enabled = true
     add_child(sun)
-    _block(Vector3(0,-0.5,0), Vector3(120,1,120), Color(0.28,0.39,0.26), true)
+    # Treino offline: cidade + bairro de parkour (200 m). Mata-mata, sala
+    # personalizada e Sobrevivência: cidade de 120 m.
+    var ground := 120.0 if survival or Net.in_match else WorldPolishScript.MAP_HALF * 2.0
+    _block(Vector3(0,-0.5,0), Vector3(ground,1,ground), Color(0.28,0.39,0.26), true)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()

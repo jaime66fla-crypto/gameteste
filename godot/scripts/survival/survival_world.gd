@@ -1,5 +1,5 @@
 extends Node3D
-## Mundo aberto da Sobrevivência (480 x 480 m), montado a partir de
+## Mundo aberto da Sobrevivência (720 x 720 m), montado a partir de
 ## data/survival_world.json. A cidade original do Campo de Fogo (WorldPolish,
 ## ±60 m) fica no meio; em volta: estradas, cidades, fazenda, base militar,
 ## hospital, florestas, rochas e carros abandonados.
@@ -11,6 +11,7 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CarModel = preload("res://scripts/survival/car_model.gd")
 const NatureModel = preload("res://scripts/survival/nature_model.gd")
+const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
 const CENTER_HALF := 60.0
 
 var containers: Dictionary = {} # id -> {node, type, pos}
@@ -28,6 +29,12 @@ func _ready() -> void:
 		_road(road)
 	for building in data.get("buildings", []):
 		_building(building)
+	# Bairros e bases de parkour do anel novo (sobrados, térreas, pistas).
+	if not data.get("parkour", []).is_empty() or not data.get("parkour_bases", []).is_empty():
+		var district := ParkourDistrictScript.new()
+		district.set("survival_lots", data.get("parkour", []))
+		district.set("survival_bases", data.get("parkour_bases", []))
+		add_child(district)
 	for spot in data.get("containers", []):
 		_container(spot)
 	for res in data.get("resources", []):

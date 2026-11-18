@@ -4,6 +4,7 @@ extends Control
 ## aliados (partidas em equipe). Inimigos e zumbis não aparecem.
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const ParkourDistrict = preload("res://scripts/parkour_district.gd")
 const RADIUS := 92.0
 
 var player: Node3D
@@ -24,6 +25,14 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
 	for b in MatchLayout.load_layout().get("buildings", []):
 		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+	if not survival and not Net.in_match:
+		# Treino offline: bairro de parkour em volta da cidade (parkour_district.gd).
+		_half = 100.0
+		for road in ParkourDistrict.roads():
+			_roads.append(road)
+		for lot in ParkourDistrict.lots():
+			if String(lot["kind"]) != "pista":
+				_buildings.append([lot["center"], lot["size"]])
 	if survival:
 		meters_per_px = 0.95
 		var data := SurvivalData.world()
@@ -32,6 +41,9 @@ func setup(local_player: Node3D, survival: bool) -> void:
 			_roads.append([Vector2(float(road["from"][0]), float(road["from"][1])), Vector2(float(road["to"][0]), float(road["to"][1])), float(road.get("width", 6))])
 		for b in data.get("buildings", []):
 			_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+		for lot in data.get("parkour", []):
+			if str(lot["kind"]) != "pista":
+				_buildings.append([Vector2(float(lot["center"][0]), float(lot["center"][1])), Vector2(10, 8)])
 		for g in data.get("grass", []):
 			_grass.append([Vector2(float(g["x"]), float(g["z"])), float(g["r"])])
 		for r in data.get("resources", []):

@@ -35,6 +35,9 @@ func _ready() -> void:
 		_roads.append([Vector2(float(road["from"][0]), float(road["from"][1])), Vector2(float(road["to"][0]), float(road["to"][1])), float(road.get("width", 6))])
 	for b in data.get("buildings", []):
 		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+	for lot in data.get("parkour", []): # bairros de parkour do anel novo
+		if str(lot["kind"]) != "pista":
+			_buildings.append([Vector2(float(lot["center"][0]), float(lot["center"][1])), Vector2(10, 8)])
 	for g in data.get("grass", []):
 		_grass.append([Vector2(float(g["x"]), float(g["z"])), float(g["r"])])
 	for r in data.get("resources", []):

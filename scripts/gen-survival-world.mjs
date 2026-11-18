@@ -9,7 +9,8 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 
 const SEED = 20261117;
-const HALF = 240; // mapa de 480 x 480 m
+const HALF = 240; // mundo original (480 x 480 m): gerado sempre igual, mesmos ids
+const OUTER = 360; // mapa inteiro (720 x 720 m): anel novo de 240 a 360 m
 const CENTER_CLEAR = 66; // cidade original do Campo de Fogo (±60 m) fica no meio
 const layout = JSON.parse(readFileSync(new URL('../godot/data/match_layout.json', import.meta.url), 'utf8'));
 
@@ -286,10 +287,164 @@ const zombie_zones = [
 	...forests.slice(0, 8).map((f) => ({ x: f.x, z: f.z, r: f.r, weight: 1 })),
 ];
 
+// =============================================================================
+// Anel novo (240 – 360 m). Tudo daqui para baixo vem DEPOIS do mundo original
+// na sequência aleatória, então o que já existia (e os ids que o servidor
+// guarda) não muda; os ids novos continuam a numeração.
+// =============================================================================
+
+// Lotes de parkour: o jogo monta com scripts/parkour_district.gd (sobrado,
+// térrea, pista) a partir de centro + rotação; frente local +Z. Aqui só entram
+// a posição (mapa, ocupação) e o saque, que o servidor precisa conhecer.
+const parkour = [];
+const parkour_bases = [];
+const PARKOUR_KINDS = ['sobrado', 'sobrado', 'pista', 'sobrado', 'terrea'];
+/** Ponto local do lote -> mundo (mesma conta do Basis(UP, yaw) do Godot). */
+function lotPoint(lot, lx, lz) {
+	const c = Math.cos(lot.yaw);
+	const s = Math.sin(lot.yaw);
+	return [lot.center[0] + lx * c + lz * s, lot.center[1] - lx * s + lz * c];
+}
+/** Saque de cada tipo de lote: [tipo, x, y, z] locais (telhado/andaime = prêmio do parkour). */
+const PARKOUR_LOOT = {
+	sobrado: [['fridge', 2.6, 0, -3.1], ['wardrobe', 2.6, 3.4, -3.0], ['military', -1.0, 6.6, 1.5]],
+	terrea: [['cabinet', 0, 0, -3.2], ['toolbox', -2.0, 3.6, 1.0]],
+	pista: [['military', 4.5, 4.4, -3.6]],
+};
+/** Bairro de parkour: rua em X no meio e duas fileiras de lotes viradas para ela. */
+function parkourTown(name, cx, cz, cols) {
+	for (const [row, yaw] of [[-14, 0], [14, Math.PI]]) {
+		for (let i = 0; i < cols; i++) {
+			const index = parkour.length;
+			const lot = { center: [r1(cx + (i - (cols - 1) / 2) * 13), r1(cz + row)], yaw: Math.round(yaw * 10000) / 10000, kind: PARKOUR_KINDS[index % 5], index };
+			parkour.push(lot);
+			for (const [type, lx, y, lz] of PARKOUR_LOOT[lot.kind]) {
+				const [x, z] = lotPoint(lot, lx, lz);
+				addContainer(type, x, z, y);
+			}
+		}
+	}
+	roads.push({ from: [cx - (cols * 13) / 2 - 4, cz], to: [cx + (cols * 13) / 2 + 4, cz], width: 6 });
+	parkour_bases.push({ center: [r1(cx - (cols * 13) / 2 - 10), r1(cz - 9)], yaw: 0 });
+	parkour_bases.push({ center: [r1(cx + (cols * 13) / 2 + 10), r1(cz + 9)], yaw: Math.round(Math.PI * 10000) / 10000 });
+	return { from: [cx - (cols * 13) / 2 - 4, cz] };
+}
+function inParkour(x, z, margin) {
+	for (const lot of parkour) if (Math.abs(x - lot.center[0]) < 7 + margin && Math.abs(z - lot.center[1]) < 16 + margin) return true;
+	for (const b of parkour_bases) if (Math.abs(x - b.center[0]) < 6 + margin && Math.abs(z - b.center[1]) < 4 + margin) return true;
+	return false;
+}
+function blockedOuter(x, z, margin) {
+	if (Math.abs(x) > OUTER - 6 || Math.abs(z) > OUTER - 6) return true;
+	if (Math.max(Math.abs(x), Math.abs(z)) < HALF - 4) return true; // só no anel novo
+	if (inParkour(x, z, margin + 2)) return true;
+	for (const b of buildings) {
+		if (Math.abs(x - b.center[0]) < b.size[0] / 2 + margin + 1.5 && Math.abs(z - b.center[1]) < b.size[1] / 2 + margin + 4) return true;
+	}
+	for (const r of roads) if (segmentDistance(x, z, r.from, r.to) < r.width / 2 + margin) return true;
+	for (const res of resources) if (Math.hypot(res.p[0] - x, res.p[2] - z) < margin + 1.2) return true;
+	return false;
+}
+
+const newTowns = [
+	{ name: 'Bairro do Parkour', x: 60, z: -305, from: 1 },
+	{ name: 'Serra Velha', x: -295, z: -215, from: 0 },
+	{ name: 'Conjunto Parkour Leste', x: 305, z: 60, from: 2 },
+	{ name: 'Vila Alta', x: -300, z: 150, from: 3 },
+	{ name: 'Mirante', x: 40, z: 305, from: 5 },
+];
+const pk1 = parkourTown('Bairro do Parkour', 60, -305, 5);
+const pk2 = parkourTown('Conjunto Parkour Leste', 305, 60, 5);
+town('Serra Velha', -295, -215, 3, 2);
+town('Vila Alta', -300, 150, 3, 2, [
+	{ name: 'Vila Alta — Armazém', kind: 'shop', x: -300 + 25.5, z: 150, w: 12, d: 10, h: 3.8, color: '#b9a37e', inside: [['shelf', -4.5, -4.2], ['shelf', 0, -4.2], ['toolbox', 4.5, -4.2], ['fuel', -4.8, 0.5]] },
+]);
+town('Mirante', 40, 305, 2, 2);
+// Estradas: de uma cidade do anel antigo até cada cidade nova (bairros de
+// parkour chegam pela ponta da rua, sem cortar os lotes).
+for (const t of newTowns) {
+	const a = towns[t.from];
+	const to = t.name === 'Bairro do Parkour' ? pk1.from : t.name === 'Conjunto Parkour Leste' ? pk2.from : [t.x, t.z];
+	roads.push({ from: [a.x, a.z], to, width: 6 });
+}
+// Carros abandonados nas estradas novas.
+for (const r of roads.slice(-newTowns.length)) {
+	const length = Math.hypot(r.to[0] - r.from[0], r.to[1] - r.from[1]);
+	const nx = -(r.to[1] - r.from[1]) / length;
+	const nz = (r.to[0] - r.from[0]) / length;
+	for (let i = 0; i < Math.floor(length / 45); i++) {
+		const t = between(0.15, 0.85);
+		const side = rand() < 0.5 ? -1 : 1;
+		const x = r.from[0] + (r.to[0] - r.from[0]) * t + nx * side * (r.width / 2 + 2.2);
+		const z = r.from[1] + (r.to[1] - r.from[1]) * t + nz * side * (r.width / 2 + 2.2);
+		if (inParkour(x, z, 3) || buildings.some((b) => Math.abs(x - b.center[0]) < b.size[0] / 2 + 4 && Math.abs(z - b.center[1]) < b.size[1] / 2 + 6)) continue;
+		addResource('car', x, z, Math.atan2(r.to[0] - r.from[0], r.to[1] - r.from[1]) + between(-0.5, 0.5));
+	}
+}
+// Bases de parkour soltas pelo anel, perto das estradas novas (fundo para fora).
+for (const r of roads.slice(-newTowns.length)) {
+	const length = Math.hypot(r.to[0] - r.from[0], r.to[1] - r.from[1]);
+	const nx = -(r.to[1] - r.from[1]) / length;
+	const nz = (r.to[0] - r.from[0]) / length;
+	for (const t of [0.45, 0.75]) {
+		const x = r.from[0] + (r.to[0] - r.from[0]) * t + nx * 9;
+		const z = r.from[1] + (r.to[1] - r.from[1]) * t + nz * 9;
+		if (blocked(x, z, 4) && Math.max(Math.abs(x), Math.abs(z)) < HALF - 6) continue; // dentro do mundo antigo: só em lugar livre
+		if (inParkour(x, z, 4) || buildings.some((b) => Math.abs(x - b.center[0]) < b.size[0] / 2 + 8 && Math.abs(z - b.center[1]) < b.size[1] / 2 + 8)) continue;
+		if (resources.some((res) => Math.hypot(res.p[0] - x, res.p[2] - z) < 7)) continue;
+		// Frente (+Z local) virada para a estrada.
+		parkour_bases.push({ center: [r1(x), r1(z)], yaw: Math.round(Math.atan2(-nx, -nz) * 10000) / 10000 });
+	}
+}
+// Florestas, pedras, arbustos e grama alta no anel novo.
+const newForests = [];
+for (let f = 0, tries = 0; f < 26 && tries < 2000; tries++) {
+	const x = between(-OUTER + 20, OUTER - 20);
+	const z = between(-OUTER + 20, OUTER - 20);
+	if (blockedOuter(x, z, 14)) continue;
+	const radius = between(14, 30);
+	newForests.push({ x: r1(x), z: r1(z), r: r1(radius) });
+	for (let i = 0; i < Math.floor(radius * 1.4); i++) {
+		const a = rand() * Math.PI * 2;
+		const d = Math.sqrt(rand()) * radius;
+		const tx = x + Math.cos(a) * d;
+		const tz = z + Math.sin(a) * d;
+		if (!blockedOuter(tx, tz, 1.5)) addResource('tree', tx, tz, rand() * 6.28);
+	}
+	f++;
+}
+function scatterOuter(kind, count, margin) {
+	for (let i = 0, tries = 0; i < count && tries < count * 60; tries++) {
+		const x = between(-OUTER + 10, OUTER - 10);
+		const z = between(-OUTER + 10, OUTER - 10);
+		if (blockedOuter(x, z, margin)) continue;
+		addResource(kind, x, z, rand() * 6.28);
+		i++;
+	}
+}
+scatterOuter('tree', 360, 2);
+scatterOuter('rock', 90, 2);
+scatterOuter('bush', 80, 2);
+for (let n = 0, tries = 0; n < 150 && tries < 8000; tries++) {
+	const x = between(-OUTER + 15, OUTER - 15);
+	const z = between(-OUTER + 15, OUTER - 15);
+	const r = between(5, 13);
+	if (blockedOuter(x, z, r)) continue;
+	grass.push({ x: r1(x), z: r1(z), r: r1(r) });
+	n++;
+}
+for (const t of newTowns) {
+	towns.push({ name: t.name, x: t.x, z: t.z });
+	zombie_zones.push({ x: t.x, z: t.z, r: 32, weight: 3 });
+}
+for (const f of newForests.slice(0, 8)) zombie_zones.push({ x: f.x, z: f.z, r: f.r, weight: 1 });
+
 const world = {
 	_comment: 'Gerado por scripts/gen-survival-world.mjs (não edite à mão). Coordenadas em metros, [x, z] no chão; p = [x, y, z]. Portas dos prédios na parede +Z.',
 	seed: SEED,
-	half_size: HALF,
+	half_size: OUTER,
+	parkour,
+	parkour_bases,
 	center_town: { half_size: 60 },
 	towns: towns.map((t) => ({ name: t.name, center: [t.x, t.z] })),
 	buildings,
@@ -302,4 +457,4 @@ const world = {
 	vehicles,
 };
 writeFileSync(new URL('../godot/data/survival_world.json', import.meta.url), JSON.stringify(world, null, 1) + '\n');
-console.log(`${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos (${resources.filter((r) => r.kind === 'tree').length} árvores), ${grass.length} manchas de grama alta, ${vehicles.length} carros que funcionam, ${spawns.length} nascimentos, ${roads.length} estradas`);
+console.log(`${parkour.length} lotes de parkour, ${parkour_bases.length} bases de parkour, ${buildings.length} prédios, ${containers.length} recipientes, ${resources.length} recursos (${resources.filter((r) => r.kind === 'tree').length} árvores), ${grass.length} manchas de grama alta, ${vehicles.length} carros que funcionam, ${spawns.length} nascimentos, ${roads.length} estradas`);

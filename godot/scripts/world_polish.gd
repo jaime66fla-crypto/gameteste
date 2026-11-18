@@ -1,11 +1,21 @@
 extends Node3D
 ## One authored 120 m neighborhood. Roads, plots and entrances share one layout.
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
+## Metade do mapa com o bairro de parkour (só no treino offline).
+const MAP_HALF := 100.0
+## Treino offline: bairro de parkour em volta da cidade (mapa de 200 m).
+## Mata-mata, equipes e sala personalizada ficam no mapa de 120 m.
+var parkour_district := false
+## Metade do mapa fechado, onde ficam os muros da borda.
+var map_half := 60.0
 var mat_cache: Dictionary = {}
 ## Sobrevivência: a cidade fica no meio do mundo aberto, sem os muros da borda.
 var open_world := false
 
 func _ready() -> void:
+    if parkour_district and not open_world:
+        map_half = MAP_HALF
     _tune_environment()
     _streets()
     _residential()
@@ -15,6 +25,12 @@ func _ready() -> void:
     _watchtower()
     _cover_walls()
     _perimeter()
+    if not open_world:
+        # Bases de parkour na faixa entre o anel e o muro (todos os modos da
+        # cidade); o bairro com os sobrados só no treino offline.
+        var district := ParkourDistrictScript.new()
+        district.set("full", parkour_district)
+        add_child(district)
 
 func _mat(hex_color: String) -> StandardMaterial3D:
     if mat_cache.has(hex_color):
@@ -352,9 +368,10 @@ func _perimeter() -> void:
         _boundary_walls()
 
 func _boundary_walls() -> void:
-    # The 120 m ground ends at +/-60: a visible 3 m concrete wall on every edge,
-    # plus a tall invisible barrier so nobody can jump or climb out.
-    var half := 59.6
+    # The ground ends at +/-map_half (60, or 100 with the parkour district):
+    # a visible 3 m concrete wall on every edge, plus a tall invisible barrier
+    # so nobody can jump or climb out (parkour roofs reach 7 m, barrier 30 m).
+    var half := map_half - 0.4
     var thickness := 0.8
     for side in [-1.0, 1.0]:
         _box(Vector3(side * half, 1.5, 0), Vector3(thickness, 3.0, half * 2 + thickness), "#9a9a92", true)
