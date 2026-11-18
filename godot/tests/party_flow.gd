@@ -182,8 +182,14 @@ func _run() -> void:
 		controller.call("_unhandled_input", any_key)
 		var title: Label = controller.get("center_title")
 		_check(title.text == "VITÓRIA DA EQUIPE!", "Team victory title (got %s)" % title.text)
-		var body: Label = controller.get("center_body")
-		_check(body.text.contains("EQUIPE ALFA") and body.text.contains("EQUIPE BRAVO"), "Scoreboard grouped by team")
+		var results := controller.get("results_panel") as Control
+		_check(results != null and results.visible, "New results panel shows")
+		_check(controller.find_child("ResultsTeam_0", true, false) != null and controller.find_child("ResultsTeam_1", true, false) != null, "Scoreboard grouped by team")
+		_check(controller.find_child("ResultsRow_me", true, false) != null and controller.find_child("ResultsRow_bot2", true, false) != null, "Every player has a row")
+		# XP confirmado pelo servidor aparece no placar.
+		controller.call("_on_message", {"t": "profile", "gained": 70, "rankUp": true, "profile": {"name": "Lider", "xp": 370, "rank": "Soldado", "rankXp": 300, "nextRank": "Cabo", "nextRankXp": 800}})
+		var xp_label := controller.find_child("ResultsXp", true, false) as Label
+		_check(xp_label != null and xp_label.text.contains("PROMOVIDO") and xp_label.text.contains("faltam 430"), "Results show XP, promotion and what is left (got %s)" % (xp_label.text if xp_label else "-"))
 		var room_button := controller.get("room_button") as Button
 		_check(room_button != null and room_button.visible and room_button.text.contains("K7Q2M"), "Custom room offers 'Voltar para a sala'")
 		# The server's lobby message after the match ends the match state.

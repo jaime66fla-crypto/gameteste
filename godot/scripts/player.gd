@@ -840,6 +840,12 @@ func _aim_setup() -> Dictionary:
         # the visible viewmodel barrel, and the hidden third-person gun is ignored.
         muzzle = null
         barrel = viewmodel.call("muzzle_position")
+    # Leaning (Q/E while aiming) slides the view sideways out of cover; the gun
+    # and the head go with it. Without this the round left from the un-leaned
+    # barrel, still behind the wall the camera was peeking past.
+    var lean_offset := global_basis.x * arm_pivot.position.x
+    if muzzle:
+        barrel += lean_offset
     # Something solid between the shooter's head and where the shot really starts
     # (a wall you are pressed against): the round stops on it.
     var wall_block := {}
@@ -855,7 +861,7 @@ func _aim_setup() -> Dictionary:
         origin += forward * maxf(0.0, depth)
         # Skipping that stretch must not let anyone shoot through a wall: the
         # head has to see the new start point. Over a low cover it does.
-        var eye := global_position + Vector3(0, height * (0.25 if prone else 0.9), 0)
+        var eye := global_position + Vector3(0, height * (0.25 if prone else 0.9), 0) + lean_offset
         var guard := PhysicsRayQueryParameters3D.create(eye, origin, HitboxScript.LAYER_WORLD)
         guard.exclude = [get_rid()]
         guard.hit_from_inside = true

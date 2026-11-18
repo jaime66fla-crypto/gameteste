@@ -279,6 +279,32 @@ func _build_ui() -> void:
     menu_button.offset_top = 16
     menu_button.offset_bottom = 56
     menu_button.pressed.connect(func(): _ask_quit(false))
+    # Contador de FPS bem pequeno no canto superior direito (verde/amarelo/vermelho).
+    fps_label = Label.new()
+    fps_label.name = "FpsCounter"
+    fps_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    fps_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+    fps_label.add_theme_font_size_override("font_size", 11)
+    fps_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
+    fps_label.add_theme_constant_override("shadow_offset_y", 1)
+    layer.add_child(fps_label)
+    fps_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+    fps_label.offset_left = -90
+    fps_label.offset_right = -6
+    fps_label.offset_top = 2
+    fps_label.offset_bottom = 16
+    _update_fps_label()
+
+var fps_label: Label
+var _fps_timer := 0.0
+
+## Atualiza 2× por segundo (número estável, sem ficar tremendo).
+func _update_fps_label() -> void:
+    if fps_label == null:
+        return
+    var fps := Engine.get_frames_per_second()
+    fps_label.text = "%d FPS" % fps
+    fps_label.add_theme_color_override("font_color", Color("#8fe08a") if fps >= 55 else (Color("#ffd166") if fps >= 30 else Color("#ff6a55")))
 
 ## Simple clock: dark disc, a sweep that fills clockwise, label and seconds left.
 func _draw_action_clock() -> void:
@@ -369,10 +395,16 @@ func return_to_menu() -> void:
     get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 func _process(_delta: float) -> void:
+    _fps_timer -= _delta
+    if _fps_timer <= 0.0:
+        _fps_timer = 0.5
+        _update_fps_label()
     if player and hud:
         menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not quit_dialog.visible and not cinematic
         if minimap != null:
             minimap.visible = not cinematic
+        if fps_label != null:
+            fps_label.visible = not cinematic
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
         action_state = player.action_progress()

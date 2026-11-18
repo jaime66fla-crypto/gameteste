@@ -828,6 +828,7 @@ func _on_profile(data: Dictionary) -> void:
 	elif bool(data.get("rankDown", false)):
 		lines += "\nRebaixado para %s." % str(profile.get("rank", ""))
 	center_body.text += lines
+	_fill_results_profile(data) # placar novo (ou guarda até ele aparecer, depois da cena)
 
 func _on_end(data: Dictionary) -> void:
 	finished = true
@@ -839,45 +840,23 @@ func _on_end(data: Dictionary) -> void:
 		_on_team_end(data)
 		return
 	var won := str(data.get("winner", "")) == my_id
-	var lines: Array[String] = []
-	if str(data.get("reason", "")) == "tempo":
-		lines.append("Tempo esgotado: venceu quem tinha mais abates.")
-	var position_number := 1
-	for row in data.get("board", []):
-		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
-		var xp_text := "  %+d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
-		lines.append("%d. %s (%s) — %d abate(s)%s" % [position_number, row["name"], who, int(row["kills"]), xp_text])
-		position_number += 1
 	var title := "VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper()
-	var body := "\n".join(lines)
 	var winner_id := str(data.get("winner", ""))
 	var winner_name := str(data.get("name", names.get(winner_id, "")))
-	_play_victory(_node_for(winner_id), "VOCÊ VENCEU!" if won else "VENCEDOR", winner_name, _winner_line(data, winner_id), ACCENT_GOLD, func(): _show_center(title, body))
+	var reason := "Tempo esgotado: venceu quem tinha mais abates." if str(data.get("reason", "")) == "tempo" else ("Você foi o último de pé." if won else "%s foi o último de pé." % winner_name)
+	_play_victory(_node_for(winner_id), "VOCÊ VENCEU!" if won else "VENCEDOR", winner_name, _winner_line(data, winner_id), ACCENT_GOLD,
+		func(): _show_results(data, title, reason, "win" if won else "lose"))
 
 ## Team scoreboard: one block per team with each member's kills.
 func _on_team_end(data: Dictionary) -> void:
 	var winner = data.get("team")
-	var lines: Array[String] = []
-	if str(data.get("reason", "")) == "tempo":
-		lines.append("Tempo esgotado: venceu a equipe com mais abates.")
-	var score: Array = data.get("score", [0, 0])
-	var current := -1
-	for row in data.get("board", []):
-		var team := int(row.get("team", 0))
-		if team != current:
-			current = team
-			var tag := "  — VENCEDORA" if winner != null and int(winner) == team else ""
-			lines.append("\nEQUIPE %s  (%d abates)%s" % [_team_name(team).to_upper(), int(score[team]) if team < score.size() else 0, tag])
-		var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
-		var xp_text := "  %+d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
-		var me := "  (você)" if str(row.get("id", "")) == my_id else ""
-		lines.append("   %s (%s) — %d abate(s)%s%s" % [row["name"], who, int(row["kills"]), xp_text, me])
 	var title := "EMPATE"
 	if winner != null:
 		title = "VITÓRIA DA EQUIPE!" if int(winner) == my_team else "DERROTA — EQUIPE %s VENCEU" % _team_name(int(winner)).to_upper()
-	var body := "\n".join(lines).strip_edges()
+	var outcome := "draw" if winner == null else ("win" if int(winner) == my_team else "lose")
+	var reason := "Tempo esgotado: venceu a equipe com mais abates." if str(data.get("reason", "")) == "tempo" else ("Ninguém venceu." if winner == null else "A equipe %s eliminou a outra." % _team_name(int(winner)))
 	var show_board := func():
-		_show_center(title, body)
+		_show_results(data, title, reason, outcome)
 		if not Net.party_code.is_empty():
 			room_button.visible = true
 			room_button.text = "Voltar para a sala %s" % Net.party_code
@@ -1315,6 +1294,315 @@ func _open_leave_panel() -> void:
 func _close_leave_panel() -> void:
 	leave_panel.visible = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+# ------------------------------------------------------------ placar final ---
+
+const RESULT_WIN := Color("#ffc94a")
+const RESULT_LOSE := Color("#ff7a5c")
+const RESULT_DRAW := Color("#9fb0ad")
+const RES_TEXT := Color("#eef1ec")
+const RES_MUTED := Color("#8d9a98")
+const RES_DIM := Color("#5f6d6c")
+const MEDALS := [Color("#f0c24b"), Color("#c9d1d6"), Color("#d08a52")]
+var results_panel: PanelContainer
+var results_xp: Label
+var results_bar: ProgressBar
+var _bold_font: FontVariation
+
+func _bold() -> Font:
+	if _bold_font == null:
+		_bold_font = FontVariation.new()
+		var base = load("res://assets/fonts/InterVariable.ttf")
+		if base is Font:
+			_bold_font.base_font = base
+		# Engrossar funciona com qualquer fonte (o eixo "wght" da variável não pegava aqui).
+		_bold_font.variation_embolden = 0.75
+	return _bold_font
+
+func _res_label(text: String, size: int, color: Color, bold := false) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_color_override("font_color", color)
+	if bold:
+		label.add_theme_font_override("font", _bold())
+	return label
+
+func _res_box(bg: Color, border: Color, width: int, radius: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = bg
+	box.border_color = border
+	box.set_border_width_all(width)
+	box.set_corner_radius_all(radius)
+	return box
+
+## Placar profissional do fim da partida: cabeçalho com o resultado, o seu
+## desempenho em destaque, a tabela (por equipe nas partidas de equipe), o XP
+## e a patente (preenchidos quando o servidor confirma) e os botões.
+func _show_results(data: Dictionary, title: String, subtitle: String, outcome: String) -> void:
+	center_panel.visible = false
+	_set_cinematic(true) # o placar ocupa a tela: sem minimapa nem mensagens da partida atrás
+	if results_panel != null:
+		results_panel.queue_free()
+	var accent: Color = RESULT_WIN if outcome == "win" else (RESULT_LOSE if outcome == "lose" else RESULT_DRAW)
+	results_panel = PanelContainer.new()
+	results_panel.name = "ResultsPanel"
+	var box := _res_box(Color(0.035, 0.05, 0.06, 0.95), accent, 0, 14)
+	box.border_width_top = 4 # só a faixa de cima na cor do resultado
+	box.shadow_color = Color(0, 0, 0, 0.55)
+	box.shadow_size = 20
+	for side in ["left", "right"]:
+		box.set("content_margin_" + side, 20)
+	box.content_margin_top = 16
+	box.content_margin_bottom = 16
+	results_panel.add_theme_stylebox_override("panel", box)
+	results_panel.custom_minimum_size.x = 500
+	ui.add_child(results_panel)
+	results_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	results_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	results_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 9)
+	results_panel.add_child(column)
+	# Cabeçalho.
+	var head := VBoxContainer.new()
+	head.add_theme_constant_override("separation", 2)
+	column.add_child(head)
+	var mode := "EQUIPES" if team_mode else "ELIMINATÓRIA"
+	var kicker := _res_label("FIM DA PARTIDA  ·  " + mode, 10, RES_MUTED, true)
+	kicker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_child(kicker)
+	var title_label := _res_label(title, 30, accent, true)
+	title_label.name = "ResultsTitle"
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_child(title_label)
+	var sub := _res_label(subtitle, 12, RES_MUTED)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	head.add_child(sub)
+	center_title.text = title # (compatível com quem lê o título antigo)
+	# Seu desempenho.
+	var board: Array = data.get("board", [])
+	var my_row: Dictionary = {}
+	var my_place := 0
+	for i in board.size():
+		if str(board[i].get("id", "")) == my_id:
+			my_row = board[i]
+			my_place = i + 1
+	var tiles := HBoxContainer.new()
+	tiles.name = "ResultsTiles"
+	tiles.add_theme_constant_override("separation", 6)
+	column.add_child(tiles)
+	var place_text := "#%d de %d" % [my_place, board.size()] if my_place > 0 else "—"
+	if team_mode:
+		var score: Array = data.get("score", [0, 0])
+		place_text = "%d  x  %d" % [int(score[0]) if score.size() > 0 else 0, int(score[1]) if score.size() > 1 else 0]
+	for tile in [["PLACAR" if team_mode else "POSIÇÃO", place_text], ["ABATES", str(int(my_row.get("kills", my_kills)))], ["XP DA PARTIDA", "%+d" % int(my_row.get("xp", match_xp))]]:
+		tiles.add_child(_result_tile(str(tile[0]), str(tile[1]), accent if tile[0] == "XP DA PARTIDA" else RES_TEXT))
+	# Tabela.
+	var table := VBoxContainer.new()
+	table.name = "ResultsTable"
+	table.add_theme_constant_override("separation", 1)
+	column.add_child(table)
+	if team_mode:
+		var winner = data.get("team")
+		var score: Array = data.get("score", [0, 0])
+		for team in [0, 1]:
+			var tint := Color("#5ea8d0") if team == 0 else Color("#d07a5e")
+			var won_team: bool = winner != null and int(winner) == team
+			var header := HBoxContainer.new()
+			header.name = "ResultsTeam_%d" % team
+			table.add_child(header)
+			var team_label := _res_label("EQUIPE %s" % _team_name(team).to_upper(), 11, tint.lightened(0.3), true)
+			team_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			header.add_child(team_label)
+			if won_team:
+				header.add_child(_res_label("VENCEDORA  ", 9, RESULT_WIN, true))
+			header.add_child(_res_label("%d abates" % (int(score[team]) if team < score.size() else 0), 10, RES_MUTED))
+			var place := 0
+			for row in board:
+				if int(row.get("team", -1)) == team:
+					place += 1
+					table.add_child(_result_row(row, place, tint))
+			if team == 0:
+				var gap := Control.new()
+				gap.custom_minimum_size.y = 4
+				table.add_child(gap)
+	else:
+		table.add_child(_result_header())
+		var place := 0
+		for row in board:
+			place += 1
+			table.add_child(_result_row(row, place, Color.TRANSPARENT))
+	# XP e patente (o servidor manda logo depois: _on_profile).
+	var progress := VBoxContainer.new()
+	progress.add_theme_constant_override("separation", 6)
+	column.add_child(progress)
+	results_xp = _res_label("Salvando seu XP…", 11, RES_MUTED)
+	results_xp.name = "ResultsXp"
+	results_xp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	progress.add_child(results_xp)
+	results_bar = ProgressBar.new()
+	results_bar.show_percentage = false
+	results_bar.custom_minimum_size.y = 4
+	results_bar.max_value = 1.0
+	results_bar.value = 0.0
+	results_bar.visible = false
+	results_bar.add_theme_stylebox_override("background", _res_box(Color(1, 1, 1, 0.07), Color.TRANSPARENT, 0, 3))
+	results_bar.add_theme_stylebox_override("fill", _res_box(accent, Color.TRANSPARENT, 0, 3))
+	progress.add_child(results_bar)
+	if not _pending_profile.is_empty():
+		_fill_results_profile(_pending_profile)
+	# Botões (os mesmos de antes, trazidos para o placar).
+	var buttons := HBoxContainer.new()
+	buttons.alignment = BoxContainer.ALIGNMENT_CENTER
+	buttons.add_theme_constant_override("separation", 12)
+	column.add_child(buttons)
+	for button in [room_button, _menu_button_ref()]:
+		if button == null:
+			continue
+		if button.get_parent() != null:
+			button.get_parent().remove_child(button)
+		buttons.add_child(button)
+		button.custom_minimum_size = Vector2(180, 34)
+		_style_result_button(button, button == room_button, accent)
+	# Entrada suave.
+	results_panel.modulate.a = 0.0
+	results_panel.scale = Vector2(0.96, 0.96)
+	var t := results_panel.create_tween().set_parallel(true)
+	t.tween_property(results_panel, "modulate:a", 1.0, 0.3)
+	t.tween_callback(func(): results_panel.pivot_offset = results_panel.size * 0.5)
+	t.tween_property(results_panel, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+var _back_button: Button
+func _menu_button_ref() -> Button:
+	if _back_button == null:
+		for child in center_panel.find_children("*", "Button", true, false):
+			if (child as Button).text == "Voltar ao menu":
+				_back_button = child
+	return _back_button
+
+func _style_result_button(button: Button, primary: bool, accent: Color) -> void:
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var b := _res_box(accent if primary else Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.12) if not primary else Color.TRANSPARENT, 0 if primary else 1, 8)
+		if state == "hover" or state == "focus":
+			b.bg_color = accent.lightened(0.12) if primary else Color(accent, 0.16)
+			b.border_color = accent
+		button.add_theme_stylebox_override(state, b)
+	for c in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		button.add_theme_color_override(c, Color("#1a1208") if primary else RES_TEXT)
+	button.add_theme_font_override("font", _bold())
+	button.add_theme_font_size_override("font_size", 13)
+
+func _result_tile(caption: String, value: String, color: Color) -> PanelContainer:
+	var tile := PanelContainer.new()
+	tile.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var b := _res_box(Color(1, 1, 1, 0.04), Color(1, 1, 1, 0.07), 1, 8)
+	b.content_margin_top = 4
+	b.content_margin_bottom = 4
+	tile.add_theme_stylebox_override("panel", b)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 0)
+	tile.add_child(stack)
+	var v := _res_label(value, 17, color, true)
+	v.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(v)
+	var c := _res_label(caption, 9, RES_MUTED, true)
+	c.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	stack.add_child(c)
+	return tile
+
+func _result_header() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	for spec in [["#", 24, HORIZONTAL_ALIGNMENT_LEFT], ["JOGADOR", 0, HORIZONTAL_ALIGNMENT_LEFT], ["ABATES", 50, HORIZONTAL_ALIGNMENT_RIGHT], ["XP", 50, HORIZONTAL_ALIGNMENT_RIGHT]]:
+		var l := _res_label(str(spec[0]), 9, RES_DIM, true)
+		l.horizontal_alignment = spec[2]
+		if int(spec[1]) > 0:
+			l.custom_minimum_size.x = int(spec[1])
+		else:
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(l)
+	return row
+
+## Linha: posição (medalha no pódio), nome + patente/BOT, abates e XP; a sua em destaque.
+func _result_row(row: Dictionary, place: int, team_tint: Color) -> PanelContainer:
+	var mine := str(row.get("id", "")) == my_id
+	var panel := PanelContainer.new()
+	panel.name = "ResultsRow_" + str(row.get("id", "")) # id: nome de nó não aceita "." ("Sgt. Lima")
+	var b := _res_box(Color(ACCENT_GOLD, 0.12) if mine else Color(1, 1, 1, 0.025 if place % 2 == 1 else 0.0), ACCENT_GOLD if mine else Color.TRANSPARENT, 1 if mine else 0, 6)
+	if team_tint.a > 0.0 and not mine:
+		b.border_width_left = 3
+		b.border_color = Color(team_tint, 0.6)
+	b.content_margin_left = 8
+	b.content_margin_right = 8
+	b.content_margin_top = 2
+	b.content_margin_bottom = 2
+	panel.add_theme_stylebox_override("panel", b)
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 10)
+	panel.add_child(line)
+	var place_color: Color = MEDALS[place - 1] if place >= 1 and place <= 3 and not team_mode else RES_DIM
+	var pos := _res_label("%d" % place, 13, place_color, true)
+	pos.custom_minimum_size.x = 24
+	line.add_child(pos)
+	var who := HBoxContainer.new()
+	who.add_theme_constant_override("separation", 8)
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(who)
+	var name_label := _res_label(str(row.get("name", "")) + ("  (você)" if mine else ""), 12, ACCENT_GOLD if mine else RES_TEXT, true)
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL # sem isso o nome encolhia a zero
+	name_label.custom_minimum_size.x = 90
+	who.add_child(name_label)
+	var bot := bool(row.get("bot", false))
+	var tag := _res_label("BOT" if bot else str(row.get("rank", "")).to_upper(), 8, RES_DIM if bot else RES_MUTED, true)
+	tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	who.add_child(tag)
+	var kills := _res_label(str(int(row.get("kills", 0))), 12, RES_TEXT, true)
+	kills.custom_minimum_size.x = 50
+	kills.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	line.add_child(kills)
+	var xp_value := int(row.get("xp", 0))
+	var xp := _res_label("—" if bot else "%+d" % xp_value, 12, RES_DIM if bot else (RESULT_LOSE if xp_value < 0 else Color("#8fe08a")), true)
+	xp.custom_minimum_size.x = 50
+	xp.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	line.add_child(xp)
+	return panel
+
+## Perfil confirmado pelo servidor: total, patente e quanto falta para a próxima.
+var _pending_profile: Dictionary = {}
+func _fill_results_profile(data: Dictionary) -> void:
+	_pending_profile = data
+	if results_xp == null or not is_instance_valid(results_xp):
+		return
+	var profile: Dictionary = data.get("profile", {})
+	var xp := int(profile.get("xp", 0))
+	var text := "%s  ·  %s XP" % [str(profile.get("rank", "")).to_upper(), _thousands(xp)]
+	if profile.get("nextRankXp") != null:
+		var next_xp := int(profile["nextRankXp"])
+		var base_xp := int(profile.get("rankXp", 0))
+		text += "  ·  faltam %s para %s" % [_thousands(next_xp - xp), profile.get("nextRank", "")]
+		results_bar.visible = true
+		results_bar.value = 0.0
+		var target := clampf(float(xp - base_xp) / maxf(1.0, float(next_xp - base_xp)), 0.0, 1.0)
+		results_bar.create_tween().tween_property(results_bar, "value", target, 0.9).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	results_xp.text = text
+	results_xp.add_theme_color_override("font_color", RES_TEXT)
+	if bool(data.get("rankUp", false)):
+		results_xp.text = "PROMOVIDO A %s!   " % str(profile.get("rank", "")).to_upper() + text
+		results_xp.add_theme_color_override("font_color", RESULT_WIN)
+	elif bool(data.get("rankDown", false)):
+		results_xp.text = "Rebaixado para %s   " % str(profile.get("rank", "")) + text
+
+func _thousands(value: int) -> String:
+	var s := str(absi(value))
+	var out := ""
+	while s.length() > 3:
+		out = "." + s.right(3) + out
+		s = s.left(s.length() - 3)
+	return ("-" if value < 0 else "") + s + out
 
 func _show_center(title: String, body: String) -> void:
 	center_title.text = title
