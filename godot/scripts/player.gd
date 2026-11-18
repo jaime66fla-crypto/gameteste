@@ -25,6 +25,7 @@ var sprinting := false
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const MAG_SIZE := 15
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
+const Controls = preload("res://scripts/controls.gd")
 const HumanoidAvatarScript = preload("res://scripts/avatar/avatar_controller.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
@@ -122,6 +123,9 @@ var gun_uses_model_mount := false
 var humanoid_avatar: Node3D
 
 func _ready() -> void:
+    # Keys chosen in Settings > Controls (also when the player runs without main.gd, e.g. in tests).
+    if not InputMap.has_action("melee"):
+        Controls.load_and_apply()
     # Characters share a layer: they block each other but bullets ignore the
     # capsules and hit body-part hitboxes instead.
     collision_layer = HitboxScript.LAYER_CHARACTERS
@@ -360,46 +364,49 @@ func _unhandled_input(event: InputEvent) -> void:
         if event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
             scope_zoom = clampf(scope_zoom - 1.0, 4.0, 8.0)
             return
-    if event is InputEventKey and event.pressed and not event.echo:
-        if event.physical_keycode in [KEY_Q, KEY_E] and aiming:
-            return # while aiming, Q / E lean (handled every physics frame)
-        if event.physical_keycode == KEY_G:
+    # Teclas configuráveis (Configurações › Controles): tudo passa pelas ações.
+    if (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo():
+        if aiming and (event.is_action("lean_left") or event.is_action("lean_right")):
+            return # while aiming, the lean keys lean (handled every physics frame)
+        if event.is_action("grenade"):
             if not grenade_aiming and _can_start_grenade_aim():
                 grenade_aiming = true
             return
-        if event.physical_keycode == KEY_Q and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+        if event.is_action("melee") and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
             humanoid_avatar.call("play_action", "punch")
             # Sobrevivência: o soco (ou a arma branca da mochila) acerta zumbis.
             if melee_handler.is_valid():
                 melee_handler.call()
             return
-        if event.physical_keycode == KEY_E:
-            # E collects loot when a crate is in reach; otherwise elbow strike.
+        if event.is_action("interact"):
+            # Collects loot when a crate is in reach; otherwise elbow strike.
             if interact_handler.is_valid() and bool(interact_handler.call()):
                 return
             if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
                 humanoid_avatar.call("play_action", "elbow_punch")
             return
-        if event.physical_keycode == KEY_F:
+        if event.is_action("heal"):
             if heal_handler.is_valid():
                 heal_handler.call()
             return
-        if event.physical_keycode == KEY_H:
+        if event.is_action("holster"):
             if not loadout_limited or not owned_weapons.is_empty():
                 _toggle_weapon_holster()
             return
-        var key_slots := {KEY_1: "rifle", KEY_2: "sniper", KEY_3: "pistol", KEY_4: "shotgun", KEY_5: "smg"}
-        if key_slots.has(event.physical_keycode):
-            var slot: String = key_slots[event.physical_keycode]
+        var slots := ["rifle", "sniper", "pistol", "shotgun", "smg"]
+        for index in slots.size():
+            if not event.is_action("weapon_%d" % (index + 1)):
+                continue
+            var slot: String = slots[index]
             if loadout_limited:
-                var index: int = event.physical_keycode - KEY_1
                 if index >= slot_order.size():
                     return
                 slot = slot_order[index]
             _equip_weapon(slot)
             if weapon_holstered:
                 _toggle_weapon_holster()
-    if event is InputEventKey and not event.pressed and event.physical_keycode == KEY_G and grenade_aiming:
+            return
+    if event.is_action_released("grenade") and grenade_aiming:
         _release_grenade()
         return
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
@@ -564,7 +571,7 @@ func _physics_process(delta: float) -> void:
     if not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading and channel_left <= 0.0:
         _shoot()
     if grenade_aiming:
-        if not Input.is_physical_key_pressed(KEY_G):
+        if not Input.is_action_pressed("grenade"):
             cancel_grenade_aim() # the release was lost (focus change, menu); never throw by accident
         else:
             _update_grenade_preview()
@@ -741,9 +748,9 @@ func _shoulder_room(wanted: float) -> float:
 func _update_lean(delta: float) -> void:
     var target := 0.0
     if aiming and not reloading and not weapon_holstered:
-        if Input.is_physical_key_pressed(KEY_Q):
+        if Input.is_action_pressed("lean_left"):
             target -= 1.0
-        if Input.is_physical_key_pressed(KEY_E):
+        if Input.is_action_pressed("lean_right"):
             target += 1.0
     lean = move_toward(lean, target, delta * 5.0)
     var reach := LEAN_DISTANCE

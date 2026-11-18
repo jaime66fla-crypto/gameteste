@@ -259,7 +259,7 @@ func _on_rammed(zombie_id: String, speed: float) -> void:
 func handle_input(event: InputEvent) -> bool:
 	if driving == null:
 		return false
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_E:
+	if (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo() and InputMap.has_action("interact") and event.is_action("interact"):
 		if absf(float(driving.get("speed"))) > 4.0:
 			controller.call("_toast", "DIMINUA A VELOCIDADE PARA SAIR")
 		else:

@@ -34,7 +34,7 @@ var minimap: Control
 var ammo_hud: Control
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
-const HELP_TEXT := "WASD mover  ALT andar devagar  SHIFT correr  CTRL agachar  ESPAÇO pular  |  Direito mirar (+Q/E inclinar)  Esquerdo atirar  R recarregar  H guardar arma\n1-5 armas  Q soco  E interagir  F curar  G granada (segure)  |  Sobrevivência: TAB inventário  M mapa  |  ESC liberar o mouse"
+const Controls = preload("res://scripts/controls.gd")
 
 func _ready() -> void:
     _register_inputs()
@@ -170,30 +170,9 @@ func _spawn_training_dummies() -> void:
         dummy.position = spot[0]
         add_child(dummy)
 
+## Teclas do jogador (padrão ou as escolhidas em Configurações › Controles).
 func _register_inputs() -> void:
-    var keys := {
-        "move_forward": KEY_W,
-        "move_back": KEY_S,
-        "move_left": KEY_A,
-        "move_right": KEY_D,
-        "jump": KEY_SPACE,
-        "sprint": KEY_SHIFT,
-        "walk": KEY_ALT, # segurar: anda devagar (estilo GTA)
-        "crouch": KEY_CTRL,
-        "reload": KEY_R
-    }
-    for action in keys.keys():
-        if not InputMap.has_action(action):
-            InputMap.add_action(action)
-        var key := InputEventKey.new()
-        key.physical_keycode = keys[action]
-        InputMap.action_add_event(action, key)
-    for action in ["aim", "fire"]:
-        if not InputMap.has_action(action):
-            InputMap.add_action(action)
-        var mouse := InputEventMouseButton.new()
-        mouse.button_index = MOUSE_BUTTON_RIGHT if action == "aim" else MOUSE_BUTTON_LEFT
-        InputMap.action_add_event(action, mouse)
+    Controls.load_and_apply()
 
 func _build_world() -> void:
     var world_environment := WorldEnvironment.new()
@@ -412,7 +391,7 @@ func _process(_delta: float) -> void:
         # Sem textos fixos na tela: controles só segurando F1 (dica nos primeiros segundos).
         _hint_time += _delta
         if Input.is_physical_key_pressed(KEY_F1):
-            hud.text = HELP_TEXT
+            hud.text = Controls.help_text()
             hud.modulate.a = 1.0
         elif _hint_time < 8.0 and not out:
             hud.text = "F1: controles"

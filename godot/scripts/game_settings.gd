@@ -1,6 +1,6 @@
 extends RefCounted
 const PATH := "user://settings.cfg"
-const DEFAULTS := {"sensitivity": 1.0, "volume": 1.0, "msaa": 1, "fullscreen": false}
+const DEFAULTS := {"sensitivity": 1.0, "volume": 1.0, "msaa": 2, "fullscreen": false} # msaa 2 = 4×
 
 static func load_settings(path: String = PATH) -> Dictionary:
     var result := DEFAULTS.duplicate()
@@ -14,7 +14,7 @@ static func _normalize(values: Dictionary) -> Dictionary:
     return {
         "sensitivity": clampf(float(values.get("sensitivity",1.0)), 0.2, 2.0),
         "volume": clampf(float(values.get("volume",1.0)), 0.0, 1.0),
-        "msaa": clampi(int(values.get("msaa",1)), 0, 2),
+        "msaa": clampi(int(values.get("msaa",2)), 0, 2),
         "fullscreen": bool(values.get("fullscreen",false))
     }
 

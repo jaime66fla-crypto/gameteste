@@ -3,6 +3,7 @@ const Settings = preload("res://scripts/game_settings.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const CharacterCard = preload("res://scripts/characters/character_card.gd")
 const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
+const Controls = preload("res://scripts/controls.gd")
 var settings: Dictionary
 var content: VBoxContainer
 var status: Label
@@ -68,6 +69,7 @@ func _ready() -> void:
     Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
     settings = Settings.load_settings()
     Settings.apply(settings,get_viewport())
+    Controls.load_and_apply()
     _build_fonts()
     theme = _build_theme()
     _build_background()
@@ -2269,6 +2271,113 @@ func _slider(title: String, node_name: String, low: float, high: float, value: f
     content.add_child(slider)
     return slider
 
+# ------------------------------------------------------------ controles ---
+
+var _capturing_action := "" # ação esperando a nova tecla ("" = nenhuma)
+
+## Configurações › Controles: cada ação com a tecla atual; clique e aperte a
+## nova tecla (ou botão do mouse). Tecla já usada por outra ação = as duas trocam.
+func _show_controls(message: String = "") -> void:
+    _clear()
+    _capturing_action = ""
+    _set_page_width(620.0)
+    _screen_header("Configurações", "Controles", "Clique numa ação e aperte a nova tecla ou botão do mouse. ESC cancela.")
+    var feedback := _wrap(message, 14, ACCENT)
+    feedback.name = "ControlsFeedback"
+    feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    feedback.visible = not message.is_empty()
+    content.add_child(feedback)
+    var scroll := ScrollContainer.new()
+    scroll.name = "ControlsScroll"
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    scroll.custom_minimum_size.y = minf(440.0, get_viewport_rect().size.y - 300.0)
+    content.add_child(scroll)
+    var groups := VBoxContainer.new()
+    groups.name = "ControlsList"
+    groups.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    groups.add_theme_constant_override("separation", 14)
+    scroll.add_child(groups)
+    var current_group := ""
+    var card: VBoxContainer = null
+    for entry in Controls.ACTIONS:
+        if str(entry[2]) != current_group:
+            current_group = str(entry[2])
+            card = _card(groups, "ControlsGroup_" + current_group, Color(0, 0, 0, 0.25), LINE, 14)
+            card.add_theme_constant_override("separation", 4)
+            card.add_child(_plain(current_group.to_upper(), 12, ACCENT, caps_font))
+        card.add_child(_control_row(str(entry[0]), str(entry[1])))
+    var bottom := HBoxContainer.new()
+    bottom.add_theme_constant_override("separation", 10)
+    content.add_child(bottom)
+    var reset := _button("Restaurar padrão", "ResetControlsButton", Callable(), false, bottom)
+    reset.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    reset.pressed.connect(_reset_controls)
+    var back := _button("Voltar", "ControlsBackButton", _show_config, true, bottom)
+    back.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+func _reset_controls() -> void:
+    Controls.reset()
+    Controls.save()
+    _show_controls("Teclas voltaram ao padrão.")
+
+## Linha: nome da ação à esquerda, "tecla" à direita (botão com cara de tecla).
+func _control_row(action: String, title: String) -> HBoxContainer:
+    var row := HBoxContainer.new()
+    row.name = "ControlRow_" + action
+    row.add_theme_constant_override("separation", 10)
+    var label := _plain(title, 14, TEXT)
+    label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(label)
+    var key := Button.new()
+    key.name = "Bind_" + action
+    key.text = Controls.key_name(Controls.binding(action))
+    key.custom_minimum_size = Vector2(170, 34)
+    key.add_theme_font_size_override("font_size", 14)
+    if semi_font != null:
+        key.add_theme_font_override("font", semi_font)
+    for state in ["normal", "hover", "pressed", "focus"]:
+        var box := _box(Color(1, 1, 1, 0.07), Color(1, 1, 1, 0.16), 1, 6)
+        box.border_width_bottom = 3 # cara de tecla
+        if state == "hover" or state == "focus":
+            box.border_color = ACCENT
+        key.add_theme_stylebox_override(state, box)
+    key.add_theme_color_override("font_color", TEXT)
+    key.add_theme_color_override("font_hover_color", TEXT)
+    key.pressed.connect(func():
+        _capturing_action = action
+        key.text = "Aperte uma tecla…"
+        var waiting := _box(Color(ACCENT, 0.18), ACCENT, 2, 6)
+        key.add_theme_stylebox_override("normal", waiting)
+        key.add_theme_stylebox_override("hover", waiting)
+        key.add_theme_stylebox_override("focus", waiting)
+        key.release_focus())
+    row.add_child(key)
+    return row
+
+## Captura a nova tecla enquanto uma ação espera (antes de qualquer outro uso do evento).
+func _input(event: InputEvent) -> void:
+    if _capturing_action.is_empty():
+        return
+    if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
+        get_viewport().set_input_as_handled()
+        _show_controls()
+        return
+    var code := Controls.code_of(event)
+    if code == 0:
+        return
+    get_viewport().set_input_as_handled()
+    var action := _capturing_action
+    _capturing_action = ""
+    var swapped := Controls.set_binding(action, code)
+    var message := "%s: %s" % [Controls.label_of(action), Controls.key_name(code)]
+    if not swapped.is_empty():
+        message += "   ·   trocou com \"%s\"" % swapped
+    if Controls.save() != OK:
+        message = "Não foi possível salvar os controles."
+    # Recria a tela no próximo quadro (o clique que escolheu o botão do mouse não aperta nada).
+    call_deferred("_show_controls", message)
+
 func _show_config() -> void:
     _clear()
     _label("Configurações",28)
@@ -2288,6 +2397,7 @@ func _show_config() -> void:
     fullscreen.text = "Tela cheia"
     fullscreen.button_pressed = settings["fullscreen"]
     content.add_child(fullscreen)
+    _button("Controles (teclas e mouse)","ControlsButton",_show_controls)
     status = _label("",14)
     _button("Salvar","SaveButton",func():
         var values := {"sensitivity": sensitivity.value/100.0,"volume": volume.value/100.0,"msaa": aa.selected,"fullscreen": fullscreen.button_pressed}

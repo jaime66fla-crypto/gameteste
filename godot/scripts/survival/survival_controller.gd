@@ -855,11 +855,11 @@ func _unhandled_input(event: InputEvent) -> void:
 	if driving_ctl != null and bool(driving_ctl.call("handle_input", event)):
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_T and not local_dead:
+	if _pressed(event, "refuel") and not local_dead:
 		if bool(driving_ctl.call("request_refuel")):
 			get_viewport().set_input_as_handled()
 		return
-	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_M:
+	if _pressed(event, "map"):
 		world_map.call("toggle")
 		get_viewport().set_input_as_handled()
 		return
@@ -872,7 +872,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE # ESC também libera o mouse (botão de menu)
 		get_viewport().set_input_as_handled()
 		return
-	if event is InputEventKey and event.pressed and not event.echo and (event.physical_keycode == KEY_TAB or event.physical_keycode == KEY_I):
+	if _pressed(event, "inventory"):
 		if local_dead:
 			return
 		if inventory.visible:
@@ -880,6 +880,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			inventory.call("open")
 		get_viewport().set_input_as_handled()
+
+## Tecla/botão configurável (Configurações › Controles) apertado agora.
+func _pressed(event: InputEvent, action: String) -> bool:
+	return (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo() and InputMap.has_action(action) and event.is_action(action)
 
 func _build_ui() -> void:
 	ui = CanvasLayer.new()
