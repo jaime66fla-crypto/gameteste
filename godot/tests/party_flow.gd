@@ -166,6 +166,20 @@ func _run() -> void:
 			"board": [{"id": "me", "name": "Lider", "kills": 2, "bot": false, "rank": "Recruta", "xp": 70, "team": 0},
 				{"id": "bot1", "name": "Cabo Rocha", "kills": 0, "bot": true, "rank": "", "xp": 0, "team": 0},
 				{"id": "bot2", "name": "Sgt. Lima", "kills": 0, "bot": true, "rank": "", "xp": 0, "team": 1}]})
+		# Primeiro a cena do vencedor (destaque da equipe que está de pé), depois o placar.
+		var overlay := controller.find_child("VictoryOverlay", true, false) as Control
+		var cam := controller.get("victory_camera") as Camera3D
+		_check(overlay != null and cam != null and cam.current, "Winner mini-scene plays with its own camera")
+		var shown_name := controller.find_child("VictoryName", true, false) as Label
+		_check(shown_name != null and shown_name.text == "CABO ROCHA", "Scene shows the standing MVP of the winning team (got %s)" % (shown_name.text if shown_name else "-"))
+		var kicker := controller.find_child("VictoryKicker", true, false) as Label
+		_check(kicker != null and kicker.text == "SUA EQUIPE VENCEU!", "Scene says your team won")
+		_check(not (controller.get("center_panel") as Control).visible, "Scoreboard waits for the scene")
+		controller.set("_victory_time", 2.0)
+		var any_key := InputEventKey.new()
+		any_key.physical_keycode = KEY_SPACE
+		any_key.pressed = true
+		controller.call("_unhandled_input", any_key)
 		var title: Label = controller.get("center_title")
 		_check(title.text == "VITÓRIA DA EQUIPE!", "Team victory title (got %s)" % title.text)
 		var body: Label = controller.get("center_body")

@@ -31,6 +31,7 @@ var scope_overlay: Control
 var menu_button: Button
 var match_controller: Node3D # online matches only
 var minimap: Control
+var cinematic := false # cena do vencedor: esconde minimapa e botão de menu
 var ammo_hud: Control
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
@@ -369,7 +370,9 @@ func return_to_menu() -> void:
 
 func _process(_delta: float) -> void:
     if player and hud:
-        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not quit_dialog.visible
+        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not quit_dialog.visible and not cinematic
+        if minimap != null:
+            minimap.visible = not cinematic
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
         action_state = player.action_progress()

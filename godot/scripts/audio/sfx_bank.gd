@@ -49,6 +49,7 @@ static func warm_all() -> void:
 	hit_head()
 	kill()
 	notify()
+	victory()
 	hurt(false)
 	zombie_bite()
 	swing()
@@ -205,6 +206,47 @@ static func kill() -> AudioStream:
 		Synth.normalize(out, 0.8)
 		Synth.fade_tail(out, 0.05)
 		return Synth.to_wav(out))
+
+## Fanfarra de vitória: arpejo de metais subindo (Dó-Mi-Sol-Dó) que abre num
+## acorde sustentado, com prato crescendo por baixo.
+static func victory() -> AudioStream:
+	return Synth.get_stream("victory", func():
+		var out := Synth.buffer(3.0)
+		var notes := [[523.25, 0.0], [659.25, 0.13], [783.99, 0.26], [1046.5, 0.42]]
+		for note in notes:
+			var start := float(note[1])
+			var hold := 2.4 - start
+			Synth.mix(out, _brass(float(note[0]), hold), 0.32, start)
+		# Acorde grave por baixo do final (a "cama" da fanfarra).
+		for f in [261.63, 392.0]:
+			Synth.mix(out, _brass(f, 2.0), 0.18, 0.42)
+		var cymbal := Synth.noise(3.0, 991)
+		Synth.highpass(cymbal, 5000.0)
+		for i in cymbal.size():
+			var t := float(i) / Synth.RATE
+			cymbal[i] *= smoothstep(0.0, 0.42, t) * exp(-maxf(0.0, t - 0.42) * 2.2)
+		Synth.mix(out, cymbal, 0.12)
+		out = Synth.echo(out, [0.11, 0.23, 0.37], [0.25, 0.14, 0.07], 2600.0)
+		Synth.saturate(out, 1.3)
+		Synth.normalize(out, 0.75)
+		Synth.fade_tail(out, 0.3)
+		return Synth.to_wav(out))
+
+## Nota de metal (trompete simples): harmônicos ímpares e pares, brilho que abre no ataque.
+static func _brass(freq: float, length: float) -> PackedFloat32Array:
+	var b := Synth.buffer(length)
+	var phase := 0.0
+	for i in b.size():
+		var t := float(i) / Synth.RATE
+		phase += TAU * freq * (1.0 + 0.004 * sin(TAU * 5.5 * t) * smoothstep(0.2, 0.6, t)) / Synth.RATE
+		var bright := lerpf(1.0, 0.45, smoothstep(0.0, 0.35, t))
+		var v := 0.0
+		for h in range(1, 9):
+			v += sin(phase * h) / pow(h, 1.6 - bright * 0.6)
+		var env := minf(1.0, t / 0.03) * (0.85 + 0.15 * exp(-t * 6.0)) * minf(1.0, (length - t) / 0.25)
+		b[i] = v * env * 0.35
+	Synth.lowpass(b, 3800.0)
+	return b
 
 ## Notificação (convite chegou): duas notas suaves subindo.
 static func notify() -> AudioStream:

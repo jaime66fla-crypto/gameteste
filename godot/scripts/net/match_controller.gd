@@ -10,6 +10,7 @@ const BOT_RATE := 1.0 / 10.0
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const LootCrateScript = preload("res://scripts/net/loot_crate.gd")
 const BotNav = preload("res://scripts/net/bot_nav.gd")
+const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 const LOOT_REACH := 2.4 # metres; the server allows a little more for latency
 const LABEL_RANGE := 9.0
 
@@ -723,6 +724,11 @@ func _on_watched_killed(victim_id: String, killer_id: String) -> void:
 
 func _process(delta: float) -> void:
 	damage_flash.color.a = move_toward(damage_flash.color.a, 0.0, delta * 1.2)
+	if _victory_target != null and victory_camera != null:
+		_victory_time += delta
+		_place_victory_camera(delta)
+		if not _victory_finished and _victory_time >= VICTORY_SECONDS:
+			_finish_victory()
 	_update_loot_ui()
 	if finished:
 		status_label.text = ""
@@ -776,6 +782,11 @@ func _spectate_target() -> Node3D:
 	return actors[spectate_id]
 
 func _unhandled_input(event: InputEvent) -> void:
+	# Cena do vencedor: qualquer tecla/clique pula para o placar (depois de 1 s).
+	if _victory_target != null and not _victory_finished and _victory_time > 1.0 and (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed():
+		_finish_victory()
+		get_viewport().set_input_as_handled()
+		return
 	# Esc: leave the match at any time (alive or spectating). The player node
 	# is disabled after death, so its own Esc handler no longer runs.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE and not finished:
@@ -837,7 +848,11 @@ func _on_end(data: Dictionary) -> void:
 		var xp_text := "  %+d XP" % int(row.get("xp", 0)) if not row.get("bot", false) else ""
 		lines.append("%d. %s (%s) — %d abate(s)%s" % [position_number, row["name"], who, int(row["kills"]), xp_text])
 		position_number += 1
-	_show_center("VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper(), "\n".join(lines))
+	var title := "VITÓRIA!" if won else "%s VENCEU" % str(data.get("name", "")).to_upper()
+	var body := "\n".join(lines)
+	var winner_id := str(data.get("winner", ""))
+	var winner_name := str(data.get("name", names.get(winner_id, "")))
+	_play_victory(_node_for(winner_id), "VOCÊ VENCEU!" if won else "VENCEDOR", winner_name, _winner_line(data, winner_id), ACCENT_GOLD, func(): _show_center(title, body))
 
 ## Team scoreboard: one block per team with each member's kills.
 func _on_team_end(data: Dictionary) -> void:
@@ -860,11 +875,245 @@ func _on_team_end(data: Dictionary) -> void:
 	var title := "EMPATE"
 	if winner != null:
 		title = "VITÓRIA DA EQUIPE!" if int(winner) == my_team else "DERROTA — EQUIPE %s VENCEU" % _team_name(int(winner)).to_upper()
-	_show_center(title, "\n".join(lines).strip_edges())
-	if not Net.party_code.is_empty():
-		room_button.visible = true
-		room_button.text = "Voltar para a sala %s" % Net.party_code
-		room_button.grab_focus()
+	var body := "\n".join(lines).strip_edges()
+	var show_board := func():
+		_show_center(title, body)
+		if not Net.party_code.is_empty():
+			room_button.visible = true
+			room_button.text = "Voltar para a sala %s" % Net.party_code
+			room_button.grab_focus()
+	if winner == null:
+		show_board.call() # empate: sem cena de vencedor
+		return
+	# Cena: o melhor da equipe vencedora (mais abates), preferindo quem está de pé.
+	var mvp := ""
+	var mvp_kills := -1
+	for row in data.get("board", []):
+		if int(row.get("team", -1)) != int(winner):
+			continue
+		var id := str(row.get("id", ""))
+		var node := _node_for(id)
+		var standing := node != null and (not local_dead if id == my_id else not bool(node.get("dead")))
+		var kills := int(row.get("kills", 0)) + (1000 if standing else 0)
+		if kills > mvp_kills:
+			mvp_kills = kills
+			mvp = id
+	var team_color := Color("#5ea8d0") if int(winner) == 0 else Color("#d07a5e")
+	var kicker := ("SUA EQUIPE VENCEU!" if int(winner) == my_team else "EQUIPE %s VENCEU" % _team_name(int(winner)).to_upper())
+	_play_victory(_node_for(mvp), kicker, str(names.get(mvp, "")), "Destaque da equipe  ·  " + _winner_line(data, mvp), team_color.lightened(0.25), show_board)
+
+# ------------------------------------------------------------ cena do vencedor ---
+
+const ACCENT_GOLD := Color("#ffc94a")
+const VICTORY_SECONDS := 5.5
+var victory_camera: Camera3D
+var victory_layer: Control
+var _victory_target: Node3D
+var _victory_time := 0.0
+var _victory_angle := 0.0
+var _victory_done: Callable
+var _victory_finished := false
+
+## Nó do jogador/bot pelo id (o próprio jogador local ou um ator da partida).
+func _node_for(id: String) -> Node3D:
+	if id.is_empty():
+		return null
+	if id == my_id:
+		return player
+	return actors.get(id)
+
+## Esconde o HUD do jogo (minimapa, botão de menu, mensagens) durante a cena.
+func _set_cinematic(on: bool) -> void:
+	var main := get_parent()
+	if main != null and "cinematic" in main:
+		main.set("cinematic", on)
+	if feed != null:
+		feed.visible = not on
+
+## "7 abates  ·  Sargento" (ou "bot") do placar final.
+func _winner_line(data: Dictionary, id: String) -> String:
+	for row in data.get("board", []):
+		if str(row.get("id", "")) == id:
+			var kills := int(row.get("kills", 0))
+			var who := "bot" if row.get("bot", false) else str(row.get("rank", ""))
+			return "%d abate%s  ·  %s" % [kills, "" if kills == 1 else "s", who]
+	return ""
+
+## Mini-cena de fim de partida: câmera de cinema girando em volta do vencedor,
+## faixas pretas, o nome dele grande com uma linha dourada, confete e fanfarra.
+## Depois de VICTORY_SECONDS (ou qualquer tecla após 1 s) chama `done` (o placar)
+## e a câmera continua girando devagar ao fundo.
+func _play_victory(target: Node3D, kicker: String, headline: String, subtitle: String, color: Color, done: Callable) -> void:
+	if target == null or not is_instance_valid(target) or not target.is_inside_tree():
+		done.call()
+		return
+	_victory_target = target
+	_victory_done = done
+	_victory_time = 0.0
+	_victory_finished = false
+	killer_panel.visible = false
+	_set_cinematic(true)
+	victory_camera = Camera3D.new()
+	victory_camera.name = "VictoryCamera"
+	victory_camera.fov = 48.0
+	add_child(victory_camera)
+	var front := -target.global_basis.z
+	front.y = 0.0
+	front = front.normalized() if front.length_squared() > 0.001 else Vector3.FORWARD
+	_victory_angle = atan2(front.x, front.z) - 0.6 # começa de frente, um pouco de lado
+	_place_victory_camera(0.0)
+	victory_camera.current = true
+	_build_victory_overlay(kicker, headline, subtitle, color)
+	_victory_confetti(target.global_position + Vector3(0, 3.2, 0))
+	var fanfare := AudioStreamPlayer.new()
+	fanfare.stream = SfxBank.victory()
+	fanfare.volume_db = -4.0
+	add_child(fanfare)
+	fanfare.play()
+
+func _place_victory_camera(delta: float) -> void:
+	if victory_camera == null or not is_instance_valid(_victory_target):
+		return
+	var speed := 0.42 if not _victory_finished else 0.12 # depois do placar, gira bem devagar
+	_victory_angle += delta * speed
+	var k := smoothstep(0.0, VICTORY_SECONDS, _victory_time)
+	var radius := lerpf(5.6, 3.6, k)
+	var center := _victory_target.global_position
+	var goal := center + Vector3(sin(_victory_angle) * radius, 1.45 + 0.35 * (1.0 - k), cos(_victory_angle) * radius)
+	victory_camera.global_position = goal if delta == 0.0 else victory_camera.global_position.lerp(goal, 1.0 - exp(-6.0 * delta))
+	victory_camera.look_at(center + Vector3(0, 1.25, 0))
+
+func _build_victory_overlay(kicker: String, headline: String, subtitle: String, color: Color) -> void:
+	victory_layer = Control.new()
+	victory_layer.name = "VictoryOverlay"
+	victory_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ui.add_child(victory_layer)
+	victory_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# Faixas de cinema (descem/sobem).
+	for top in [true, false]:
+		var bar := ColorRect.new()
+		bar.color = Color(0, 0, 0, 0.92)
+		bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		victory_layer.add_child(bar)
+		bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE if top else Control.PRESET_BOTTOM_WIDE)
+		bar.custom_minimum_size.y = 0.0
+		bar.offset_bottom = 0.0 if top else 0.0
+		var height := 86.0
+		var tween := bar.create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		if top:
+			bar.offset_bottom = 0.0
+			tween.tween_property(bar, "offset_bottom", height, 0.6)
+		else:
+			bar.offset_top = 0.0
+			tween.tween_property(bar, "offset_top", -height, 0.6)
+	# Bloco do nome, no terço de baixo da tela.
+	var block := VBoxContainer.new()
+	block.name = "VictoryBlock"
+	block.alignment = BoxContainer.ALIGNMENT_CENTER
+	block.add_theme_constant_override("separation", 6)
+	block.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	victory_layer.add_child(block)
+	block.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
+	block.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	block.grow_vertical = Control.GROW_DIRECTION_BEGIN
+	block.offset_bottom = -120.0
+	var kicker_label := _victory_label(kicker, 20, color)
+	kicker_label.name = "VictoryKicker"
+	block.add_child(kicker_label)
+	var name_label := _victory_label(headline.to_upper(), 76, Color.WHITE)
+	name_label.name = "VictoryName"
+	name_label.add_theme_constant_override("outline_size", 10)
+	name_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
+	block.add_child(name_label)
+	var line_holder := CenterContainer.new()
+	line_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	block.add_child(line_holder)
+	var line := ColorRect.new()
+	line.color = color
+	line.custom_minimum_size = Vector2(0, 3)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line_holder.add_child(line)
+	var sub_label := _victory_label(subtitle, 20, Color(0.92, 0.94, 0.9, 0.9))
+	sub_label.name = "VictorySubtitle"
+	block.add_child(sub_label)
+	var skip := _victory_label("qualquer tecla para pular", 12, Color(1, 1, 1, 0.35))
+	block.add_child(skip)
+	# Entrada: título, nome (encolhendo de 1,25× para 1×), linha abrindo, subtítulo.
+	for node in [kicker_label, name_label, sub_label, skip]:
+		node.modulate.a = 0.0
+	var t := victory_layer.create_tween()
+	t.tween_interval(0.35)
+	t.tween_property(kicker_label, "modulate:a", 1.0, 0.35)
+	t.tween_callback(func():
+		name_label.pivot_offset = name_label.size * 0.5
+		name_label.scale = Vector2(1.25, 1.25))
+	t.parallel().tween_property(name_label, "modulate:a", 1.0, 0.45)
+	t.parallel().tween_property(name_label, "scale", Vector2.ONE, 0.6).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	t.tween_property(line, "custom_minimum_size:x", 440.0, 0.5).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	t.tween_property(sub_label, "modulate:a", 1.0, 0.4)
+	t.tween_property(skip, "modulate:a", 1.0, 0.6)
+
+func _victory_label(text: String, size: int, color: Color) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", size)
+	label.add_theme_color_override("font_color", color)
+	label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+	label.add_theme_constant_override("shadow_offset_y", 3)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return label
+
+## Confete dourado/laranja/branco caindo sobre o vencedor.
+func _victory_confetti(at: Vector3) -> void:
+	var confetti := CPUParticles3D.new()
+	confetti.name = "VictoryConfetti"
+	confetti.amount = 180
+	confetti.lifetime = 4.5
+	confetti.one_shot = true
+	confetti.explosiveness = 0.85
+	confetti.direction = Vector3.UP
+	confetti.spread = 70.0
+	confetti.initial_velocity_min = 3.5
+	confetti.initial_velocity_max = 7.0
+	confetti.gravity = Vector3(0, -4.5, 0)
+	confetti.damping_min = 1.5
+	confetti.damping_max = 3.0
+	confetti.angular_velocity_min = -360.0
+	confetti.angular_velocity_max = 360.0
+	confetti.scale_amount_min = 0.6
+	confetti.scale_amount_max = 1.2
+	var piece := QuadMesh.new()
+	piece.size = Vector2(0.09, 0.05)
+	var material := StandardMaterial3D.new()
+	material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	material.vertex_color_use_as_albedo = true
+	material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	material.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	piece.material = material
+	confetti.mesh = piece
+	var colors := Gradient.new()
+	colors.offsets = PackedFloat32Array([0.0, 0.33, 0.66, 1.0])
+	colors.colors = PackedColorArray([Color("#ffc94a"), Color("#f0a23b"), Color("#ffffff"), Color("#e8622c")])
+	confetti.color_initial_ramp = colors
+	add_child(confetti)
+	confetti.global_position = at
+	confetti.emitting = true
+	get_tree().create_timer(6.0).timeout.connect(confetti.queue_free)
+
+## Fim da cena: o nome some, entra o placar; a câmera segue girando devagar.
+func _finish_victory() -> void:
+	if _victory_finished:
+		return
+	_victory_finished = true
+	_set_cinematic(false)
+	if victory_layer != null and is_instance_valid(victory_layer):
+		var layer := victory_layer
+		var t := layer.create_tween()
+		t.tween_property(layer, "modulate:a", 0.0, 0.45)
+		t.tween_callback(layer.queue_free)
+	if _victory_done.is_valid():
+		_victory_done.call()
 
 
 # -------------------------------------------------------------------- UI ---
