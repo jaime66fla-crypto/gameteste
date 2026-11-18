@@ -31,6 +31,9 @@ const MAX_MATCH_MS = 8 * 60 * 1000;
 const CLOSE_AFTER_END_MS = 15000;
 // Per-hit damage caps (one pellet). Matches godot/scripts/weapon_data.gd.
 const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+const FIST_DAMAGE = 15; // soco (×1,5 na cabeça)
+const PUNCH_REACH = 3.2; // metros entre os dois (folga para o atraso da rede)
+const PUNCH_COOLDOWN_MS = 550;
 // Body-part multipliers. Matches godot/scripts/net/hitbox.gd.
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
 const BOT_DAMAGE = 14;
@@ -603,6 +606,19 @@ export class GodotMatch {
 				else damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), WEAPON_DAMAGE[d.w] || 0) : 0;
 				if (damage <= 0 || !this.allowHit(attacker.id)) return;
 				this.damage(attacker, target, damage, d.w, zone);
+				return;
+			}
+			case 'melee': {
+				// Soco: só de perto, no máximo um a cada PUNCH_COOLDOWN_MS, sem fogo amigo.
+				const target = m.players[d.target];
+				if (me.dead || !target || target.dead || target.id === me.id) return;
+				if (m.party && target.team === me.team) return;
+				if (!me.p || !target.p || Math.hypot(me.p[0] - target.p[0], me.p[2] - target.p[2]) > PUNCH_REACH) return;
+				const now = Date.now();
+				if (now - (me.lastPunch || 0) < PUNCH_COOLDOWN_MS) return;
+				me.lastPunch = now;
+				const head = d.zone === 'head';
+				this.damage(me, target, FIST_DAMAGE * (head ? 1.5 : 1), 'fist', head ? 'head' : 'chest');
 				return;
 			}
 		}

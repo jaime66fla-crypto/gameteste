@@ -245,11 +245,18 @@ func _drive(delta: float) -> void:
 	# Menos esterço em alta velocidade.
 	var steer_limit := MAX_STEER * (1.0 - clampf(absf(speed) / max_speed, 0.0, 1.0) * 0.55)
 	steer = move_toward(steer, turn * steer_limit, delta * 2.5)
+	# Curva pelas rodas da frente (modelo de bicicleta): as dianteiras apontam
+	# para onde o carro vai e o eixo traseiro segue sem escorregar de lado; o
+	# carro gira em torno do eixo traseiro, não do centro. Assim o centro (meio
+	# entre-eixos à frente do eixo traseiro) também desliza para dentro da curva.
 	var wheelbase := float(CarModel.KINDS.get(kind, CarModel.KINDS["sedan"])["wb"])
-	rotation.y += speed / wheelbase * tan(steer) * delta
+	var yaw_rate := speed / wheelbase * tan(steer)
+	rotation.y += yaw_rate * delta
 	var forward := -global_basis.z
-	velocity.x = forward.x * speed
-	velocity.z = forward.z * speed
+	var left := -global_basis.x
+	var center_velocity := forward * speed + left * (wheelbase * 0.5) * yaw_rate
+	velocity.x = center_velocity.x
+	velocity.z = center_velocity.z
 	velocity.y = velocity.y - GRAVITY * delta if not is_on_floor() else -0.5
 	move_and_slide()
 	# Bateu: a velocidade cai para o que de fato andou.

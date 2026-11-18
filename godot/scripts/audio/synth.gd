@@ -58,6 +58,31 @@ static func bandpass(b: PackedFloat32Array, low_hz: float, high_hz: float) -> vo
 	highpass(b, low_hz)
 	lowpass(b, high_hz)
 
+## Ressonador passa-faixa (biquad) em `freq` com qualidade `q`: devolve uma cópia
+## filtrada. Vários em paralelo = formantes de voz (as ressonâncias da garganta).
+static func resonator(b: PackedFloat32Array, freq: float, q: float) -> PackedFloat32Array:
+	var w := TAU * freq / RATE
+	var alpha := sin(w) / (2.0 * q)
+	var a0 := 1.0 + alpha
+	var b0 := alpha / a0
+	var a1 := -2.0 * cos(w) / a0
+	var a2 := (1.0 - alpha) / a0
+	var out := PackedFloat32Array()
+	out.resize(b.size())
+	var x1 := 0.0
+	var x2 := 0.0
+	var y1 := 0.0
+	var y2 := 0.0
+	for i in b.size():
+		var x := b[i]
+		var y := b0 * x - b0 * x2 - a1 * y1 - a2 * y2
+		out[i] = y
+		x2 = x1
+		x1 = x
+		y2 = y1
+		y1 = y
+	return out
+
 ## Ruído branco determinístico.
 static func noise(seconds: float, seed_value: int) -> PackedFloat32Array:
 	var rng := RandomNumberGenerator.new()

@@ -72,6 +72,34 @@ async function join(match, { create = false, code = 'ABCDE', name = 'P' } = {}) 
 }
 const say = (match, player, data) => match.webSocketMessage(player.ws, JSON.stringify(data));
 
+test('punches deal damage up close, not from afar, not too fast and never to a teammate', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	say(match, b, { t: 'team', team: 0 }); // A e B na mesma equipe
+	say(match, b, { t: 'ready' });
+	say(match, a, { t: 'start' });
+	const m = match.match;
+	const bot = Object.values(m.players).find((p) => p.bot && p.team === 1);
+	m.players[a.id].p = [0, 0, 0];
+	m.players[b.id].p = [1, 0, 0];
+	bot.p = [1.5, 0, 0];
+	say(match, a, { t: 'melee', target: bot.id, zone: 'chest' });
+	assert.equal(bot.hp, 85, 'punch: 15 damage');
+	say(match, a, { t: 'melee', target: bot.id, zone: 'chest' });
+	assert.equal(bot.hp, 85, 'too fast: ignored');
+	m.players[a.id].lastPunch = 0;
+	say(match, a, { t: 'melee', target: bot.id, zone: 'head' });
+	assert.equal(bot.hp, 62.5, 'head: x1.5');
+	m.players[a.id].lastPunch = 0;
+	bot.p = [10, 0, 0];
+	say(match, a, { t: 'melee', target: bot.id, zone: 'chest' });
+	assert.equal(bot.hp, 62.5, 'too far');
+	m.players[a.id].lastPunch = 0;
+	say(match, a, { t: 'melee', target: b.id, zone: 'chest' });
+	assert.equal(m.players[b.id].hp, 100, 'no friendly fire');
+});
+
 test('XP penalties: dying costs XP and quitting a running match while alive costs more (once)', async () => {
 	const match = room();
 	const a = await join(match, { create: true, name: 'A' });

@@ -109,6 +109,32 @@ func _run() -> void:
 	Input.action_release("move_forward")
 	check(car.global_position.distance_to(start) > 3.0, "W acelera o carro (andou %.1f m)" % car.global_position.distance_to(start))
 	check(player.global_position.distance_to(car.global_position) < 1.0, "o jogador viaja junto com o carro")
+	# Curva: as rodas da frente viram e o eixo traseiro segue sem escorregar de lado.
+	var half_wb := float(load("res://scripts/survival/car_model.gd").KINDS["sedan"]["wb"]) * 0.5
+	Input.action_press("move_forward")
+	Input.action_press("move_left")
+	var yaw0 := car.rotation.y
+	var worst_slip := 0.0
+	var front_steer := 0.0
+	var rear_prev: Vector3 = car.global_transform * Vector3(0, 0, half_wb)
+	for i in 50:
+		await get_tree().physics_frame
+		var rear_now: Vector3 = car.global_transform * Vector3(0, 0, half_wb)
+		var move := rear_now - rear_prev
+		move.y = 0.0
+		var side := car.global_basis.x
+		side.y = 0.0
+		if move.length() > 0.02:
+			worst_slip = maxf(worst_slip, absf(move.normalized().dot(side.normalized())))
+		rear_prev = rear_now
+		var wheel := car.find_child("Wheel_FL", true, false) as Node3D
+		if wheel != null:
+			front_steer = maxf(front_steer, wheel.rotation.y)
+	Input.action_release("move_left")
+	Input.action_release("move_forward")
+	check(absf(wrapf(car.rotation.y - yaw0, -PI, PI)) > 0.15, "A/D fazem curva")
+	check(front_steer > 0.1, "as rodas da frente viram na curva")
+	check(worst_slip < 0.12, "eixo traseiro não escorrega de lado na curva (deslize %.2f)" % worst_slip)
 	car.set("fuel", 0.0)
 	var parked := car.global_position
 	car.set("speed", 0.0)

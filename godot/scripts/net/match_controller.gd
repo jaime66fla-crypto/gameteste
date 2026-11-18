@@ -77,6 +77,7 @@ func _ready() -> void:
 	player.call("start_unarmed")
 	player.set("interact_handler", _try_loot)
 	player.set("heal_handler", _use_medkit)
+	player.set("melee_handler", _punch)
 	player.set("grenade_handler", _throw_grenade)
 	player.set("grenade_check", _can_throw_grenade)
 	team_mode = bool(info.get("party", false))
@@ -525,6 +526,43 @@ func _on_local_damaged(amount: float, attacker_id: String) -> void:
 		var to: Vector3 = attacker.global_position - player.global_position
 		to.y = 0.0
 		combat_feedback.call("show_damage_from", atan2(to.dot(right.normalized()), to.dot(forward.normalized())))
+
+## Soco (sem arma branca nas partidas): acerta quem está logo à frente; o
+## servidor confere a distância e aplica o dano.
+const PUNCH_REACH := 2.2
+const PUNCH_COOLDOWN := 0.55
+var _punch_timer := 0.0
+
+func _punch() -> void:
+	if local_dead or finished:
+		return
+	var now := Time.get_ticks_msec() / 1000.0
+	if now < _punch_timer:
+		return
+	_punch_timer = now + PUNCH_COOLDOWN
+	player.get("sound_fx").call("melee_swing")
+	var camera := get_viewport().get_camera_3d()
+	if camera == null:
+		return
+	var forward := -camera.global_basis.z
+	var from := player.global_position + Vector3(0, 1.35, 0)
+	var query := PhysicsRayQueryParameters3D.create(from, from + forward * PUNCH_REACH, HitboxScript.SHOT_MASK)
+	query.exclude = [player.get_rid()]
+	var hit := player.get_world_3d().direct_space_state.intersect_ray(query)
+	if hit.is_empty():
+		return
+	var body: Object = hit["collider"]
+	var target = body.get("actor") if body != null else null
+	if target == null or target.get("actor_id") == null:
+		return
+	var target_id := str(target.get("actor_id"))
+	if target_id == my_id or bool(target.get("dead")) or is_ally(target_id):
+		return
+	var zone := str(body.get("zone")) if body.get("zone") != null else "chest"
+	Net.send({"t": "melee", "target": target_id, "zone": zone})
+	combat_feedback.call("show_hit", zone == "head")
+	player.get("sound_fx").call("melee_impact", zone == "head")
+	_blood_burst(hit["position"], hit["normal"], zone == "head")
 
 func _blood_burst(point: Vector3, normal: Vector3, headshot: bool) -> void:
 	var particles := CPUParticles3D.new()

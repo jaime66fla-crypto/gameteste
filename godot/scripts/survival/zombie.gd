@@ -11,14 +11,17 @@ signal attacked(zombie_id: String, target_id: String)
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const GRAVITY := 22.0
 const KINDS := {
-	"walker": {"wander": 0.9, "chase": 2.4, "scale": 1.0, "skin": "#7f8f6a", "shirt": "#5a4a3c", "tint": "#ffffff", "width": 1.0},
-	"runner": {"wander": 1.2, "chase": 5.0, "scale": 0.95, "skin": "#8c9a74", "shirt": "#3b4d63", "tint": "#d9e0d0", "width": 0.95},
-	"brute":  {"wander": 0.8, "chase": 2.1, "scale": 1.18, "skin": "#6f7d5c", "shirt": "#463b33", "tint": "#a89a8a", "width": 1.25},
+	# Velocidades (m/s) mais lentas: andando o jogador (≈3,5) escapa do andarilho; correndo, do corredor.
+	"walker": {"wander": 0.7, "chase": 1.8, "scale": 1.0, "skin": "#7f8f6a", "shirt": "#5a4a3c", "tint": "#ffffff", "width": 1.0},
+	"runner": {"wander": 1.0, "chase": 3.8, "scale": 0.95, "skin": "#8c9a74", "shirt": "#3b4d63", "tint": "#d9e0d0", "width": 0.95},
+	"brute":  {"wander": 0.6, "chase": 1.6, "scale": 1.18, "skin": "#6f7d5c", "shirt": "#463b33", "tint": "#a89a8a", "width": 1.25},
 }
 const ZombieAvatar = preload("res://scripts/survival/zombie_avatar.gd")
 const ZombieHull = preload("res://scripts/survival/zombie_hull.gd")
 var _avatar: Node3D
-const SIGHT := 24.0 # metros; de noite cai pela metade
+const SIGHT := 15.0 # metros; de noite cai pela metade
+const VIEW_CONE := 0.5 # cos(60°): só enxerga num cone de 120° à frente...
+const NOTICE_CLOSE := 3.5 # ...a não ser bem de perto (sente quem encosta por trás)
 const HIDDEN_SIGHT := 4.0 # agachado dentro da grama alta
 const HEARING := 48.0 # tiros ouvidos daqui
 const ATTACK_RANGE := 1.25 # precisa encostar (antes 1,7 m: acertava de longe)
@@ -333,18 +336,18 @@ func _update_groan(delta: float) -> void:
 	if _groan_timer > 0.0:
 		return
 	match anim:
-		Anim.RUN, Anim.ATTACK: _groan_timer = randf_range(1.8, 4.0)
-		Anim.WALK: _groan_timer = randf_range(3.5, 8.0)
-		_: _groan_timer = randf_range(7.0, 15.0)
+		Anim.RUN, Anim.ATTACK: _groan_timer = randf_range(4.0, 8.0)
+		Anim.WALK: _groan_timer = randf_range(8.0, 16.0)
+		_: _groan_timer = randf_range(14.0, 26.0)
 	var now := Time.get_ticks_msec()
-	if now - _last_groan_ms < 450 or (_voice != null and _voice.playing):
+	if now - _last_groan_ms < 1500 or (_voice != null and _voice.playing):
 		return
 	var camera := get_viewport().get_camera_3d()
 	if camera == null or camera.global_position.distance_to(global_position) > 34.0:
 		return
 	_last_groan_ms = now
 	var chasing := anim == Anim.RUN or anim == Anim.ATTACK or (controlled and _target != null)
-	_play_voice(SfxBank.zombie_groan(randi() % 3), randf_range(0.9, 1.08), -2.0 if chasing else -5.0)
+	_play_voice(SfxBank.zombie_groan(randi() % 3), randf_range(0.92, 1.06), -7.0 if chasing else -10.0)
 
 # ---------------------------------------------------------------- quadro ---
 
@@ -427,6 +430,18 @@ func _sight_for(entry: Dictionary) -> float:
 		sight *= 0.65
 	return sight
 
+## Está na frente do zumbi (cone de visão) ou perto demais para passar despercebido.
+func _in_view_cone(node: Node3D, dist: float) -> bool:
+	if dist < NOTICE_CLOSE:
+		return true
+	var to := node.global_position - global_position
+	to.y = 0.0
+	var facing := -global_basis.z
+	facing.y = 0.0
+	if to.length_squared() < 0.0001 or facing.length_squared() < 0.0001:
+		return true
+	return facing.normalized().dot(to.normalized()) >= VIEW_CONE
+
 func _sees(node: Node3D) -> bool:
 	var from := global_position + Vector3(0, 1.6, 0)
 	var to := node.global_position + Vector3(0, 1.4, 0)
@@ -454,7 +469,7 @@ func _run_ai(delta: float) -> void:
 			return
 		var sight := float(near["range"])
 		if _target == null:
-			if float(near["dist"]) < sight and _sees(near["node"]):
+			if float(near["dist"]) < sight and _in_view_cone(near["node"], float(near["dist"])) and _sees(near["node"]):
 				_target = near["node"]
 				_target_id = str(near["id"])
 				_lost_timer = 0.0

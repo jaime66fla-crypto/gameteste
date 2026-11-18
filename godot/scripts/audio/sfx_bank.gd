@@ -292,22 +292,93 @@ static func zombie_bite() -> AudioStream:
 
 # -------------------------------------------------------------- zumbis ---
 
-## Rosnado do bote (posicional, sai do zumbi). Variações com tom diferente.
-static func zombie_snarl(variant: int) -> AudioStream:
-	return Synth.get_stream("zsnarl_%d" % variant, func(): return Synth.to_wav(_growl(801 + variant, 0.55, 105.0 + variant * 14.0, 1.35, 0.9)))
+# Vogais da voz do zumbi: [F1, F2, F3] em Hz (ressonâncias da garganta/boca).
+const VOWEL_OH := [430.0, 780.0, 2450.0] # "ôôô" do gemido
+const VOWEL_UH := [380.0, 950.0, 2350.0] # "uhh" fechado
+const VOWEL_AH := [720.0, 1180.0, 2600.0] # "ááá" aberto do bote
 
-## Gemido longo de zumbi perseguindo.
+## Rosnado do bote (posicional, sai do zumbi): "hhrrÁÁ" curto, mais ar.
+static func zombie_snarl(variant: int) -> AudioStream:
+	return Synth.get_stream("zsnarl_%d" % variant, func(): return Synth.to_wav(_voice(801 + variant, 0.6, 118.0 + variant * 12.0, 96.0 + variant * 8.0, VOWEL_UH, VOWEL_AH, 0.55, 0.5, 0.06)))
+
+## Gemido longo de zumbi perseguindo: "uuhhôôô" grave e arrastado.
 static func zombie_groan(variant: int) -> AudioStream:
-	return Synth.get_stream("zgroan_%d" % variant, func(): return Synth.to_wav(_growl(851 + variant, 1.3 + variant * 0.2, 72.0 + variant * 9.0, 0.85, 0.55)))
+	return Synth.get_stream("zgroan_%d" % variant, func(): return Synth.to_wav(_voice(851 + variant, 1.5 + variant * 0.25, 82.0 + variant * 7.0, 68.0 + variant * 5.0, VOWEL_UH, VOWEL_OH, 0.25, 0.35, 0.25)))
+
+## Voz sintetizada: pulsos das pregas vocais (com tremor, rouquidão e
+## falhas de período, como uma garganta machucada) + respiração, passando
+## por três formantes que deslizam da vogal `from` para `to`.
+## f0a→f0b: tom no começo e no fim; breath: quanto ar; creak: rouquidão;
+## attack: tempo até o volume cheio (s).
+static func _voice(seed_value: int, length: float, f0a: float, f0b: float, from: Array, to: Array, breath: float, creak: float, attack: float) -> PackedFloat32Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = seed_value
+	var n := int(length * Synth.RATE)
+	var source := Synth.buffer(length)
+	var phase := 0.0
+	var drift := 0.0
+	var period_gain := 1.0
+	var prev := 0.0
+	for i in n:
+		var t := float(i) / Synth.RATE
+		var k := t / length
+		drift = lerpf(drift, rng.randf_range(-1.0, 1.0), 0.002)
+		var f0 := lerpf(f0a, f0b, k) * (1.0 + 0.035 * sin(TAU * 4.3 * t) + 0.06 * drift)
+		phase += f0 / Synth.RATE
+		if phase >= 1.0:
+			phase -= 1.0
+			# Rouquidão: cada período sai com força um pouco diferente, às vezes fraco.
+			period_gain = 1.0 - creak * (rng.randf() * 0.6 + (0.5 if rng.randf() < creak * 0.35 else 0.0))
+		var p := phase
+		# Pulso glótico (Rosenberg): abre devagar, fecha rápido, fica fechado.
+		var g := 0.0
+		if p < 0.42:
+			g = 0.5 * (1.0 - cos(PI * p / 0.42))
+		elif p < 0.6:
+			g = cos(PI * (p - 0.42) / 0.36)
+		g *= period_gain
+		# Derivada = som irradiado pela boca (mais brilhante).
+		source[i] = (g - prev) * 6.0
+		prev = g
+	var air := Synth.noise(length, seed_value + 7)
+	Synth.lowpass(air, 3500.0)
+	# Ar entra mais nos pulsos (sopro modulado pela voz) e um pouco sempre.
+	for i in n:
+		source[i] += air[i] * breath * (0.35 + 0.65 * absf(source[i]))
+	# Formantes da vogal inicial e final, cruzadas no tempo (a boca se abre/fecha).
+	var a := _formants(source, from)
+	var b := _formants(source, to)
+	var out := Synth.buffer(length)
+	for i in n:
+		var k := float(i) / n
+		var mix_k := smoothstep(0.15, 0.85, k)
+		var env := minf(1.0, (float(i) / Synth.RATE) / maxf(attack, 0.01)) * pow(1.0 - k, 0.9)
+		out[i] = lerpf(a[i], b[i], mix_k) * env
+	Synth.highpass(out, 70.0)
+	Synth.lowpass(out, 4200.0)
+	Synth.saturate(out, 1.25)
+	out = Synth.echo(out, [0.07, 0.15], [0.18, 0.08], 1800.0) # espaço (não soa "dentro da cabeça")
+	Synth.normalize(out, 0.8)
+	Synth.fade_tail(out, 0.06)
+	return out
+
+static func _formants(source: PackedFloat32Array, vowel: Array) -> PackedFloat32Array:
+	var f1 := Synth.resonator(source, float(vowel[0]), 6.0)
+	var f2 := Synth.resonator(source, float(vowel[1]), 8.0)
+	var f3 := Synth.resonator(source, float(vowel[2]), 10.0)
+	var out := Synth.buffer(float(source.size()) / Synth.RATE)
+	for i in mini(out.size(), source.size()):
+		out[i] = f1[i] + f2[i] * 0.55 + f3[i] * 0.18 + source[i] * 0.03
+	return out
 
 ## Grito curto de dor quando o zumbi leva tiro/golpe.
 static func zombie_pain(variant: int) -> AudioStream:
-	return Synth.get_stream("zpain_%d" % variant, func(): return Synth.to_wav(_growl(871 + variant, 0.32, 150.0 + variant * 22.0, 1.7, 1.0)))
+	return Synth.get_stream("zpain_%d" % variant, func(): return Synth.to_wav(_voice(871 + variant, 0.38, 165.0 + variant * 15.0, 120.0 + variant * 10.0, VOWEL_AH, VOWEL_UH, 0.35, 0.45, 0.015)))
 
 ## Morte: gemido longo que cai de tom, com gorgolejo.
 static func zombie_death(variant: int) -> AudioStream:
 	return Synth.get_stream("zdeath_%d" % variant, func():
-		var b := _growl(891 + variant, 1.4, 120.0 + variant * 15.0, 0.55, 0.8)
+		var b := _voice(891 + variant, 1.5, 125.0 + variant * 12.0, 62.0, VOWEL_AH, VOWEL_OH, 0.45, 0.6, 0.03)
 		for i in b.size():
 			var t := float(i) / Synth.RATE
 			b[i] *= 0.55 + 0.45 * sin(t * TAU * (13.0 - t * 5.0))
@@ -321,35 +392,6 @@ static func zombie_death(variant: int) -> AudioStream:
 ## Zunido dos braços no golpe do zumbi.
 static func zombie_swipe() -> AudioStream:
 	return Synth.get_stream("zswipe", func(): return Synth.to_wav(_whoosh(811, 0.28, 0.4)))
-
-## Voz rouca: dente de serra com tremor, rascado por ruído, filtrado em formantes.
-static func _growl(seed_value: int, length: float, f0: float, rise: float, rasp: float) -> PackedFloat32Array:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed_value
-	var b := Synth.buffer(length)
-	var grit := Synth.noise(length, seed_value + 1)
-	Synth.lowpass(grit, 600.0)
-	var phase := 0.0
-	var jitter := 0.0
-	for i in b.size():
-		var t := float(i) / Synth.RATE
-		var k := t / length
-		jitter = lerpf(jitter, rng.randf_range(-1.0, 1.0), 0.01)
-		var f := f0 * lerpf(1.0, rise, sin(k * PI * 0.7)) * (1.0 + jitter * 0.12 + sin(t * TAU * 6.5) * 0.03)
-		phase = fmod(phase + f / Synth.RATE, 1.0)
-		var saw := phase * 2.0 - 1.0
-		b[i] = saw * (1.0 - rasp * 0.5 + rasp * grit[i] * 3.0)
-	var vowel := b.duplicate()
-	Synth.bandpass(vowel, 550.0, 1100.0)
-	Synth.bandpass(b, 120.0, 2200.0)
-	Synth.mix(b, vowel, 1.4)
-	# Envelope: entra rápido, sustenta e morre.
-	for i in b.size():
-		var k := float(i) / b.size()
-		b[i] *= minf(1.0, k * 12.0) * pow(1.0 - k, 1.4)
-	Synth.saturate(b, 2.2)
-	Synth.normalize(b, 0.85)
-	return b
 
 ## Zunido de ar: ruído com filtro que abre e fecha.
 static func _whoosh(seed_value: int, length: float, peak_at: float) -> PackedFloat32Array:

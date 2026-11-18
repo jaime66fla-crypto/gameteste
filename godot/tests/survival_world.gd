@@ -34,19 +34,33 @@ func _run() -> void:
 	var rid: String = world.resources.keys()[0]
 	world.call("set_depleted", rid, true)
 	check(bool(world.resources[rid]["depleted"]), "recurso coletado")
-	# Zumbi anfitrião persegue um alvo a 10 m em campo aberto.
+	# Cone de visão: alvo 10 m ATRÁS do zumbi (que olha para -Z) passa despercebido.
 	var spawn: Array = data["spawns"][0]
 	var target := Node3D.new()
 	root3d.add_child(target)
-	target.global_position = Vector3(float(spawn[0]) + 10.0, 0, float(spawn[1]))
+	target.global_position = Vector3(float(spawn[0]), 0, float(spawn[1]) + 10.0)
 	var z: CharacterBody3D = ZombieScript.new()
 	z.call("setup", "z1", "runner", 45)
 	root3d.add_child(z)
 	z.global_position = Vector3(float(spawn[0]), 0.3, float(spawn[1]))
+	z.rotation.y = 0.0
 	z.set("targets", func(): return [{"id": "p1", "node": target}])
 	z.call("set_controlled", true)
 	var bites := [0]
 	z.connect("attacked", func(_zid, tid): bites[0] += 1)
+	await physics_frame
+	z.set("_think", 0.0)
+	for i in 3:
+		await physics_frame
+	check(z.get("_target") == null, "zumbi não vê quem está atrás dele, longe")
+	z.global_position = Vector3(float(spawn[0]), 0.3, float(spawn[1]))
+	z.rotation.y = 0.0
+	z.set("_target", null)
+	z.set("_investigate", Vector3.INF)
+	# Zumbi anfitrião persegue um alvo a 10 m à frente, em campo aberto
+	# (vagueando na direção dele, para não virar de costas antes de vê-lo).
+	target.global_position = Vector3(float(spawn[0]), 0, float(spawn[1]) - 10.0)
+	z.set("_wander_goal", target.global_position)
 	var start: float = z.global_position.distance_to(target.global_position)
 	for i in 240:
 		await physics_frame

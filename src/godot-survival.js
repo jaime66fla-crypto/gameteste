@@ -37,7 +37,7 @@ const INTEREST_RANGE = 360;
 // Armas de fogo: mesmo dano por acerto do mata-mata (scripts/weapon_data.gd).
 const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
-const FIST_DAMAGE = 9;
+const FIST_DAMAGE = 12; // soco sem arma branca
 const MAX_HITS_PER_SECOND = 18;
 // Zumbis: andarilho, corredor (mais rápido, menos vida) e brutamontes.
 export const ZOMBIE_KINDS = {
