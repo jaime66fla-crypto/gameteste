@@ -192,6 +192,74 @@ test('backpacks are equipped on the back: carrying one in the pockets does not h
 	assert.equal(Object.values(room.state.bags)[0].items.backpack, 1, 'equipped bag drops on death');
 });
 
+test('helmet and vest: worn in their own slots, cut damage on the parts they cover, drop on death', async () => {
+	const { room } = makeWorld();
+	const shooter = await join(room);
+	const p = await join(room);
+	at(shooter, [0, 0, 0]);
+	at(p, [5, 0, 0]);
+	shooter.me().inv.w_rifle = 1;
+	p.me().inv = { helmet_military: 1, vest_military: 1, helmet_moto: 1 };
+	say(room, p, { t: 'equip', item: 'helmet_military' });
+	say(room, p, { t: 'equip', item: 'vest_military' });
+	assert.equal(p.me().head, 'helmet_military');
+	assert.equal(p.me().chest, 'vest_military');
+	assert.equal(p.me().back, '', 'armor does not take the back slot');
+	assert.equal(p.ws.last('inv').head, 'helmet_military');
+	assert.equal(p.ws.last('inv').weight, 1.2 + 1.5 + 5.5, 'worn armor still weighs');
+	say(room, p, { t: 'equip', item: 'helmet_moto' });
+	assert.equal(p.me().head, 'helmet_moto');
+	assert.equal(p.me().inv.helmet_military, 1, 'swapped helmet goes back to the inventory');
+	say(room, p, { t: 'equip', item: 'helmet_military' });
+
+	say(room, shooter, { t: 'hit', target: p.id, w: 'rifle', zone: 'head' });
+	assert.equal(p.me().hp, 100 - 27 * 2 * 0.6, 'helmet cuts 40% on the head');
+	p.me().hp = 100;
+	say(room, shooter, { t: 'hit', target: p.id, w: 'rifle', zone: 'chest' });
+	assert.equal(p.me().hp, Math.round((100 - 27 * 0.55) * 10) / 10, 'vest cuts 45% on the chest');
+	p.me().hp = 100;
+	say(room, shooter, { t: 'hit', target: p.id, w: 'rifle', zone: 'leg' });
+	assert.equal(p.me().hp, 100 - 27 * 0.7, 'legs are not covered');
+
+	say(room, p, { t: 'unequip', slot: 'head' });
+	assert.equal(p.me().head, '');
+	assert.equal(p.me().inv.helmet_military, 1);
+	say(room, p, { t: 'equip', item: 'helmet_military' });
+	room.damagePlayer(p.me(), 500, 'z1', 'zombie');
+	const bag = Object.values(room.state.bags)[0].items;
+	assert.equal(bag.helmet_military, 1, 'helmet drops on death');
+	assert.equal(bag.vest_military, 1, 'vest drops on death');
+	assert.equal(p.me().head, '');
+	assert.equal(p.me().chest, '');
+});
+
+test('gun hits on players: weapon range and a plausible head (from the target stance)', async () => {
+	const { room } = makeWorld();
+	const shooter = await join(room);
+	const p = await join(room);
+	at(shooter, [0, 0, 0]);
+	at(p, [100, 0, 0]);
+	shooter.me().inv = { w_shotgun: 1, w_rifle: 1 };
+	say(room, shooter, { t: 'hit', target: p.id, w: 'shotgun', zone: 'chest' });
+	assert.equal(p.me().hp, 100, 'shotgun does not reach 100 m');
+	say(room, p, { t: 's', p: [100, 0, 0], pr: true });
+	assert.equal(p.me().stance, 'prone');
+	say(room, shooter, { t: 'hit', target: p.id, w: 'rifle', zone: 'head', pt: [100, 1.7, 0] });
+	assert.equal(p.me().hp, 100 - 27, 'head at standing height of a prone player counts as chest');
+	say(room, shooter, { t: 'hit', target: p.id, w: 'rifle', zone: 'head', pt: [100.8, 0.3, 0] });
+	assert.equal(p.me().hp, 100 - 27 - 54, 'a real prone headshot still counts double');
+});
+
+test('ping is answered at once with the client clock (also while dead)', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	say(room, p, { t: 'ping', c: 123456 });
+	assert.deepEqual(p.ws.last('pong'), { t: 'pong', c: 123456 });
+	p.me().dead = true;
+	say(room, p, { t: 'ping', c: 'x' });
+	assert.deepEqual(p.ws.last('pong'), { t: 'pong', c: 0 }, 'junk clock becomes 0');
+});
+
 test('take is capped by weight', async () => {
 	const { room } = makeWorld();
 	const p = await join(room);

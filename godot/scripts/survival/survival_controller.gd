@@ -104,7 +104,7 @@ func _ready() -> void:
 	my_hp = float(you.get("hp", 100))
 	hunger = float(you.get("hunger", 100))
 	thirst = float(you.get("thirst", 100))
-	_apply_inventory(you.get("inv", {}), float(you.get("weight", 0)), float(you.get("cap", 10)), str(you.get("back", "")))
+	_apply_inventory(you)
 	for entry in info.get("roster", []):
 		_add_actor(entry)
 	_spawn_zombies(info.get("zombies", []))
@@ -210,9 +210,7 @@ func _on_message(data: Dictionary) -> void:
 				# Dirigindo: o corpo some (está dentro do carro).
 				actor.visible = str(data.get("dv", "")).is_empty()
 				actor.call("set_action", str(data.get("act", "")), str(data.get("tool", "")))
-				var visual = actor.get("visual")
-				if visual != null and visual.has_method("set_backpack"):
-					visual.call("set_backpack", str(data.get("bp", "")))
+				_dress(actor.get("visual"), str(data.get("bp", "")))
 		"join":
 			_add_actor(data)
 		"leave":
@@ -265,7 +263,7 @@ func _on_message(data: Dictionary) -> void:
 		"hp":
 			_on_health(data)
 		"inv":
-			_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 10)), str(data.get("back", "")))
+			_apply_inventory(data)
 		"stats":
 			my_hp = float(data.get("hp", my_hp))
 			hunger = float(data.get("hunger", hunger))
@@ -355,9 +353,7 @@ func _add_sleeper(entry: Dictionary) -> void:
 	actor.position = p
 	main_node.add_child(actor)
 	actor.call("sleep", float(entry.get("y", 0.0)))
-	var visual = actor.get("visual")
-	if visual != null and visual.has_method("set_backpack"):
-		visual.call("set_backpack", str(entry.get("bp", "")))
+	_dress(actor.get("visual"), str(entry.get("bp", "")))
 	sleepers[id] = actor
 
 func _spawn_zombies(list: Array) -> void:
@@ -398,7 +394,8 @@ func _on_target_damaged(target_id: String, zone: String, point: Vector3, normal:
 		return
 	if weapon.is_empty():
 		weapon = str(player.get("current_weapon"))
-	Net.send({"t": "hit", "target": target_id, "zone": zone, "w": weapon})
+	# pt = onde a bala bateu (o servidor confere se a cabeça estava ali).
+	Net.send({"t": "hit", "target": target_id, "zone": zone, "w": weapon, "pt": [point.x, point.y, point.z]})
 	var headshot := zone == "head"
 	combat_feedback.call("show_hit", headshot)
 	player.get("sound_fx").call("hit_confirm", headshot)
@@ -499,20 +496,29 @@ func _on_respawned(data: Dictionary) -> void:
 	my_hp = float(data.get("hp", 100))
 	hunger = float(data.get("hunger", 85))
 	thirst = float(data.get("thirst", 85))
-	_apply_inventory(data.get("inv", {}), float(data.get("weight", 0)), float(data.get("cap", 10)), str(data.get("back", "")))
+	_apply_inventory(data)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 # --------------------------------------------------------------- mochila ---
 
+## Mostra no personagem a mochila que o servidor mandou (capacete e colete não aparecem).
+static func _dress(visual, back: String) -> void:
+	if visual != null and visual.has_method("set_backpack"):
+		visual.call("set_backpack", back)
+
 ## O servidor mandou a mochila: armas aparecem/somem e a munição vira reserva.
-func _apply_inventory(new_inv: Dictionary, weight: float, cap: float, back: String = "") -> void:
+func _apply_inventory(data: Dictionary) -> void:
+	var new_inv: Dictionary = data.get("inv", {})
+	var weight := float(data.get("weight", 0))
+	var cap := float(data.get("cap", 10))
+	var back := str(data.get("back", ""))
+	var head := str(data.get("head", ""))
+	var chest := str(data.get("chest", ""))
 	inv = new_inv
 	carried = weight
 	carry_cap = cap
-	inventory.call("set_inventory", inv, weight, cap, back)
-	var avatar = player.get("humanoid_avatar")
-	if avatar != null and avatar.has_method("set_backpack"):
-		avatar.call("set_backpack", back)
+	inventory.call("set_inventory", inv, weight, cap, back, head, chest)
+	_dress(player.get("humanoid_avatar"), back)
 	var owned: Dictionary = player.get("owned_weapons")
 	for item in inv:
 		var w := SurvivalData.weapon_of(str(item))
@@ -978,7 +984,7 @@ func _build_ui() -> void:
 	inventory.connect("use_requested", _on_use)
 	inventory.connect("craft_requested", _on_craft)
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
-	inventory.connect("unequip_requested", func(): Net.send({"t": "unequip"}))
+	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
 	death_panel = PanelContainer.new()
 	death_panel.visible = false
 	death_panel.set_anchors_preset(Control.PRESET_CENTER)

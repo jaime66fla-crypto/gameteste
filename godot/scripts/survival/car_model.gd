@@ -56,6 +56,39 @@ static func build(kind: String, color_hex: String, wreck: bool, seed_value: int 
 			pivot.scale = Vector3(1, 0.75, 1)
 	return root
 
+## Níveis de detalhe pela distância: rodas até `wheels_end`, carroceria até
+## `body_end` e, dali até `proxy_end` (0 = sem fim), um bloco só na cor do
+## carro no lugar da carroceria de várias superfícies e das 4 rodas.
+static func apply_lod(model: Node3D, kind: String, color_hex: String, wheels_end: float, body_end: float, proxy_end: float, margin: float = 6.0) -> void:
+	for node in model.find_children("*", "GeometryInstance3D", true, false):
+		var g := node as GeometryInstance3D
+		var is_body := g.name == "Body"
+		g.visibility_range_end = body_end if is_body else wheels_end
+		g.visibility_range_end_margin = margin
+		if not is_body:
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var spec: Dictionary = KINDS.get(kind, KINDS["sedan"])
+	var proxy := MeshInstance3D.new()
+	proxy.name = "FarProxy"
+	var box := BoxMesh.new()
+	box.size = Vector3(float(spec["w"]), float(spec["roof"]) * 0.82, float(spec["l"]) * 0.96)
+	proxy.mesh = box
+	proxy.position.y = float(spec["roof"]) * 0.45
+	var key := "proxy" + color_hex
+	if not _mat_cache.has(key):
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(color_hex).darkened(0.15)
+		mat.roughness = 0.6
+		_mat_cache[key] = mat
+	proxy.material_override = _mat_cache[key]
+	proxy.set_meta("paint", _mat_cache[key]) # quem troca o material (carro queimado) volta para este
+	proxy.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	proxy.visibility_range_begin = body_end
+	proxy.visibility_range_begin_margin = margin
+	proxy.visibility_range_end = proxy_end
+	proxy.visibility_range_end_margin = margin if proxy_end > 0.0 else 0.0
+	model.add_child(proxy)
+
 ## Dimensões para a colisão.
 static func size_of(kind: String) -> Vector3:
 	var spec: Dictionary = KINDS.get(kind, KINDS["sedan"])

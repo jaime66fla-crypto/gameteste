@@ -39,7 +39,12 @@ func _run() -> void:
 	else:
 		_check(false, "Rank list has a toggle button")
 	var friends_button := menu.find_child("FriendsButton", true, false) as Button
-	_check(friends_button != null and friends_button.text.contains("1 pedido"), "Main menu shows Amigos with pending requests")
+	var badge_text := ""
+	var badge := friends_button.find_child("Badge", false, false) if friends_button != null else null
+	if badge != null:
+		for label in badge.find_children("*", "Label", true, false):
+			badge_text += (label as Label).text
+	_check(badge_text.to_lower().contains("1 pedido"), "Main menu shows Amigos with pending requests")
 	var ladder := menu.find_child("RankLadder", true, false) as RichTextLabel
 	_check(ladder != null and ladder.text.contains("Marechal 70000") and ladder.text.contains("[b]Recruta 0[/b]"), "Main menu lists every rank, current one highlighted")
 	menu.call("_show_friends")

@@ -2129,50 +2129,109 @@ func _on_friends_updated(_data: Dictionary) -> void:
     if invite_side != null and invite_side.visible and not Net.party_info.is_empty():
         _fill_invite_list()
 
+const FRIEND_DANGER := Color("#e0705e")
+
 ## Friends screen: add by name, answer requests, see who is online / in a room.
+## Cartão de adicionar no topo; lista em seções (pedidos, online, offline) com
+## avatar, nome, patente e estado; rola quando passa da tela.
 func _show_friends(message: String = "") -> void:
     _clear()
-    _set_page_width(560.0)
-    _label("AMIGOS",28,Color("#f0f2e9"))
-    _label("Adicione pelo nome de jogador. Na sala personalizada aparece a lista para convidar.",13,Color("#9bad9f"))
+    _set_page_width(ONLINE_PAGE_WIDTH)
+    _screen_header("Social", "Amigos", "Adicione pelo nome e convide para a sua sala.")
+    var add_card := _card(content, "FriendAddCard")
+    add_card.add_theme_constant_override("separation", 8)
+    add_card.add_child(_plain("ADICIONAR AMIGO", 12, MUTED, caps_font))
     var row := HBoxContainer.new()
-    row.add_theme_constant_override("separation",8)
-    content.add_child(row)
+    row.add_theme_constant_override("separation", 8)
+    add_card.add_child(row)
     var field := LineEdit.new()
     field.name = "FriendNameField"
     field.placeholder_text = "Nome do jogador"
     field.max_length = 16
-    field.custom_minimum_size.y = 42
+    field.clear_button_enabled = true
+    field.custom_minimum_size.y = 44
     field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(field)
-    var add := Button.new()
-    add.name = "AddFriendButton"
-    add.text = "Adicionar"
-    add.custom_minimum_size = Vector2(120,42)
-    row.add_child(add)
-    var feedback := _label(message,14,Color("#ffe08a"))
+    var add := _button("Adicionar", "AddFriendButton", Callable(), true, row)
+    add.custom_minimum_size = Vector2(128, 44)
+    var feedback := _wrap("", 13, ACCENT)
     feedback.name = "FriendsFeedback"
+    add_card.add_child(feedback)
+    _friends_feedback(feedback, message)
     add.pressed.connect(func():
         if field.text.strip_edges().length() < 3:
-            feedback.text = "Digite o nome do jogador."
+            _friends_feedback(feedback, "Digite o nome do jogador (3 letras ou mais).")
             return
         add.disabled = true
-        var result: String = await Net.friend_action("add",field.text)
+        var result: String = await Net.friend_action("add", field.text)
         if is_instance_valid(feedback):
-            feedback.text = result
+            _friends_feedback(feedback, result)
             add.disabled = false
             field.text = "")
     field.text_submitted.connect(func(_text): add.pressed.emit())
+    var scroll := ScrollContainer.new()
+    scroll.name = "FriendsScroll"
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    content.add_child(scroll)
     var list := VBoxContainer.new()
     list.name = "FriendsList"
-    list.add_theme_constant_override("separation",6)
-    content.add_child(list)
-    _button("Voltar","BackButton",func():
+    list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    list.add_theme_constant_override("separation", 6)
+    scroll.add_child(list)
+    _button("Voltar", "BackButton", func():
         friends_screen_open = false
         _show_main())
     friends_screen_open = true
     _fill_friends()
     Net.poll_friends()
+
+## Mensagem do cartão de adicionar: some quando vazia (sem buraco na tela).
+func _friends_feedback(label: Label, text: String) -> void:
+    if label == null or not is_instance_valid(label):
+        return
+    label.text = text
+    label.visible = not text.is_empty()
+
+## Linha da lista: cartão com avatar, nome, patente · estado e botões à direita.
+func _friend_row(row_name: String, player_name: String, online: bool, avatar: int, detail: String, detail_color: Color) -> HBoxContainer:
+    var panel := PanelContainer.new()
+    panel.name = row_name
+    var box := _box(Color(1, 1, 1, 0.04 if online else 0.02), LINE, 1, 8)
+    box.content_margin_left = 10
+    box.content_margin_right = 8
+    box.content_margin_top = 7
+    box.content_margin_bottom = 7
+    panel.add_theme_stylebox_override("panel", box)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 10)
+    panel.add_child(row)
+    row.add_child(_avatar_badge(player_name, online, 36.0, avatar))
+    var words := VBoxContainer.new()
+    words.add_theme_constant_override("separation", 0)
+    words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(words)
+    var name_label := _plain(player_name, 15, TEXT if online else MUTED, semi_font)
+    name_label.clip_text = true
+    name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+    words.add_child(name_label)
+    var detail_label := _plain(detail, 12, detail_color)
+    detail_label.clip_text = true
+    detail_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+    words.add_child(detail_label)
+    var list := content.get_node_or_null("FriendsScroll/FriendsList")
+    if list != null:
+        list.add_child(panel)
+    return row
+
+## Título de seção da lista ("PEDIDOS · 1", "ONLINE · 2"...).
+func _friends_section(list: VBoxContainer, text: String, count: int, color: Color) -> void:
+    var label := _plain("%s  ·  %d" % [text.to_upper(), count], 11, color, caps_font)
+    if list.get_child_count() > 0:
+        var gap := Control.new()
+        gap.custom_minimum_size.y = 6
+        list.add_child(gap)
+    list.add_child(label)
 
 func _status_text(friend: Dictionary) -> String:
     match str(friend.get("status","offline")):
@@ -2186,65 +2245,101 @@ func _status_text(friend: Dictionary) -> String:
     return "offline"
 
 func _fill_friends() -> void:
-    var list := content.get_node_or_null("FriendsList") as VBoxContainer
+    var list := content.get_node_or_null("FriendsScroll/FriendsList") as VBoxContainer
+    var scroll := content.get_node_or_null("FriendsScroll") as ScrollContainer
     if list == null:
         return
     for child in list.get_children():
+        list.remove_child(child)
         child.queue_free()
-    var feedback := content.get_node_or_null("FriendsFeedback") as Label
+    var feedback := content.find_child("FriendsFeedback", true, false) as Label
     var data: Dictionary = Net.friends_data
-    for requester in data.get("requests",[]):
-        var row := HBoxContainer.new()
-        row.add_theme_constant_override("separation",8)
-        var label := Label.new()
-        label.text = "%s quer ser seu amigo" % requester
-        label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        label.add_theme_color_override("font_color",Color("#ffe08a"))
-        row.add_child(label)
-        for action in [["accept","Aceitar"],["decline","Recusar"]]:
-            var button := Button.new()
-            button.text = action[1]
-            button.name = "Request_%s_%s" % [action[0],requester]
-            button.pressed.connect(func():
-                var result: String = await Net.friend_action(action[0],requester)
-                if feedback != null and is_instance_valid(feedback):
-                    feedback.text = result)
-            row.add_child(button)
-        list.add_child(row)
-    var friends: Array = data.get("friends",[])
-    if friends.is_empty():
-        var empty := Label.new()
-        empty.text = "Você ainda não tem amigos adicionados."
-        empty.add_theme_color_override("font_color",Color("#7f9187"))
-        list.add_child(empty)
+    var requests: Array = data.get("requests", [])
+    var friends: Array = (data.get("friends", []) as Array).duplicate()
+    friends.sort_custom(func(a, b):
+        var oa := bool(a.get("online", false))
+        var ob := bool(b.get("online", false))
+        return oa if oa != ob else str(a.get("name", "")).naturalnocasecmp_to(str(b.get("name", ""))) < 0)
+    var rows := 0
+    # Pedidos de amizade primeiro (com Aceitar em destaque).
+    if not requests.is_empty():
+        _friends_section(list, "Pedidos", requests.size(), ACCENT)
+        for requester in requests:
+            var row := _friend_row("FriendRequest_" + str(requester), str(requester), true, 0, "quer ser seu amigo", ACCENT)
+            for action in [["accept", "Aceitar", true], ["decline", "Recusar", false]]:
+                var button := _small_button(action[1], "Request_%s_%s" % [action[0], requester], action[2], row)
+                button.custom_minimum_size = Vector2(84, 32)
+                button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+                button.pressed.connect(func():
+                    button.disabled = true
+                    var result: String = await Net.friend_action(action[0], requester)
+                    _friends_feedback(feedback, result))
+            rows += 1
+    var online_count := 0
     for friend in friends:
-        var row := HBoxContainer.new()
-        row.add_theme_constant_override("separation",8)
-        var label := Label.new()
-        var online := bool(friend.get("online",false))
-        label.text = "%s  [%s]  •  %s" % [friend.get("name",""),friend.get("rank",""),_status_text(friend)]
-        label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        label.add_theme_color_override("font_color",Color("#a8e08c") if online else Color("#7f9187"))
-        row.add_child(label)
-        var friend_name := str(friend.get("name",""))
-        var code := str(friend.get("code",""))
-        if not code.is_empty():
-            var join := Button.new()
-            join.text = "Entrar na sala"
-            join.name = "JoinFriend_" + friend_name
-            join.pressed.connect(func():
-                friends_screen_open = false
-                _connect_party(code))
-            row.add_child(join)
-        var remove := Button.new()
-        remove.text = "Remover"
-        remove.name = "RemoveFriend_" + friend_name
-        remove.pressed.connect(func():
-            var result: String = await Net.friend_action("remove",friend_name)
-            if feedback != null and is_instance_valid(feedback):
-                feedback.text = result)
-        row.add_child(remove)
-        list.add_child(row)
+        if bool(friend.get("online", false)):
+            online_count += 1
+    if friends.is_empty():
+        if requests.is_empty():
+            var empty := _wrap("Você ainda não tem amigos. Digite o nome de um jogador acima e clique em Adicionar: ele recebe o pedido no menu.", 13, MUTED)
+            empty.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+            list.add_child(empty)
+            rows += 1
+    else:
+        var section_done := {}
+        for friend in friends:
+            var online := bool(friend.get("online", false))
+            var key := "online" if online else "offline"
+            if not section_done.has(key):
+                section_done[key] = true
+                if online:
+                    _friends_section(list, "Online", online_count, ONLINE_GREEN)
+                else:
+                    _friends_section(list, "Offline", friends.size() - online_count, DIM)
+            var friend_name := str(friend.get("name", ""))
+            var status := _status_text(friend)
+            var status_color := ONLINE_GREEN if str(friend.get("status", "")) == "menu" else (ACCENT if online else DIM)
+            var rank := str(friend.get("rank", ""))
+            var detail := "%s  ·  %s" % [rank, status] if not rank.is_empty() else status
+            var row := _friend_row("Friend_" + friend_name, friend_name, online, int(friend.get("avatar", 0)), detail, status_color)
+            var code := str(friend.get("code", ""))
+            if not code.is_empty():
+                var join := _small_button("Entrar na sala", "JoinFriend_" + friend_name, true, row)
+                join.custom_minimum_size.y = 32
+                join.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+                join.pressed.connect(func():
+                    friends_screen_open = false
+                    _connect_party(code))
+            _friend_remove_button(row, friend_name, feedback)
+            rows += 1
+    # A lista cresce até caber na janela (título, cartão e Voltar sempre visíveis); depois rola.
+    if scroll != null:
+        var room := clampf(get_viewport_rect().size.y - 470.0, 150.0, 420.0)
+        scroll.custom_minimum_size.y = clampf(rows * 60.0 + 30.0, 60.0, room)
+
+## "Remover" pede confirmação: o primeiro clique vira "Confirmar?" por 3 s.
+func _friend_remove_button(row: HBoxContainer, friend_name: String, feedback: Label) -> void:
+    var remove := _small_button("Remover", "RemoveFriend_" + friend_name, false, row)
+    remove.custom_minimum_size = Vector2(92, 32)
+    remove.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    remove.tooltip_text = "Remover %s da lista de amigos" % friend_name
+    remove.add_theme_color_override("font_color", MUTED)
+    remove.add_theme_color_override("font_hover_color", FRIEND_DANGER)
+    var armed := [false]
+    remove.pressed.connect(func():
+        if not armed[0]:
+            armed[0] = true
+            remove.text = "Confirmar?"
+            remove.add_theme_color_override("font_color", FRIEND_DANGER)
+            get_tree().create_timer(3.0).timeout.connect(func():
+                if is_instance_valid(remove):
+                    armed[0] = false
+                    remove.text = "Remover"
+                    remove.add_theme_color_override("font_color", MUTED))
+            return
+        remove.disabled = true
+        var result: String = await Net.friend_action("remove", friend_name)
+        _friends_feedback(feedback, result))
 
 ## Lista de amigos compacta na lateral direita da sala personalizada (fora do
 ## cartão da sala, que fica só com código, equipes e "pronto"). Online primeiro,

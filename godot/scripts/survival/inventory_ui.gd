@@ -14,13 +14,14 @@ signal drop_requested(item: String, all: bool)
 signal use_requested(item: String)
 signal craft_requested(recipe: String)
 signal equip_requested(item: String)
-signal unequip_requested()
+signal unequip_requested(slot: String)
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
-const CAT_ORDER := ["weapon", "ammo", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
-const CAT_NAME := {"weapon": "Armas", "ammo": "Munição", "melee": "Armas brancas e ferramentas", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "fuel": "Combustível", "material": "Materiais"}
-const CAT_COLOR := {"weapon": Color("#d0574a"), "ammo": Color("#d6a23e"), "melee": Color("#b9824f"), "medical": Color("#e05a6a"), "food": Color("#8fbf5a"), "drink": Color("#4aa3d8"), "gear": Color("#7f9a5b"), "fuel": Color("#e08a2e"), "material": Color("#9a9389")}
-const CAT_GLYPH := {"weapon": "A", "ammo": "M", "melee": "F", "medical": "+", "food": "C", "drink": "B", "gear": "E", "fuel": "G", "material": "•"}
+const CAT_ORDER := ["weapon", "ammo", "armor", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
+const CAT_NAME := {"weapon": "Armas", "ammo": "Munição", "armor": "Proteção", "melee": "Armas brancas e ferramentas", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "fuel": "Combustível", "material": "Materiais"}
+const CAT_COLOR := {"weapon": Color("#d0574a"), "ammo": Color("#d6a23e"), "armor": Color("#6f8fb0"), "melee": Color("#b9824f"), "medical": Color("#e05a6a"), "food": Color("#8fbf5a"), "drink": Color("#4aa3d8"), "gear": Color("#7f9a5b"), "fuel": Color("#e08a2e"), "material": Color("#9a9389")}
+const CAT_GLYPH := {"weapon": "A", "ammo": "M", "armor": "P", "melee": "F", "medical": "+", "food": "C", "drink": "B", "gear": "E", "fuel": "G", "material": "•"}
+const ARMOR_PART := {"head": "na cabeça", "chest": "no peito e quadril"}
 # Paleta
 const BG := Color("#14181c")
 const PANEL := Color("#1c2228")
@@ -35,6 +36,8 @@ var inv: Dictionary = {}
 var weight := 0.0
 var cap := 10.0
 var back := "" # mochila equipada nas costas
+var head := "" # capacete
+var chest := "" # colete
 var weapon := "" # arma na mão (só mostra)
 var status: Dictionary = {"hp": 100.0, "hunger": 100.0, "thirst": 100.0}
 var container_id := ""
@@ -270,11 +273,13 @@ func close() -> void:
 func close_inventory() -> void:
 	close()
 
-func set_inventory(new_inv: Dictionary, new_weight: float, new_cap: float, new_back: String = "") -> void:
+func set_inventory(new_inv: Dictionary, new_weight: float, new_cap: float, new_back: String = "", new_head: String = "", new_chest: String = "") -> void:
 	inv = new_inv
 	weight = new_weight
 	cap = new_cap
 	back = new_back
+	head = new_head
+	chest = new_chest
 	_refresh()
 
 func set_status(hp: float, hunger: float, thirst: float, weapon_name: String = "") -> void:
@@ -321,6 +326,8 @@ func _describe(id: String) -> String:
 		parts.append("Rende mais em " + ("árvores" if str(entry["tool"]) == "wood" else "pedras e carros"))
 	if entry.has("carry"):
 		parts.append("+%d kg de carga (equipar nas costas)" % int(entry["carry"]))
+	if entry.has("armor"):
+		parts.append("−%d%% de dano %s (vestir)" % [roundi(float(entry["armor"]) * 100), ARMOR_PART.get(str(entry.get("slot", "")), "")])
 	if entry.has("ammo"):
 		parts.append("Usa " + SurvivalData.item_name(str(entry["ammo"])))
 	if entry.has("fuel"):
@@ -397,28 +404,10 @@ func _refresh() -> void:
 func _refresh_left() -> void:
 	_clear(_equip_box)
 	_clear(_status_box)
-	# Costas
-	var back_card := PanelContainer.new()
-	back_card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	back_card.add_child(row)
-	row.add_child(_icon("gear"))
-	var text := VBoxContainer.new()
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.add_theme_constant_override("separation", 0)
-	row.add_child(text)
-	text.add_child(_label("Costas", 11, MUTED))
-	if back.is_empty():
-		text.add_child(_label("Só bolsos (%d kg)" % int(SurvivalData.catalog().get("carry_base", 10)), 13, TEXT))
-	else:
-		text.add_child(_label(SurvivalData.item_name(back), 13, TEXT))
-		text.add_child(_label("+%d kg de carga" % int(SurvivalData.item(back).get("carry", 0)), 11, Color("#8fbf8a")))
-		var off := _button("Tirar")
-		off.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		off.pressed.connect(func(): unequip_requested.emit())
-		row.add_child(off)
-	_equip_box.add_child(back_card)
+	# Cabeça, peito e costas
+	_equip_box.add_child(_slot_card("Cabeça", "head", head, "armor", "Sem capacete"))
+	_equip_box.add_child(_slot_card("Peito", "chest", chest, "armor", "Sem colete"))
+	_equip_box.add_child(_slot_card("Costas", "back", back, "gear", "Só bolsos (%d kg)" % int(SurvivalData.catalog().get("carry_base", 10))))
 	# Arma e ferramenta
 	for spec in [["Arma na mão", weapon if not weapon.is_empty() else "Nenhuma", "weapon"], ["Melhor arma branca", _best_melee_name(), "melee"]]:
 		var card := PanelContainer.new()
@@ -457,6 +446,32 @@ func _refresh_left() -> void:
 		line.add_child(value)
 		_status_box.add_child(line)
 
+## Cartão de um espaço do corpo: o que está vestido, o efeito e o botão Tirar.
+func _slot_card(title: String, slot: String, item_id: String, cat: String, empty_text: String) -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	card.add_child(row)
+	row.add_child(_icon(cat))
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 0)
+	row.add_child(text)
+	text.add_child(_label(title, 11, MUTED))
+	if item_id.is_empty():
+		text.add_child(_label(empty_text, 13, TEXT))
+		return card
+	var entry := SurvivalData.item(item_id)
+	text.add_child(_label(SurvivalData.item_name(item_id), 13, TEXT))
+	var effect := "+%d kg de carga" % int(entry.get("carry", 0)) if entry.has("carry") else "−%d%% de dano" % roundi(float(entry.get("armor", 0)) * 100)
+	text.add_child(_label(effect, 11, Color("#8fbf8a")))
+	var off := _button("Tirar")
+	off.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	off.pressed.connect(func(): unequip_requested.emit(slot))
+	row.add_child(off)
+	return card
+
 func _best_melee_name() -> String:
 	var best: Array = SurvivalData.best_melee(inv)
 	return "Soco (%d)" % int(best[1]) if str(best[0]).is_empty() else "%s (%d)" % [SurvivalData.item_name(str(best[0])), int(best[1])]
@@ -483,6 +498,8 @@ func _refresh_items() -> void:
 			buttons.append(["Usar", func(): use_requested.emit(id), true])
 		if str(entry.get("slot", "")) == "back":
 			buttons.append(["Equipar", func(): equip_requested.emit(id), true])
+		elif str(entry.get("slot", "")) in ["head", "chest"]:
+			buttons.append(["Vestir", func(): equip_requested.emit(id), true])
 		buttons.append(["Largar", func(): drop_requested.emit(id, false)])
 		_items.add_child(_card(id, int(inv[id]), buttons))
 

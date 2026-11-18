@@ -293,9 +293,19 @@ func _build_ui() -> void:
     fps_label.offset_right = -6
     fps_label.offset_top = 2
     fps_label.offset_bottom = 16
+    # Ping logo abaixo, mesmo estilo (só nas partidas online).
+    ping_label = fps_label.duplicate() as Label
+    ping_label.name = "PingCounter"
+    layer.add_child(ping_label)
+    ping_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
+    ping_label.offset_left = -90
+    ping_label.offset_right = -6
+    ping_label.offset_top = 15
+    ping_label.offset_bottom = 29
     _update_fps_label()
 
 var fps_label: Label
+var ping_label: Label
 var _fps_timer := 0.0
 
 ## Atualiza 2× por segundo (número estável, sem ficar tremendo).
@@ -305,6 +315,14 @@ func _update_fps_label() -> void:
     var fps := Engine.get_frames_per_second()
     fps_label.text = "%d FPS" % fps
     fps_label.add_theme_color_override("font_color", Color("#8fe08a") if fps >= 55 else (Color("#ffd166") if fps >= 30 else Color("#ff6a55")))
+    if ping_label != null:
+        var ping := float(Net.ping_ms)
+        ping_label.text = ping_text(ping)
+        ping_label.add_theme_color_override("font_color", Color("#8e979e") if ping < 0.0 else (Color("#8fe08a") if ping < 80.0 else (Color("#ffd166") if ping < 150.0 else Color("#ff6a55"))))
+
+## "42 ms" (verde até 80, amarelo até 150, vermelho acima); "— ms" sem medida.
+static func ping_text(ping: float) -> String:
+    return "— ms" if ping < 0.0 else "%d ms" % roundi(ping)
 
 ## Simple clock: dark disc, a sweep that fills clockwise, label and seconds left.
 func _draw_action_clock() -> void:
@@ -405,6 +423,8 @@ func _process(_delta: float) -> void:
             minimap.visible = not cinematic
         if fps_label != null:
             fps_label.visible = not cinematic
+        if ping_label != null:
+            ping_label.visible = not cinematic and Net.in_match # treino offline não tem servidor
         var scoped: bool = player.is_scope_active()
         scope_overlay.visible = scoped
         action_state = player.action_progress()

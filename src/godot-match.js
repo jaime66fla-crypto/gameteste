@@ -10,6 +10,7 @@
 // Spawns (one per building) and loot spots, shared with the Godot client.
 import layout from '../godot/data/match_layout.json' with { type: 'json' };
 import { resolveSession, rankFor, XP_REWARDS } from './godot-accounts.js';
+import { HitCheck, stanceOf } from './godot-hitcheck.js';
 
 const CAPACITY = 8;
 // Loot: everyone starts unarmed; crates hold one weapon plus reserve ammo.
@@ -214,6 +215,7 @@ export class GodotMatch {
 		this.env = env;
 		this.sessions = new Map(); // player id -> WebSocket
 		this.hitLog = new Map(); // attacker id -> recent hit timestamps
+		this.hitCheck = new HitCheck(); // alcance, cabeça plausível e taxa de tiros na cabeça
 		this.match = this.fresh('');
 		ctx.blockConcurrencyWhile(async () => {
 			const saved = await ctx.storage.get('match');
@@ -482,6 +484,8 @@ export class GodotMatch {
 			return;
 		}
 		if (!d || typeof d !== 'object') return;
+		// Ping: devolve na hora o relógio do jogo, que mede o tempo de ida e volta.
+		if (d.t === 'ping') return this.send(ws, { t: 'pong', c: finite(d.c, 1e15) ? d.c : 0 });
 		if (m.phase === 'waiting') return this.partyMessage(meta.id, d, ws);
 		if (m.phase !== 'running') return;
 		const isHost = meta.id === m.host;
@@ -491,6 +495,7 @@ export class GodotMatch {
 				const state = cleanState(d);
 				if (!state) return;
 				me.p = state.p; // last known position, for loot range and death drops
+				me.stance = stanceOf(state); // a cabeça de quem está agachado/deitado fica mais baixa
 				this.broadcast({ t: 's', id: meta.id, ...state }, meta.id);
 				return;
 			}
@@ -504,6 +509,7 @@ export class GodotMatch {
 					const state = cleanState(entry);
 					if (!state) continue;
 					bot.p = state.p;
+					bot.stance = stanceOf(state);
 					list.push({ id: bot.id, ...state });
 				}
 				if (list.length) this.broadcast({ t: 'b', l: list }, meta.id);
@@ -599,7 +605,13 @@ export class GodotMatch {
 				if (!target || target.dead || target.id === attacker.id) return;
 				if (m.party && target.team === attacker.team) return; // no friendly fire
 				let damage = 0;
-				const zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
+				let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
+				if (!attacker.bot) {
+					// Alcance da arma e cabeça plausível (cabeça duvidosa vale como peito).
+					const verdict = this.hitCheck.check({ attacker, target, weapon: d.w, zone, point: d.pt });
+					if (!verdict.ok) return;
+					zone = verdict.zone;
+				}
 				if (attacker.bot) damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), BOT_DAMAGE) : 0;
 				// Human hits: the server computes damage from weapon and body zone.
 				else if (zone) damage = (WEAPON_DAMAGE[d.w] || 0) * ZONE_MULTIPLIER[zone];
@@ -817,6 +829,7 @@ export class GodotMatch {
 		room.leader = players[m.leader] ? m.leader : Object.keys(players)[0];
 		this.match = room;
 		this.hitLog.clear();
+		this.hitCheck.reset();
 		this.save();
 		this.broadcastParty();
 	}
@@ -843,6 +856,7 @@ export class GodotMatch {
 	reset() {
 		this.sessions.clear();
 		this.hitLog.clear();
+		this.hitCheck.reset();
 		this.match = this.fresh('');
 		this.ctx.waitUntil(this.ctx.storage.deleteAll());
 	}

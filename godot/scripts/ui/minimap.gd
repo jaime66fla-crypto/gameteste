@@ -60,6 +60,68 @@ func _ready() -> void:
 	_canvas.draw.connect(_draw_map)
 	disc.add_child(_canvas)
 	_bake()
+	_build_coords()
+
+# ----------------------------------------------------------- coordenadas ---
+# Ao lado do minimapa: posição em metros a partir do canto noroeste do mapa
+# (X cresce para o leste, Y para o sul) e para onde o jogador está olhando.
+const COMPASS := ["N", "NE", "L", "SE", "S", "SO", "O", "NO"]
+var _coords_label: Label
+var _heading_label: Label
+var _last_coords := Vector3i(-99999, -99999, -1)
+
+func _build_coords() -> void:
+	var panel := PanelContainer.new()
+	panel.name = "Coords"
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.05, 0.06, 0.06, 0.62)
+	style.set_corner_radius_all(6)
+	style.content_margin_left = 9
+	style.content_margin_right = 9
+	style.content_margin_top = 4
+	style.content_margin_bottom = 5
+	panel.add_theme_stylebox_override("panel", style)
+	add_child(panel)
+	panel.position = Vector2(RADIUS * 2.0 + 10.0, 4.0) # à direita, na altura do topo do minimapa
+	var stack := VBoxContainer.new()
+	stack.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stack.add_theme_constant_override("separation", -2)
+	panel.add_child(stack)
+	_coords_label = Label.new()
+	_coords_label.name = "CoordsText"
+	_coords_label.add_theme_font_size_override("font_size", 15)
+	_coords_label.add_theme_color_override("font_color", Color(1, 0.95, 0.8))
+	_coords_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_coords_label.add_theme_constant_override("outline_size", 3)
+	stack.add_child(_coords_label)
+	_heading_label = Label.new()
+	_heading_label.name = "HeadingText"
+	_heading_label.add_theme_font_size_override("font_size", 12)
+	_heading_label.add_theme_color_override("font_color", Color(1, 0.85, 0.4))
+	stack.add_child(_heading_label)
+
+## Texto das coordenadas para uma posição do mundo (também usado nos testes).
+func coords_of(world: Vector3) -> Vector2i:
+	return Vector2i(int(round(world.x + _half)), int(round(world.z + _half)))
+
+## Direção em graus (0 = norte, 90 = leste) e o nome curto.
+static func heading_of(yaw: float) -> Array:
+	var deg := int(round(fposmod(rad_to_deg(-yaw), 360.0))) % 360
+	return [deg, COMPASS[int(round(deg / 45.0)) % 8]]
+
+func _update_coords() -> void:
+	if _coords_label == null or player == null or not is_instance_valid(player):
+		return
+	var c := coords_of(player.global_position)
+	var yaw := float(player.get("yaw")) if player.get("yaw") != null else player.rotation.y
+	var h: Array = heading_of(yaw)
+	var key := Vector3i(c.x, c.y, int(h[0]))
+	if key == _last_coords:
+		return # só reescreve quando muda
+	_last_coords = key
+	_coords_label.text = "X %d  ·  Y %d" % [c.x, c.y]
+	_heading_label.text = "%s  %03d°" % [h[1], h[0]]
 
 # O mapa (grama, árvores, ruas, prédios) não muda: é desenhado uma vez numa
 # textura e, a cada quadro, só essa textura é girada em volta do jogador.
@@ -98,6 +160,7 @@ func _process(_delta: float) -> void:
 	if _canvas != null:
 		_canvas.queue_redraw()
 	queue_redraw()
+	_update_coords()
 
 ## Mapa no espaço do mundo, girado e escalado em volta do jogador.
 func _draw_map() -> void:

@@ -83,7 +83,8 @@ func _apply_burnt(on: bool) -> void:
 		_burnt_mat.albedo_color = Color("#1b1714")
 		_burnt_mat.roughness = 1.0
 	for node in _model.find_children("*", "MeshInstance3D", true, false):
-		(node as MeshInstance3D).material_override = _burnt_mat if on else null
+		# O bloco de longe (FarProxy) guarda a cor dele em "paint".
+		(node as MeshInstance3D).material_override = _burnt_mat if on else node.get_meta("paint", null)
 
 func display_name() -> String:
 	return str(SurvivalData.catalog().get("vehicles", {}).get(kind, {}).get("name", "Carro"))
@@ -95,6 +96,8 @@ func _ready() -> void:
 	floor_snap_length = 0.6
 	_model = CarModel.build(kind, color_hex, false, int(vehicle_id.substr(1)))
 	add_child(_model)
+	# Carro que anda: visível de qualquer distância (vira um bloco na cor de longe).
+	CarModel.apply_lod(_model, kind, color_hex, 140.0, 220.0, 0.0)
 	for child in _model.get_children():
 		if str(child.name).begins_with("Wheel_"):
 			_wheels.append(child)

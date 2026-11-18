@@ -26,11 +26,13 @@ static func leaf_material() -> StandardMaterial3D:
 		_leaf.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _leaf
 
-## Modelo pelo nome ("pine_a", "oak_b", "stump", "rock", "bush_full"...); `far` = versão leve.
-static func mesh(variant: String, far: bool = false) -> ArrayMesh:
-	var key := variant + ("_far" if far else "")
+## Modelo pelo nome ("pine_a", "oak_b", "stump", "rock", "bush_full"...) e
+## nível de detalhe: 0 = perto (detalhado), 1 = médio (leve), 2 = longe
+## (silhueta de poucos triângulos numa superfície só = 1 desenho por lote).
+static func mesh(variant: String, lod: int = 0) -> ArrayMesh:
+	var key := "%s_lod%d" % [variant, lod]
 	if not _cache.has(key):
-		_cache[key] = _build(variant, far)
+		_cache[key] = _build_silhouette(variant) if lod >= 2 else _build(variant, lod == 1)
 	return _cache[key]
 
 static func _build(variant: String, far: bool) -> ArrayMesh:
@@ -61,6 +63,52 @@ static func _build(variant: String, far: bool) -> ArrayMesh:
 		out = st.commit(out)
 		out.surface_set_material(out.get_surface_count() - 1, pair[1])
 	return out
+
+# ------------------------------------------------------------- silhuetas ---
+# Nível "longe": só o contorno, com as mesmas medidas do modelo detalhado.
+# Tronco e copa na mesma superfície (material de folha, cor por vértice).
+
+static func _build_silhouette(variant: String) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = variant.hash()
+	var trunk_dark := Color("#3a2c20")
+	var trunk_light := Color("#5a4632")
+	match variant:
+		"pine_a", "pine_b":
+			var height := 10.5 if variant == "pine_a" else 8.0
+			var spread := 2.4 if variant == "pine_a" else 2.0
+			_tube(st, [Vector3.ZERO, Vector3(0, height * 0.3, 0)], [0.28, 0.2], 4, trunk_dark, trunk_light, rng)
+			_cone(st, height * 0.2, height * 1.02, spread + 0.45, 7, Color("#1f3a22"), Color("#4f7540"))
+		"oak_a", "oak_b":
+			var trunk_h := 3.4 if variant == "oak_a" else 2.8
+			var green := Color("#3f6a2e") if variant == "oak_a" else Color("#56772f")
+			_tube(st, [Vector3.ZERO, Vector3(0, trunk_h + 0.4, 0)], [0.4, 0.24], 4, trunk_dark, trunk_light, rng)
+			_blob(st, Vector3(0, trunk_h + 1.3, 0), 3.4, rng, 0, green, 0.72)
+		"birch":
+			_tube(st, [Vector3.ZERO, Vector3(0, 6.0, 0)], [0.16, 0.07], 4, Color("#d8d4c8"), Color("#ebe7dc"), rng)
+			_blob(st, Vector3(0, 6.3, -0.1), 1.9, rng, 0, Color("#7a9a44"), 1.55)
+		"rock":
+			_rock(st, rng, true)
+		_:
+			return _build(variant, true)
+	st.generate_normals()
+	var out := st.commit()
+	out.surface_set_material(0, leaf_material())
+	return out
+
+## Cone fechado (copa do pinheiro de longe): base escura, ponta clara.
+static func _cone(st: SurfaceTool, base_y: float, top_y: float, radius: float, sides: int, base_color: Color, tip_color: Color) -> void:
+	var apex := Vector3(0, top_y, 0)
+	var center := Vector3(0, base_y, 0)
+	for s in sides:
+		var a0 := TAU * s / sides
+		var a1 := TAU * (s + 1) / sides
+		var p0 := Vector3(cos(a0) * radius, base_y, sin(a0) * radius)
+		var p1 := Vector3(cos(a1) * radius, base_y, sin(a1) * radius)
+		_tri(st, p1, p0, apex, base_color, base_color, tip_color)
+		_tri(st, p0, p1, center, base_color.darkened(0.3), base_color.darkened(0.3), base_color.darkened(0.4))
 
 # ---------------------------------------------------------------- formas ---
 

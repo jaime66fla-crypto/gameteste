@@ -90,6 +90,20 @@ func _run() -> void:
 	check(main.get_node_or_null("SurvivalWorld").call("in_tall_grass", Vector3(float(SurvivalData.world()["grass"][0]["x"]), 0, float(SurvivalData.world()["grass"][0]["z"]))), "grama alta reconhecida")
 	var hud: CanvasLayer = main.get_node_or_null("Hud")
 	check(hud != null and hud.get_node_or_null("Minimap") != null and hud.get_node_or_null("AmmoHud") != null, "HUD com minimapa e munição")
+	var minimap: Node = hud.get_node_or_null("Minimap") if hud != null else null
+	if minimap != null:
+		var coords: Vector2i = minimap.call("coords_of", Vector3(0, 0, 0))
+		var half := float(SurvivalData.world().get("half_size", 240))
+		check(coords == Vector2i(int(half), int(half)), "coordenadas: centro do mapa = metade do tamanho")
+		check(minimap.call("heading_of", 0.0) == [0, "N"] and minimap.call("heading_of", -PI * 0.5) == [90, "L"] and minimap.call("heading_of", PI * 0.5) == [270, "O"], "direção: norte, leste e oeste")
+		var coords_text := minimap.find_child("CoordsText", true, false) as Label
+		check(coords_text != null and coords_text.text.begins_with("X "), "coordenadas ao lado do minimapa")
+	# Ping: o "pong" do servidor devolve o relógio; o contador fica embaixo do FPS.
+	Net.call("_handle", {"t": "pong", "c": Time.get_ticks_msec() - 50})
+	check(absf(float(Net.ping_ms) - 50.0) < 20.0, "ping medido pelo pong (%.0f ms)" % float(Net.ping_ms))
+	main.call("_update_fps_label")
+	var ping_label := main.get("ping_label") as Label
+	check(ping_label != null and ping_label.text.ends_with(" ms") and ping_label.text != "— ms", "contador de ping embaixo do FPS")
 	check(str(main.get("hud").text).find("ARMA:") < 0, "sem o bloco de texto antigo na tela")
 	# Carro: entra (servidor confirma), dirige com W, sai.
 	var driving: Node = controller.driving_ctl

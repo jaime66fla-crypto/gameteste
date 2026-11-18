@@ -505,7 +505,8 @@ func _on_actor_damaged(actor_id: String, zone: String, point: Vector3, normal: V
 		weapon = str(player.get("current_weapon"))
 	var base := float(WeaponData.stats(weapon)["damage"])
 	var damage := base * float(HitboxScript.MULTIPLIER.get(zone, 1.0))
-	Net.send({"t": "hit", "target": actor_id, "zone": zone, "dmg": damage, "w": weapon})
+	# pt = onde a bala bateu (o servidor confere se a cabeça estava ali).
+	Net.send({"t": "hit", "target": actor_id, "zone": zone, "dmg": damage, "w": weapon, "pt": [point.x, point.y, point.z]})
 	# Immediate feedback (the server confirms health a moment later).
 	var headshot := zone == "head"
 	combat_feedback.call("show_hit", headshot)

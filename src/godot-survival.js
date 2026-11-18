@@ -15,6 +15,7 @@
 import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor } from './godot-accounts.js';
+import { HitCheck, stanceOf } from './godot-hitcheck.js';
 
 export const CAPACITY = 16;
 const MAX_WORLDS = 12;
@@ -120,9 +121,29 @@ export function carryLimit(back = '') {
 	return catalog.carry_base + (ITEMS[back]?.carry || 0);
 }
 
-/** Peso carregado: itens + a mochila equipada (ela pesa, mas não ocupa espaço). */
+/** Espaços do corpo: slot do item → campo do jogador. */
+export const GEAR_SLOTS = { back: 'back', head: 'head', chest: 'chest' };
+/** Partes do corpo que cada proteção cobre. */
+const ARMOR_COVERS = { head: ['head'], chest: ['chest', 'pelvis'] };
+
+/** Peso carregado: itens + o que está vestido (mochila, capacete, colete). */
 export function carriedWeight(player) {
-	return Math.round((inventoryWeight(player.inv) + (ITEMS[player.back]?.weight || 0)) * 100) / 100;
+	let worn = 0;
+	for (const field of Object.values(GEAR_SLOTS)) worn += ITEMS[player[field]]?.weight || 0;
+	return Math.round((inventoryWeight(player.inv) + worn) * 100) / 100;
+}
+
+/**
+ * Fração do dano que passa pela proteção. Capacete protege a cabeça; colete o
+ * peito e o quadril (explosão conta como peito). Mordida de zumbi não tem parte
+ * do corpo: o colete segura metade do que seguraria um tiro.
+ */
+export function armorFactor(player, zone, weapon = '') {
+	if (weapon === 'zombie') return 1 - (ITEMS[player.chest]?.armor || 0) / 2;
+	for (const [field, zones] of Object.entries(ARMOR_COVERS)) {
+		if (zones.includes(zone)) return 1 - (ITEMS[player[field]]?.armor || 0);
+	}
+	return 1;
 }
 
 function addItems(inv, item, n) {
@@ -224,6 +245,7 @@ export class GodotSurvival {
 		this.env = env;
 		this.sessions = new Map(); // player id -> WebSocket
 		this.hitLog = new Map();
+		this.hitCheck = new HitCheck(); // alcance, cabeça plausível e taxa de tiros na cabeça
 		this.state = this.fresh();
 		this.dirty = false;
 		ctx.blockConcurrencyWhile(async () => {
@@ -513,7 +535,7 @@ export class GodotSurvival {
 
 	newCharacter() {
 		const spawn = world.spawns[Math.floor(Math.random() * world.spawns.length)];
-		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', dead: false, infectedAt: 0 };
+		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', head: '', chest: '', dead: false, infectedAt: 0 };
 	}
 
 	restore(saved) {
@@ -521,7 +543,7 @@ export class GodotSurvival {
 		// A infecção fica "pausada" enquanto o jogador está fora do jogo.
 		const left = Math.max(0, Math.min(INFECTION_MS, Number(saved.infectedLeft) || 0));
 		return {
-			p: saved.p, y: saved.y || 0, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', dead: false,
+			p: saved.p, y: saved.y || 0, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', head: saved.head || '', chest: saved.chest || '', dead: false,
 			infectedAt: left > 0 ? Date.now() - (INFECTION_MS - left) : 0,
 		};
 	}
@@ -562,7 +584,7 @@ export class GodotSurvival {
 	}
 
 	invPacket(player) {
-		return { inv: player.inv, back: player.back || '', weight: carriedWeight(player), cap: carryLimit(player.back) };
+		return { inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back) };
 	}
 
 	sendInv(player) {
@@ -599,6 +621,8 @@ export class GodotSurvival {
 		const isHost = meta.id === s.host;
 		const reply = (data) => this.send(ws, data);
 		const note = (message) => reply({ t: 'note', message });
+		// Ping: devolve na hora o relógio do jogo, que mede o tempo de ida e volta.
+		if (d.t === 'ping') return reply({ t: 'pong', c: finite(d.c, 1e15) ? d.c : 0 });
 		if (d.t === 'respawn') return this.respawn(me);
 		if (me.dead) return;
 		switch (d.t) {
@@ -606,6 +630,7 @@ export class GodotSurvival {
 				const p = vec3(d.p, 600);
 				if (!p) return;
 				me.p = p;
+				me.stance = stanceOf(d);
 				if (finite(d.y, 1000)) me.y = d.y;
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
@@ -652,7 +677,7 @@ export class GodotSurvival {
 			}
 			case 'repair': return this.repair(me, d, note);
 			case 'equip': return this.equip(me, d, note);
-			case 'unequip': return this.unequip(me, note);
+			case 'unequip': return this.unequip(me, d, note);
 			case 'gather_start': {
 				const res = RESOURCES[d.r];
 				if (!res || flat(me.p, res.p) > REACH) return;
@@ -688,7 +713,15 @@ export class GodotSurvival {
 	gunHit(me, d) {
 		const weapon = WEAPON_DAMAGE[d.w] ? d.w : null;
 		if (!weapon || !me.inv['w_' + weapon] || !this.allowHit(me.id)) return;
-		const zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
+		let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
+		// Alcance da arma; em jogadores, cabeça plausível e taxa de tiros na cabeça.
+		const s = this.state;
+		const target = s.zombies[d.target] || s.players[d.target];
+		if (target) {
+			const verdict = this.hitCheck.check({ attacker: me, target, weapon, zone, point: d.pt, player: !s.zombies[d.target] });
+			if (!verdict.ok) return;
+			zone = verdict.zone;
+		}
 		this.applyHit(me, d.target, WEAPON_DAMAGE[weapon] * ZONE_MULTIPLIER[zone], weapon, zone, GUN_REACH);
 	}
 
@@ -726,6 +759,7 @@ export class GodotSurvival {
 	}
 
 	damagePlayer(target, amount, by, weapon, zone = null, attacker = null) {
+		amount *= armorFactor(target, zone, weapon);
 		target.hp = Math.max(0, round1(target.hp - amount));
 		const killed = target.hp === 0;
 		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by, w: weapon, zone, killed });
@@ -742,11 +776,13 @@ export class GodotSurvival {
 			attacker.kills++;
 			this.credit(attacker, XP.player);
 		}
-		// Tudo o que carregava fica numa mochila no chão.
-		if (target.back) addItems(target.inv, target.back, 1);
+		// Tudo o que carregava e vestia fica numa mochila no chão.
+		for (const field of Object.values(GEAR_SLOTS)) {
+			if (target[field]) addItems(target.inv, target[field], 1);
+			target[field] = '';
+		}
 		if (Object.keys(target.inv).length) this.makeBag(target.p, target.inv, target.name);
 		target.inv = {};
-		target.back = '';
 		this.sendInv(target);
 	}
 
@@ -1018,35 +1054,37 @@ export class GodotSurvival {
 		note(`Usou ${item.name}.`);
 	}
 
-	/** Veste uma mochila nas costas (a que estava volta para o inventário). */
+	/** Veste mochila (costas), capacete (cabeça) ou colete (peito); o que estava volta para o inventário. */
 	equip(me, d, note) {
 		const item = ITEMS[d.item];
-		if (item?.slot !== 'back' || !me.inv[d.item]) return;
-		const old = me.back;
+		const field = GEAR_SLOTS[item?.slot];
+		if (!field || !me.inv[d.item]) return;
+		const old = me[field] || '';
 		removeItems(me.inv, d.item, 1);
-		me.back = d.item;
+		me[field] = d.item;
 		if (old) addItems(me.inv, old, 1);
 		if (carriedWeight(me) > carryLimit(me.back)) {
 			// Trocar por uma mochila menor não pode deixar o jogador acima do limite.
 			if (old) removeItems(me.inv, old, 1);
-			me.back = old;
+			me[field] = old;
 			addItems(me.inv, d.item, 1);
 			return note('Peso demais para essa mochila. Largue alguns itens antes.');
 		}
 		this.save();
 		this.sendInv(me);
-		note(`Equipou ${item.name} (+${item.carry} kg).`);
+		note(item.carry ? `Equipou ${item.name} (+${item.carry} kg).` : `Vestiu ${item.name} (−${Math.round(item.armor * 100)}% de dano).`);
 	}
 
-	/** Tira a mochila das costas: só se o resto couber nos bolsos. */
-	unequip(me, note) {
-		if (!me.back) return;
-		const old = me.back;
-		me.back = '';
+	/** Tira o que está num espaço (padrão: costas). A mochila só sai se o resto couber nos bolsos. */
+	unequip(me, d, note) {
+		const field = GEAR_SLOTS[d?.slot] || 'back';
+		if (!me[field]) return;
+		const old = me[field];
+		me[field] = '';
 		addItems(me.inv, old, 1);
-		if (carriedWeight(me) > carryLimit('')) {
+		if (carriedWeight(me) > carryLimit(me.back)) {
 			removeItems(me.inv, old, 1);
-			me.back = old;
+			me[field] = old;
 			return note('Os bolsos não aguentam tudo. Largue itens antes de tirar a mochila.');
 		}
 		this.save();
@@ -1159,7 +1197,7 @@ export class GodotSurvival {
 				sleeper = {
 					sid: 'sl' + crypto.randomUUID().slice(0, 8), name: player.name, rank: player.rank,
 					p: player.p, y: player.y || 0, hp: player.hp, hunger: player.hunger, thirst: player.thirst,
-					inv: player.inv, back: player.back || '', dead: player.dead, savedAt: Date.now(),
+					inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', dead: player.dead, savedAt: Date.now(),
 					infectedLeft: this.infectionLeft(player),
 				};
 				s.chars[player.account] = sleeper;

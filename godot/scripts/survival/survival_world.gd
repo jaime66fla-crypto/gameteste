@@ -48,14 +48,14 @@ func _cull_details() -> void:
 	var root := get_parent() if get_parent() != null else self
 	for node in root.find_children("*", "GeometryInstance3D", true, false):
 		var g := node as GeometryInstance3D
-		if g is MultiMeshInstance3D or g.visibility_range_end > 0.0 or _in_character(g):
+		if g is MultiMeshInstance3D or g.visibility_range_end > 0.0 or g.visibility_range_begin > 0.0 or _in_character(g):
 			continue
 		var box := g.get_aabb()
 		var longest := maxf(box.size.x * g.global_basis.get_scale().x, maxf(box.size.y * g.global_basis.get_scale().y, box.size.z * g.global_basis.get_scale().z))
 		if g is Label3D:
 			g.visibility_range_end = 70.0
 		elif longest < 1.6:
-			g.visibility_range_end = 75.0
+			g.visibility_range_end = 50.0
 			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		elif longest < 5.0:
 			g.visibility_range_end = 170.0
@@ -342,6 +342,28 @@ func _building(data: Dictionary) -> void:
 	if kind == "hospital":
 		_part(root, Vector3(0, h - 0.6, d * 0.5 + 0.16), Vector3(0.9, 0.25, 0.04), _flat("#c8261f"))
 		_part(root, Vector3(0, h - 0.6, d * 0.5 + 0.16), Vector3(0.25, 0.9, 0.04), _flat("#c8261f"))
+	_building_lod(root, w, d, h, wall)
+
+## Prédio em 3 níveis: perto tudo (placa e piso só aqui); médio paredes, teto e
+## janelas; longe um bloco só no lugar das ~10 peças (1 desenho em vez de ~10).
+func _building_lod(root: Node3D, w: float, d: float, h: float, wall: Material) -> void:
+	for node in root.find_children("*", "GeometryInstance3D", true, false):
+		var g := node as GeometryInstance3D
+		if g.get_parent() is StaticBody3D:
+			_lod_range(g, 0, LOD_MID) # paredes e teto (com sombra)
+		elif g is Label3D or g.get_aabb().size.y < 0.1:
+			_lod_range(g, 0, LOD_NEAR) # placa e piso
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		else:
+			_lod_range(g, 0, LOD_MID) # janelas, cruz do hospital
+			g.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var shell := MeshInstance3D.new()
+	shell.name = "FarShell"
+	shell.mesh = _box_mesh(Vector3(w + 0.25, h + 0.2, d + 0.25))
+	shell.material_override = wall
+	shell.position.y = (h + 0.2) * 0.5
+	root.add_child(shell)
+	_lod_range(shell, 2, LOD_FAR)
 
 func _town_sign(town: Dictionary) -> void:
 	var c := Vector3(float(town["center"][0]), 0, float(town["center"][1]))
@@ -394,7 +416,7 @@ func _container(spot: Dictionary) -> void:
 	col.position.y = size.y * 0.5
 	body.add_child(col)
 	var mat := _mat(str(look[2]), str(look[1]))
-	_part(body, Vector3(0, size.y * 0.5, 0), size, mat)
+	var main_part := _part(body, Vector3(0, size.y * 0.5, 0), size, mat)
 	# Detalhes: porta/gaveta escura na frente, cruz no armário de remédios.
 	if size.y > 1.0:
 		_part(body, Vector3(0, size.y * 0.5, size.z * 0.5 + 0.01), Vector3(0.04, size.y * 0.9, 0.02), _flat("#222"))
@@ -403,6 +425,12 @@ func _container(spot: Dictionary) -> void:
 	if type == "medcab":
 		_part(body, Vector3(0, size.y * 0.6, size.z * 0.5 + 0.02), Vector3(0.36, 0.1, 0.01), _flat("#c8261f"))
 		_part(body, Vector3(0, size.y * 0.6, size.z * 0.5 + 0.02), Vector3(0.1, 0.36, 0.01), _flat("#c8261f"))
+	# Móveis ficam dentro dos prédios: o corpo some no meio da faixa média,
+	# portas, gavetas e a cruz somem ainda perto. Nenhum faz sombra.
+	for node in body.get_children():
+		if node is MeshInstance3D:
+			_lod_range(node, 0, 90.0 if node == main_part else 35.0)
+			(node as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	var label := Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.font_size = 36
@@ -458,11 +486,8 @@ func _resource(res: Dictionary) -> void:
 			var model := CarModel.build(car_kind, colors[seed_value % colors.size()], true, seed_value)
 			body.add_child(model)
 			parts.append(model)
-			# Muitas peças: de longe some (a neblina já esconde).
-			for mesh in model.find_children("*", "GeometryInstance3D", true, false):
-				(mesh as GeometryInstance3D).visibility_range_end = 220.0
-				if not mesh.name == "Body":
-					(mesh as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			# Perto: carroceria e rodas; médio: só a carroceria; longe: um bloco na cor.
+			CarModel.apply_lod(model, car_kind, colors[seed_value % colors.size()], LOD_NEAR, LOD_MID, 380.0)
 			var size := CarModel.size_of(car_kind)
 			var shape := BoxShape3D.new()
 			shape.size = Vector3(size.x, size.y - 0.2, size.z)
@@ -478,13 +503,11 @@ func _resource(res: Dictionary) -> void:
 	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "slots": slots, "depleted": false}
 
 # ---------------------------------------------------- desenho em lote ---
-# Árvores, pedras e arbustos: um MultiMesh por modelo e por quadrado de 80 m
-# (o motor descarta quadrados fora da câmera). Perto usa o modelo detalhado;
-# longe, o leve, sem sombra. Esconder = escala zero naquela posição do lote.
+# Árvores, pedras e arbustos: um MultiMesh por modelo, por nível de detalhe e
+# por quadrado de 120 m (o motor descarta quadrados fora da câmera).
+# Esconder = escala zero naquela posição do lote (em todos os níveis).
 const CHUNK := 120.0
-const NEAR_RANGE := 130.0
-const FAR_RANGE := 430.0
-const HAS_FAR := ["pine_a", "pine_b", "oak_a", "oak_b", "birch", "rock"]
+const HAS_SILHOUETTE := ["pine_a", "pine_b", "oak_a", "oak_b", "birch", "rock"]
 var _batches: Dictionary = {} # "modelo|cx|cz" -> {variant, center, list, mms}
 
 func _slot(variant: String, xform: Transform3D, visible: bool) -> Array:
@@ -506,28 +529,44 @@ func _flush_batches() -> void:
 	for key in _batches:
 		var batch: Dictionary = _batches[key]
 		var variant: String = batch["variant"]
-		for far in ([false, true] if variant in HAS_FAR else [false]):
+		# Árvores e pedras: perto / médio / longe (silhueta). Arbusto e toco são
+		# pequenos: perto (com sombra) e médio (sem sombra), e somem de longe.
+		var levels := [0, 1, 2] if variant in HAS_SILHOUETTE else [0, 1]
+		for lod in levels:
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = NatureModel.mesh(variant, far)
+			mm.mesh = NatureModel.mesh(variant, lod if variant in HAS_SILHOUETTE else 0)
 			mm.instance_count = batch["list"].size()
 			for i in batch["list"].size():
 				mm.set_instance_transform(i, batch["list"][i])
 			var node := MultiMeshInstance3D.new()
-			node.name = "Nature_" + variant + ("_far" if far else "")
+			node.name = "Nature_%s_lod%d" % [variant, lod]
 			node.multimesh = mm
 			node.position = batch["center"]
-			node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if far else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
-			if variant in HAS_FAR:
-				node.visibility_range_begin = NEAR_RANGE if far else 0.0
-				node.visibility_range_end = FAR_RANGE if far else NEAR_RANGE
-				node.visibility_range_begin_margin = 6.0
-				node.visibility_range_end_margin = 6.0
-			else:
-				node.visibility_range_end = 150.0
-				node.visibility_range_end_margin = 8.0
+			var end := LOD_FAR if lod == 2 else (LOD_MID if variant in HAS_SILHOUETTE else LOD_SMALL_MID)
+			_lod_range(node, lod, end if lod > 0 else LOD_NEAR)
 			add_child(node)
 			batch["mms"].append(mm)
+
+# ------------------------------------------------------ níveis de detalhe ---
+# Três faixas pela distância da câmera: quanto mais longe, menos detalhe.
+#   perto  0–60 m:   modelo completo, com sombra
+#   médio  60–170 m: modelo leve, sem sombra, detalhes pequenos somem
+#   longe  170–430 m: silhuetas e blocos (a neblina cobre o resto)
+const LOD_NEAR := 60.0
+const LOD_MID := 170.0
+const LOD_FAR := 430.0
+const LOD_SMALL_MID := 140.0 # coisas pequenas (arbusto, toco, rodas): somem antes
+const LOD_MARGIN := 6.0 # folga para não piscar na troca de nível
+
+## Faixa do nível `lod` (0 perto, 1 médio, 2 longe), terminando em `end`.
+## Só o nível perto faz sombra.
+func _lod_range(node: GeometryInstance3D, lod: int, end: float) -> void:
+	node.visibility_range_begin = [0.0, LOD_NEAR, LOD_MID][lod]
+	node.visibility_range_end = end
+	node.visibility_range_begin_margin = LOD_MARGIN
+	node.visibility_range_end_margin = LOD_MARGIN
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if lod == 0 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
 func _set_slot(slot: Array, visible: bool, scale_factor: float = 1.0) -> void:
 	if slot.is_empty():

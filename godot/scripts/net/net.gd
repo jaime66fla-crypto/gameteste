@@ -354,6 +354,26 @@ func send(data: Dictionary) -> void:
 	if is_online():
 		socket.send_text(JSON.stringify(data))
 
+## Ping (ms de ida e volta até o servidor, suavizado); -1 = ainda sem medida.
+## O jogo manda "ping" com o relógio a cada PING_INTERVAL e o servidor devolve "pong".
+const PING_INTERVAL := 2.0
+var ping_ms := -1.0
+var _ping_timer := 0.0
+
+func _tick_ping(delta: float) -> void:
+	if not is_online():
+		return
+	_ping_timer -= delta
+	if _ping_timer <= 0.0:
+		_ping_timer = PING_INTERVAL
+		send({"t": "ping", "c": Time.get_ticks_msec()})
+
+func _on_pong(data: Dictionary) -> void:
+	var rtt := float(Time.get_ticks_msec()) - float(data.get("c", 0))
+	if rtt < 0.0 or rtt > 30000.0:
+		return
+	ping_ms = rtt if ping_ms < 0.0 else lerpf(ping_ms, rtt, 0.35)
+
 func leave() -> void:
 	if socket != null:
 		socket.close(1000, "saiu")
@@ -368,6 +388,8 @@ func leave() -> void:
 	my_team = -1
 	_consumer_ready = false
 	_pending.clear()
+	ping_ms = -1.0
+	_ping_timer = 0.0
 
 ## The match scene calls this once it can handle messages; buffered ones are replayed.
 func attach_consumer() -> void:
@@ -385,6 +407,7 @@ func _process(delta: float) -> void:
 	if socket == null:
 		return
 	socket.poll()
+	_tick_ping(delta)
 	var state := socket.get_ready_state()
 	if state != WebSocketPeer.STATE_CONNECTING:
 		_opened = _opened or state == WebSocketPeer.STATE_OPEN
@@ -407,6 +430,9 @@ func _process(delta: float) -> void:
 
 func _handle(data: Dictionary) -> void:
 	match str(data.get("t", "")):
+		"pong":
+			_on_pong(data)
+			return
 		"outdated":
 			_outdated = true
 			update_url = str(data.get("url", ""))
