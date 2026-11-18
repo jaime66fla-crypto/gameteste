@@ -7,11 +7,11 @@ const Synth = preload("res://scripts/audio/synth.gd")
 # Receita de cada arma: corpo grave (Hz início → fim, queda), ruído do estampido
 # (queda, brilho), cauda de eco, e o mecanismo (ferrolho, bomba).
 const GUNS := {
-	"pistol":  {"f0": 210.0, "f1": 70.0, "body": 0.035, "blast": 0.045, "bright": 4200.0, "low": 700.0, "tail": 0.55, "crack": 0.9, "drive": 2.2, "mech": [[0.035, 0.12]]},
-	"smg":     {"f0": 260.0, "f1": 90.0, "body": 0.025, "blast": 0.03, "bright": 5200.0, "low": 800.0, "tail": 0.45, "crack": 0.8, "drive": 2.0, "mech": [[0.03, 0.14]]},
-	"rifle":   {"f0": 170.0, "f1": 55.0, "body": 0.05, "blast": 0.06, "bright": 4800.0, "low": 650.0, "tail": 0.9, "crack": 1.0, "drive": 2.6, "mech": [[0.04, 0.1]]},
-	"shotgun": {"f0": 120.0, "f1": 40.0, "body": 0.09, "blast": 0.11, "bright": 3000.0, "low": 450.0, "tail": 1.3, "crack": 0.7, "drive": 3.0, "mech": [[0.42, 0.35], [0.56, 0.4]]},
-	"sniper":  {"f0": 140.0, "f1": 38.0, "body": 0.1, "blast": 0.12, "bright": 4000.0, "low": 420.0, "tail": 1.6, "crack": 1.2, "drive": 3.2, "mech": [[0.7, 0.3], [0.86, 0.35]]},
+	"pistol":  {"f0": 210.0, "f1": 70.0, "body": 0.035, "blast": 0.045, "bright": 4200.0, "low": 700.0, "tail": 0.55, "crack": 0.9, "drive": 1.7, "mech": [[0.035, 0.12]]},
+	"smg":     {"f0": 260.0, "f1": 90.0, "body": 0.025, "blast": 0.03, "bright": 5200.0, "low": 800.0, "tail": 0.45, "crack": 0.8, "drive": 1.6, "mech": [[0.03, 0.14]]},
+	"rifle":   {"f0": 170.0, "f1": 55.0, "body": 0.05, "blast": 0.06, "bright": 4800.0, "low": 650.0, "tail": 0.9, "crack": 1.0, "drive": 1.9, "mech": [[0.04, 0.1]]},
+	"shotgun": {"f0": 120.0, "f1": 40.0, "body": 0.09, "blast": 0.11, "bright": 3000.0, "low": 450.0, "tail": 1.3, "crack": 0.7, "drive": 2.2, "mech": [[0.42, 0.35], [0.56, 0.4]]},
+	"sniper":  {"f0": 140.0, "f1": 38.0, "body": 0.1, "blast": 0.12, "bright": 4000.0, "low": 420.0, "tail": 1.6, "crack": 1.2, "drive": 2.3, "mech": [[0.7, 0.3], [0.86, 0.35]]},
 }
 const GUN_VARIANTS := 2
 
@@ -23,7 +23,19 @@ static func warmup() -> void:
 	if _warm:
 		return
 	_warm = true
+	_add_master_limiter()
 	warm_all()
+
+## Limitador na saída: rajada + explosão + zumbis juntos nunca passam de 0 dB
+## (era o que "estourava"). Não muda nada quando o som já está abaixo do teto.
+static func _add_master_limiter() -> void:
+	for i in AudioServer.get_bus_effect_count(0):
+		if AudioServer.get_bus_effect(0, i) is AudioEffectHardLimiter:
+			return
+	var limiter := AudioEffectHardLimiter.new()
+	limiter.ceiling_db = -1.0
+	limiter.pre_gain_db = 0.0
+	AudioServer.add_bus_effect(0, limiter)
 
 ## Todos os sons do banco, pelo nome com que são gravados.
 static func warm_all() -> void:
@@ -94,7 +106,7 @@ static func _build_gun(id: String, variant: int) -> AudioStream:
 	for click in g["mech"]:
 		Synth.mix(out, _metal_click(seed_value + 10 + m, m), float(click[1]), float(click[0]))
 		m += 1
-	Synth.normalize(out, 0.95)
+	Synth.normalize(out, 0.85)
 	Synth.fade_tail(out, 0.05)
 	return Synth.to_wav(out)
 

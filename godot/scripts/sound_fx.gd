@@ -103,7 +103,7 @@ func shot(weapon_id: String = "pistol") -> void:
 	last_shot_player = p
 
 ## Volume de cada arma (dB). Exposto para os testes.
-const SHOT_GAIN := {"pistol": -3.0, "smg": -4.0, "rifle": -2.0, "shotgun": 0.0, "sniper": 1.0}
+const SHOT_GAIN := {"pistol": -7.0, "smg": -9.0, "rifle": -7.0, "shotgun": -5.0, "sniper": -4.5}
 var last_shot_player: Node # o tocador do último tiro (há um por som de arma)
 
 ## Um tocador por som de arma (trocar o stream cortaria a cauda do tiro anterior).
