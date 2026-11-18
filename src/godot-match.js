@@ -154,6 +154,8 @@ export async function handleGodotSocket(request, env, url) {
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
 	const party = (url.searchParams.get('party') || '').trim().toUpperCase();
 	if (party) return joinParty(request, env, session, party);
+	const invited = (url.searchParams.get('elim') || '').trim().toLowerCase();
+	if (invited) return joinInvitedElimination(request, env, session, invited);
 	const matchmaker = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('godot-matchmaker'));
 	const name = session.name;
 	let full = '';
@@ -169,6 +171,20 @@ export async function handleGodotSocket(request, env, url) {
 		full = room; // started or full in the meantime: ask for a fresh room
 	}
 	return new Response('Nenhuma sala disponível. Tente novamente.', { status: 503 });
+}
+
+/** Convite de amigo para a sala de espera de uma eliminatória pública (elim=<sala>). */
+async function joinInvitedElimination(request, env, session, room) {
+	if (!/^[0-9a-f]{6}$/.test(room)) return noticeSocket({ t: 'party_error', message: 'Convite inválido.' });
+	const stub = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('match:' + room));
+	const target =
+		'https://internal/join?invite=1&room=' + room + '&name=' + encodeURIComponent(session.name) +
+		'&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
+	const response = await stub.fetch(new Request(target, request));
+	if (response.status === 101) return response;
+	const reason = await response.text();
+	const message = /andamento/.test(reason) ? 'A partida dessa eliminatória já começou.' : /cheia/i.test(reason) ? 'A sala de eliminatória está cheia.' : reason;
+	return noticeSocket({ t: 'party_error', message });
 }
 
 /** Custom room: party=NEW creates one with a fresh code, party=<code> joins it. */
@@ -262,6 +278,9 @@ export class GodotMatch {
 			this.match.party = true;
 		} else if (isParty && (!this.match.party || !this.sessions.size)) {
 			return new Response('Sala não encontrada. Confira o código com quem criou.', { status: 404 });
+		} else if (url.searchParams.get('invite') === '1' && (this.match.party || !this.sessions.size)) {
+			// Convite para uma eliminatória: só entra se a sala ainda existe (alguém dentro).
+			return new Response('Essa sala de eliminatória não existe mais.', { status: 404 });
 		}
 		const m = this.match;
 		if (m.phase !== 'waiting') return new Response(m.party ? 'A partida desta sala já começou.' : 'Partida em andamento', { status: 409 });

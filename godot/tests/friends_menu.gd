@@ -74,6 +74,25 @@ func _run() -> void:
 	var invite_text := menu.find_child("InviteText", true, false) as Label
 	_check(invite_text != null and invite_text.text.contains("Ana"), "Invite card names who invited")
 	_check(menu.find_child("InviteTimer", true, false) != null, "Invite card shows the time left")
+	(menu.find_child("IgnoreInviteButton", true, false) as Button).pressed.emit()
+	# Eliminatória pública: o painel de convite também aparece na sala de espera.
+	net.set("party_code", "")
+	net.set("room", "a1b2c3")
+	net.set("party_info", {"t": "party", "party": false, "leader": "me", "capacity": 8, "players": [{"id": "me", "name": "Lider", "rank": "Recruta", "ready": true}]})
+	menu.call("_on_party_updated", net.get("party_info"))
+	await process_frame
+	var side := menu.find_child("InviteFriendsCard", true, false) as Control
+	_check(side != null and side.visible and menu.find_child("Invite_Beto", true, false) != null, "Elimination waiting room can invite friends")
+	# Convite recebido para uma eliminatória.
+	net.emit_signal("friend_invite", "Ana", "f0f0f0", "elim")
+	await process_frame
+	var sub_ok := false
+	for label in banner.find_children("*", "Label", true, false):
+		sub_ok = sub_ok or (label as Label).text.contains("Eliminatória")
+	_check(banner.visible and sub_ok, "Elimination invite card says Eliminatória")
+	net.set("party_info", {})
+	net.set("room", "")
+	net.set("party_code", "K7Q2M")
 	_check(menu.find_child("AcceptInviteButton", true, false) != null, "Invite can be accepted")
 	(menu.find_child("IgnoreInviteButton", true, false) as Button).pressed.emit()
 	_check(not banner.visible and (net.get("pending_invite") as Dictionary).is_empty(), "Invite can be ignored")

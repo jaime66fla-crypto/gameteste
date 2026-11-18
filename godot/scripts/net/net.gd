@@ -19,7 +19,7 @@ signal party_notice(message: String)
 
 ## Friends list (polled over HTTP while logged in) and room invites.
 signal friends_updated(data: Dictionary)
-signal friend_invite(from: String, code: String)
+signal friend_invite(from: String, code: String, kind: String)
 const FRIENDS_POLL := 8.0
 var friends_data: Dictionary = {} # friends, requests
 var pending_invite: Dictionary = {} # last invite not yet answered: {from, code}
@@ -122,21 +122,37 @@ func poll_friends() -> void:
 	if _friends_busy or not is_logged_in():
 		return
 	_friends_busy = true
-	var status := "match" if in_match else ("room" if is_online() and not party_code.is_empty() else "menu")
-	var path := "/friends?status=" + status + ("&code=" + party_code if status == "room" else "")
+	var code := invite_code()
+	var status := "match" if in_match else ("room" if not code.is_empty() else "menu")
+	var path := "/friends?status=" + status + ("&code=" + code if status == "room" else "")
 	var response := await _api(path, {}, HTTPClient.METHOD_GET)
 	_friends_busy = false
 	if response["status"] != 200:
 		return
 	friends_data = response["data"]
 	for invite in friends_data.get("invites", []):
-		pending_invite = {"from": str(invite.get("from", "")), "code": str(invite.get("code", ""))}
-		friend_invite.emit(pending_invite["from"], pending_invite["code"])
+		pending_invite = {"from": str(invite.get("from", "")), "code": str(invite.get("code", "")), "kind": str(invite.get("kind", "party"))}
+		friend_invite.emit(pending_invite["from"], pending_invite["code"], pending_invite["kind"])
 	friends_updated.emit(friends_data)
 
-## add / accept / decline / remove {name}, invite {name, code}. Returns the server's message.
-func friend_action(action: String, friend_name: String, code: String = "") -> String:
-	var response := await _api("/friends/" + action, {"name": friend_name.strip_edges(), "code": code})
+## Sala em que dá para convidar agora: o código da sala personalizada, ou a
+## sala de espera da eliminatória pública (antes da partida começar). "" = nenhuma.
+func invite_code() -> String:
+	if not is_online() or in_match:
+		return ""
+	if not party_code.is_empty():
+		return party_code
+	if not party_info.is_empty() and not bool(party_info.get("party", true)):
+		return room
+	return ""
+
+## "party" (sala personalizada) ou "elim" (sala de espera da eliminatória).
+func invite_kind() -> String:
+	return "party" if not party_code.is_empty() else "elim"
+
+## add / accept / decline / remove {name}, invite {name, code, kind}. Returns the server's message.
+func friend_action(action: String, friend_name: String, code: String = "", kind: String = "party") -> String:
+	var response := await _api("/friends/" + action, {"name": friend_name.strip_edges(), "code": code, "kind": kind})
 	_friends_timer = 0.3 # refresh the list right after
 	var data: Dictionary = response["data"]
 	return str(data.get("message", data.get("error", "Não foi possível falar com o servidor.")))
@@ -193,6 +209,10 @@ func save_name(value: String) -> void:
 func find_match(player_name: String) -> Error:
 	return _open(player_name, "")
 
+## Convite de amigo: entra direto na sala de espera daquela eliminatória.
+func join_elimination(room_id: String) -> Error:
+	return _open(load_name(), "", "/godot/ws", "", room_id)
+
 ## Sobrevivência: entra num mundo aberto (até 16 jogadores) sem sala de espera.
 ## `world` ("world:3") escolhe o mundo da lista; vazio = o do seu personagem ou o primeiro com vaga.
 func find_survival(player_name: String, world: String = "") -> Error:
@@ -240,7 +260,7 @@ func in_room_lobby() -> bool:
 func is_party_leader() -> bool:
 	return not my_id.is_empty() and str(party_info.get("leader", "")) == my_id
 
-func _open(player_name: String, party: String, path: String = "/godot/ws", world: String = "") -> Error:
+func _open(player_name: String, party: String, path: String = "/godot/ws", world: String = "", elim: String = "") -> Error:
 	leave()
 	socket = WebSocketPeer.new()
 	_opened = false
@@ -255,6 +275,8 @@ func _open(player_name: String, party: String, path: String = "/godot/ws", world
 		query += "&party=" + party.uri_encode()
 	if not world.is_empty():
 		query += "&world=" + world.uri_encode()
+	if not elim.is_empty():
+		query += "&elim=" + elim.uri_encode()
 	return socket.connect_to_url(server_url.replace("/godot/ws", path) + query)
 
 func is_online() -> bool:

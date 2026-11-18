@@ -224,7 +224,9 @@ export class GodotAccounts {
 		const found = await this.accountFor(token);
 		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
 		const status = ['menu', 'room', 'match'].includes(url.searchParams.get('status')) ? url.searchParams.get('status') : 'menu';
-		const code = /^[A-Z0-9]{5}$/.test(url.searchParams.get('code') || '') ? url.searchParams.get('code') : '';
+		// Sala personalizada (5 letras/números) ou sala de espera de eliminatória (6 hex).
+		const raw = url.searchParams.get('code') || '';
+		const code = /^[A-Z0-9]{5}$/.test(raw) || /^[0-9a-f]{6}$/.test(raw) ? raw : '';
 		const now = Date.now();
 		this.presence.set(found.key, { seen: now, status, code: status === 'room' ? code : '' });
 		const friends = [];
@@ -243,7 +245,7 @@ export class GodotAccounts {
 		}
 		const invites = (this.invites.get(found.key) || []).filter((invite) => now - invite.at < INVITE_MS);
 		this.invites.delete(found.key);
-		return json({ friends, requests, invites: invites.map(({ from, code }) => ({ from, code })) });
+		return json({ friends, requests, invites: invites.map(({ from, code, kind }) => ({ from, code, kind: kind || 'party' })) });
 	}
 
 	/** POST /friends/<add|accept|decline|remove|invite> with {name} (and {code} for invite). */
@@ -301,11 +303,13 @@ export class GodotAccounts {
 				return json({ message: `${other.name} foi removido dos amigos.` });
 			}
 			case 'invite': {
-				const code = String(body?.code || '').toUpperCase();
-				if (!/^[A-Z0-9]{5}$/.test(code)) return json({ error: 'Entre numa sala personalizada para convidar.' }, 400);
+				// kind "party": sala personalizada (5 letras); "elim": sala de espera de eliminatória (6 hex).
+				const kind = body?.kind === 'elim' ? 'elim' : 'party';
+				const code = kind === 'elim' ? String(body?.code || '').toLowerCase() : String(body?.code || '').toUpperCase();
+				if (!(kind === 'elim' ? /^[0-9a-f]{6}$/ : /^[A-Z0-9]{5}$/).test(code)) return json({ error: 'Entre numa sala para convidar.' }, 400);
 				if (!me.friends.includes(otherKey)) return json({ error: 'Só dá para convidar amigos.' }, 400);
 				const list = (this.invites.get(otherKey) || []).filter((invite) => invite.from !== me.name);
-				list.push({ from: me.name, code, at: Date.now() });
+				list.push({ from: me.name, code, kind, at: Date.now() });
 				this.invites.set(otherKey, list.slice(-5));
 				return json({ message: `Convite enviado para ${other.name}.` });
 			}

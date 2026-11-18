@@ -374,6 +374,21 @@ test('public elimination room: no timer, everyone confirms ready, the first play
 	assert.equal(b.last('party').leader, b.deserializeAttachment().id);
 });
 
+test('invited friend joins a public elimination waiting room, but not an empty/gone or started one', async () => {
+	const match = room();
+	const open = (params) => match.fetch(new Request(`https://internal/join?${params}&name=X&account=acc${++accountSeq}&xp=0`, { headers: { Upgrade: 'websocket' } }));
+	// Sala que não existe (ninguém dentro): o convite não cria uma sala órfã.
+	assert.equal((await open('invite=1&room=abc123')).status, 404);
+	assert.equal((await open('room=abc123')).status, 101); // quem abriu pelo matchmaker
+	assert.equal((await open('invite=1&room=abc123')).status, 101, 'friend enters by the invite');
+	assert.equal(Object.keys(match.match.players).length, 2);
+	const leader = [...match.sessions.values()][0];
+	match.webSocketMessage([...match.sessions.values()][1], JSON.stringify({ t: 'ready' }));
+	match.webSocketMessage(leader, JSON.stringify({ t: 'start' }));
+	assert.equal(match.match.phase, 'running');
+	assert.equal((await open('invite=1&room=abc123')).status, 409, 'started: refused');
+});
+
 test('a code in use cannot be created again; started rooms refuse new players', async () => {
 	const match = room();
 	const a = await join(match, { create: true });

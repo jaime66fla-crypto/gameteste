@@ -1478,7 +1478,32 @@ func _leave_party() -> void:
 func _on_party_error(message: String) -> void:
     _disconnect_net()
     Net.leave()
+    if _joining_elimination:
+        _joining_elimination = false
+        _show_multiplayer()
+        if status != null:
+            status.text = message
+        return
     _show_teams_tab(message)
+
+var _joining_elimination := false
+
+## Convite aceito para uma eliminatória: entra na sala de espera do amigo.
+func _connect_elimination(room_id: String) -> void:
+    _clear()
+    _label("Eliminatória",28)
+    status = _label("Entrando na sala do seu amigo...",17)
+    status.name = "MultiplayerStatus"
+    _button("Cancelar","CancelButton",func():
+        _joining_elimination = false
+        _disconnect_net()
+        Net.leave()
+        _show_multiplayer())
+    _joining_elimination = true
+    _connect_net()
+    if Net.join_elimination(room_id) != OK:
+        _joining_elimination = false
+        _on_connection_lost("Não foi possível conectar ao servidor.")
 
 func _on_party_notice(message: String) -> void:
     var note := content.get_node_or_null("PartyNote") as Label
@@ -1489,6 +1514,7 @@ func _on_party_notice(message: String) -> void:
 ## Room screen (public elimination or team room), rebuilt on every update.
 ## Everyone confirms "ready"; the first player in the room (leader) starts.
 func _on_party_updated(info: Dictionary) -> void:
+    _joining_elimination = false
     _clear()
     var team_room := bool(info.get("party",true))
     _set_page_width(720.0 if team_room else 520.0)
@@ -1584,6 +1610,7 @@ func _show_elimination_room(info: Dictionary, leader: bool) -> void:
         list.add_child(_player_row(info,entry))
     for _slot in range(players.size(),capacity):
         list.add_child(_plain("—   Vaga livre  ·  bot", 14, DIM))
+    _invite_friends_section() # convidar amigos para esta eliminatória (antes de começar)
     _ready_controls(info, leader)
 
 ## "★ líder / (você) / ✓ PRONTO" row used by both room screens.
@@ -1815,17 +1842,21 @@ func _build_invite_banner() -> void:
     _invite_sound.volume_db = -8.0
     add_child(_invite_sound)
 
-func _on_friend_invite(from: String, code: String) -> void:
-    if code == Net.party_code and Net.is_online():
+var invite_kind := "party"
+
+func _on_friend_invite(from: String, code: String, kind: String = "party") -> void:
+    if code == Net.invite_code():
         Net.pending_invite = {}
         return # already in that room
     invite_code = code
+    invite_kind = kind
     var rank := ""
     for friend in Net.friends_data.get("friends", []):
         if str(friend.get("name", "")) == from:
             rank = str(friend.get("rank", ""))
     invite_label.text = "%s convidou você" % from
-    invite_sub.text = ("%s  ·  " % rank if not rank.is_empty() else "") + "Sala %s  ·  Equipes" % code
+    var where := "Eliminatória  ·  sala de espera" if kind == "elim" else "Sala %s  ·  Equipes" % code
+    invite_sub.text = ("%s  ·  " % rank if not rank.is_empty() else "") + where
     for child in invite_avatar_slot.get_children():
         child.queue_free()
     invite_avatar_slot.add_child(_avatar_badge(from, true, 46.0))
@@ -1861,7 +1892,10 @@ func _accept_invite() -> void:
     if Net.is_online():
         _disconnect_net()
         Net.leave()
-    _connect_party(invite_code)
+    if invite_kind == "elim":
+        _connect_elimination(invite_code)
+    else:
+        _connect_party(invite_code)
 
 func _on_friends_updated(_data: Dictionary) -> void:
     if friends_screen_open:
@@ -1919,7 +1953,8 @@ func _show_friends(message: String = "") -> void:
 func _status_text(friend: Dictionary) -> String:
     match str(friend.get("status","offline")):
         "room":
-            return "na sala %s" % friend.get("code","")
+            var room_code := str(friend.get("code",""))
+            return "numa eliminatória" if room_code.length() == 6 else "na sala %s" % room_code
         "match":
             return "em partida"
         "menu":
@@ -2098,7 +2133,7 @@ func _small_button(text: String, node_name: String, primary: bool, parent: Node)
 func _invite_sort_key(friend: Dictionary) -> int:
     if not bool(friend.get("online", false)):
         return 4
-    if str(friend.get("code", "")) == Net.party_code and not Net.party_code.is_empty():
+    if str(friend.get("code", "")) == Net.invite_code() and not Net.invite_code().is_empty():
         return 3
     return {"menu": 0, "room": 1, "match": 2}.get(str(friend.get("status", "menu")), 0)
 
@@ -2143,7 +2178,7 @@ func _fill_invite_list() -> void:
 func _invite_row(friend: Dictionary) -> PanelContainer:
     var friend_name := str(friend.get("name", ""))
     var online := bool(friend.get("online", false))
-    var here := online and str(friend.get("code", "")) == Net.party_code and not Net.party_code.is_empty()
+    var here := online and str(friend.get("code", "")) == Net.invite_code() and not Net.invite_code().is_empty()
     var panel := PanelContainer.new()
     panel.name = "InviteRow_" + friend_name
     var box := _box(Color.TRANSPARENT, Color.TRANSPARENT, 0, 6)
@@ -2186,7 +2221,7 @@ func _invite_row(friend: Dictionary) -> PanelContainer:
     invite.pressed.connect(func():
         invite.disabled = true
         invite.text = "…"
-        var result: String = await Net.friend_action("invite", friend_name, Net.party_code)
+        var result: String = await Net.friend_action("invite", friend_name, Net.invite_code(), Net.invite_kind())
         var sent := result.begins_with("Convite enviado")
         if sent:
             _invited_at[friend_name] = Time.get_ticks_msec()

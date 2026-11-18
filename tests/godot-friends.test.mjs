@@ -50,9 +50,14 @@ test('friend request, accept, presence, invite once, remove', async () => {
 	// Invite is delivered once.
 	assert.match((await call(accounts, '/friends/invite', { token: ana, body: { name: 'Beto', code: 'K7Q2M' } })).data.message, /Convite/);
 	list = (await call(accounts, '/friends', { token: beto })).data;
-	assert.deepEqual(list.invites, [{ from: 'Ana', code: 'K7Q2M' }]);
+	assert.deepEqual(list.invites, [{ from: 'Ana', code: 'K7Q2M', kind: 'party' }]);
 	list = (await call(accounts, '/friends', { token: beto })).data;
 	assert.deepEqual(list.invites, []);
+	// Convite para a sala de espera de uma eliminatória (código de 6 hex).
+	assert.match((await call(accounts, '/friends/invite', { token: ana, body: { name: 'Beto', code: 'a1b2c3', kind: 'elim' } })).data.message, /Convite/);
+	list = (await call(accounts, '/friends', { token: beto })).data;
+	assert.deepEqual(list.invites, [{ from: 'Ana', code: 'a1b2c3', kind: 'elim' }]);
+	assert.equal((await call(accounts, '/friends/invite', { token: ana, body: { name: 'Beto', code: 'K7Q2M', kind: 'elim' } })).status, 400, 'elim needs a 6-hex room');
 	// Invites need a valid room code and a friend.
 	assert.equal((await call(accounts, '/friends/invite', { token: ana, body: { name: 'Beto', code: '' } })).status, 400);
 	const caio = await register(accounts, 'Caio');
