@@ -18,7 +18,9 @@ func _ready() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	get_tree().root.size = Vector2i(1600, 900)
+	# PROBE_RES=640x360: janela pequena separa o custo de pixels (GPU) do resto.
+	var res := (OS.get_environment("PROBE_RES") if OS.has_environment("PROBE_RES") else "1600x900").split("x")
+	get_tree().root.size = Vector2i(int(res[0]), int(res[1]))
 	DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 	var spawn: Array = SurvivalData.world()["spawns"][2]
 	var spot := Vector3(float(spawn[0]), 0.2, float(spawn[1]))
