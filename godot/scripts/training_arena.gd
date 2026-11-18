@@ -210,6 +210,9 @@ func _melee() -> void:
 			avatar.set("current_clip", "")
 		_set_action("", "")
 		_set_action("swing", STAFF)
+		# O corpo vira para a mira durante o golpe (andando, ele olha para onde vai).
+		if player.has_method("face_aim"):
+			player.call("face_aim", SWING_TIME + 0.15)
 		_swing_left = SWING_TIME
 	var fx = player.get("sound_fx")
 	if fx != null:

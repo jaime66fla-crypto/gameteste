@@ -535,6 +535,7 @@ func _physics_process(delta: float) -> void:
         velocity.y = -0.1
     move_and_slide()
     var actual_velocity := get_real_velocity()
+    _update_body_facing(delta, actual_velocity)
     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
     sprinting = Input.is_action_pressed("sprint") and not aiming and not crouching and not prone and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
     _animate_avatar(delta, actual_move, is_on_floor())
@@ -583,6 +584,39 @@ func _physics_process(delta: float) -> void:
             cancel_grenade_aim() # the release was lost (focus change, menu); never throw by accident
         else:
             _update_grenade_preview()
+
+## Com arma branca na mão o corpo não anda de lado: vira para onde está
+## andando (estilo mundo aberto clássico) e sempre caminha para a frente. A
+## câmera e a mira continuam livres. Ao golpear (face_aim) vira rápido para a
+## mira, para o golpe sair onde se aponta. Com arma de fogo, o corpo segue a
+## câmera como antes (passos laterais de quem mira).
+const BODY_TURN_RATE := 10.0
+const BODY_AIM_TURN_RATE := 28.0
+var _body_yaw := 0.0
+var _face_aim_left := 0.0
+
+func face_aim(seconds: float) -> void:
+    _face_aim_left = maxf(_face_aim_left, seconds)
+
+func _update_body_facing(delta: float, planar_velocity: Vector3) -> void:
+    if avatar == null:
+        return
+    _face_aim_left = maxf(0.0, _face_aim_left - delta)
+    if melee_weapon.is_empty() or aiming:
+        _body_yaw = yaw
+        avatar.rotation.y = 0.0
+        return
+    var planar := Vector2(planar_velocity.x, planar_velocity.z)
+    var rate := BODY_TURN_RATE
+    var target := _body_yaw
+    if _face_aim_left > 0.0:
+        target = yaw
+        rate = BODY_AIM_TURN_RATE
+    elif planar.length() > 0.4:
+        target = atan2(-planar.x, -planar.y) # frente do corpo = -Z
+    _body_yaw = lerp_angle(_body_yaw, target, minf(1.0, delta * rate))
+    # O avatar é filho do jogador (que gira com a câmera): rotação relativa.
+    avatar.rotation.y = wrapf(_body_yaw - yaw, -PI, PI)
 
 func _toggle_weapon_holster() -> void:
     weapon_holstered = not weapon_holstered

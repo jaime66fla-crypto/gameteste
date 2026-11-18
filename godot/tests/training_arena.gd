@@ -112,6 +112,26 @@ func _run() -> void:
 		side_cam.current = false
 		side_cam.queue_free()
 		await _frames(2)
+	# Andando para o lado com o bastão: o corpo vira para onde anda (sem passo lateral).
+	player.global_position = Arena.CENTER + Vector3(-2.0, 0.1, 0.5)
+	player.set("yaw", 0.0)
+	await _frames(5)
+	Input.action_press("move_right")
+	await _frames(45)
+	var turned := float(player.get("avatar").rotation.y)
+	var clip := str(avatar.get("current_clip"))
+	if not _capture_folder().is_empty():
+		get_viewport().get_texture().get_image().save_png(_capture_folder().path_join("arena_andando_de_lado.png"))
+	Input.action_release("move_right")
+	print("andando para a direita: corpo girado %.0f° em relação à câmera, clipe %s" % [rad_to_deg(turned), clip])
+	check(absf(wrapf(turned + PI * 0.5, -PI, PI)) < 0.25, "com o bastão, andar para a direita vira o corpo para a direita (%.0f°)" % rad_to_deg(turned))
+	check(not clip.ends_with("_right") and not clip.ends_with("_left"), "e anda para a frente, sem passo lateral (clipe %s)" % clip)
+	await _frames(20)
+	player.call("face_aim", 0.5)
+	await _frames(20)
+	check(absf(float(player.get("avatar").rotation.y)) < 0.15, "ao golpear o corpo vira para a mira (%.0f°)" % rad_to_deg(float(player.get("avatar").rotation.y)))
+	player.global_position = Arena.RACK + Vector3(-0.8, 0.1, 0.3)
+	await _frames(5)
 	# Clique esquerdo com o bastão: golpeia (não atira).
 	var ammo_before := int(player.get("ammo"))
 	var swing_before := float(arena.get("_swing_left"))
