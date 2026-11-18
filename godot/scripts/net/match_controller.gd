@@ -42,6 +42,13 @@ var bots: Dictionary = {} # id -> true for bots
 var ranks: Dictionary = {} # id -> rank name (players)
 # Team matches (custom 2x2 / 4x4 rooms).
 var team_mode := false
+## Mata-mata: renasce depois de alguns segundos; vence quem chegar a kill_goal abates.
+var dm_mode := false
+var kill_goal := 15
+var kill_counts: Dictionary = {} # id -> abates (placar ao vivo)
+var respawn_left := 0.0 # segundos até renascer (jogador local morto)
+var match_ends_msec := 0 # Time.get_ticks_msec() em que o tempo acaba
+var dm_kit: Dictionary = {"pistol": 45}
 var my_team := -1
 var teams: Dictionary = {} # id -> 0/1
 var team_names: Array = ["Alfa", "Bravo"]
@@ -83,6 +90,12 @@ func _ready() -> void:
 	player.set("grenade_handler", _throw_grenade)
 	player.set("grenade_check", _can_throw_grenade)
 	team_mode = bool(info.get("party", false))
+	dm_mode = str(info.get("mode", "")) == "dm"
+	kill_goal = int(info.get("goal", kill_goal))
+	if info.get("kit") is Dictionary and not (info["kit"] as Dictionary).is_empty():
+		dm_kit = info["kit"]
+	if info.has("duration"):
+		match_ends_msec = Time.get_ticks_msec() + int(info["duration"])
 	if info.get("teams") is Array:
 		team_names = info["teams"]
 	for entry in info.get("roster", []):
@@ -120,6 +133,12 @@ func _ready() -> void:
 		actor.connect("bot_heal", _on_bot_heal)
 		main_node.add_child(actor)
 		actors[id] = actor
+		if dm_mode:
+			for weapon_id in dm_kit:
+				actor.call("give_weapon", weapon_id)
+	if dm_mode:
+		for weapon_id in dm_kit:
+			player.call("give_weapon", weapon_id, int(dm_kit[weapon_id]))
 	# Bot navigation grid (~0.2 s): build it while the match loads, not on the
 	# first bot step (any client may become the bot host later).
 	BotNav.grid_for(main_node.get_world_3d())
@@ -132,6 +151,10 @@ func _ready() -> void:
 		var team_size := int(alive_count / 2.0)
 		_feed("Partida em equipes %dx%d! Você está na equipe %s — elimine a equipe adversária." % [team_size, team_size, _team_name(my_team)])
 		_feed("Aliados têm o nome em azul (visível através das paredes). Não há fogo amigo.")
+	elif dm_mode:
+		_feed("Mata-mata! %d combatentes — o primeiro a fazer %d abates vence." % [alive_count, kill_goal])
+		_feed("Morreu? Você renasce em poucos segundos com uma pistola. As caixas se reabastecem.")
+		return
 	else:
 		_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
 	_feed("Você começa sem arma: procure as caixas de suprimento (E para coletar).")
@@ -210,7 +233,8 @@ func _physics_process(delta: float) -> void:
 		_bot_timer = BOT_RATE
 		# Só bots vivos (todos os jogadores morreram ou saíram): modo caçada, para a
 		# partida não se arrastar com bots passeando pelo mapa.
-		var humans_alive := not local_dead
+		# Mata-mata: quem morre volta em segundos, então nunca entra em caçada.
+		var humans_alive := not local_dead or dm_mode
 		for actor in actors.values():
 			if not actor.is_bot and not actor.dead:
 				humans_alive = true
@@ -255,6 +279,13 @@ func _on_message(data: Dictionary) -> void:
 			_on_end(data)
 		"looted":
 			_on_looted(data)
+		"respawn":
+			_on_respawn(data)
+		"refill":
+			var refilled: Dictionary = data.get("crate", {})
+			var crate = crates.get(str(refilled.get("id", "")))
+			if crate != null:
+				crate.call("refill", refilled)
 		"loot_denied":
 			if str(data.get("by", "")) == my_id:
 				_toast(str(data.get("message", "")).to_upper())
@@ -469,11 +500,15 @@ func _on_health(data: Dictionary) -> void:
 	var killed := bool(data.get("killed", false))
 	var by := str(data.get("by", ""))
 	alive_count = int(data.get("alive", alive_count))
+	if killed and names.has(by) and by != id:
+		kill_counts[by] = int(data.get("kills", int(kill_counts.get(by, 0)) + 1))
 	if id == my_id:
 		if hp < my_hp:
 			_on_local_damaged(my_hp - hp, by)
 		my_hp = hp
 		if killed:
+			if data.has("respawn"):
+				respawn_left = float(data["respawn"]) / 1000.0
 			_on_local_death(by)
 	elif actors.has(id):
 		actors[id].call("set_hp", hp, killed)
@@ -699,7 +734,52 @@ func _on_local_death(killer_id: String) -> void:
 		_killer_banner("VOCÊ FOI ELIMINADO", "")
 	else:
 		_killer_banner("ELIMINADO POR %s" % str(names[killer_id]).to_upper(), _describe(killer_id))
+	if dm_mode:
+		return # renasce em instantes (status mostra a contagem)
 	_feed("Assistindo quem te eliminou. Clique para trocar de câmera  •  ESC: sair da partida.")
+
+## Mata-mata: alguém renasceu (o servidor escolhe o lugar e dá a pistola).
+func _on_respawn(data: Dictionary) -> void:
+	var id := str(data.get("id", ""))
+	var at = _vec(data.get("p"))
+	if at == null:
+		return
+	var weapon := str(data.get("w", "pistol"))
+	alive_count = int(data.get("alive", alive_count))
+	if id == my_id:
+		_revive_local(at, weapon, int(data.get("ammo", 45)))
+	elif actors.has(id):
+		var actor = actors[id]
+		actor.call("revive", at + Vector3(0, 0.1, 0), weapon)
+		actor.call("set_controlled", is_host() and actor.is_bot)
+
+func _revive_local(at: Vector3, weapon: String, reserve: int) -> void:
+	if not local_dead or finished:
+		return
+	local_dead = false
+	respawn_left = 0.0
+	my_hp = 100.0
+	my_medkits = 0
+	my_nades = 0
+	_pending_loot = ""
+	if spectate_camera != null:
+		spectate_camera.queue_free()
+		spectate_camera = null
+	spectate_id = ""
+	player.collision_layer = HitboxScript.LAYER_CHARACTERS
+	player.global_position = at + Vector3(0, 0.1, 0)
+	player.velocity = Vector3.ZERO
+	player.set("yaw", PI)
+	player.rotation.y = PI
+	(player.get("avatar") as Node3D).visible = true # the player re-decides avatar/viewmodel every frame
+	player.process_mode = Node.PROCESS_MODE_INHERIT
+	(player.get("camera") as Camera3D).current = true
+	player.call("start_unarmed")
+	player.call("give_weapon", weapon, reserve)
+	killer_panel.visible = false
+	if not leave_panel.visible:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_toast("DE VOLTA AO COMBATE")
 
 func _killer_banner(title: String, subtitle: String) -> void:
 	killer_title.text = title
@@ -729,8 +809,12 @@ func _process(delta: float) -> void:
 		if not _victory_finished and _victory_time >= VICTORY_SECONDS:
 			_finish_victory()
 	_update_loot_ui()
+	if local_dead and dm_mode:
+		respawn_left = maxf(0.0, respawn_left - delta)
 	if finished:
 		status_label.text = ""
+	elif dm_mode:
+		status_label.text = _dm_status()
 	elif local_dead:
 		var target := _spectate_target()
 		var watched := "—"
@@ -756,6 +840,22 @@ func _process(delta: float) -> void:
 			var goal: Vector3 = target.global_position + back * 3.6 + Vector3(0, 2.4, 0)
 			spectate_camera.global_position = spectate_camera.global_position.lerp(goal, minf(1.0, delta * 5.0))
 			spectate_camera.look_at(target.global_position + Vector3(0, 1.4, 0))
+
+## Mata-mata HUD line: your kills / goal, the leader and the clock (or the respawn countdown).
+func _dm_status() -> String:
+	var leader := ""
+	var best := 0
+	for id in kill_counts:
+		if int(kill_counts[id]) > best:
+			best = int(kill_counts[id])
+			leader = id
+	var left := maxi(0, int(ceil((match_ends_msec - Time.get_ticks_msec()) / 1000.0))) if match_ends_msec > 0 else 0
+	var clock := "%d:%02d" % [floori(left / 60.0), left % 60]
+	var lead := "LÍDER: VOCÊ" if leader == my_id else ("LÍDER: %s %d" % [str(names.get(leader, "")).to_upper(), best] if not leader.is_empty() else "LÍDER: —")
+	var mine := int(kill_counts.get(my_id, my_kills))
+	if local_dead:
+		return "RENASCENDO EM %d…  |  ABATES %d/%d  •  %s  •  %s" % [int(ceil(respawn_left)), mine, kill_goal, lead, clock]
+	return "ABATES %d/%d  •  %s  •  %s" % [mine, kill_goal, lead, clock]
 
 ## Who an eliminated player can watch. In team matches, teammates come first.
 func _living_ids() -> Array:
@@ -843,6 +943,9 @@ func _on_end(data: Dictionary) -> void:
 	var winner_id := str(data.get("winner", ""))
 	var winner_name := str(data.get("name", names.get(winner_id, "")))
 	var reason := "Tempo esgotado: venceu quem tinha mais abates." if str(data.get("reason", "")) == "tempo" else ("Você foi o último de pé." if won else "%s foi o último de pé." % winner_name)
+	if str(data.get("reason", "")) == "abates":
+		var goal := int(data.get("goal", kill_goal))
+		reason = ("Você chegou a %d abates primeiro." % goal) if won else ("%s chegou a %d abates primeiro." % [winner_name, goal])
 	_play_victory(_node_for(winner_id), "VOCÊ VENCEU!" if won else "VENCEDOR", winner_name, _winner_line(data, winner_id), ACCENT_GOLD,
 		func(): _show_results(data, title, reason, "win" if won else "lose"))
 
@@ -1367,7 +1470,7 @@ func _show_results(data: Dictionary, title: String, subtitle: String, outcome: S
 	var head := VBoxContainer.new()
 	head.add_theme_constant_override("separation", 2)
 	column.add_child(head)
-	var mode := "EQUIPES" if team_mode else "ELIMINATÓRIA"
+	var mode := "EQUIPES" if team_mode else ("MATA-MATA" if dm_mode else "ELIMINATÓRIA")
 	var kicker := _res_label("FIM DA PARTIDA  ·  " + mode, 10, RES_MUTED, true)
 	kicker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	head.add_child(kicker)

@@ -387,7 +387,7 @@ func _show_main(notice: String = "") -> void:
     var logged := Net.is_logged_in()
     var first: Button
     if logged:
-        first = _nav_button(nav, "Jogar online", "MultiplayerButton", _show_multiplayer, true, "3 modos de jogo")
+        first = _nav_button(nav, "Jogar online", "MultiplayerButton", _show_multiplayer, true, "4 modos de jogo")
     else:
         first = _nav_button(nav, "Entrar / criar conta", "LoginButton", func(): _show_login(false), true)
     _nav_button(nav, "Treino offline", "StartButton", _start_match, false, "Bonecos de teste")
@@ -1289,9 +1289,9 @@ func _online_tabs(active: int) -> void:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 4)
     bar.add_child(row)
-    var titles := ["Eliminatória","Equipes","Sobrevivência"]
-    var names := ["TabElimination","TabTeams","TabSurvival"]
-    var actions := [_show_multiplayer,_show_teams_tab,_show_survival_tab]
+    var titles := ["Eliminatória","Mata-mata","Equipes","Sobrevivência"]
+    var names := ["TabElimination","TabDeathmatch","TabTeams","TabSurvival"]
+    var actions := [_show_multiplayer,_show_deathmatch_tab,_show_teams_tab,_show_survival_tab]
     for i in titles.size():
         var on: bool = i == active
         var tab := Button.new()
@@ -1359,11 +1359,31 @@ func _show_multiplayer() -> void:
     find.grab_focus()
     _back_row()
 
+# ----------------------------------------------------------- mata-mata ---
+
+## Aba "Mata-mata": salas públicas de 8, todos contra todos, renasce ao morrer.
+func _show_deathmatch_tab() -> void:
+    if not _online_screen(1):
+        return
+    _mode_card("Mata-mata", "8 jogadores",
+        "Todos contra todos sem pausa: morreu, volta em 3 segundos com uma pistola, longe de quem está vivo. O primeiro a chegar a 15 abates vence — ou quem tiver mais abates quando os 6 minutos acabarem.",
+        ["Todos começam com pistola; as caixas se reabastecem",
+        "Morrer não tira XP aqui; cada abate vale o mesmo da Eliminatória",
+        "Proteção de 1,5 s ao renascer (acaba se você atirar)",
+        "Vagas livres são completadas com bots"], Color("#ff9a6a"))
+    _player_strip()
+    _status_note()
+    var find := _button("Procurar sala","FindDeathmatchButton",func():
+        _show_lobby(str(Net.profile.get("name","")), true)
+    ,true)
+    find.grab_focus()
+    _back_row()
+
 # ------------------------------------------------------- sobrevivência ---
 
 ## Aba "Sobrevivência": mundo aberto com zumbis, até 16 jogadores, sem sala de espera.
 func _show_survival_tab() -> void:
-    if not _online_screen(2):
+    if not _online_screen(3):
         return
     _mode_card("Sobrevivência", "Até 16 jogadores",
         "Mundo aberto infestado de zumbis. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",
@@ -1488,7 +1508,7 @@ func _join_survival(world_id: String) -> void:
 
 ## "Equipes" tab: create a room or join a friend's with the code.
 func _show_teams_tab(message: String = "") -> void:
-    if not _online_screen(1):
+    if not _online_screen(2):
         return
     _mode_card("Equipes", "2x2 ou 4x4",
         "Partida personalizada em equipes. Crie uma sala e mande o código para seus amigos.",
@@ -1669,7 +1689,11 @@ func _on_party_updated(info: Dictionary) -> void:
 func _show_elimination_room(info: Dictionary, leader: bool) -> void:
     var players: Array = info.get("players",[])
     var capacity := int(info.get("capacity",8))
-    _screen_header("Eliminatória", "Sala de espera", "%d/%d jogadores  ·  vagas livres viram bots" % [players.size(),capacity])
+    var deathmatch := str(info.get("mode","elim")) == "dm"
+    var detail := "%d/%d jogadores  ·  vagas livres viram bots" % [players.size(),capacity]
+    if deathmatch:
+        detail += "  ·  %d abates para vencer" % int(info.get("goal",15))
+    _screen_header("Mata-mata" if deathmatch else "Eliminatória", "Sala de espera", detail)
     var list := _card(content, "RoomPlayersCard", Color(0, 0, 0, 0.25), LINE, 16)
     list.name = "RoomPlayers"
     list.add_theme_constant_override("separation",8)
@@ -1777,9 +1801,9 @@ func _connect_net() -> void:
     Net.party_error.connect(_on_party_error)
     Net.party_notice.connect(_on_party_notice)
 
-func _show_lobby(player_name: String) -> void:
+func _show_lobby(player_name: String, deathmatch: bool = false) -> void:
     _clear()
-    _label("Procurando sala",28)
+    _label("Procurando sala de mata-mata" if deathmatch else "Procurando sala",28)
     status = _label("Conectando ao servidor...",17)
     status.name = "MultiplayerStatus"
     var players := _label("",15,Color("#9bad9f"))
@@ -1787,10 +1811,14 @@ func _show_lobby(player_name: String) -> void:
     _button("Cancelar","CancelButton",func():
         _disconnect_net()
         Net.leave()
-        _show_multiplayer()
+        if deathmatch:
+            _show_deathmatch_tab()
+        else:
+            _show_multiplayer()
     )
     _connect_net()
-    if Net.find_match(player_name) != OK:
+    var opened := Net.find_deathmatch(player_name) if deathmatch else Net.find_match(player_name)
+    if opened != OK:
         _on_connection_lost("Não foi possível conectar ao servidor.")
 
 func _disconnect_net() -> void:

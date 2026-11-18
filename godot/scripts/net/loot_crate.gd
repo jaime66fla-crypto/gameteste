@@ -119,6 +119,16 @@ func mark_opened() -> void:
 	var tween := create_tween()
 	tween.tween_property(lid, "rotation:x", -1.9, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
+## Mata-mata: the server refilled this crate (new contents, lid closes again).
+func refill(data: Dictionary) -> void:
+	items = data.get("items", {})
+	opened = false
+	if label != null:
+		label.text = contents_text()
+	if lid != null:
+		var tween := create_tween()
+		tween.tween_property(lid, "rotation:x", 0.0, 0.3).set_trans(Tween.TRANS_SINE)
+
 func _part(parent: Node3D, pos: Vector3, size: Vector3, color: Color) -> void:
 	var mesh := MeshInstance3D.new()
 	var box := BoxMesh.new()

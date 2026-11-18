@@ -46,6 +46,16 @@ const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cab
 const TEAM_NAMES = ['Alfa', 'Bravo'];
 const TEAM_BUILDINGS = [[4, 5], [6, 7]];
 const TEAM_SIZES = [2, 4];
+// Mata-mata ("mode=dm"): same 8-player public rooms, but nobody stays dead.
+// You respawn after a few seconds with a pistol in the building farthest from
+// the others; crates refill; the first to DM_KILL_GOAL kills (or the most kills
+// when time runs out) wins. Dying costs no XP here.
+const DM_KILL_GOAL = 15;
+const DM_MATCH_MS = 6 * 60 * 1000;
+const DM_RESPAWN_MS = 3000;
+const DM_SPAWN_PROTECT_MS = 1500; // invulnerable right after respawning (until you attack)
+const DM_CRATE_REFILL_MS = 25000;
+const DM_KIT = 'pistol';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
 function newPartyCode() {
@@ -162,14 +172,17 @@ export async function handleGodotSocket(request, env, url) {
 	if (invited) return joinInvitedElimination(request, env, session, invited);
 	const matchmaker = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('godot-matchmaker'));
 	const name = session.name;
+	// Mata-mata has its own queue; its rooms are "match:<id>" too, so friend invites work the same.
+	const mode = url.searchParams.get('mode') === 'dm' ? 'dm' : '';
 	let full = '';
 	for (let attempt = 0; attempt < 3; attempt++) {
-		const assigned = await matchmaker.fetch('https://internal/assign' + (full ? '?full=' + encodeURIComponent(full) : ''));
+		const query = [mode && 'mode=' + mode, full && 'full=' + encodeURIComponent(full)].filter(Boolean).join('&');
+		const assigned = await matchmaker.fetch('https://internal/assign' + (query ? '?' + query : ''));
 		const { room } = await assigned.json();
 		const stub = env.GODOT_MATCHES.get(env.GODOT_MATCHES.idFromName('match:' + room));
 		const target =
 			'https://internal/join?room=' + encodeURIComponent(room) + '&name=' + encodeURIComponent(name) +
-			'&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
+			'&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp) + (mode ? '&mode=' + mode : '');
 		const response = await stub.fetch(new Request(target, request));
 		if (response.status === 101) return response;
 		full = room; // started or full in the meantime: ask for a fresh room
@@ -232,7 +245,16 @@ export class GodotMatch {
 			room, phase: 'waiting', deadline: 0, startedAt: 0, players: {}, order: [], host: null, winner: null, crates: {}, dropSeq: 0,
 			// Custom rooms only.
 			party: false, leader: null, size: 2, bots: true, winnerTeam: null, grenades: {},
+			mode: 'elim', // public rooms: 'elim' (one life) or 'dm' (mata-mata, respawn)
 		};
+	}
+
+	isDm() {
+		return !this.match.party && this.match.mode === 'dm';
+	}
+
+	matchLength() {
+		return this.isDm() ? DM_MATCH_MS : MAX_MATCH_MS;
 	}
 
 	capacity() {
@@ -288,6 +310,12 @@ export class GodotMatch {
 			return new Response('Essa sala de eliminatória não existe mais.', { status: 404 });
 		}
 		const m = this.match;
+		if (!isParty && url.searchParams.get('invite') !== '1') {
+			// The first player of a public room sets its mode; the matchmaker never mixes queues.
+			const mode = url.searchParams.get('mode') === 'dm' ? 'dm' : 'elim';
+			if (!this.sessions.size && m.phase === 'waiting') m.mode = mode;
+			else if ((m.mode || 'elim') !== mode) return new Response('Sala de outro modo', { status: 409 });
+		}
 		if (m.phase !== 'waiting') return new Response(m.party ? 'A partida desta sala já começou.' : 'Partida em andamento', { status: 409 });
 		if (this.sessions.size >= this.capacity()) return new Response(m.party ? 'A sala está cheia.' : 'Sala cheia', { status: 409 });
 		const account = url.searchParams.get('account') || '';
@@ -310,7 +338,7 @@ export class GodotMatch {
 		if (!m.leader) m.leader = id;
 		if (m.party) m.players[id].team = this.teamCount(0) <= this.teamCount(1) ? 0 : 1;
 		this.save();
-		this.send(server, { t: 'welcome', id, room: m.room, party: m.party, lobby: true, code: m.party ? m.room : '', capacity: this.capacity() });
+		this.send(server, { t: 'welcome', id, room: m.room, party: m.party, mode: m.mode || 'elim', lobby: true, code: m.party ? m.room : '', capacity: this.capacity() });
 		this.broadcastParty();
 		return new Response(null, { status: 101, webSocket: client });
 	}
@@ -321,10 +349,11 @@ export class GodotMatch {
 	 * caller asks again with full=<room>, which opens a new one.
 	 */
 	async assign(url) {
-		let mm = await this.ctx.storage.get('mm');
+		const key = url.searchParams.get('mode') === 'dm' ? 'mm_dm' : 'mm';
+		let mm = await this.ctx.storage.get(key);
 		const full = url.searchParams.get('full');
 		if (!mm || (full && full === mm.room)) mm = { room: crypto.randomUUID().slice(0, 6), openedAt: Date.now() };
-		await this.ctx.storage.put('mm', mm);
+		await this.ctx.storage.put(key, mm);
 		return json({ room: mm.room });
 	}
 
@@ -339,6 +368,8 @@ export class GodotMatch {
 		this.broadcast({
 			t: 'party',
 			party: m.party,
+			mode: m.mode || 'elim',
+			goal: this.isDm() ? DM_KILL_GOAL : undefined,
 			code: m.party ? m.room : '',
 			leader: m.leader,
 			size: m.size,
@@ -434,7 +465,9 @@ export class GodotMatch {
 				player.inv = {};
 			});
 		}
-		for (const id of m.order) Object.assign(m.players[id], { medkits: 0, nades: 0 });
+		for (const id of m.order) Object.assign(m.players[id], { medkits: 0, nades: 0, deaths: 0, respawnAt: 0 });
+		// Mata-mata: everyone starts with a pistol (and gets one again on every respawn).
+		if (this.isDm()) for (const id of m.order) m.players[id].inv = { [DM_KIT]: true };
 		m.grenades = {};
 		const spots = [...layout.buildings.map((b) => b.loot), ...layout.outdoor_loot];
 		m.crates = {};
@@ -460,6 +493,11 @@ export class GodotMatch {
 			host: m.host,
 			alive: m.order.length,
 			party: m.party,
+			mode: m.mode || 'elim',
+			goal: this.isDm() ? DM_KILL_GOAL : undefined,
+			duration: this.matchLength(),
+			respawn: this.isDm() ? DM_RESPAWN_MS : undefined,
+			kit: this.isDm() ? { [DM_KIT]: RESERVE_AMMO[DM_KIT] } : undefined,
 			teams: m.party ? TEAM_NAMES : undefined,
 			roster: m.order.map((id) => {
 				const p = m.players[id];
@@ -469,7 +507,61 @@ export class GodotMatch {
 			}),
 			crates: Object.values(m.crates),
 		});
-		this.ctx.waitUntil(this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS));
+		this.schedule();
+	}
+
+	/** Next alarm: the end of the match, or (mata-mata) the next respawn or crate refill. */
+	schedule() {
+		const m = this.match;
+		if (m.phase !== 'running') return;
+		let next = m.startedAt + this.matchLength();
+		if (this.isDm()) {
+			for (const p of Object.values(m.players)) if (p.dead && p.respawnAt) next = Math.min(next, p.respawnAt);
+			for (const c of Object.values(m.crates)) if (c.refillAt) next = Math.min(next, c.refillAt);
+		}
+		this.ctx.waitUntil(this.ctx.storage.setAlarm(next));
+	}
+
+	/** Mata-mata: bring back whoever finished waiting, refill opened crates. */
+	dmTick(now = Date.now()) {
+		const m = this.match;
+		for (const id of m.order) {
+			const p = m.players[id];
+			if (p?.dead && p.respawnAt && p.respawnAt <= now) this.respawn(p, now);
+		}
+		for (const crate of Object.values(m.crates)) if (crate.refillAt && crate.refillAt <= now) this.refillCrate(crate);
+		this.save();
+	}
+
+	/** Respawn in the building farthest from the living (random among the 3 best), with a pistol. */
+	respawn(p, now = Date.now()) {
+		const m = this.match;
+		p.respawnAt = 0;
+		if (!p.bot && !this.sessions.has(p.id)) return; // left the match: stays out
+		const others = m.order.map((id) => m.players[id]).filter((o) => o && o !== p && !o.dead && o.p);
+		const ranked = layout.buildings
+			.map((b, i) => ({ i, d: others.length ? Math.min(...others.map((o) => flatDistance([b.spawn[0], 0, b.spawn[1]], o.p))) : Math.random() }))
+			.sort((a, b) => b.d - a.d);
+		const pick = ranked[Math.floor(Math.random() * Math.min(3, ranked.length))];
+		const at = layout.buildings[pick.i].spawn;
+		Object.assign(p, {
+			dead: false, hp: 100, spawn: pick.i, p: [at[0], 0, at[1]], inv: { [DM_KIT]: true }, medkits: 0, nades: 0, healAt: 0,
+			safeUntil: now + DM_SPAWN_PROTECT_MS,
+		});
+		this.broadcast({ t: 'respawn', id: p.id, spawn: pick.i, p: p.p, w: DM_KIT, ammo: RESERVE_AMMO[DM_KIT], safe: DM_SPAWN_PROTECT_MS, alive: this.alive().length });
+	}
+
+	/** Mata-mata: an opened map crate fills up again (new random weapon). */
+	refillCrate(crate) {
+		crate.refillAt = 0;
+		crate.open = false;
+		if (crate.med) crate.items = {};
+		else {
+			const weapon = crate.tower ? 'sniper' : rollWeapon();
+			crate.items = { [weapon]: RESERVE_AMMO[weapon] };
+			crate.nades = crate.tower || Math.random() < 0.5 ? 1 : 0;
+		}
+		this.broadcast({ t: 'refill', crate });
 	}
 
 	webSocketMessage(ws, message) {
@@ -539,6 +631,10 @@ export class GodotMatch {
 				if (kits) looter.medkits = Math.min(MAX_MEDKITS, (looter.medkits || 0) + kits);
 				const nades = crate.nades || 0;
 				if (nades) looter.nades = Math.min(MAX_NADES, (looter.nades || 0) + nades);
+				if (this.isDm() && !crate.drop) {
+					crate.refillAt = Date.now() + DM_CRATE_REFILL_MS;
+					this.schedule();
+				}
 				this.save();
 				this.broadcast({ t: 'looted', crate: crate.id, by: looter.id, items: crate.items, med: !!crate.med, kits, nades });
 				if (kits) this.broadcast({ t: 'medkits', id: looter.id, count: looter.medkits });
@@ -662,15 +758,27 @@ export class GodotMatch {
 	}
 
 	damage(attacker, target, amount, weapon, zone = null) {
+		const self = attacker.id === target.id; // own grenade: no kill, no XP
+		const dm = this.isDm();
+		if (dm && !self) {
+			attacker.safeUntil = 0; // attacking ends your spawn protection
+			if (target.safeUntil && Date.now() < target.safeUntil) return;
+		}
 		target.hp = Math.max(0, Math.round((target.hp - amount) * 10) / 10);
 		const killed = target.hp === 0;
-		const self = attacker.id === target.id; // own grenade: no kill, no XP
 		if (killed) {
 			target.dead = true;
 			if (!self) attacker.kills++;
+			if (dm) {
+				target.deaths = (target.deaths || 0) + 1;
+				target.respawnAt = Date.now() + DM_RESPAWN_MS;
+			}
 		}
 		this.save();
-		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length });
+		this.broadcast({
+			t: 'hp', id: target.id, hp: target.hp, by: attacker.id, w: weapon, zone, killed, kills: attacker.kills, alive: this.alive().length,
+			...(dm && killed ? { respawn: DM_RESPAWN_MS, deaths: target.deaths } : {}),
+		});
 		if (killed) {
 			// XP: a real player is worth much more than a bot.
 			if (!attacker.bot && !self) {
@@ -683,10 +791,11 @@ export class GodotMatch {
 				}
 				if (zone === 'head') this.credit(attacker, XP_REWARDS.headshot_bonus, 'headshot', target.name);
 			}
-			// Morrer custa XP (inclusive na própria granada).
-			if (!target.bot) this.credit(target, XP_REWARDS.death, 'death', self ? '' : attacker.name);
+			// Morrer custa XP (inclusive na própria granada) — menos no mata-mata, onde se renasce.
+			if (!target.bot && !dm) this.credit(target, XP_REWARDS.death, 'death', self ? '' : attacker.name);
 			this.dropCrate(target);
 			this.checkEnd();
+			if (dm) this.schedule(); // respawn alarm (no-op once the match ended)
 		}
 	}
 
@@ -742,14 +851,28 @@ export class GodotMatch {
 		const m = this.match;
 		if (m.phase !== 'running') return;
 		if (m.party) return this.checkTeamEnd(force);
-		const alive = this.alive();
-		if (alive.length > 1 && !force) return;
-		// On timeout the survivor with most kills (then most health) wins.
-		alive.sort((a, b) => m.players[b].kills - m.players[a].kills || m.players[b].hp - m.players[a].hp);
+		const dm = this.isDm();
+		const byScore = (a, b) => m.players[b].kills - m.players[a].kills || (m.players[a].deaths || 0) - (m.players[b].deaths || 0);
+		let winner;
+		let reason;
+		if (dm) {
+			// Mata-mata: first to the kill goal; on timeout, most kills (then fewest deaths).
+			winner = [...m.order].sort(byScore)[0] || null;
+			const reached = !!winner && m.players[winner].kills >= DM_KILL_GOAL;
+			if (!reached && !force) return;
+			reason = reached ? 'abates' : 'tempo';
+		} else {
+			const alive = this.alive();
+			if (alive.length > 1 && !force) return;
+			// On timeout the survivor with most kills (then most health) wins.
+			alive.sort((a, b) => m.players[b].kills - m.players[a].kills || m.players[b].hp - m.players[a].hp);
+			winner = alive[0] || null;
+			reason = force ? 'tempo' : 'eliminacao';
+		}
 		m.phase = 'finished';
-		m.winner = alive[0] || null;
+		m.winner = winner;
 		this.save();
-		const winner = m.winner ? m.players[m.winner] : null;
+		const winnerPlayer = m.winner ? m.players[m.winner] : null;
 		// Everyone who played to the end earns match XP; the winner a bonus.
 		for (const id of m.order) {
 			const player = m.players[id];
@@ -760,11 +883,13 @@ export class GodotMatch {
 		this.broadcast({
 			t: 'end',
 			winner: m.winner,
-			name: winner ? winner.name : 'Ninguém',
-			reason: force ? 'tempo' : 'eliminacao',
-			board: m.order
-				.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, bot: m.players[id].bot, rank: m.players[id].rank || '', xp: m.players[id].xpGain || 0 }))
-				.sort((a, b) => b.kills - a.kills),
+			name: winnerPlayer ? winnerPlayer.name : 'Ninguém',
+			reason,
+			mode: m.mode || 'elim',
+			goal: dm ? DM_KILL_GOAL : undefined,
+			board: [...m.order]
+				.sort(byScore)
+				.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, deaths: m.players[id].deaths || 0, bot: m.players[id].bot, rank: m.players[id].rank || '', xp: m.players[id].xpGain || 0 })),
 		});
 		this.ctx.waitUntil(Promise.all(m.order.map((id) => this.flush(m.players[id], id === m.winner))));
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
@@ -841,8 +966,9 @@ export class GodotMatch {
 		if (m.phase === 'waiting') {
 			return; // rooms start only when the leader confirms
 		} else if (m.phase === 'running') {
-			if (now >= m.startedAt + MAX_MATCH_MS) this.checkEnd(true);
-			else await this.ctx.storage.setAlarm(m.startedAt + MAX_MATCH_MS);
+			if (now >= m.startedAt + this.matchLength()) return this.checkEnd(true);
+			if (this.isDm()) this.dmTick(now);
+			this.schedule();
 		} else {
 			for (const ws of this.sessions.values()) {
 				try {

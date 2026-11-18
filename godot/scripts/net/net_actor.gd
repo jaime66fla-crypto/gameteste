@@ -290,6 +290,34 @@ func die() -> void:
 	name_tag.visible = false
 	_death_timer = 0.0
 
+## Mata-mata: volta à partida noutro lugar, com vida cheia e só a pistola.
+func revive(at: Vector3, weapon: String) -> void:
+	dead = false
+	hp = 100.0
+	visible = true
+	set_physics_process(true)
+	collision_layer = HitboxScript.LAYER_CHARACTERS
+	collision_mask = HitboxScript.LAYER_WORLD | HitboxScript.LAYER_CHARACTERS
+	for body in hitboxes:
+		body.collision_layer = HitboxScript.LAYER_HITBOXES
+	if visual != null:
+		visual.rotation = Vector3.ZERO
+	name_tag.visible = true
+	global_position = at
+	target_position = at
+	velocity = Vector3.ZERO
+	_has_state = false
+	remote_state = {}
+	_death_timer = 0.0
+	medkits = 0
+	_ai_target_id = ""
+	_ai_target = null
+	_has_waypoint = false
+	_goal_crate = ""
+	_approach_point = Vector3.INF
+	owned_weapons.clear()
+	give_weapon(weapon)
+
 ## Sobrevivência: jogador que saiu do jogo. Fica deitado de costas, dormindo,
 ## no lugar onde saiu — os outros veem, mas ninguém acerta nem esbarra nele.
 var sleeping := false

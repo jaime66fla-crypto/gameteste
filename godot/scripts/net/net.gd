@@ -278,6 +278,13 @@ func save_name(value: String) -> void:
 func find_match(player_name: String) -> Error:
 	return _open(player_name, "")
 
+## Mata-mata: fila própria de salas públicas (8 jogadores, renasce ao morrer).
+func find_deathmatch(player_name: String) -> Error:
+	return _open(player_name, "", "/godot/ws", "", "", "dm")
+
+## Modo da sala pública atual: "elim" ou "dm" (vem do servidor no welcome/party/start).
+var room_mode := "elim"
+
 ## Convite de amigo: entra direto na sala de espera daquela eliminatória.
 func join_elimination(room_id: String) -> Error:
 	return _open(load_name(), "", "/godot/ws", "", room_id)
@@ -329,7 +336,7 @@ func in_room_lobby() -> bool:
 func is_party_leader() -> bool:
 	return not my_id.is_empty() and str(party_info.get("leader", "")) == my_id
 
-func _open(player_name: String, party: String, path: String = "/godot/ws", world: String = "", elim: String = "") -> Error:
+func _open(player_name: String, party: String, path: String = "/godot/ws", world: String = "", elim: String = "", mode: String = "") -> Error:
 	leave()
 	socket = WebSocketPeer.new()
 	_opened = false
@@ -346,6 +353,9 @@ func _open(player_name: String, party: String, path: String = "/godot/ws", world
 		query += "&world=" + world.uri_encode()
 	if not elim.is_empty():
 		query += "&elim=" + elim.uri_encode()
+	if not mode.is_empty():
+		query += "&mode=" + mode.uri_encode()
+	room_mode = mode if not mode.is_empty() else "elim"
 	return socket.connect_to_url(server_url.replace("/godot/ws", path) + query)
 
 func is_online() -> bool:
@@ -577,6 +587,7 @@ func _handle(data: Dictionary) -> void:
 			in_match = false
 			party_info = data
 			party_code = str(data.get("code", ""))
+			room_mode = str(data.get("mode", room_mode))
 			for entry in data.get("players", []):
 				if str(entry.get("id", "")) == my_id and entry.get("team") != null:
 					my_team = int(entry["team"])
@@ -585,6 +596,7 @@ func _handle(data: Dictionary) -> void:
 		"welcome":
 			my_id = str(data["id"])
 			room = str(data.get("room", ""))
+			room_mode = str(data.get("mode", room_mode))
 			if bool(data.get("party", false)):
 				party_code = str(data.get("code", room))
 			lobby_joined.emit(data)
