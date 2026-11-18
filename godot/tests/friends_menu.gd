@@ -112,6 +112,39 @@ func _run() -> void:
 	_check(menu.find_child("AcceptInviteButton", true, false) != null, "Invite can be accepted")
 	(menu.find_child("IgnoreInviteButton", true, false) as Button).pressed.emit()
 	_check(not banner.visible and (net.get("pending_invite") as Dictionary).is_empty(), "Invite can be ignored")
+	# Chat do menu principal: global e conversa com amigo, não lidas e só na tela principal.
+	net.set_process(false) # sem conexão de verdade: mensagens injetadas
+	net.set("party_info", {})
+	net.set("party_code", "")
+	menu.call("_show_main")
+	await process_frame
+	var dock := menu.find_child("ChatDock", true, false) as Control
+	_check(dock != null and dock.visible, "Chat appears on the main menu")
+	net.call("_chat_handle", {"t": "chat_hello", "name": "Lider", "global": [], "recent": []})
+	net.call("_chat_handle", {"t": "msg", "ch": "global", "from": "Ana", "rank": "Cabo", "text": "oi", "at": 1})
+	net.call("_chat_handle", {"t": "msg", "ch": "dm", "from": "Beto", "to": "Lider", "rank": "Recruta", "text": "bora?", "at": 2})
+	net.call("_chat_handle", {"t": "msg", "ch": "global", "from": "Lider", "rank": "Recruta", "text": "minha", "at": 3})
+	_check(int(net.call("chat_unread_total")) == 2, "Unread: messages from others only (%d)" % int(net.call("chat_unread_total")))
+	var unread_badge := dock.find_child("ChatUnread", true, false) as Label
+	_check(unread_badge != null and unread_badge.visible and unread_badge.text == "2", "Chat button shows unread count")
+	dock.set("open", true)
+	dock.set("tab", "global")
+	dock.call("refresh")
+	_check(int(net.get("chat_unread").get("global", 0)) == 0 and int(net.get("chat_unread").get("Beto", 0)) == 1, "Opening Global reads only Global")
+	var chat_list := dock.find_child("ChatList", true, false) as VBoxContainer
+	_check(chat_list != null and chat_list.get_child_count() == 2, "Global shows its messages")
+	dock.set("tab", "friends")
+	dock.set("friend", "")
+	dock.call("refresh")
+	_check(dock.find_child("ChatFriend_Beto", true, false) != null and dock.find_child("ChatFriend_Duda", true, false) != null, "Friends tab lists friends")
+	dock.set("friend", "Beto")
+	dock.call("refresh")
+	_check(int(net.call("chat_unread_total")) == 0, "Opening the conversation reads it")
+	menu.call("_show_friends")
+	await process_frame
+	_check(not dock.visible, "Chat hidden outside the main menu")
+	net.call("chat_close")
+	net.set_process(true)
 	menu.queue_free()
 	await process_frame
 	net.set("party_code", "")

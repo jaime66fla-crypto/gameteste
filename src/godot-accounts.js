@@ -2,6 +2,7 @@
 // One Durable Object instance ("godot-accounts") owns every account so names
 // stay unique. Passwords are stored only as salted PBKDF2-SHA256 hashes.
 import ranks from '../godot/data/ranks.json' with { type: 'json' };
+import { installChat } from './godot-chat.js';
 
 const SESSION_DAYS = 90;
 const PBKDF2_ITERATIONS = 100000;
@@ -97,6 +98,18 @@ const AVATAR_MAX_BYTES = 60 * 1024; // foto já reduzida pelo jogo (128×128 JPE
 const ONLINE_MS = 25000; // a client polls every ~8 s while the game is open
 const INVITE_MS = 120000;
 
+/**
+ * GET /godot/chat (WebSocket): chat do menu, global e com amigos (src/godot-chat.js).
+ * O pedido vai inteiro para o Durable Object de contas (o Upgrade passa junto).
+ */
+export async function handleGodotChat(request, env, url) {
+	const accounts = env.GODOT_ACCOUNTS.get(env.GODOT_ACCOUNTS.idFromName('godot-accounts'));
+	const headers = new Headers(request.headers);
+	const token = bearer(request, url);
+	if (token) headers.set('Authorization', 'Bearer ' + token);
+	return accounts.fetch(new Request('https://internal/chat', { headers }));
+}
+
 /** Resolve a session token to {account, name, xp} (used by the match socket route). */
 export async function resolveSession(env, token) {
 	if (!token) return null;
@@ -132,6 +145,8 @@ export class GodotAccounts {
 					return this.addXp(await request.json());
 				case '/friends':
 					return this.friends(bearer(request, url), url);
+				case '/chat':
+					return this.chatConnect(request, bearer(request, url));
 				case '/profile/name':
 					return request.method === 'POST' ? this.rename(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/profile/avatar':
@@ -466,3 +481,5 @@ export class GodotAccounts {
 		return json({ players, me, total: board.length });
 	}
 }
+
+installChat(GodotAccounts, rankFor);

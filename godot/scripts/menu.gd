@@ -277,6 +277,9 @@ func _rank_ladder(current: String, parent: Node) -> void:
 
 func _clear() -> void:
     friends_screen_open = false
+    if chat_dock != null:
+        chat_dock.set("shown", false) # o chat só fica na tela principal
+        chat_dock.call("refresh")
     if invite_side != null:
         invite_side.visible = false # a lista lateral só existe na tela da sala
     for child in content.get_children():
@@ -429,6 +432,21 @@ func _show_main(notice: String = "") -> void:
     _leaderboard_panel(side)
     first.grab_focus()
     _animate_in(nav.get_children() + [side])
+    _show_chat_dock()
+
+## Chat global e com amigos no canto inferior direito (scripts/ui/chat_dock.gd).
+## O mesmo painel é reaproveitado: aberto/fechado e a conversa continuam.
+const ChatDockScript = preload("res://scripts/ui/chat_dock.gd")
+var chat_dock: PanelContainer
+
+func _show_chat_dock() -> void:
+    if chat_dock == null:
+        chat_dock = ChatDockScript.new()
+        chat_dock.call("setup", self)
+        add_child(chat_dock)
+    move_child(chat_dock, get_child_count() - 1)
+    chat_dock.set("shown", true)
+    chat_dock.call("refresh")
 
 func _on_menu_resized() -> void:
     if menu_card:

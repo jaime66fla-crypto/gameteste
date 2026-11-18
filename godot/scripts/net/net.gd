@@ -234,6 +234,7 @@ func fetch_leaderboard(limit: int = 10) -> Dictionary:
 
 func logout() -> void:
 	leave()
+	chat_close()
 	session_token = ""
 	profile = {}
 	friends_data = {}
@@ -354,6 +355,125 @@ func send(data: Dictionary) -> void:
 	if is_online():
 		socket.send_text(JSON.stringify(data))
 
+# ------------------------------------------------------------------ chat ---
+## Chat do menu: canal global e conversa com amigos, em tempo real. Usa um
+## WebSocket próprio (/godot/chat), separado da partida; fica ligado enquanto
+## há conta logada e reconecta sozinho se cair (5 s, depois até 30 s).
+signal chat_message(msg: Dictionary) # chegou mensagem (ch = "global" ou "dm")
+signal chat_history(with_name: String, messages: Array)
+signal chat_state(online: bool)
+signal chat_error(message: String)
+
+const CHAT_KEEP := 100 # mensagens guardadas por conversa no jogo
+var chat_socket: WebSocketPeer
+var chat_online := false
+var chat_global: Array = []
+var chat_dms: Dictionary = {} # amigo -> Array de mensagens
+var chat_unread: Dictionary = {} # "global" ou amigo -> não lidas
+var chat_recent: Array = [] # conversas recentes ([{with, at}]) que o servidor mandou ao conectar
+var _chat_retry := 0.0
+var _chat_backoff := 5.0
+
+func _tick_chat(delta: float) -> void:
+	if not is_logged_in():
+		if chat_socket != null:
+			chat_close()
+		return
+	if chat_socket == null:
+		_chat_retry -= delta
+		if _chat_retry <= 0.0:
+			_chat_open()
+		return
+	chat_socket.poll()
+	var state := chat_socket.get_ready_state()
+	if state == WebSocketPeer.STATE_OPEN:
+		while chat_socket != null and chat_socket.get_available_packet_count() > 0:
+			var parsed = JSON.parse_string(chat_socket.get_packet().get_string_from_utf8())
+			if typeof(parsed) == TYPE_DICTIONARY:
+				_chat_handle(parsed)
+	elif state == WebSocketPeer.STATE_CLOSED:
+		chat_socket = null
+		_chat_retry = _chat_backoff
+		_chat_backoff = minf(_chat_backoff * 2.0, 30.0)
+		if chat_online:
+			chat_online = false
+			chat_state.emit(false)
+
+func _chat_open() -> void:
+	chat_socket = WebSocketPeer.new()
+	chat_socket.handshake_headers = PackedStringArray(["Authorization: Bearer " + session_token])
+	if chat_socket.connect_to_url(server_url.replace("/godot/ws", "/godot/chat")) != OK:
+		chat_socket = null
+		_chat_retry = _chat_backoff
+
+func chat_close() -> void:
+	if chat_socket != null:
+		chat_socket.close(1000, "saiu")
+	chat_socket = null
+	chat_online = false
+	chat_global = []
+	chat_dms = {}
+	chat_unread = {}
+	chat_recent = []
+	_chat_retry = 0.0
+	_chat_backoff = 5.0
+
+func _chat_send(data: Dictionary) -> bool:
+	if chat_socket == null or chat_socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		chat_error.emit("Chat desconectado. Tentando de novo…")
+		return false
+	chat_socket.send_text(JSON.stringify(data))
+	return true
+
+func chat_say(text: String) -> bool:
+	return not text.strip_edges().is_empty() and _chat_send({"t": "say", "text": text.strip_edges().left(200)})
+
+func chat_dm(friend: String, text: String) -> bool:
+	return not text.strip_edges().is_empty() and _chat_send({"t": "dm", "to": friend, "text": text.strip_edges().left(200)})
+
+## Pede a conversa guardada com um amigo (chega em chat_history).
+func chat_open_dm(friend: String) -> void:
+	_chat_send({"t": "history", "with": friend})
+
+func chat_mark_read(channel: String) -> void:
+	chat_unread.erase(channel)
+
+func chat_unread_total() -> int:
+	var total := 0
+	for key in chat_unread:
+		total += int(chat_unread[key])
+	return total
+
+func _chat_handle(d: Dictionary) -> void:
+	var me := str(profile.get("name", ""))
+	match str(d.get("t", "")):
+		"chat_hello":
+			chat_online = true
+			_chat_backoff = 5.0
+			chat_global = d.get("global", [])
+			chat_recent = d.get("recent", [])
+			chat_state.emit(true)
+		"msg":
+			var own := str(d.get("from", "")) == me
+			var channel := "global"
+			if str(d.get("ch", "")) == "dm":
+				channel = str(d.get("to", "")) if own else str(d.get("from", ""))
+				var list: Array = chat_dms.get(channel, [])
+				list.append(d)
+				chat_dms[channel] = list.slice(-CHAT_KEEP)
+			else:
+				chat_global.append(d)
+				chat_global = chat_global.slice(-CHAT_KEEP)
+			if not own:
+				chat_unread[channel] = int(chat_unread.get(channel, 0)) + 1
+			chat_message.emit(d)
+		"history":
+			var friend := str(d.get("with", ""))
+			chat_dms[friend] = d.get("messages", [])
+			chat_history.emit(friend, chat_dms[friend])
+		"chat_error":
+			chat_error.emit(str(d.get("message", "")))
+
 ## Ping (ms de ida e volta até o servidor, suavizado); -1 = ainda sem medida.
 ## O jogo manda "ping" com o relógio a cada PING_INTERVAL e o servidor devolve "pong".
 const PING_INTERVAL := 2.0
@@ -404,6 +524,7 @@ func _process(delta: float) -> void:
 		_friends_timer -= delta
 		if _friends_timer <= 0.0:
 			poll_friends()
+	_tick_chat(delta)
 	if socket == null:
 		return
 	socket.poll()
