@@ -48,6 +48,7 @@ static func warm_all() -> void:
 	hit_body()
 	hit_head()
 	kill()
+	notify()
 	hurt(false)
 	zombie_bite()
 	swing()
@@ -203,6 +204,21 @@ static func kill() -> AudioStream:
 		Synth.saturate(out, 1.4)
 		Synth.normalize(out, 0.8)
 		Synth.fade_tail(out, 0.05)
+		return Synth.to_wav(out))
+
+## Notificação (convite chegou): duas notas suaves subindo.
+static func notify() -> AudioStream:
+	return Synth.get_stream("notify", func():
+		var out := Synth.buffer(0.7)
+		for note in [[987.8, 0.0], [1318.5, 0.11]]:
+			var tone := Synth.sweep(0.6, note[0], note[0], 1.0)
+			var octave := Synth.sweep(0.6, note[0] * 2.0, note[0] * 2.0, 1.0)
+			Synth.mix(tone, octave, 0.18)
+			Synth.envelope(tone, 0.006, 0.16)
+			Synth.mix(out, tone, 0.5, note[1])
+		out = Synth.echo(out, [0.09, 0.18], [0.22, 0.1], 3000.0)
+		Synth.normalize(out, 0.7)
+		Synth.fade_tail(out, 0.06)
 		return Synth.to_wav(out))
 
 ## Arma branca: zunido do golpe.

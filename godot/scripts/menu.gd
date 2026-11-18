@@ -2,6 +2,7 @@ extends Control
 const Settings = preload("res://scripts/game_settings.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const CharacterCard = preload("res://scripts/characters/character_card.gd")
+const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 var settings: Dictionary
 var content: VBoxContainer
 var status: Label
@@ -1709,58 +1710,150 @@ func _exit_tree() -> void:
 
 var invite_banner: PanelContainer
 var invite_label: Label
+var invite_sub: Label
+var invite_avatar_slot: Control
+var invite_timer_bar: ProgressBar
 var invite_code := ""
 var friends_screen_open := false
+var _invite_tween: Tween
+var _invite_sound: AudioStreamPlayer
+const INVITE_SHOW_SECONDS := 60.0 # o card some sozinho (o servidor guarda o convite por 2 min)
+const INVITE_COOLDOWN_MS := 30000 # depois de convidar, "Convidar de novo" só após 30 s
+const ONLINE_GREEN := Color("#7ccf8a")
+var _invited_at: Dictionary = {} # nome do amigo -> quando foi convidado (sobrevive às atualizações da sala)
+var _invite_filter := ""
 
-## Banner at the top of the menu: "X convidou você para a sala CODE" [Entrar] [Ignorar].
+## Círculo com as iniciais do jogador (cor fixa por nome) e a bolinha de status.
+func _avatar_badge(player_name: String, online: bool, diameter: float = 38.0) -> Control:
+    var holder := Control.new()
+    holder.custom_minimum_size = Vector2(diameter, diameter)
+    holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    var circle := PanelContainer.new()
+    var hue := float(absi(hash(player_name)) % 360) / 360.0
+    circle.add_theme_stylebox_override("panel", _box(Color.from_hsv(hue, 0.42, 0.52 if online else 0.3), Color(1, 1, 1, 0.12), 1, int(diameter / 2.0)))
+    circle.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    holder.add_child(circle)
+    var initials := player_name.substr(0, 2).to_upper() if not player_name.is_empty() else "?"
+    var letters := _plain(initials, int(diameter * 0.36), TEXT if online else MUTED, semi_font)
+    letters.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    letters.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    letters.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    holder.add_child(letters)
+    var dot := Panel.new()
+    var dot_size := maxf(9.0, diameter * 0.28)
+    dot.add_theme_stylebox_override("panel", _box(ONLINE_GREEN if online else DIM, Color(0.04, 0.06, 0.07), 2, int(dot_size / 2.0)))
+    dot.size = Vector2(dot_size, dot_size)
+    dot.position = Vector2(diameter - dot_size + 1, diameter - dot_size + 1)
+    dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    holder.add_child(dot)
+    return holder
+
+## Card de convite recebido: entra deslizando no canto, mostra quem convidou,
+## a sala, uma barra de tempo e [Entrar na sala] [Recusar].
 func _build_invite_banner() -> void:
     invite_banner = PanelContainer.new()
     invite_banner.name = "InviteBanner"
     invite_banner.visible = false
-    var box := StyleBoxFlat.new()
-    box.bg_color = Color("#2d4a3a")
-    box.border_color = Color("#a8e08c")
-    box.set_border_width_all(1)
-    box.set_corner_radius_all(10)
+    var box := _box(Color(0.05, 0.075, 0.085, 0.97), Color(ACCENT, 0.7), 1, 12)
+    box.border_width_left = 4
+    box.shadow_color = Color(0, 0, 0, 0.55)
+    box.shadow_size = 18
     for side in ["left","right","top","bottom"]:
-        box.set("content_margin_" + side,12)
-    invite_banner.add_theme_stylebox_override("panel",box)
+        box.set("content_margin_" + side, 16)
+    invite_banner.add_theme_stylebox_override("panel", box)
     add_child(invite_banner)
-    invite_banner.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-    invite_banner.grow_horizontal = Control.GROW_DIRECTION_BOTH
-    invite_banner.offset_top = 14
-    var row := HBoxContainer.new()
-    row.add_theme_constant_override("separation",12)
-    invite_banner.add_child(row)
-    invite_label = Label.new()
-    invite_label.add_theme_font_size_override("font_size",17)
-    row.add_child(invite_label)
-    var accept := Button.new()
-    accept.name = "AcceptInviteButton"
-    accept.text = "Entrar"
-    accept.custom_minimum_size = Vector2(100,38)
-    accept.pressed.connect(_accept_invite)
-    row.add_child(accept)
-    var ignore := Button.new()
-    ignore.name = "IgnoreInviteButton"
-    ignore.text = "Ignorar"
-    ignore.custom_minimum_size = Vector2(100,38)
-    ignore.pressed.connect(func():
-        Net.pending_invite = {}
-        invite_banner.visible = false)
-    row.add_child(ignore)
+    invite_banner.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+    invite_banner.offset_left = -404
+    invite_banner.offset_right = -24
+    invite_banner.offset_top = 24
+    invite_banner.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+    var stack := VBoxContainer.new()
+    stack.add_theme_constant_override("separation", 12)
+    invite_banner.add_child(stack)
+    var head := HBoxContainer.new()
+    head.add_theme_constant_override("separation", 12)
+    stack.add_child(head)
+    invite_avatar_slot = Control.new()
+    invite_avatar_slot.custom_minimum_size = Vector2(46, 46)
+    invite_avatar_slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    head.add_child(invite_avatar_slot)
+    var words := VBoxContainer.new()
+    words.add_theme_constant_override("separation", 1)
+    words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(words)
+    words.add_child(_plain("CONVITE PARA SALA", 11, ACCENT, caps_font))
+    invite_label = _plain("", 17, TEXT, semi_font)
+    invite_label.name = "InviteText"
+    invite_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    words.add_child(invite_label)
+    invite_sub = _plain("", 13, MUTED)
+    words.add_child(invite_sub)
+    invite_timer_bar = ProgressBar.new()
+    invite_timer_bar.name = "InviteTimer"
+    invite_timer_bar.show_percentage = false
+    invite_timer_bar.custom_minimum_size.y = 4
+    invite_timer_bar.max_value = 1.0
+    invite_timer_bar.add_theme_stylebox_override("background", _box(Color(1, 1, 1, 0.07), Color.TRANSPARENT, 0, 2))
+    invite_timer_bar.add_theme_stylebox_override("fill", _box(ACCENT, Color.TRANSPARENT, 0, 2))
+    stack.add_child(invite_timer_bar)
+    var buttons := HBoxContainer.new()
+    buttons.add_theme_constant_override("separation", 10)
+    stack.add_child(buttons)
+    var accept := _button("Entrar na sala", "AcceptInviteButton", _accept_invite, true, buttons)
+    accept.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    accept.custom_minimum_size.y = 42
+    var ignore := _button("Recusar", "IgnoreInviteButton", _dismiss_invite, false, buttons)
+    ignore.custom_minimum_size = Vector2(110, 42)
+    _invite_sound = AudioStreamPlayer.new()
+    _invite_sound.stream = SfxBank.notify()
+    _invite_sound.volume_db = -8.0
+    add_child(_invite_sound)
 
 func _on_friend_invite(from: String, code: String) -> void:
     if code == Net.party_code and Net.is_online():
         Net.pending_invite = {}
         return # already in that room
     invite_code = code
-    invite_label.text = "%s convidou você para a sala %s" % [from, code]
+    var rank := ""
+    for friend in Net.friends_data.get("friends", []):
+        if str(friend.get("name", "")) == from:
+            rank = str(friend.get("rank", ""))
+    invite_label.text = "%s convidou você" % from
+    invite_sub.text = ("%s  ·  " % rank if not rank.is_empty() else "") + "Sala %s  ·  Equipes" % code
+    for child in invite_avatar_slot.get_children():
+        child.queue_free()
+    invite_avatar_slot.add_child(_avatar_badge(from, true, 46.0))
+    # Entra deslizando da direita, com um "plim"; a barra mostra quanto tempo resta.
+    if _invite_tween != null and _invite_tween.is_valid():
+        _invite_tween.kill()
     invite_banner.visible = true
+    invite_banner.modulate.a = 0.0
+    invite_banner.offset_left = -364
+    invite_banner.offset_right = 16
+    invite_timer_bar.value = 1.0
+    _invite_tween = create_tween()
+    _invite_tween.set_parallel(true)
+    _invite_tween.tween_property(invite_banner, "modulate:a", 1.0, 0.22)
+    _invite_tween.tween_property(invite_banner, "offset_left", -404.0, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+    _invite_tween.tween_property(invite_banner, "offset_right", -24.0, 0.28).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+    _invite_tween.tween_property(invite_timer_bar, "value", 0.0, INVITE_SHOW_SECONDS)
+    _invite_tween.chain().tween_callback(_dismiss_invite)
+    if _invite_sound != null and _invite_sound.is_inside_tree():
+        _invite_sound.play()
+    var accept := invite_banner.find_child("AcceptInviteButton", true, false) as Button
+    if accept != null:
+        accept.grab_focus()
+
+func _dismiss_invite() -> void:
+    Net.pending_invite = {}
+    if _invite_tween != null and _invite_tween.is_valid():
+        _invite_tween.kill()
+    invite_banner.visible = false
 
 func _accept_invite() -> void:
-    Net.pending_invite = {}
-    invite_banner.visible = false
+    _dismiss_invite()
     if Net.is_online():
         _disconnect_net()
         Net.leave()
@@ -1769,8 +1862,11 @@ func _accept_invite() -> void:
 func _on_friends_updated(_data: Dictionary) -> void:
     if friends_screen_open:
         _fill_friends()
-    elif content.get_node_or_null("InviteFriendsList") != null and not Net.party_info.is_empty():
-        _on_party_updated(Net.party_info) # refresh who can be invited
+        return
+    # Na sala: só a lista de convite se atualiza (a tela inteira não pisca e a busca não perde o foco).
+    var list := content.get_node_or_null("InviteFriendsCard")
+    if list != null and not Net.party_info.is_empty():
+        _fill_invite_list()
 
 ## Friends screen: add by name, answer requests, see who is online / in a room.
 func _show_friends(message: String = "") -> void:
@@ -1888,34 +1984,189 @@ func _fill_friends() -> void:
         row.add_child(remove)
         list.add_child(row)
 
-## Room lobby section: online friends not in this room, each with "Convidar".
+## Painel "Convidar amigos" da sala personalizada: todos os amigos, online
+## primeiro, com avatar, patente e status; convite com um clique e estado
+## ("Enviando…", "✓ Convidado"); busca quando a lista é grande; e adicionar
+## amigo pelo nome sem sair da sala.
 func _invite_friends_section() -> void:
-    var friends: Array = Net.friends_data.get("friends",[])
-    var candidates: Array = []
-    for friend in friends:
-        if bool(friend.get("online",false)) and str(friend.get("code","")) != Net.party_code:
-            candidates.append(friend)
-    _label("CONVIDAR AMIGOS" if not candidates.is_empty() else "Nenhum amigo online para convidar (adicione em Menu > Amigos).",14,Color("#9bad9f"))
+    var card := _card(content, "InviteFriendsCard", Color(0, 0, 0, 0.28), LINE, 16)
+    card.add_theme_constant_override("separation", 12)
+    var head := HBoxContainer.new()
+    head.name = "InviteHeader"
+    head.add_theme_constant_override("separation", 10)
+    card.add_child(head)
+    var titles := VBoxContainer.new()
+    titles.add_theme_constant_override("separation", 0)
+    titles.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(titles)
+    titles.add_child(_plain("CONVIDAR AMIGOS", 12, ACCENT, caps_font))
+    titles.add_child(_wrap("O convite chega na hora e eles entram com um clique.", 13, MUTED))
+    var count_slot := HBoxContainer.new()
+    count_slot.name = "InviteOnlineCount"
+    count_slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    head.add_child(count_slot)
+    var search := LineEdit.new()
+    search.name = "InviteSearch"
+    search.placeholder_text = "Buscar amigo"
+    search.text = _invite_filter
+    search.clear_button_enabled = true
+    search.custom_minimum_size.y = 38
+    search.text_changed.connect(func(text: String):
+        _invite_filter = text
+        _fill_invite_list())
+    card.add_child(search)
+    var scroll := ScrollContainer.new()
+    scroll.name = "InviteScroll"
+    scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+    card.add_child(scroll)
     var list := VBoxContainer.new()
     list.name = "InviteFriendsList"
-    content.add_child(list)
-    for friend in candidates:
-        var row := HBoxContainer.new()
-        row.add_theme_constant_override("separation",8)
-        var label := Label.new()
-        label.text = "%s  •  %s" % [friend.get("name",""),_status_text(friend)]
-        label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-        row.add_child(label)
-        var friend_name := str(friend.get("name",""))
-        var invite := Button.new()
-        invite.text = "Convidar"
-        invite.name = "Invite_" + friend_name
+    list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    list.add_theme_constant_override("separation", 6)
+    scroll.add_child(list)
+    # Adicionar amigo sem sair da sala (manda o pedido de amizade).
+    var add_row := HBoxContainer.new()
+    add_row.name = "InviteAddRow"
+    add_row.add_theme_constant_override("separation", 8)
+    card.add_child(add_row)
+    var field := LineEdit.new()
+    field.name = "InviteAddField"
+    field.placeholder_text = "Adicionar amigo pelo nome"
+    field.max_length = 16
+    field.custom_minimum_size.y = 40
+    field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    add_row.add_child(field)
+    var add := _button("Enviar pedido", "InviteAddButton", Callable(), false, add_row)
+    add.custom_minimum_size = Vector2(140, 40)
+    add.pressed.connect(func():
+        if field.text.strip_edges().length() < 3:
+            _on_party_notice("Digite o nome do jogador.")
+            return
+        add.disabled = true
+        var result: String = await Net.friend_action("add", field.text)
+        if is_instance_valid(add):
+            add.disabled = false
+            field.text = ""
+        _on_party_notice(result))
+    field.text_submitted.connect(func(_text): add.pressed.emit())
+    _fill_invite_list()
+
+## Ordem: online e livres (menu, outra sala, em partida), já na sala, offline.
+func _invite_sort_key(friend: Dictionary) -> int:
+    if not bool(friend.get("online", false)):
+        return 4
+    if str(friend.get("code", "")) == Net.party_code and not Net.party_code.is_empty():
+        return 3
+    return {"menu": 0, "room": 1, "match": 2}.get(str(friend.get("status", "menu")), 0)
+
+func _fill_invite_list() -> void:
+    var card := content.get_node_or_null("InviteFriendsCard")
+    if card == null:
+        return
+    var list := card.find_child("InviteFriendsList", true, false) as VBoxContainer
+    var scroll := card.find_child("InviteScroll", true, false) as ScrollContainer
+    var search := card.find_child("InviteSearch", true, false) as LineEdit
+    var count_slot := card.find_child("InviteOnlineCount", true, false) as HBoxContainer
+    if list == null:
+        return
+    for child in list.get_children():
+        child.queue_free()
+    var friends: Array = (Net.friends_data.get("friends", []) as Array).duplicate()
+    friends.sort_custom(func(a, b):
+        var ka := _invite_sort_key(a)
+        var kb := _invite_sort_key(b)
+        return ka < kb if ka != kb else str(a.get("name", "")).naturalnocasecmp_to(str(b.get("name", ""))) < 0)
+    var online := 0
+    for friend in friends:
+        if bool(friend.get("online", false)):
+            online += 1
+    for child in count_slot.get_children():
+        child.queue_free()
+    count_slot.add_child(_pill("%d online" % online, ONLINE_GREEN if online > 0 else MUTED))
+    search.visible = friends.size() > 5
+    var shown := 0
+    var needle := _invite_filter.strip_edges().to_lower()
+    for friend in friends:
+        if not needle.is_empty() and not str(friend.get("name", "")).to_lower().contains(needle):
+            continue
+        list.add_child(_invite_row(friend))
+        shown += 1
+    if friends.is_empty():
+        var empty := _wrap("Você ainda não tem amigos. Adicione pelo nome aqui embaixo: quando aceitarem, eles aparecem nesta lista.", 13, MUTED)
+        list.add_child(empty)
+    elif shown == 0:
+        list.add_child(_wrap("Nenhum amigo com esse nome.", 13, MUTED))
+    # Até ~5 linhas visíveis; mais que isso rola.
+    scroll.custom_minimum_size.y = clampf(maxf(shown, 1) * 60.0, 60.0, 300.0)
+
+func _invite_row(friend: Dictionary) -> PanelContainer:
+    var friend_name := str(friend.get("name", ""))
+    var online := bool(friend.get("online", false))
+    var here := online and str(friend.get("code", "")) == Net.party_code and not Net.party_code.is_empty()
+    var panel := PanelContainer.new()
+    panel.name = "InviteRow_" + friend_name
+    var box := _box(Color(1, 1, 1, 0.04 if online else 0.015), Color(1, 1, 1, 0.06), 1, 8)
+    for side in ["left", "right"]:
+        box.set("content_margin_" + side, 10)
+    for side in ["top", "bottom"]:
+        box.set("content_margin_" + side, 7)
+    panel.add_theme_stylebox_override("panel", box)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 12)
+    panel.add_child(row)
+    row.add_child(_avatar_badge(friend_name, online))
+    var words := VBoxContainer.new()
+    words.add_theme_constant_override("separation", 0)
+    words.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    words.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(words)
+    words.add_child(_plain(friend_name, 15, TEXT if online else MUTED, semi_font))
+    var status_text := "nesta sala" if here else _status_text(friend)
+    var status_color := ONLINE_GREEN if online and str(friend.get("status", "")) == "menu" else (ACCENT if online else DIM)
+    var sub := HBoxContainer.new()
+    sub.add_theme_constant_override("separation", 6)
+    words.add_child(sub)
+    var rank := str(friend.get("rank", ""))
+    if not rank.is_empty():
+        sub.add_child(_plain(rank, 12, MUTED))
+        sub.add_child(_plain("·", 12, DIM))
+    sub.add_child(_plain(status_text, 12, status_color))
+    if here:
+        row.add_child(_pill("Na sala", ONLINE_GREEN))
+    elif not online:
+        var off := _plain("Offline", 12, DIM, caps_font)
+        off.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        row.add_child(off)
+    else:
+        var invited_ago := Time.get_ticks_msec() - int(_invited_at.get(friend_name, -INVITE_COOLDOWN_MS))
+        var cooling := invited_ago < INVITE_COOLDOWN_MS
+        var invite := _button("✓ Convidado" if cooling else "Convidar", "Invite_" + friend_name, Callable(), not cooling, row)
+        invite.custom_minimum_size = Vector2(140, 38)
+        invite.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        invite.disabled = cooling
+        if cooling:
+            _reenable_invite(invite, INVITE_COOLDOWN_MS - invited_ago)
         invite.pressed.connect(func():
             invite.disabled = true
-            var result: String = await Net.friend_action("invite",friend_name,Net.party_code)
+            invite.text = "Enviando…"
+            var result: String = await Net.friend_action("invite", friend_name, Net.party_code)
+            var sent := result.begins_with("Convite enviado")
+            if sent:
+                _invited_at[friend_name] = Time.get_ticks_msec()
+            if is_instance_valid(invite):
+                invite.text = "✓ Convidado" if sent else "Convidar"
+                invite.disabled = sent
+                if sent:
+                    _reenable_invite(invite, INVITE_COOLDOWN_MS)
             _on_party_notice(result))
-        row.add_child(invite)
-        list.add_child(row)
+    return panel
+
+## Depois do intervalo, o botão volta como "Convidar de novo".
+func _reenable_invite(button: Button, wait_ms: int) -> void:
+    get_tree().create_timer(maxf(0.1, wait_ms / 1000.0)).timeout.connect(func():
+        if is_instance_valid(button):
+            button.disabled = false
+            button.text = "Convidar de novo")
 
 func _on_lobby_joined(info: Dictionary) -> void:
     if bool(info.get("party",false)) or bool(info.get("lobby",false)):

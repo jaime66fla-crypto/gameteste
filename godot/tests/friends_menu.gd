@@ -47,12 +47,33 @@ func _run() -> void:
 	await process_frame
 	_check(menu.find_child("Invite_Ana", true, false) != null, "Invite friend who is in another room")
 	_check(menu.find_child("Invite_Beto", true, false) != null, "Invite friend who is online in the menu")
-	_check(menu.find_child("Invite_Duda", true, false) == null, "Offline friends are not listed for invites")
-	# Receiving an invite shows the banner.
+	_check(menu.find_child("Invite_Duda", true, false) == null, "Offline friends cannot be invited")
+	# Professional panel: card, every friend as a row (offline dimmed, last), online count, add-by-name.
+	_check(menu.find_child("InviteFriendsCard", true, false) != null, "Invite panel card in the room")
+	var list := menu.find_child("InviteFriendsList", true, false) as VBoxContainer
+	var order: Array[String] = []
+	if list != null:
+		for child in list.get_children():
+			order.append(str(child.name).trim_prefix("InviteRow_"))
+	_check(order == ["Beto", "Ana", "Duda"], "Free online friends first, offline last: %s" % [order])
+	var count: Node = menu.find_child("InviteOnlineCount", true, false)
+	_check(count != null and count.get_child_count() == 1, "Online count shown")
+	_check(menu.find_child("InviteAddField", true, false) != null and menu.find_child("InviteAddButton", true, false) != null, "Add friend without leaving the room")
+	var search := menu.find_child("InviteSearch", true, false) as LineEdit
+	_check(search != null and not search.visible, "Search hidden for a short list")
+	# Friends refresh while in the room: only the list is rebuilt (screen does not flash).
+	var card_before: Node = menu.find_child("InviteFriendsCard", true, false)
+	net.emit_signal("friends_updated", net.get("friends_data"))
+	await process_frame
+	_check(menu.find_child("InviteFriendsCard", true, false) == card_before, "Friends refresh keeps the room screen")
+	# Receiving an invite shows the card with who invited and the room.
 	net.emit_signal("friend_invite", "Ana", "ABCDE")
 	await process_frame
 	var banner := menu.find_child("InviteBanner", true, false) as Control
 	_check(banner != null and banner.visible, "Invite banner appears")
+	var invite_text := menu.find_child("InviteText", true, false) as Label
+	_check(invite_text != null and invite_text.text.contains("Ana"), "Invite card names who invited")
+	_check(menu.find_child("InviteTimer", true, false) != null, "Invite card shows the time left")
 	_check(menu.find_child("AcceptInviteButton", true, false) != null, "Invite can be accepted")
 	(menu.find_child("IgnoreInviteButton", true, false) as Button).pressed.emit()
 	_check(not banner.visible and (net.get("pending_invite") as Dictionary).is_empty(), "Invite can be ignored")
