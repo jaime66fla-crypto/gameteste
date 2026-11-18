@@ -1,0 +1,144 @@
+extends Node
+## Treino offline: arena do zumbi no parque. O jogador entra, pega o bastão no
+## suporte (E), mira no zumbi e golpeia (Q) até matar; depois o zumbi volta.
+## Confere: arena livre (nada da cidade dentro), dano 34 do bastão, recuo,
+## zumbi preso dentro e não sai caçando quem está fora.
+## godot --headless --path godot res://tests/training_arena.tscn
+## Foto: godot --path godot res://tests/training_arena.tscn -- --capture=<pasta>
+const Arena = preload("res://scripts/training_arena.gd")
+
+var failures := 0
+
+func check(ok: bool, what: String) -> void:
+	if not ok:
+		failures += 1
+		printerr("FALHOU: " + what)
+	else:
+		print("ok: " + what)
+
+func _frames(n: int) -> void:
+	for i in n:
+		await get_tree().physics_frame
+
+func _ready() -> void:
+	_run.call_deferred()
+
+func _aim_at(player: Node, point: Vector3) -> void:
+	var camera: Camera3D = player.get("camera")
+	# A câmera segue o jogador suavizada: repete até o centro da tela parar no alvo.
+	for k in 10:
+		var to := point - camera.global_position
+		player.set("yaw", atan2(-to.x, -to.z))
+		player.set("pitch", atan2(to.y, Vector2(to.x, to.z).length()))
+		await _frames(3)
+
+func _run() -> void:
+	Net.in_match = false
+	var main: Node = load("res://scenes/main.tscn").instantiate()
+	get_tree().root.add_child(main)
+	await _frames(10)
+	var player: CharacterBody3D = main.get("player")
+	var arena: Node3D = main.get_node_or_null("TrainingArena")
+	check(arena != null, "a arena existe no treino offline")
+	if arena == null:
+		get_tree().quit(1)
+		return
+	# Nada da cidade dentro da arena: só o chão (raios de cima para baixo batem no chão).
+	var space := player.get_world_3d().direct_space_state
+	var blocked := 0
+	var steps := int((Arena.HALF - 0.3) / 0.25)
+	for i in range(-steps, steps + 1):
+		for k in range(-steps, steps + 1):
+			var p := Arena.CENTER + Vector3(i * 0.25, 0, k * 0.25)
+			if Arena.RACK.distance_to(p) < 0.6:
+				continue # o próprio suporte do bastão
+			var q := PhysicsRayQueryParameters3D.create(p + Vector3(0, 6, 0), p + Vector3(0, -1, 0), 1)
+			var hit := space.intersect_ray(q)
+			if not hit.is_empty() and (hit["position"] as Vector3).y > 0.2:
+				blocked += 1
+	check(blocked == 0, "chão da arena livre (%d pontos com algo em cima)" % blocked)
+	if OS.has_environment("ARENA_SCAN"):
+		for x in range(-8, 9):
+			for z in range(-8, 9):
+				var p := Arena.CENTER + Vector3(x, 0, z)
+				var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(p + Vector3(0, 8, 0), p + Vector3(0, -1, 0), 1))
+				if not hit.is_empty() and (hit["position"] as Vector3).y > 1.3:
+					var c: Node = hit["collider"]
+					print("alto em %s: y=%.1f %s pai=%s" % [p, (hit["position"] as Vector3).y, c.name, c.get_parent().name])
+	# Fora da arena o zumbi não caça.
+	var zombie: CharacterBody3D = arena.get("zombie")
+	var start := zombie.global_position
+	player.global_position = Arena.CENTER + Vector3(0, 0.1, -Arena.HALF - 4.0)
+	await _frames(120)
+	check(zombie.global_position.distance_to(start) < 0.5, "com o jogador fora, o zumbi fica parado")
+	# Entra e pega o bastão.
+	player.global_position = Arena.RACK + Vector3(-0.8, 0.1, 0.3)
+	await _frames(5)
+	check(bool(arena.call("_interact")), "E perto do suporte pega o bastão")
+	check(bool(arena.get("holding")), "segurando o bastão")
+	# Golpeia até matar (60 de vida: 2 golpes de 34).
+	var hp_before := float(zombie.get("hp"))
+	var swings := 0
+	while not bool(zombie.get("dead")) and swings < 12:
+		var target := zombie.global_position + Vector3(0, 1.2, 0)
+		var dist := Vector2(target.x - player.global_position.x, target.z - player.global_position.z).length()
+		if dist > 2.6:
+			# Chega perto (como o jogador faria), mas fica fora do bote.
+			var dir := (zombie.global_position - player.global_position)
+			dir.y = 0.0
+			player.global_position = zombie.global_position - dir.normalized() * 2.3 + Vector3(0, 0.1, 0)
+			player.global_position.x = clampf(player.global_position.x, Arena.CENTER.x - 3.4, Arena.CENTER.x + 3.4)
+			player.global_position.z = clampf(player.global_position.z, Arena.CENTER.z - 3.4, Arena.CENTER.z + 3.4)
+			await _frames(2)
+		await _aim_at(player, zombie.global_position + Vector3(0, 1.2, 0))
+		arena.set("_cooldown", 0.0)
+		var before := float(zombie.get("hp"))
+		var pos_before := zombie.global_position
+		arena.call("_melee")
+		swings += 1
+		print("  golpe %d: distância %.2f, vida %.0f -> %.0f, jogador %s, zumbi %s" % [swings, Vector2(zombie.global_position.x - player.global_position.x, zombie.global_position.z - player.global_position.z).length(), before, float(zombie.get("hp")), player.global_position, zombie.global_position])
+		if swings == 1:
+			check(is_equal_approx(before - float(zombie.get("hp")), 34.0) or is_equal_approx(before - float(zombie.get("hp")), 51.0), "golpe do bastão tira 34 (51 na cabeça): tirou %.0f" % (before - float(zombie.get("hp"))))
+			await _frames(30)
+			var pushed := Vector2(zombie.global_position.x - pos_before.x, zombie.global_position.z - pos_before.z).length()
+			check(pushed > 0.4, "o zumbi recua com o golpe (%.2f m)" % pushed)
+			var shot := _capture_folder()
+			if not shot.is_empty():
+				get_viewport().get_texture().get_image().save_png(shot.path_join("arena_golpe.png"))
+		await _frames(40)
+	print("golpes: %d  vida antes %.0f  acertos %d  mordidas %d" % [swings, hp_before, arena.get("hits"), arena.get("bites")])
+	check(bool(zombie.get("dead")), "o zumbi morre a golpes de bastão (%d golpes)" % swings)
+	check(int(arena.get("kills")) == 1, "abate contado")
+	await _frames(int(Arena.RESPAWN * 60) + 30)
+	var fresh: CharacterBody3D = arena.get("zombie")
+	check(fresh != zombie and not bool(fresh.get("dead")) and Arena.new().inside(fresh.global_position), "o zumbi volta dentro da arena")
+	# Larga o bastão: volta ao soco.
+	player.global_position = Arena.RACK + Vector3(-0.8, 0.1, 0.3)
+	await _frames(3)
+	arena.call("_interact")
+	check(not bool(arena.get("holding")), "E de novo larga o bastão")
+	# Zumbi preso: mesmo empurrado para fora, volta para dentro.
+	fresh.global_position = Arena.CENTER + Vector3(0, 0.05, -Arena.HALF - 2.0)
+	await _frames(3)
+	check(Arena.new().inside(fresh.global_position), "o zumbi não sai da arena")
+	var folder := _capture_folder()
+	if not folder.is_empty():
+		player.global_position = Arena.CENTER + Vector3(-2.5, 0.1, -Arena.HALF - 3.0)
+		await _aim_at(player, Arena.CENTER + Vector3(0, 0.8, 0))
+		await _frames(20)
+		get_viewport().get_texture().get_image().save_png(folder.path_join("arena_visao.png"))
+		var top := Camera3D.new()
+		main.add_child(top)
+		top.global_position = Arena.CENTER + Vector3(0, 16, 9)
+		top.look_at(Arena.CENTER)
+		top.current = true
+		await _frames(10)
+		get_viewport().get_texture().get_image().save_png(folder.path_join("arena_cima.png"))
+	print("FALHAS: %d" % failures)
+	get_tree().quit(1 if failures else 0)
+
+func _capture_folder() -> String:
+	for arg in OS.get_cmdline_user_args():
+		if arg.begins_with("--capture="):
+			return arg.substr(10)
+	return ""

@@ -46,6 +46,13 @@ func _on_damaged(_id: String, zone: String, point: Vector3, normal: Vector3, wea
 	var damage := float(stats["damage"]) * float(HitboxScript.MULTIPLIER.get(zone, 1.0))
 	_register(damage, "%s  •  %s" % [stats["name"], ZONE_NAMES.get(zone, zone.to_upper())], point, normal, zone == "head")
 
+## Soco / arma branca (cenas de demonstração): o dano já vem calculado como no
+## servidor (×1,5 na cabeça). O boneco balança para longe do golpe.
+func melee_hit(damage: float, what: String, zone: String, point: Vector3, normal: Vector3) -> void:
+	actor.set("_flinch", 1.0 if zone == "head" else 0.6)
+	actor.set("_flinch_side", signf(actor.global_basis.x.dot(-normal)) * 0.5)
+	_register(damage, "%s  •  %s" % [what, ZONE_NAMES.get(zone, zone.to_upper())], point, normal, zone == "head")
+
 ## Grenade blast (offline): same falloff as online.
 func explosion_hit(amount: float, at: Vector3) -> void:
 	_register(amount, "GRANADA", actor.global_position + Vector3(0, 1.3, 0), (actor.global_position - at).normalized(), false)

@@ -8,6 +8,7 @@ const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
+const TrainingArenaScript = preload("res://scripts/training_arena.gd")
 const SurvivalWorldScript = preload("res://scripts/survival/survival_world.gd")
 const SurvivalControllerScript = preload("res://scripts/survival/survival_controller.gd")
 var player: CharacterBody3D
@@ -171,6 +172,10 @@ func _spawn_training_dummies() -> void:
         dummy.set("sound_fx", player.get("sound_fx"))
         dummy.position = spot[0]
         add_child(dummy)
+    # Arena pequena no parque: zumbi preso dentro e o bastão longo no suporte.
+    var arena := TrainingArenaScript.new()
+    arena.call("setup", player)
+    add_child(arena)
 
 ## Teclas do jogador (padrão ou as escolhidas em Configurações › Controles).
 func _register_inputs() -> void:

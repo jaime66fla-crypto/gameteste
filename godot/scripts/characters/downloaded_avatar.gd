@@ -224,6 +224,7 @@ func _play_cycle(clip: String, rate: float) -> void:
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
 	_apply_crouch()
+	_apply_foot_ik()
 	_apply_prone()
 	if not work_action.is_empty():
 		_apply_work()
@@ -591,6 +592,57 @@ func _apply_crouch() -> void:
 	for side in feet:
 		_leg_ik(side, (feet[side] as Transform3D).origin, Vector3(0, 0, 1))
 		Grip._set_global_rotation(skeleton, Grip._bone(skeleton, side + "Foot"), (feet[side] as Transform3D).basis)
+
+# ------------------------------------------------------------- degraus ---
+# Pés no degrau (desligado por padrão; a cena de escada liga). O corpo segue a
+# rampa invisível que passa pelo meio dos degraus; cada pé procura o chão
+# embaixo dele por raio (camada do mundo), o quadril desce o necessário para o
+# pé mais baixo alcançar o degrau dele e o outro pé sobe por IK.
+const FOOT_PROBE := 0.6 # alcance do raio acima/abaixo da origem do personagem (m)
+var foot_ik_enabled := false
+var _foot_offsets := {"Left": 0.0, "Right": 0.0}
+
+func set_foot_ik(value: bool) -> void:
+	foot_ik_enabled = value
+	if not value:
+		_foot_offsets = {"Left": 0.0, "Right": 0.0}
+
+func _apply_foot_ik() -> void:
+	if not foot_ik_enabled or prone_weight > 0.01 or not is_inside_tree():
+		return
+	var hips := Grip._bone(skeleton, "Hips")
+	if hips < 0:
+		return
+	var space := get_world_3d().direct_space_state
+	var to_world := skeleton.global_transform
+	var to_local := to_world.affine_inverse().basis
+	var base_y := global_position.y
+	var feet := {}
+	var lowest := 0.0
+	for side in ["Left", "Right"]:
+		var foot := Grip._bone(skeleton, side + "Foot")
+		if foot < 0:
+			return
+		var pose := skeleton.get_bone_global_pose(foot)
+		var world := to_world * pose.origin
+		var query := PhysicsRayQueryParameters3D.create(Vector3(world.x, base_y + FOOT_PROBE, world.z), Vector3(world.x, base_y - FOOT_PROBE, world.z), 1)
+		var hit := space.intersect_ray(query)
+		var target := 0.0
+		if not hit.is_empty():
+			target = clampf((hit["position"] as Vector3).y - base_y, -FOOT_PROBE, FOOT_PROBE)
+		_foot_offsets[side] = lerpf(float(_foot_offsets[side]), target, minf(1.0, _last_delta * 18.0))
+		feet[side] = [foot, pose]
+		lowest = minf(lowest, float(_foot_offsets[side]))
+	var drop := to_local * Vector3(0, lowest, 0)
+	var parent := skeleton.get_bone_parent(hips)
+	if parent >= 0:
+		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
+	for side in feet:
+		var foot: int = feet[side][0]
+		var pose: Transform3D = feet[side][1]
+		_leg_ik(side, pose.origin + to_local * Vector3(0, float(_foot_offsets[side]), 0), Vector3(0, 0, 1))
+		Grip._set_global_rotation(skeleton, foot, pose.basis)
 
 ## IK de duas juntas (coxa e canela) até `target`, com o joelho apontando para `pole`.
 func _leg_ik(side: String, target: Vector3, pole: Vector3) -> void:

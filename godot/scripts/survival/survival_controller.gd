@@ -9,6 +9,7 @@ const WeaponData = preload("res://scripts/weapon_data.gd")
 const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
+const TrainingArena = preload("res://scripts/training_arena.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 var driving_ctl: Node # carros (survival_driving.gd)
@@ -236,6 +237,11 @@ func _on_message(data: Dictionary) -> void:
 				var new_hp := float(data.get("hp", 0))
 				if new_hp < float(z.hp):
 					z.call("pain_sound") # quem não atirou também ouve o zumbi gritar
+					# Anfitrião: golpe de perto (soco, arma branca) faz o zumbi recuar e perder o bote.
+					var by_node: Node3D = player if str(data.get("by", "")) == my_id else actors.get(str(data.get("by", "")))
+					if bool(z.controlled) and by_node != null \
+							and Vector2(by_node.global_position.x - z.global_position.x, by_node.global_position.z - z.global_position.z).length() < float(z.MELEE_STAGGER_RANGE):
+						z.call("stagger", by_node.global_position)
 				z.hp = new_hp
 		"zdead":
 			var z = zombies.get(str(data.get("id", "")))
@@ -415,10 +421,9 @@ func _melee() -> void:
 	player.get("sound_fx").call("melee_swing")
 	var camera := get_viewport().get_camera_3d()
 	var forward := -camera.global_basis.z
-	var from := player.global_position + Vector3(0, 1.35, 0)
-	var query := PhysicsRayQueryParameters3D.create(from, from + forward * reach, HitboxScript.SHOT_MASK)
-	query.exclude = [player.get_rid()]
-	var hit := player.get_world_3d().direct_space_state.intersect_ray(query)
+	var from := camera.global_position
+	# Pela mira (câmera no ombro), no alcance a partir do jogador; vale colado num zumbi largo.
+	var hit := TrainingArena.melee_ray(player, camera, reach)
 	if hit.is_empty():
 		return
 	var body: Object = hit["collider"]

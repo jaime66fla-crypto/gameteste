@@ -251,6 +251,38 @@ func die() -> void:
 		_avatar.set("strike", -1.0)
 		_avatar.position = Vector3.ZERO
 
+## Levou soco / golpe de arma branca de perto (anfitrião): cancela o bote que
+## estava preparando, é empurrado para longe de quem bateu e fica atordoado
+## por STAGGER_TIME sem atacar. Assim dá para manter o zumbi longe batendo.
+const STAGGER_TIME := 0.7
+const KNOCKBACK := 1.1 # metros empurrado para trás
+const MELEE_STAGGER_RANGE := 3.6 # quem bateu desta distância conta como golpe corpo a corpo
+var stagger_left := 0.0
+var _knock := Vector3.ZERO
+## Brecha depois de cada bote (acertando ou não): o zumbi fica parado, sem
+## andar nem atacar, por RECOVER_TIME. É a hora de bater sem levar mordida.
+const RECOVER_TIME := 0.8
+var recover_left := 0.0
+
+func stagger(from: Vector3) -> void:
+	if dead:
+		return
+	var away := global_position - from
+	away.y = 0.0
+	if away.length_squared() < 0.0001:
+		away = global_basis.z
+	# Brute (tanque) recua menos.
+	var push := KNOCKBACK * (0.5 if kind == "brute" else 1.0)
+	# Velocidade inicial que, caindo linearmente até 0 em STAGGER_TIME, percorre `push`.
+	_knock = away.normalized() * (2.0 * push / STAGGER_TIME)
+	stagger_left = STAGGER_TIME
+	recover_left = 0.0
+	_flinch = 1.0
+	_attack_timer = maxf(_attack_timer, STAGGER_TIME + 0.25)
+	if strike_t >= 0.0 and strike_t < STRIKE_IMPACT:
+		strike_t = -1.0 # o bote não chega a sair
+	_strike_pending = false
+
 ## Começa o golpe. `from_impact`: quem só soube pelo servidor que a mordida
 ## acertou entra direto no instante do impacto (o bote bate junto com o dano).
 func strike(from_impact: bool = false) -> void:
@@ -299,6 +331,8 @@ func _update_strike(delta: float) -> void:
 			attacked.emit(zombie_id, _strike_target)
 	if strike_t >= STRIKE_TIME:
 		strike_t = -1.0
+		# Turno do jogador: depois do bote o zumbi fica parado se recuperando.
+		recover_left = RECOVER_TIME
 
 ## Braço alcança sem atravessar parede: dois raios (peito e cintura) contra o cenário.
 ## Basta um livre (janela baixa, porta, mureta) para o golpe valer.
@@ -451,6 +485,24 @@ func _sees(node: Node3D) -> bool:
 func _run_ai(delta: float) -> void:
 	var spec: Dictionary = KINDS[kind]
 	_attack_timer = maxf(0.0, _attack_timer - delta)
+	if stagger_left > 0.0:
+		stagger_left = maxf(0.0, stagger_left - delta)
+		var k := stagger_left / STAGGER_TIME
+		velocity.x = _knock.x * k
+		velocity.z = _knock.z * k
+		anim = Anim.IDLE
+		_asleep = false
+		_apply_gravity(delta)
+		return
+	if recover_left > 0.0:
+		recover_left = maxf(0.0, recover_left - delta)
+		_attack_timer = maxf(_attack_timer, recover_left)
+		velocity.x = 0.0
+		velocity.z = 0.0
+		anim = Anim.IDLE
+		_asleep = false
+		_apply_gravity(delta)
+		return
 	_think -= delta
 	if _asleep and _think > 0.0:
 		return # longe de todos: parado, sem física até a próxima checagem
