@@ -70,6 +70,7 @@ func _ready() -> void:
     settings = Settings.load_settings()
     Settings.apply(settings,get_viewport())
     Controls.load_and_apply()
+    Net.avatar_loaded.connect(_on_avatar_loaded)
     _build_fonts()
     theme = _build_theme()
     _build_background()
@@ -661,15 +662,7 @@ func _profile_panel(parent: Node) -> void:
     who.add_theme_constant_override("separation", 14)
     stack.add_child(who)
     var player_name := str(profile.get("name", ""))
-    var avatar := PanelContainer.new()
-    avatar.custom_minimum_size = Vector2(56, 56)
-    var ring := _box(Color(ACCENT, 0.16), ACCENT, 2, 28)
-    avatar.add_theme_stylebox_override("panel", ring)
-    var initial := _plain(player_name.left(1).to_upper() if not player_name.is_empty() else "?", 26, ACCENT, title_font)
-    initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-    initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-    avatar.add_child(initial)
-    who.add_child(avatar)
+    who.add_child(_profile_photo(player_name, int(profile.get("avatar", 0)), 56.0))
     var names := VBoxContainer.new()
     names.add_theme_constant_override("separation", 0)
     names.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -680,6 +673,21 @@ func _profile_panel(parent: Node) -> void:
     name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
     names.add_child(name_label)
     names.add_child(_plain(str(profile.get("rank","Recruta")).to_upper(), 13, ACCENT, caps_font))
+    var edit := Button.new()
+    edit.name = "EditProfileButton"
+    edit.text = "✎  Editar"
+    edit.tooltip_text = "Trocar nick e foto"
+    edit.flat = true
+    edit.focus_mode = Control.FOCUS_NONE
+    edit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    edit.add_theme_font_size_override("font_size", 12)
+    if caps_font != null:
+        edit.add_theme_font_override("font", caps_font)
+    edit.add_theme_color_override("font_color", MUTED)
+    edit.add_theme_color_override("font_hover_color", ACCENT)
+    edit.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+    edit.pressed.connect(func(): _show_profile_editor())
+    who.add_child(edit)
 
     var xp := int(profile.get("xp",0))
     var next_xp = profile.get("nextRankXp")
@@ -857,6 +865,7 @@ func _leaderboard_row(entry: Dictionary, mine: bool) -> PanelContainer:
     var place_label := _plain(place_text, 13 if leaderboard_compact else 15, place_color, title_font)
     place_label.custom_minimum_size.x = 44
     line.add_child(place_label)
+    line.add_child(_avatar_badge(str(entry.get("name", "")), true, 20.0 if leaderboard_compact else 26.0, int(entry.get("avatar", 0)), false))
     var names := VBoxContainer.new()
     names.add_theme_constant_override("separation", -2)
     names.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1773,7 +1782,7 @@ func _disconnect_net() -> void:
 
 func _exit_tree() -> void:
     _disconnect_net()
-    for pair in [[Net.friend_invite,_on_friend_invite],[Net.friends_updated,_on_friends_updated]]:
+    for pair in [[Net.friend_invite,_on_friend_invite],[Net.friends_updated,_on_friends_updated],[Net.avatar_loaded,_on_avatar_loaded]]:
         if pair[0].is_connected(pair[1]):
             pair[0].disconnect(pair[1])
 
@@ -1794,8 +1803,175 @@ const ONLINE_GREEN := Color("#7ccf8a")
 var _invited_at: Dictionary = {} # nome do amigo -> quando foi convidado (sobrevive às atualizações da sala)
 var _invite_filter := ""
 
+# ----------------------------------------------------------- fotos e perfil ---
+
+static var _circle_shader: Shader
+
+## Foto recortada em círculo (shader simples: descarta fora do raio, borda suave).
+func _circle_photo(texture: Texture2D, diameter: float) -> TextureRect:
+    if _circle_shader == null:
+        _circle_shader = Shader.new()
+        _circle_shader.code = "shader_type canvas_item;\nvoid fragment() {\n\tfloat d = distance(UV, vec2(0.5));\n\tCOLOR = texture(TEXTURE, UV);\n\tCOLOR.a *= 1.0 - smoothstep(0.47, 0.5, d);\n}\n"
+    var rect := TextureRect.new()
+    rect.name = "Photo"
+    rect.texture = texture
+    rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+    rect.custom_minimum_size = Vector2(diameter, diameter)
+    rect.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    var material := ShaderMaterial.new()
+    material.shader = _circle_shader
+    rect.material = material
+    return rect
+
+## Coloca a foto por cima das iniciais quando ela já foi baixada (e de novo
+## quando o download termina: Net.avatar_loaded).
+func _apply_photo(holder: Control) -> void:
+    if not is_instance_valid(holder) or holder.get_node_or_null("Photo") != null:
+        return
+    var texture := Net.avatar_texture(str(holder.get_meta("avatar_name", "")), int(holder.get_meta("avatar_version", 0)))
+    if texture == null:
+        return
+    var photo := _circle_photo(texture, holder.custom_minimum_size.x)
+    holder.add_child(photo)
+    holder.move_child(photo, mini(1, holder.get_child_count() - 1)) # acima do círculo, abaixo da bolinha de status
+    var letters := holder.get_node_or_null("Initials")
+    if letters != null:
+        letters.visible = false
+
+func _on_avatar_loaded(player_name: String) -> void:
+    for node in get_tree().get_nodes_in_group("avatar_badges"):
+        if str(node.get_meta("avatar_name", "")) == player_name:
+            _apply_photo(node)
+
+## Foto grande do cartão de perfil: anel laranja e a foto (ou a inicial).
+func _profile_photo(player_name: String, version: int, diameter: float) -> Control:
+    var holder := Control.new()
+    holder.name = "ProfilePhoto"
+    holder.custom_minimum_size = Vector2(diameter, diameter)
+    holder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    var ring := Panel.new()
+    ring.add_theme_stylebox_override("panel", _box(Color(ACCENT, 0.16), ACCENT, 2, int(diameter / 2.0)))
+    ring.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    holder.add_child(ring)
+    var initial := _plain(player_name.left(1).to_upper() if not player_name.is_empty() else "?", int(diameter * 0.46), ACCENT, title_font)
+    initial.name = "Initials"
+    initial.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    initial.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    initial.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    holder.add_child(initial)
+    holder.set_meta("avatar_name", player_name)
+    holder.set_meta("avatar_version", version)
+    holder.add_to_group("avatar_badges")
+    _apply_photo(holder)
+    return holder
+
+## Editar perfil: foto (do computador, recortada em quadrado e reduzida) e nick.
+func _show_profile_editor(message: String = "") -> void:
+    _clear()
+    _set_page_width(520.0)
+    var profile: Dictionary = Net.profile
+    var player_name := str(profile.get("name", ""))
+    _screen_header("Perfil", "Editar perfil")
+    var feedback := _wrap(message, 14, ACCENT)
+    feedback.name = "ProfileFeedback"
+    feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    content.add_child(feedback)
+    # Foto
+    var photo_card := _card(content, "ProfilePhotoCard", Color(0, 0, 0, 0.25), LINE, 16)
+    photo_card.add_child(_plain("FOTO", 12, ACCENT, caps_font))
+    var photo_row := HBoxContainer.new()
+    photo_row.add_theme_constant_override("separation", 18)
+    photo_card.add_child(photo_row)
+    photo_row.add_child(_profile_photo(player_name, int(profile.get("avatar", 0)), 96.0))
+    var photo_actions := VBoxContainer.new()
+    photo_actions.add_theme_constant_override("separation", 8)
+    photo_actions.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    photo_actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    photo_row.add_child(photo_actions)
+    var choose := _button("Escolher foto…", "ChoosePhotoButton", _pick_photo, true, photo_actions)
+    choose.custom_minimum_size.y = 40
+    var remove := _button("Remover foto", "RemovePhotoButton", Callable(), false, photo_actions)
+    remove.custom_minimum_size.y = 36
+    remove.disabled = int(profile.get("avatar", 0)) <= 0
+    remove.pressed.connect(func():
+        remove.disabled = true
+        var result: String = await Net.set_avatar(PackedByteArray())
+        _show_profile_editor(result))
+    photo_actions.add_child(_wrap("JPG ou PNG. A foto é recortada em quadrado e aparece para seus amigos e no ranking.", 12, MUTED))
+    # Nick
+    var name_card := _card(content, "ProfileNameCard", Color(0, 0, 0, 0.25), LINE, 16)
+    name_card.add_child(_plain("NICK", 12, ACCENT, caps_font))
+    var name_row := HBoxContainer.new()
+    name_row.add_theme_constant_override("separation", 8)
+    name_card.add_child(name_row)
+    var field := LineEdit.new()
+    field.name = "NickField"
+    field.text = player_name
+    field.max_length = 16
+    field.custom_minimum_size.y = 42
+    field.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    name_row.add_child(field)
+    var save := _button("Salvar nick", "SaveNickButton", Callable(), true, name_row)
+    save.custom_minimum_size = Vector2(150, 42)
+    var renamed_at := int(profile.get("renamedAt", 0))
+    var wait_h := ceili((renamed_at + 24 * 3600 * 1000 - Time.get_unix_time_from_system() * 1000.0) / 3600000.0) if renamed_at > 0 else 0
+    var hint := "De 3 a 16 letras, números, ponto, traço ou sublinhado. Dá para trocar 1 vez por dia."
+    if wait_h > 0:
+        hint = "Você trocou de nick há pouco: a próxima troca fica liberada em %d h." % wait_h
+        save.disabled = true
+    name_card.add_child(_wrap(hint, 12, MUTED))
+    save.pressed.connect(func():
+        save.disabled = true
+        var result: String = await Net.rename(field.text)
+        _show_profile_editor(result))
+    field.text_submitted.connect(func(_text):
+        if not save.disabled:
+            save.pressed.emit())
+    _button("Voltar", "ProfileBackButton", _show_main)
+
+## Abre o seletor de arquivos do sistema para escolher a foto.
+func _pick_photo() -> void:
+    var dialog := FileDialog.new()
+    dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+    dialog.access = FileDialog.ACCESS_FILESYSTEM
+    dialog.use_native_dialog = true
+    dialog.title = "Escolha sua foto"
+    dialog.filters = PackedStringArray(["*.png, *.jpg, *.jpeg ; Imagens"])
+    add_child(dialog)
+    dialog.file_selected.connect(func(path: String):
+        dialog.queue_free()
+        _upload_photo(path))
+    dialog.canceled.connect(dialog.queue_free)
+    dialog.popup_centered_ratio(0.6)
+
+## Recorta o centro em quadrado, reduz para 128 px, comprime em JPEG e envia.
+func _upload_photo(path: String) -> void:
+    var image := Image.load_from_file(path)
+    if image == null or image.is_empty():
+        _show_profile_editor("Não foi possível abrir essa imagem.")
+        return
+    var bytes := photo_bytes(image)
+    var feedback := content.get_node_or_null("ProfileFeedback") as Label
+    if feedback != null:
+        feedback.text = "Enviando foto…"
+    var result: String = await Net.set_avatar(bytes)
+    _show_profile_editor(result)
+
+## Foto pronta para enviar: quadrado do centro, 128×128, JPEG.
+static func photo_bytes(image: Image) -> PackedByteArray:
+    var side := mini(image.get_width(), image.get_height())
+    var square := image.get_region(Rect2i((image.get_width() - side) / 2, (image.get_height() - side) / 2, side, side))
+    square.convert(Image.FORMAT_RGB8)
+    square.resize(128, 128, Image.INTERPOLATE_LANCZOS)
+    return square.save_jpg_to_buffer(0.85)
+
 ## Círculo com as iniciais do jogador (cor fixa por nome) e a bolinha de status.
-func _avatar_badge(player_name: String, online: bool, diameter: float = 38.0) -> Control:
+## Com foto (versão > 0), a foto aparece por cima assim que é baixada.
+func _avatar_badge(player_name: String, online: bool, diameter: float = 38.0, version: int = 0, show_status: bool = true) -> Control:
     var holder := Control.new()
     holder.custom_minimum_size = Vector2(diameter, diameter)
     holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1808,6 +1984,7 @@ func _avatar_badge(player_name: String, online: bool, diameter: float = 38.0) ->
     holder.add_child(circle)
     var initials := player_name.substr(0, 2).to_upper() if not player_name.is_empty() else "?"
     var letters := _plain(initials, int(diameter * 0.36), TEXT if online else MUTED, semi_font)
+    letters.name = "Initials"
     letters.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     letters.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
     letters.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1818,7 +1995,12 @@ func _avatar_badge(player_name: String, online: bool, diameter: float = 38.0) ->
     dot.size = Vector2(dot_size, dot_size)
     dot.position = Vector2(diameter - dot_size + 1, diameter - dot_size + 1)
     dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    dot.visible = show_status
     holder.add_child(dot)
+    holder.set_meta("avatar_name", player_name)
+    holder.set_meta("avatar_version", version)
+    holder.add_to_group("avatar_badges")
+    _apply_photo(holder)
     return holder
 
 ## Card de convite recebido: entra deslizando no canto, mostra quem convidou,
@@ -1891,15 +2073,17 @@ func _on_friend_invite(from: String, code: String, kind: String = "party") -> vo
     invite_code = code
     invite_kind = kind
     var rank := ""
+    var photo_version := 0
     for friend in Net.friends_data.get("friends", []):
         if str(friend.get("name", "")) == from:
             rank = str(friend.get("rank", ""))
+            photo_version = int(friend.get("avatar", 0))
     invite_label.text = "%s convidou você" % from
     var where := "Eliminatória  ·  sala de espera" if kind == "elim" else "Sala %s  ·  Equipes" % code
     invite_sub.text = ("%s  ·  " % rank if not rank.is_empty() else "") + where
     for child in invite_avatar_slot.get_children():
         child.queue_free()
-    invite_avatar_slot.add_child(_avatar_badge(from, true, 46.0))
+    invite_avatar_slot.add_child(_avatar_badge(from, true, 46.0, photo_version))
     # Entra deslizando da direita, com um "plim"; a barra mostra quanto tempo resta.
     if _invite_tween != null and _invite_tween.is_valid():
         _invite_tween.kill()
@@ -2231,7 +2415,7 @@ func _invite_row(friend: Dictionary) -> PanelContainer:
     var row := HBoxContainer.new()
     row.add_theme_constant_override("separation", 8)
     panel.add_child(row)
-    row.add_child(_avatar_badge(friend_name, online, 28.0))
+    row.add_child(_avatar_badge(friend_name, online, 28.0, int(friend.get("avatar", 0))))
     var words := VBoxContainer.new()
     words.add_theme_constant_override("separation", -2)
     words.size_flags_horizontal = Control.SIZE_EXPAND_FILL

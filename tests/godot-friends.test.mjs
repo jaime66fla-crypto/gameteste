@@ -30,6 +30,42 @@ async function register(accounts, name) {
 	return r.data.token;
 }
 
+test('edit profile: new nickname (unique, once a day, login and friends follow it) and photo', async () => {
+	const accounts = service();
+	const ana = await register(accounts, 'Ana');
+	const beto = await register(accounts, 'Beto');
+	await call(accounts, '/friends/add', { token: beto, body: { name: 'Ana' } });
+	await call(accounts, '/friends/accept', { token: ana, body: { name: 'Beto' } });
+	// Nick ocupado (atual ou original de alguém) é recusado.
+	assert.equal((await call(accounts, '/profile/name', { token: ana, body: { name: 'beto' } })).status, 409);
+	assert.equal((await call(accounts, '/profile/name', { token: ana, body: { name: 'x' } })).status, 400);
+	let r = await call(accounts, '/profile/name', { token: ana, body: { name: 'AnaSniper' } });
+	assert.equal(r.status, 200);
+	assert.equal(r.data.profile.name, 'AnaSniper');
+	// O amigo vê o nick novo; entrar com o nick novo funciona; ninguém registra o nick novo.
+	assert.equal((await call(accounts, '/friends', { token: beto })).data.friends[0].name, 'AnaSniper');
+	assert.equal((await call(accounts, '/login', { body: { name: 'anasniper', password: 'segredo1' } })).status, 200);
+	assert.equal((await call(accounts, '/register', { body: { name: 'AnaSniper', password: 'segredo1' } })).status, 409);
+	assert.equal((await call(accounts, '/register', { body: { name: 'Ana', password: 'segredo1' } })).status, 409, 'original nick stays reserved');
+	// Adicionar pelo nick novo acha a conta.
+	const caio = await register(accounts, 'Caio');
+	assert.match((await call(accounts, '/friends/add', { token: caio, body: { name: 'AnaSniper' } })).data.message, /AnaSniper|pedido|enviado/i);
+	// Só uma troca por dia.
+	assert.equal((await call(accounts, '/profile/name', { token: ana, body: { name: 'AnaDois' } })).status, 429);
+	// Foto: JPEG/PNG pequeno, servido por /avatar com a versão no perfil.
+	const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]).toString('base64');
+	assert.equal((await call(accounts, '/profile/avatar', { token: ana, body: { image: Buffer.from('not an image').toString('base64') } })).status, 400);
+	r = await call(accounts, '/profile/avatar', { token: ana, body: { image: png } });
+	assert.ok(r.data.profile.avatar > 0);
+	const image = await accounts.fetch(new Request('https://internal/avatar?name=AnaSniper&v=1'));
+	assert.equal(image.status, 200);
+	assert.equal(image.headers.get('content-type'), 'image/png');
+	assert.ok((await call(accounts, '/friends', { token: beto })).data.friends[0].avatar > 0, 'friends get the photo version');
+	r = await call(accounts, '/profile/avatar', { token: ana, body: { image: '' } });
+	assert.equal(r.data.profile.avatar, 0);
+	assert.equal((await accounts.fetch(new Request('https://internal/avatar?name=AnaSniper'))).status, 404);
+});
+
 test('friend request, accept, presence, invite once, remove', async () => {
 	const accounts = service();
 	const ana = await register(accounts, 'Ana');
@@ -46,7 +82,7 @@ test('friend request, accept, presence, invite once, remove', async () => {
 	await call(accounts, '/friends?status=room&code=K7Q2M', { token: ana });
 	list = (await call(accounts, '/friends?status=menu', { token: beto })).data;
 	assert.equal(list.requests.length, 0);
-	assert.deepEqual(list.friends, [{ name: 'Ana', rank: list.friends[0].rank, online: true, status: 'room', code: 'K7Q2M' }]);
+	assert.deepEqual(list.friends, [{ name: 'Ana', avatar: 0, rank: list.friends[0].rank, online: true, status: 'room', code: 'K7Q2M' }]);
 	// Invite is delivered once.
 	assert.match((await call(accounts, '/friends/invite', { token: ana, body: { name: 'Beto', code: 'K7Q2M' } })).data.message, /Convite/);
 	list = (await call(accounts, '/friends', { token: beto })).data;

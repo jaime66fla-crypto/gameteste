@@ -158,6 +158,74 @@ func friend_action(action: String, friend_name: String, code: String = "", kind:
 	return str(data.get("message", data.get("error", "Não foi possível falar com o servidor.")))
 
 ## Top players by XP (public). Returns {"players": [...], "me": {...}|null} or {"error": "..."}.
+## Editar perfil: troca o nick. Devolve a mensagem do servidor (sucesso ou erro).
+func rename(new_name: String) -> String:
+	var response := await _api("/profile/name", {"name": new_name.strip_edges()})
+	if response["status"] == 200:
+		profile = response["data"].get("profile", profile)
+		save_name(str(profile.get("name", new_name)))
+		return str(response["data"].get("message", "Nick atualizado."))
+	return str(response["data"].get("error", "Não foi possível trocar o nick."))
+
+## Editar perfil: foto (JPEG/PNG já reduzido) ou PackedByteArray vazio para remover.
+func set_avatar(image_bytes: PackedByteArray) -> String:
+	var payload := Marshalls.raw_to_base64(image_bytes) if not image_bytes.is_empty() else ""
+	var response := await _api("/profile/avatar", {"image": payload})
+	if response["status"] == 200:
+		profile = response["data"].get("profile", profile)
+		var me := str(profile.get("name", ""))
+		_avatar_cache.erase(me)
+		if not image_bytes.is_empty():
+			var texture := _texture_from(image_bytes)
+			if texture != null:
+				_avatar_cache[me] = {"version": int(profile.get("avatar", 0)), "texture": texture}
+		avatar_loaded.emit(me)
+		return str(response["data"].get("message", "Foto atualizada."))
+	return str(response["data"].get("error", "Não foi possível trocar a foto."))
+
+## Fotos dos jogadores: baixadas uma vez por versão e guardadas em memória.
+signal avatar_loaded(player_name: String)
+var _avatar_cache: Dictionary = {} # nome -> {version, texture}
+var _avatar_loading: Dictionary = {} # "nome:versão" em download
+
+## Textura da foto (null = ainda não chegou ou sem foto: o menu mostra as iniciais).
+## Quando o download termina, avatar_loaded(nome) avisa para redesenhar.
+func avatar_texture(player_name: String, version: int) -> Texture2D:
+	if version <= 0 or player_name.is_empty():
+		return null
+	var cached: Dictionary = _avatar_cache.get(player_name, {})
+	if int(cached.get("version", -1)) == version:
+		return cached["texture"]
+	var key := "%s:%d" % [player_name, version]
+	if not _avatar_loading.has(key):
+		_avatar_loading[key] = true
+		_download_avatar(player_name, version, key)
+	return null
+
+func _download_avatar(player_name: String, version: int, key: String) -> void:
+	var request := HTTPRequest.new()
+	request.timeout = 15.0
+	add_child(request)
+	if request.request(_api_url("/avatar?name=%s&v=%d" % [player_name.uri_encode(), version])) != OK:
+		request.queue_free()
+		_avatar_loading.erase(key)
+		return
+	var result: Array = await request.request_completed
+	request.queue_free()
+	_avatar_loading.erase(key)
+	if int(result[1]) != 200:
+		return
+	var texture := _texture_from(result[3])
+	if texture == null:
+		return
+	_avatar_cache[player_name] = {"version": version, "texture": texture}
+	avatar_loaded.emit(player_name)
+
+func _texture_from(bytes: PackedByteArray) -> Texture2D:
+	var image := Image.new()
+	var ok := image.load_jpg_from_buffer(bytes) if bytes.size() > 2 and bytes[0] == 0xFF and bytes[1] == 0xD8 else image.load_png_from_buffer(bytes)
+	return ImageTexture.create_from_image(image) if ok == OK else null
+
 func fetch_leaderboard(limit: int = 10) -> Dictionary:
 	var response := await _api("/leaderboard?limit=%d" % limit, {}, HTTPClient.METHOD_GET)
 	if response["status"] != 200:

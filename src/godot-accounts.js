@@ -46,6 +46,8 @@ export const XP_REWARDS = ranks.xp;
 function profile(account) {
 	return {
 		name: account.name,
+		avatar: account.avatar || 0, // versão da foto (0 = sem foto: iniciais)
+		renamedAt: account.renamedAt || 0,
 		xp: account.xp,
 		...rankFor(account.xp),
 		kills: account.kills,
@@ -60,7 +62,7 @@ const BOARD_SIZE = 100; // players kept in the stored leaderboard
 const BOARD_MAX_LIMIT = 50; // most rows one request can return
 
 function boardEntry(key, account) {
-	return { key, name: account.name, xp: account.xp || 0, kills: account.kills || 0, wins: account.wins || 0, matches: account.matches || 0 };
+	return { key, name: account.name, avatar: account.avatar || 0, xp: account.xp || 0, kills: account.kills || 0, wins: account.wins || 0, matches: account.matches || 0 };
 }
 
 /** XP first, then wins, then kills, then name. */
@@ -90,6 +92,8 @@ export async function handleGodotAccount(request, env, url) {
 }
 
 const MAX_FRIENDS = 100;
+const RENAME_COOLDOWN_MS = 24 * 3600 * 1000; // trocar de nick no máximo 1 vez por dia
+const AVATAR_MAX_BYTES = 60 * 1024; // foto já reduzida pelo jogo (128×128 JPEG fica bem abaixo)
 const ONLINE_MS = 25000; // a client polls every ~8 s while the game is open
 const INVITE_MS = 120000;
 
@@ -128,6 +132,12 @@ export class GodotAccounts {
 					return this.addXp(await request.json());
 				case '/friends':
 					return this.friends(bearer(request, url), url);
+				case '/profile/name':
+					return request.method === 'POST' ? this.rename(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
+				case '/profile/avatar':
+					return request.method === 'POST' ? this.setAvatar(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
+				case '/avatar':
+					return this.avatar(url);
 				case '/friends/add':
 				case '/friends/accept':
 				case '/friends/decline':
@@ -146,6 +156,85 @@ export class GodotAccounts {
 		return 'acct:' + String(name).toLowerCase();
 	}
 
+	/**
+	 * Conta pelo nick atual. A chave da conta nunca muda (amigos, sessões,
+	 * ranking e personagens apontam para ela); quem trocou de nick ganha um
+	 * apelido "name:<nick>" → chave. O nick original continua reservado.
+	 */
+	async keyForName(name) {
+		const lower = String(name).toLowerCase();
+		return (await this.ctx.storage.get('name:' + lower)) || 'acct:' + lower;
+	}
+
+	/** Nick em uso por outra conta (nick atual de alguém ou nick original reservado). */
+	async nameTaken(name, exceptKey = '') {
+		const lower = String(name).toLowerCase();
+		const alias = await this.ctx.storage.get('name:' + lower);
+		if (alias && alias !== exceptKey) return true;
+		const direct = 'acct:' + lower;
+		return direct !== exceptKey && !!(await this.ctx.storage.get(direct));
+	}
+
+	/** POST /profile/name {name}: troca o nick (1 vez por dia, único). */
+	async rename(token, body) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const { key, account } = found;
+		const name = String(body?.name || '').trim();
+		if (!NAME_RULE.test(name)) return json({ error: 'O nick deve ter de 3 a 16 letras, números, ponto, traço ou sublinhado.' }, 400);
+		if (name === account.name) return json({ profile: profile(account), message: 'Esse já é o seu nick.' });
+		const wait = (account.renamedAt || 0) + RENAME_COOLDOWN_MS - Date.now();
+		if (wait > 0) return json({ error: `Você já trocou de nick hoje. Tente de novo em ${Math.ceil(wait / 3600000)} h.` }, 429);
+		const oldLower = account.name.toLowerCase();
+		const newLower = name.toLowerCase();
+		if (newLower !== oldLower && (await this.nameTaken(name, key))) return json({ error: 'Esse nick já está em uso.' }, 409);
+		if ('acct:' + oldLower !== key && (await this.ctx.storage.get('name:' + oldLower)) === key) await this.ctx.storage.delete('name:' + oldLower);
+		if ('acct:' + newLower !== key) await this.ctx.storage.put('name:' + newLower, key);
+		account.name = name;
+		account.renamedAt = Date.now();
+		await this.ctx.storage.put(key, account);
+		await this.updateBoard(key, account);
+		return json({ profile: profile(account), message: `Agora você é ${name}.` });
+	}
+
+	/** POST /profile/avatar {image: base64 JPEG/PNG} troca a foto; image vazia remove. */
+	async setAvatar(token, body) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const { key, account } = found;
+		const data = String(body?.image || '');
+		if (!data) {
+			await this.ctx.storage.delete('avatar:' + key);
+			account.avatar = 0;
+		} else {
+			let bytes;
+			try {
+				bytes = Uint8Array.from(atob(data), (c) => c.charCodeAt(0));
+			} catch {
+				return json({ error: 'Imagem inválida.' }, 400);
+			}
+			const jpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+			const png = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47;
+			if (!jpeg && !png) return json({ error: 'A foto precisa ser JPG ou PNG.' }, 400);
+			if (bytes.length > AVATAR_MAX_BYTES) return json({ error: 'Foto grande demais.' }, 413);
+			await this.ctx.storage.put('avatar:' + key, { type: jpeg ? 'image/jpeg' : 'image/png', data });
+			account.avatar = Date.now();
+		}
+		await this.ctx.storage.put(key, account);
+		await this.updateBoard(key, account);
+		return json({ profile: profile(account), message: data ? 'Foto atualizada.' : 'Foto removida.' });
+	}
+
+	/** GET /avatar?name=<nick>&v=<versão>: a foto de um jogador (cache longo: a URL muda com a versão). */
+	async avatar(url) {
+		const name = String(url.searchParams.get('name') || '');
+		if (!NAME_RULE.test(name)) return new Response('Not found', { status: 404 });
+		const stored = await this.ctx.storage.get('avatar:' + (await this.keyForName(name)));
+		if (!stored) return new Response('Not found', { status: 404 });
+		const bytes = Uint8Array.from(atob(stored.data), (c) => c.charCodeAt(0));
+		return new Response(bytes, { headers: { 'content-type': stored.type, 'cache-control': 'public, max-age=86400' } });
+	}
+
 	async newSession(accountKey) {
 		const token = randomHex(32);
 		await this.ctx.storage.put('sess:' + token, { account: accountKey, expires: Date.now() + SESSION_DAYS * 86400000 });
@@ -158,7 +247,7 @@ export class GodotAccounts {
 		if (!NAME_RULE.test(name)) return json({ error: 'Nome deve ter de 3 a 16 letras, números, ponto, traço ou sublinhado.' }, 400);
 		if (password.length < 6 || password.length > 72) return json({ error: 'A senha precisa ter entre 6 e 72 caracteres.' }, 400);
 		const key = this.key(name);
-		if (await this.ctx.storage.get(key)) return json({ error: 'Esse nome já está em uso.' }, 409);
+		if (await this.nameTaken(name)) return json({ error: 'Esse nome já está em uso.' }, 409);
 		const salt = randomHex(16);
 		const account = { name, salt, hash: await hashPassword(password, salt), xp: 0, kills: 0, botKills: 0, wins: 0, matches: 0, created: Date.now(), failures: 0, lockedUntil: 0 };
 		await this.ctx.storage.put(key, account);
@@ -167,7 +256,7 @@ export class GodotAccounts {
 	}
 
 	async login(body) {
-		const key = this.key(String(body?.name || '').trim());
+		const key = await this.keyForName(String(body?.name || '').trim()); // nick atual (ou o original)
 		const password = String(body?.password || '');
 		const account = await this.ctx.storage.get(key);
 		const wrong = json({ error: 'Nome ou senha incorretos.' }, 401);
@@ -235,7 +324,7 @@ export class GodotAccounts {
 			if (!friend) continue;
 			const seen = this.presence.get(key);
 			const online = !!seen && now - seen.seen < ONLINE_MS;
-			friends.push({ name: friend.name, rank: rankFor(friend.xp).rank, online, status: online ? seen.status : 'offline', code: online ? seen.code : '' });
+			friends.push({ name: friend.name, avatar: friend.avatar || 0, rank: rankFor(friend.xp).rank, online, status: online ? seen.status : 'offline', code: online ? seen.code : '' });
 		}
 		friends.sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name));
 		const requests = [];
@@ -255,8 +344,8 @@ export class GodotAccounts {
 		const me = found.account;
 		const meKey = found.key;
 		const name = String(body?.name || '').trim();
-		const otherKey = this.key(name);
 		if (!NAME_RULE.test(name)) return json({ error: 'Nome inválido.' }, 400);
+		const otherKey = await this.keyForName(name);
 		if (otherKey === meKey) return json({ error: 'Esse é você.' }, 400);
 		const other = await this.ctx.storage.get(otherKey);
 		if (!other) return json({ error: `Jogador ${name} não encontrado.` }, 404);
@@ -366,7 +455,7 @@ export class GodotAccounts {
 	async leaderboard(token, url) {
 		const limit = Math.max(1, Math.min(BOARD_MAX_LIMIT, Math.floor(Number(url.searchParams.get('limit')) || 10)));
 		const board = await this.board();
-		const line = (entry, index) => ({ position: index + 1, name: entry.name, rank: rankFor(entry.xp).rank, xp: entry.xp, kills: entry.kills, wins: entry.wins, matches: entry.matches });
+		const line = (entry, index) => ({ position: index + 1, name: entry.name, avatar: entry.avatar || 0, rank: rankFor(entry.xp).rank, xp: entry.xp, kills: entry.kills, wins: entry.wins, matches: entry.matches });
 		const players = board.slice(0, limit).map(line);
 		let me = null;
 		const found = token ? await this.accountFor(token) : null;
