@@ -91,6 +91,12 @@ var _flinch_side := 0.0
 var _lean := 0.0
 var _approach_point := Vector3.INF # nav waypoint toward a visible target behind an obstacle
 const HEARING_RANGE := 30.0 # enemies closer than this are "heard" and checked out
+## Modo caçada (só bots vivos na partida): vão direto ao inimigo mais próximo,
+## correndo mais, enxergando mais longe e errando menos, para a partida acabar logo.
+var hunt_mode := false
+const HUNT_SPEED_SCALE := 1.35
+const HUNT_VIEW_SCALE := 1.6
+const HUNT_ACCURACY_BONUS := 0.18
 const WANDER_PATIENCE := 25.0 # seconds before giving up on a roaming spot
 var _wander_timer := 0.0
 
@@ -427,7 +433,7 @@ func _run_bot(delta: float) -> void:
 			_think_timer = 0.0 # reached: choose the next waypoint right away
 		elif to.length() > 0.2:
 			desired = to.normalized()
-		speed = BOT_RUN_SPEED
+		speed = BOT_RUN_SPEED * (HUNT_SPEED_SCALE if hunt_mode else 1.0)
 		if desired.length_squared() > 0.01:
 			rotation.y = lerp_angle(rotation.y, atan2(-desired.x, -desired.z), minf(1.0, delta * 6.0))
 	desired.y = 0.0
@@ -472,7 +478,11 @@ func _think() -> void:
 	var has_goal := false
 	_goal_crate = ""
 	var crate := _nearest_crate()
-	if not crate.is_empty() and (not armed or _flat_distance(crate["pos"], global_position) < 22.0):
+	if hunt_mode and armed and not fallback.is_empty():
+		# Caçada: o inimigo mais próximo, esteja onde estiver (sem passear nem saquear).
+		goal = (fallback["node"] as Node3D).global_position
+		has_goal = true
+	elif not crate.is_empty() and (not armed or _flat_distance(crate["pos"], global_position) < 22.0):
 		goal = crate["pos"]
 		has_goal = true
 		_goal_crate = crate["id"]
@@ -576,7 +586,8 @@ func _pick_target() -> Dictionary:
 		if distance < fallback_distance:
 			fallback_distance = distance
 			fallback = entry
-		if armed and distance < BOT_VIEW_RANGE and distance < best_distance and _line_of_sight(node):
+		var view_range := BOT_VIEW_RANGE * (HUNT_VIEW_SCALE if hunt_mode else 1.0)
+		if armed and distance < view_range and distance < best_distance and _line_of_sight(node):
 			best_distance = distance
 			_ai_target = node
 			_ai_target_id = entry["id"]
@@ -600,7 +611,7 @@ func _bot_shoot(distance: float) -> void:
 		return
 	var aim_point := _ai_target.global_position + Vector3(0, 1.3, 0)
 	# Accuracy falls with distance and when the target is moving.
-	var chance := clampf(0.62 - distance * 0.011, 0.14, 0.55)
+	var chance := clampf(0.62 - distance * 0.011, 0.14, 0.55) + (HUNT_ACCURACY_BONUS if hunt_mode else 0.0)
 	if _ai_target is CharacterBody3D and Vector2((_ai_target as CharacterBody3D).velocity.x, (_ai_target as CharacterBody3D).velocity.z).length() > 3.0:
 		chance *= 0.7
 	var hit := randf() < chance

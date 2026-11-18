@@ -214,8 +214,41 @@ func _show_login(create: bool, message: String = "") -> void:
         _button("Sou novo: criar conta","SwitchToCreate",func(): _show_login(true))
     _button("Treinar offline sem conta","OfflineButton",func(): _show_main())
 
+const UI_STATE_PATH := "user://ui.cfg"
+
+## Lista de patentes aberta ou fechada (lembrada entre sessões).
+func _ranks_open() -> bool:
+    var file := ConfigFile.new()
+    return bool(file.get_value("menu", "ranks_open", true)) if file.load(UI_STATE_PATH) == OK else true
+
+var _suppress_ui_save := false # testes: não mexe no arquivo do jogador
+
+func _save_ranks_open(open: bool) -> void:
+    if _suppress_ui_save:
+        return
+    var file := ConfigFile.new()
+    file.load(UI_STATE_PATH)
+    file.set_value("menu", "ranks_open", open)
+    file.save(UI_STATE_PATH)
+
 ## Every rank with its XP, in small print; the player's current one highlighted.
+## O título é um botão que esconde/mostra a lista.
 func _rank_ladder(current: String, parent: Node) -> void:
+    var open := _ranks_open()
+    var toggle := Button.new()
+    toggle.name = "RankLadderToggle"
+    toggle.flat = true
+    toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+    toggle.focus_mode = Control.FOCUS_NONE
+    toggle.add_theme_font_size_override("font_size", 10)
+    if caps_font != null:
+        toggle.add_theme_font_override("font", caps_font)
+    for state in ["font_color", "font_pressed_color", "font_focus_color"]:
+        toggle.add_theme_color_override(state, MUTED)
+    toggle.add_theme_color_override("font_hover_color", ACCENT)
+    toggle.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+    toggle.tooltip_text = "Mostrar ou esconder a lista de patentes"
+    parent.add_child(toggle)
     var ladder := RichTextLabel.new()
     ladder.name = "RankLadder"
     ladder.bbcode_enabled = true
@@ -231,8 +264,15 @@ func _rank_ladder(current: String, parent: Node) -> void:
             parts.append("[color=#f0a23b][b]%s[/b][/color]" % text)
         else:
             parts.append("[color=#5f6d6c]%s[/color]" % text)
-    ladder.text = "[color=#8d9a98]PATENTES (XP):[/color] " + "  •  ".join(parts)
+    ladder.text = "  •  ".join(parts)
+    ladder.visible = open
     parent.add_child(ladder)
+    var label_for := func(is_open: bool) -> String: return ("▾  " if is_open else "▸  ") + "PATENTES (XP)" + ("" if is_open else "  ·  mostrar")
+    toggle.text = label_for.call(open)
+    toggle.pressed.connect(func():
+        ladder.visible = not ladder.visible
+        toggle.text = label_for.call(ladder.visible)
+        _save_ranks_open(ladder.visible))
 
 func _clear() -> void:
     friends_screen_open = false

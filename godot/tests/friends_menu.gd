@@ -27,6 +27,17 @@ func _run() -> void:
 	await process_frame
 	menu.call("_show_main")
 	await process_frame
+	# Lista de patentes: o título esconde e mostra (sem gravar no arquivo do jogador).
+	var ranks_toggle := menu.find_child("RankLadderToggle", true, false) as Button
+	var ladder_node := menu.find_child("RankLadder", true, false) as Control
+	if ranks_toggle != null and ladder_node != null:
+		var was := ladder_node.visible
+		menu.set("_suppress_ui_save", true)
+		ranks_toggle.pressed.emit()
+		_check(ladder_node.visible != was, "Rank list toggle hides/shows the list")
+		ranks_toggle.pressed.emit()
+	else:
+		_check(false, "Rank list has a toggle button")
 	var friends_button := menu.find_child("FriendsButton", true, false) as Button
 	_check(friends_button != null and friends_button.text.contains("1 pedido"), "Main menu shows Amigos with pending requests")
 	var ladder := menu.find_child("RankLadder", true, false) as RichTextLabel

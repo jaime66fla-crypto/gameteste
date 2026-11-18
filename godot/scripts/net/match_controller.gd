@@ -205,9 +205,16 @@ func _physics_process(delta: float) -> void:
 	_bot_timer -= delta
 	if _bot_timer <= 0.0 and is_host():
 		_bot_timer = BOT_RATE
+		# Só bots vivos (todos os jogadores morreram ou saíram): modo caçada, para a
+		# partida não se arrastar com bots passeando pelo mapa.
+		var humans_alive := not local_dead
+		for actor in actors.values():
+			if not actor.is_bot and not actor.dead:
+				humans_alive = true
 		var list: Array = []
 		for actor in actors.values():
 			if actor.is_bot and actor.controlled and not actor.dead:
+				actor.set("hunt_mode", not humans_alive)
 				list.append(actor.call("bot_state"))
 		if not list.is_empty():
 			Net.send({"t": "b", "l": list})
