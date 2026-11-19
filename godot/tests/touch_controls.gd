@@ -107,6 +107,32 @@ func _run() -> void:
 	_check(Input.get_vector("move_left", "move_right", "move_forward", "move_back") == Vector2.ZERO, "Soltar o joystick para")
 	_check(not Input.is_action_pressed("sprint"), "Soltar o joystick para de correr")
 
+	# CORRER liga a corrida: meio joystick já corre; desligar volta a andar.
+	var sprint_btn: Vector2 = touch.call("_center", "sprint")
+	_touch(6, sprint_btn, true)
+	_touch(6, sprint_btn, false)
+	_touch(0, start, true)
+	_drag(0, start + Vector2(30, -40), Vector2(30, -40))
+	await _frames(1)
+	_check(Input.is_action_pressed("sprint"), "CORRER ligado: andando já corre")
+	_touch(6, sprint_btn, true)
+	_touch(6, sprint_btn, false)
+	await _frames(1)
+	_check(not Input.is_action_pressed("sprint"), "CORRER desligado: volta a andar")
+	_touch(0, start, false)
+	await _frames(1)
+
+	# Editor: Cancelar desfaz o que foi mexido.
+	var crouch_before: Vector2 = touch.call("_center", "crouch")
+	touch.call("start_editing")
+	_touch(7, crouch_before, true)
+	_drag(7, s * Vector2(0.4, 0.4), Vector2.ZERO)
+	_touch(7, s * Vector2(0.4, 0.4), false)
+	touch.call("cancel_editing")
+	_check((touch.call("_center", "crouch") as Vector2).distance_to(crouch_before) < 1.0, "Cancelar no editor desfaz a mudança")
+	PointerMode.capture()
+	await _frames(2)
+
 	# Botão de toque (InputEventAction) chega nas ações do jogador, como a tecla.
 	var healed := [false]
 	player.set("heal_handler", func(): healed[0] = true)

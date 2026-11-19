@@ -14,26 +14,30 @@ const PATH := "user://touch_layout.cfg"
 
 ## [id, texto, ação, modo, centro (fração da tela), raio em px (tela 1280×720)]
 ## modo: "hold" = apertado enquanto o dedo está em cima; "toggle" = liga/desliga;
-## "pause" = mesmo que Esc.
+## "pause" = mesmo que Esc; "sprint" = corrida ligada/desligada (anda correndo).
+## Layout no estilo battle royale mobile: esquerda com correr/atirar, coluna de
+## mochila/usar/granada e joystick; direita com armas no alto, mira, pulo,
+## atirar grande, agachar e curar.
 const BUTTONS := [
-	["fire", "ATIRAR", "fire", "hold", Vector2(0.84, 0.62), 68.0],
-	["fire_left", "FOGO", "fire", "hold", Vector2(0.07, 0.40), 40.0],
-	["aim", "MIRA", "aim", "toggle", Vector2(0.71, 0.42), 40.0],
-	["jump", "PULO", "jump", "hold", Vector2(0.95, 0.47), 38.0],
-	["crouch", "AGACHA", "crouch", "hold", Vector2(0.95, 0.73), 36.0],
-	["reload", "RECARGA", "reload", "hold", Vector2(0.71, 0.76), 32.0],
-	["melee", "SOCO", "melee", "hold", Vector2(0.62, 0.62), 30.0],
-	["grenade", "GRANADA", "grenade", "hold", Vector2(0.61, 0.86), 30.0],
-	["heal", "CURAR", "heal", "hold", Vector2(0.52, 0.88), 30.0],
-	["interact", "USAR", "interact", "hold", Vector2(0.60, 0.30), 32.0],
-	["weapon_1", "1", "weapon_1", "hold", Vector2(0.39, 0.08), 24.0],
-	["weapon_2", "2", "weapon_2", "hold", Vector2(0.45, 0.08), 24.0],
-	["weapon_3", "3", "weapon_3", "hold", Vector2(0.51, 0.08), 24.0],
-	["weapon_4", "4", "weapon_4", "hold", Vector2(0.57, 0.08), 24.0],
-	["weapon_5", "5", "weapon_5", "hold", Vector2(0.63, 0.08), 24.0],
-	["map", "MAPA", "map", "hold", Vector2(0.77, 0.08), 26.0],
-	["inventory", "MOCHILA", "inventory", "hold", Vector2(0.84, 0.08), 26.0],
-	["pause", "II", "", "pause", Vector2(0.95, 0.17), 24.0],
+	["fire", "ATIRAR", "fire", "hold", Vector2(0.81, 0.73), 66.0],
+	["fire_left", "FOGO", "fire", "hold", Vector2(0.245, 0.43), 34.0],
+	["sprint", "CORRER", "sprint", "sprint", Vector2(0.17, 0.43), 34.0],
+	["aim", "MIRA", "aim", "toggle", Vector2(0.955, 0.54), 32.0],
+	["jump", "PULO", "jump", "hold", Vector2(0.955, 0.69), 32.0],
+	["crouch", "AGACHA", "crouch", "hold", Vector2(0.93, 0.88), 32.0],
+	["heal", "CURAR", "heal", "hold", Vector2(0.735, 0.91), 30.0],
+	["reload", "RECARGA", "reload", "hold", Vector2(0.70, 0.58), 28.0],
+	["inventory", "MOCHILA", "inventory", "hold", Vector2(0.045, 0.50), 28.0],
+	["interact", "USAR", "interact", "hold", Vector2(0.045, 0.62), 28.0],
+	["grenade", "GRANADA", "grenade", "hold", Vector2(0.045, 0.74), 28.0],
+	["map", "MAPA", "map", "hold", Vector2(0.19, 0.30), 24.0],
+	["weapon_1", "1", "weapon_1", "hold", Vector2(0.89, 0.13), 34.0],
+	["weapon_2", "2", "weapon_2", "hold", Vector2(0.83, 0.25), 25.0],
+	["weapon_3", "3", "weapon_3", "hold", Vector2(0.89, 0.25), 25.0],
+	["melee", "SOCO", "melee", "hold", Vector2(0.95, 0.25), 25.0],
+	["weapon_4", "4", "weapon_4", "hold", Vector2(0.83, 0.37), 22.0],
+	["weapon_5", "5", "weapon_5", "hold", Vector2(0.89, 0.37), 22.0],
+	["pause", "II", "", "pause", Vector2(0.97, 0.05), 20.0],
 	# Dirigindo: só botões (sem joystick). Volante na esquerda, pedais na direita.
 	["car_left", "◀", "move_left", "hold", Vector2(0.08, 0.72), 54.0],
 	["car_right", "▶", "move_right", "hold", Vector2(0.23, 0.72), 54.0],
@@ -47,10 +51,14 @@ const SURVIVAL_ONLY := ["map", "inventory"]
 ## Botões do carro; os outros (menos os de BOTH) são de quem está a pé.
 const CAR_IDS := ["car_left", "car_right", "car_gas", "car_brake", "car_handbrake", "car_exit"]
 const BOTH_IDS := ["map", "inventory", "pause"]
+## Desenhados como quadrado (itens e armas), os outros como círculo.
+const SQUARE_IDS := ["inventory", "interact", "grenade", "weapon_1", "weapon_2", "weapon_3", "weapon_4", "weapon_5", "melee"]
+## Sobe quando o layout padrão muda: posições salvas do layout antigo são descartadas.
+const LAYOUT_VERSION := 2
 ## Joystick: só nasce nesta área (fração da tela).
 const JOY_ZONE := Rect2(0.0, 0.22, 0.42, 0.78)
 const JOY_RADIUS := 72.0
-const JOY_HINT := Vector2(0.17, 0.72)
+const JOY_HINT := Vector2(0.17, 0.75)
 const DEFAULTS := {"look": 1.5, "scope": 1.0, "opacity": 0.75, "size": 1.0}
 
 var player: Node
@@ -74,8 +82,10 @@ var _joy_finger := -1
 var _joy_center := Vector2.ZERO
 var _joy_vec := Vector2.ZERO
 var _look_finger := -1
+var _sprint_on := false # botão CORRER ligado
 
 var editing := false
+var _edit_backup: Array = [] # [custom, options] ao abrir o editor (para Cancelar)
 var _selected := ""
 var _settings_button: Button
 var _settings_panel: PanelContainer
@@ -135,9 +145,12 @@ func _button_at(pos: Vector2) -> String:
 	var best := ""
 	var best_d := INF
 	for id in _visible_ids():
-		var d := pos.distance_to(_center(id))
+		var delta := pos - _center(id)
+		var d := delta.length()
 		# Um pouco de folga em volta: dedo não é tão preciso quanto o mouse.
-		if d <= _radius(id) * 1.15 and d < best_d:
+		var reach := _radius(id) * 1.15
+		var inside := maxf(absf(delta.x), absf(delta.y)) <= reach if SQUARE_IDS.has(id) else d <= reach
+		if inside and d < best_d:
 			best = id
 			best_d = d
 	return best
@@ -168,6 +181,7 @@ func _release_all() -> void:
 	_fingers.clear()
 	_joy_finger = -1
 	_look_finger = -1
+	_sprint_on = false
 	_set_joystick(Vector2.ZERO)
 
 func _send(action: String, pressed: bool) -> void:
@@ -197,6 +211,9 @@ func _press_button(id: String) -> void:
 			_hold(entry[2], true)
 		"toggle":
 			_send(entry[2], not Input.is_action_pressed(entry[2]))
+		"sprint":
+			_sprint_on = not _sprint_on
+			_set_joystick(_joy_vec)
 		"pause":
 			_release_all()
 			for pressed in [true, false]:
@@ -223,8 +240,8 @@ func _set_joystick(vec: Vector2) -> void:
 			Input.action_press(pair[0], float(pair[1]))
 		else:
 			Input.action_release(pair[0])
-	# Empurrado até o fim para a frente: corre.
-	var run := vec.length() > 0.95 and -vec.y > 0.8
+	# Empurrado até o fim para a frente (ou CORRER ligado e andando): corre.
+	var run := (vec.length() > 0.95 and -vec.y > 0.8) or (_sprint_on and vec.length() > 0.1)
 	if run and not Input.is_action_pressed("sprint"):
 		Input.action_press("sprint")
 	elif not run and Input.is_action_pressed("sprint"):
@@ -333,20 +350,34 @@ func _draw() -> void:
 		var running := Input.is_action_pressed("sprint")
 		draw_circle(knob, r * 0.45, Color(1, 0.75, 0.25, 0.8 * alpha) if running else Color(1, 1, 1, 0.55 * alpha))
 	else:
+		# Em repouso: base com as setas nas quatro direções.
 		var hint := JOY_HINT * size
-		draw_arc(hint, r, 0, TAU, 48, Color(1, 1, 1, 0.18 * alpha), 2.0 * s)
-		draw_circle(hint, r * 0.45, Color(1, 1, 1, 0.12 * alpha))
+		draw_circle(hint, r, Color(0, 0, 0, 0.18 * alpha))
+		draw_arc(hint, r, 0, TAU, 48, Color(1, 1, 1, 0.35 * alpha), 2.0 * s)
+		draw_circle(hint, r * 0.4, Color(1, 1, 1, 0.3 * alpha))
+		var arrow := Color(1, 1, 1, 0.55 * alpha)
+		for dir in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
+			var tip: Vector2 = hint + dir * r * 0.86
+			var side: Vector2 = Vector2(-dir.y, dir.x) * r * 0.1
+			var back: Vector2 = tip - dir * r * 0.1
+			draw_polyline(PackedVector2Array([back + side, tip, back - side]), arrow, 2.0 * s)
 	for id in _visible_ids():
 		var entry := _entry(id)
 		var c := _center(id)
 		var br := _radius(id)
-		var on: bool = _pressed_ids.has(id) or (entry[3] == "toggle" and Input.is_action_pressed(entry[2]))
+		var on: bool = _pressed_ids.has(id) or (entry[3] == "toggle" and Input.is_action_pressed(entry[2])) or (entry[3] == "sprint" and _sprint_on)
 		var fill := Color(1, 0.55, 0.15, 0.55 * alpha) if on else Color(0, 0, 0, 0.35 * alpha)
 		if id == "fire" and not on:
 			fill = Color(0.75, 0.12, 0.08, 0.45 * alpha)
-		draw_circle(c, br, fill)
 		var outline := Color(1, 0.85, 0.3, 0.95) if editing and id == _selected else Color(1, 1, 1, 0.6 * alpha)
-		draw_arc(c, br, 0, TAU, 40, outline, (3.0 if editing and id == _selected else 2.0) * s)
+		var width := (3.0 if editing and id == _selected else 2.0) * s
+		if SQUARE_IDS.has(id):
+			var box := Rect2(c - Vector2(br, br), Vector2(br, br) * 2.0)
+			draw_rect(box, fill)
+			draw_rect(box, outline, false, width)
+		else:
+			draw_circle(c, br, fill)
+			draw_arc(c, br, 0, TAU, 40, outline, width)
 		var text: String = entry[1]
 		var font_size := int(clampf(br * 0.42, 11.0 * s, 20.0 * s))
 		if text.length() <= 2:
@@ -395,6 +426,7 @@ func _resize_selected(step: float) -> void:
 
 func start_editing() -> void:
 	editing = true
+	_edit_backup = [custom.duplicate(), options.duplicate()]
 	_release_all()
 	_settings_panel.visible = false
 	_edit_bar.visible = true
@@ -408,6 +440,13 @@ func stop_editing() -> void:
 	_edit_bar.visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_save()
+
+## Sai do editor desfazendo o que foi mexido desde que abriu.
+func cancel_editing() -> void:
+	if _edit_backup.size() == 2:
+		custom = _edit_backup[0]
+		options = _edit_backup[1]
+	stop_editing()
 
 # ------------------------------------------------------------- ajustes ---
 
@@ -472,8 +511,8 @@ func _build_settings_ui() -> void:
 	_edit_bar.visible = false
 	add_child(_edit_bar)
 	_edit_bar.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP)
-	_edit_bar.offset_left = -390
-	_edit_bar.offset_right = 390
+	_edit_bar.offset_left = -440
+	_edit_bar.offset_right = 440
 	_edit_bar.offset_top = 120
 	_edit_bar.offset_bottom = 180
 	var bar := HBoxContainer.new()
@@ -500,17 +539,22 @@ func _build_settings_ui() -> void:
 			which.text = "Ver: a pé" if _edit_car else "Ver: carro"
 			_select(""))
 		bar.add_child(which)
+	var cancel := Button.new()
+	cancel.text = "Cancelar"
+	cancel.custom_minimum_size = Vector2(100, 48)
+	cancel.pressed.connect(cancel_editing)
+	bar.add_child(cancel)
 	var reset := Button.new()
-	reset.text = "Padrão"
-	reset.custom_minimum_size = Vector2(90, 48)
+	reset.text = "Reiniciar"
+	reset.custom_minimum_size = Vector2(100, 48)
 	reset.pressed.connect(func():
 		custom.clear()
 		options = DEFAULTS.duplicate()
 		_select(""))
 	bar.add_child(reset)
 	var done := Button.new()
-	done.text = "Pronto"
-	done.custom_minimum_size = Vector2(90, 48)
+	done.text = "Salvar"
+	done.custom_minimum_size = Vector2(100, 48)
 	done.pressed.connect(stop_editing)
 	bar.add_child(done)
 
@@ -541,6 +585,8 @@ func _load() -> void:
 		return
 	for key in DEFAULTS:
 		options[key] = float(file.get_value("options", key, DEFAULTS[key]))
+	if int(file.get_value("meta", "version", 1)) < LAYOUT_VERSION:
+		return # posições do layout antigo não servem no novo
 	for entry in BUTTONS:
 		var v = file.get_value("layout", entry[0], null)
 		if v is Vector3:
@@ -548,6 +594,7 @@ func _load() -> void:
 
 func _save() -> void:
 	var file := ConfigFile.new()
+	file.set_value("meta", "version", LAYOUT_VERSION)
 	for key in options:
 		file.set_value("options", key, options[key])
 	for id in custom:
