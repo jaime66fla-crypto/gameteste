@@ -1,4 +1,5 @@
 extends Node3D
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 
 const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
@@ -40,9 +41,11 @@ var cinematic := false # cena do vencedor: esconde minimapa e botão de menu
 var ammo_hud: Control
 const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
+const TouchControlsScript = preload("res://scripts/ui/touch_controls.gd")
 const Controls = preload("res://scripts/controls.gd")
 
 func _ready() -> void:
+    PointerMode.setup_window(get_tree())
     _register_inputs()
     Input.action_release("fire")
     Input.action_release("aim")
@@ -139,7 +142,7 @@ func _build_quit_dialog(survival: bool) -> void:
     quit_dialog.canceled.connect(func():
         var busy: bool = match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open"))
         if not busy and not bool(match_controller != null and match_controller.get("local_dead")):
-            Input.mouse_mode = Input.MOUSE_MODE_CAPTURED)
+            PointerMode.capture())
 
 func _ask_quit(to_desktop: bool) -> void:
     if quit_dialog == null:
@@ -148,7 +151,7 @@ func _ask_quit(to_desktop: bool) -> void:
     _quit_to_desktop = to_desktop
     Input.action_release("fire")
     Input.action_release("aim")
-    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    PointerMode.release()
     quit_dialog.popup_centered()
 
 ## HUD enxuto: minimapa redondo (canto superior esquerdo) e munição (inferior
@@ -170,6 +173,18 @@ func _build_hud(survival: bool) -> void:
     if match_controller != null and match_controller.has_method("hud_extra"):
         ammo_hud.set("extra", Callable(match_controller, "hud_extra"))
     layer.add_child(ammo_hud)
+    if PointerMode.touch_mode():
+        # Celular: joystick, câmera no arrastar e botões na tela.
+        var touch_layer := CanvasLayer.new()
+        touch_layer.name = "TouchLayer"
+        touch_layer.layer = 6
+        add_child(touch_layer)
+        var touch := TouchControlsScript.new()
+        touch.set("player", player)
+        touch.set("survival", survival)
+        touch.set("match_controller", match_controller) # sobrevivência: botões do carro
+        touch.set("hidden_check", func() -> bool: return cinematic or (quit_dialog != null and quit_dialog.visible))
+        touch_layer.add_child(touch)
     # A legenda de controles (F1) fica centralizada, longe do minimapa.
     hud.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     hud.set_anchors_and_offsets_preset(Control.PRESET_CENTER_BOTTOM)
@@ -436,7 +451,7 @@ func _update_crosshair(delta: float) -> void:
 func return_to_menu() -> void:
     Input.action_release("fire")
     Input.action_release("aim")
-    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    PointerMode.release()
     Net.leave() # leaving an online match counts as elimination on the server
     get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
@@ -446,7 +461,7 @@ func _process(_delta: float) -> void:
         _fps_timer = 0.5
         _update_fps_label()
     if player and hud:
-        menu_button.visible = Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and not quit_dialog.visible and not cinematic
+        menu_button.visible = not PointerMode.is_captured() and not quit_dialog.visible and not cinematic
         if minimap != null:
             minimap.visible = not cinematic
         if fps_label != null:
@@ -476,7 +491,7 @@ func _process(_delta: float) -> void:
         if Input.is_physical_key_pressed(KEY_F1):
             hud.text = Controls.help_text()
             hud.modulate.a = 1.0
-        elif _hint_time < 8.0 and not out:
+        elif _hint_time < 8.0 and not out and not PointerMode.touch_mode(): # celular não tem F1
             hud.text = "F1: controles"
             hud.modulate.a = clampf(8.0 - _hint_time, 0.0, 1.0) * 0.8
         else:

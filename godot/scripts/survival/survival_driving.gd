@@ -1,4 +1,5 @@
 extends Node
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Carros da Sobrevivência no jogo: cria os carros do servidor, entra/sai
 ## (E), abastece (T, com galão), câmera de perseguição, velocímetro e
 ## gasolina na tela, e manda a posição do carro enquanto você dirige.
@@ -208,7 +209,7 @@ func _start_driving(v: CharacterBody3D) -> void:
 	_orbit = 0.0
 	_camera.global_position = v.global_position + v.global_basis.z * 7.0 + Vector3(0, 3, 0)
 	_camera.current = true
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	PointerMode.capture()
 	if float(v.get("fuel")) <= 0.0:
 		controller.call("_toast", "TANQUE VAZIO — abasteça com um galão (T fora do carro)")
 
@@ -262,16 +263,20 @@ func _on_rammed(zombie_id: String, speed: float) -> void:
 func handle_input(event: InputEvent) -> bool:
 	if driving == null:
 		return false
-	if (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo() and InputMap.has_action("interact") and event.is_action("interact"):
+	if (event is InputEventKey or event is InputEventMouseButton or event is InputEventAction) and event.is_pressed() and not event.is_echo() and InputMap.has_action("interact") and event.is_action("interact"):
 		if absf(float(driving.get("speed"))) > 4.0:
 			controller.call("_toast", "DIMINUA A VELOCIDADE PARA SAIR")
 		else:
 			_stop_driving(true)
 		return true
-	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		_orbit = clampf(_orbit - event.relative.x * 0.004, -PI, PI)
+	if event is InputEventMouseMotion and PointerMode.is_captured():
+		orbit_camera(event.relative.x)
 		return true
 	return false
+
+## Gira a câmera em volta do carro (mouse ou dedo arrastando na tela).
+func orbit_camera(dx: float) -> void:
+	_orbit = clampf(_orbit - dx * 0.004, -PI, PI)
 
 func _physics_process(delta: float) -> void:
 	if driving == null:

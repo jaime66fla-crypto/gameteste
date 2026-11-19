@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://hxjvx7ktcdxo"
 path.s3tc="res://.godot/imported/[FREE] Rigged Stylized SWAT Soldier_2.jpg-26d650ad8b11cf9c4c0c8c790a75a743.s3tc.ctex"
+path.etc2="res://.godot/imported/[FREE] Rigged Stylized SWAT Soldier_2.jpg-26d650ad8b11cf9c4c0c8c790a75a743.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/personagens/jaime/[FREE] Rigged Stylized SWAT Soldier_2.jpg"
-dest_files=["res://.godot/imported/[FREE] Rigged Stylized SWAT Soldier_2.jpg-26d650ad8b11cf9c4c0c8c790a75a743.s3tc.ctex"]
+dest_files=["res://.godot/imported/[FREE] Rigged Stylized SWAT Soldier_2.jpg-26d650ad8b11cf9c4c0c8c790a75a743.s3tc.ctex", "res://.godot/imported/[FREE] Rigged Stylized SWAT Soldier_2.jpg-26d650ad8b11cf9c4c0c8c790a75a743.etc2.ctex"]
 
 [params]
 

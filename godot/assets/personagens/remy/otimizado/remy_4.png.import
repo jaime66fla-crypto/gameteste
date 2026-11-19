@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://byutcves3ea1n"
 path.s3tc="res://.godot/imported/remy_4.png-aaf20297b2bf40428968ce20aad7f8b7.s3tc.ctex"
+path.etc2="res://.godot/imported/remy_4.png-aaf20297b2bf40428968ce20aad7f8b7.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/personagens/remy/otimizado/remy_4.png"
-dest_files=["res://.godot/imported/remy_4.png-aaf20297b2bf40428968ce20aad7f8b7.s3tc.ctex"]
+dest_files=["res://.godot/imported/remy_4.png-aaf20297b2bf40428968ce20aad7f8b7.s3tc.ctex", "res://.godot/imported/remy_4.png-aaf20297b2bf40428968ce20aad7f8b7.etc2.ctex"]
 
 [params]
 

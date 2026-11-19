@@ -38,3 +38,6 @@ tools/mcp-godot/.tmp-smoke-project/generation_jobs/
 /assets/personagens/ual2/UAL2_Standard.glb.import
 /assets/personagens/ual2/*.png
 /assets/personagens/ual2/*.png.import
+
+# Builds Android (APK/AAB) gerados pelo export
+android/

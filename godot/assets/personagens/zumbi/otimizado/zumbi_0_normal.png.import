@@ -4,15 +4,16 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://bwsbeweuegc0m"
 path.s3tc="res://.godot/imported/zumbi_0_normal.png-1bd91e831a7beeef99c3c039ad8f0381.s3tc.ctex"
+path.etc2="res://.godot/imported/zumbi_0_normal.png-1bd91e831a7beeef99c3c039ad8f0381.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/personagens/zumbi/otimizado/zumbi_0_normal.png"
-dest_files=["res://.godot/imported/zumbi_0_normal.png-1bd91e831a7beeef99c3c039ad8f0381.s3tc.ctex"]
+dest_files=["res://.godot/imported/zumbi_0_normal.png-1bd91e831a7beeef99c3c039ad8f0381.s3tc.ctex", "res://.godot/imported/zumbi_0_normal.png-1bd91e831a7beeef99c3c039ad8f0381.etc2.ctex"]
 
 [params]
 

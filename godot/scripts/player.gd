@@ -1,4 +1,5 @@
 extends CharacterBody3D
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Emitted once per trigger pull with the visible tracer path (online matches relay it).
 signal shot_fired(weapon_id: String, from: Vector3, to: Vector3)
 
@@ -179,7 +180,7 @@ func _ready() -> void:
     viewmodel.visible = false
     camera.add_child(viewmodel)
     _rebuild_viewmodel()
-    Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+    PointerMode.capture()
 
 func _install_selected_character() -> void:
     requested_character_id = character_id if not character_id.is_empty() else CharacterRegistry.load_selection()
@@ -368,7 +369,8 @@ func _unhandled_input(event: InputEvent) -> void:
             scope_zoom = clampf(scope_zoom - 1.0, 4.0, 8.0)
             return
     # Teclas configuráveis (Configurações › Controles): tudo passa pelas ações.
-    if (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo():
+    # InputEventAction: os botões de toque apertam as mesmas ações.
+    if (event is InputEventKey or event is InputEventMouseButton or event is InputEventAction) and event.is_pressed() and not event.is_echo():
         if climbing and (event.is_action("grenade") or event.is_action("melee") or event.is_action("interact") or event.is_action("heal")):
             return # mãos ocupadas na escalada
         if aiming and (event.is_action("lean_left") or event.is_action("lean_right")):
@@ -421,13 +423,13 @@ func _unhandled_input(event: InputEvent) -> void:
         cancel_grenade_aim()
         Input.action_release("aim")
         aiming = false
-        Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-    if event is InputEventMouseButton and event.pressed and Input.mouse_mode == Input.MOUSE_MODE_VISIBLE:
+        PointerMode.release()
+    if event is InputEventMouseButton and event.pressed and not PointerMode.is_captured():
         # Com a mochila (ou outra janela) aberta o clique é para ela: o cursor fica.
         if ui_blocking.is_valid() and bool(ui_blocking.call()):
             return
-        Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-    if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+        PointerMode.capture()
+    if event is InputEventMouseMotion and PointerMode.is_captured():
         _apply_mouse_look(event.relative)
 
 func _apply_mouse_look(relative: Vector2) -> void:
@@ -612,9 +614,9 @@ func _physics_process(delta: float) -> void:
         _reload()
     if not melee_weapon.is_empty():
         # Bastão na mão: clique esquerdo golpeia (um golpe por clique).
-        if not grenade_aiming and Input.is_action_just_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and channel_left <= 0.0 and melee_handler.is_valid():
+        if not grenade_aiming and Input.is_action_just_pressed("fire") and PointerMode.is_captured() and channel_left <= 0.0 and melee_handler.is_valid():
             melee_handler.call()
-    elif not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and fire_delay <= 0 and not reloading and channel_left <= 0.0:
+    elif not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and PointerMode.is_captured() and fire_delay <= 0 and not reloading and channel_left <= 0.0:
         _shoot()
     if grenade_aiming:
         if not Input.is_action_pressed("grenade"):

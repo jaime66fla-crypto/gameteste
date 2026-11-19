@@ -4,8 +4,9 @@ importer="texture"
 type="CompressedTexture2D"
 uid="uid://c2k0f61vqq02x"
 path.s3tc="res://.godot/imported/compact_submachine_gun_1.png-55161f4c48ffd59343e75f5b97b66d87.s3tc.ctex"
+path.etc2="res://.godot/imported/compact_submachine_gun_1.png-55161f4c48ffd59343e75f5b97b66d87.etc2.ctex"
 metadata={
-"imported_formats": ["s3tc_bptc"],
+"imported_formats": ["s3tc_bptc", "etc2_astc"],
 "vram_texture": true
 }
 generator_parameters={
@@ -15,7 +16,7 @@ generator_parameters={
 [deps]
 
 source_file="res://assets/weapons/polyy/models/compact_submachine_gun_1.png"
-dest_files=["res://.godot/imported/compact_submachine_gun_1.png-55161f4c48ffd59343e75f5b97b66d87.s3tc.ctex"]
+dest_files=["res://.godot/imported/compact_submachine_gun_1.png-55161f4c48ffd59343e75f5b97b66d87.s3tc.ctex", "res://.godot/imported/compact_submachine_gun_1.png-55161f4c48ffd59343e75f5b97b66d87.etc2.ctex"]
 
 [params]
 

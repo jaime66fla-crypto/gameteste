@@ -1,4 +1,5 @@
 extends Control
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Inventário da Sobrevivência (TAB). Cobre a tela com um fundo escurecido e
 ## um painel centralizado que sempre cabe na tela (o conteúdo rola por dentro).
 ##
@@ -260,7 +261,7 @@ func _build_right() -> Control:
 
 func open() -> void:
 	visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 	if not container_id.is_empty():
 		_tab = 0
 	_fit()
@@ -268,7 +269,7 @@ func open() -> void:
 
 func close() -> void:
 	visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	PointerMode.capture()
 
 func close_inventory() -> void:
 	close()

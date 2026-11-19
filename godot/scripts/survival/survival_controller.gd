@@ -1,4 +1,5 @@
 extends Node3D
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Partida de Sobrevivência (mundo aberto, até 16 jogadores, zumbis).
 ## O servidor (src/godot-survival.js) é dono de vida, fome, sede, mochila,
 ## recipientes e recursos; este nó mostra o mundo, manda as ações e, no
@@ -204,6 +205,11 @@ func _physics_process(delta: float) -> void:
 
 func is_driving() -> bool:
 	return driving_ctl != null and bool(driving_ctl.call("is_driving"))
+
+## Controles de toque: arrastar o dedo dirigindo gira a câmera do carro.
+func drive_look(relative: Vector2) -> void:
+	if is_driving():
+		driving_ctl.call("orbit_camera", relative.x)
 
 func _on_message(data: Dictionary) -> void:
 	if driving_ctl != null and bool(driving_ctl.call("on_message", data)):
@@ -489,7 +495,7 @@ func _on_local_death() -> void:
 	player.set_physics_process(false)
 	player.visible = false
 	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce num ponto aleatório com o kit inicial.", true)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 
 func _on_respawned(data: Dictionary) -> void:
 	local_dead = false
@@ -507,7 +513,7 @@ func _on_respawned(data: Dictionary) -> void:
 	hunger = float(data.get("hunger", 85))
 	thirst = float(data.get("thirst", 85))
 	_apply_inventory(data)
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	PointerMode.capture()
 
 # --------------------------------------------------------------- mochila ---
 
@@ -859,8 +865,8 @@ func _process(delta: float) -> void:
 		infected_left = maxf(0.0, infected_left - delta) # o servidor decide a hora exata
 		infection_clock.queue_redraw()
 	# Mochila aberta: o ponteiro tem que estar sempre visível para escolher os itens.
-	if ui_open() and Input.mouse_mode != Input.MOUSE_MODE_VISIBLE:
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	if ui_open() and PointerMode.is_captured():
+		PointerMode.release()
 	# Procurar o que está perto percorre ~1500 coisas: 10 vezes por segundo basta.
 	_scan_timer -= delta
 	if _scan_timer > 0.0:
@@ -902,7 +908,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE and inventory.visible:
 		inventory.call("close")
-		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE # ESC também libera o mouse (botão de menu)
+		PointerMode.release() # ESC também libera o mouse (botão de menu)
 		get_viewport().set_input_as_handled()
 		return
 	if _pressed(event, "inventory"):
@@ -916,7 +922,7 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Tecla/botão configurável (Configurações › Controles) apertado agora.
 func _pressed(event: InputEvent, action: String) -> bool:
-	return (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo() and InputMap.has_action(action) and event.is_action(action)
+	return (event is InputEventKey or event is InputEventMouseButton or event is InputEventAction) and event.is_pressed() and not event.is_echo() and InputMap.has_action(action) and event.is_action(action)
 
 func _build_ui() -> void:
 	ui = CanvasLayer.new()
@@ -1049,7 +1055,7 @@ func _show_death(title: String, body: String, can_respawn: bool) -> void:
 	death_label.text = title + "\n\n" + body
 	respawn_button.visible = can_respawn
 	death_panel.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 
 func _feed(text: String) -> void:
 	var label := Label.new()

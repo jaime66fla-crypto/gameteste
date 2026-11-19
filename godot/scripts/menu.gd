@@ -1,4 +1,5 @@
 extends Control
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 const Settings = preload("res://scripts/game_settings.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const CharacterCard = preload("res://scripts/characters/character_card.gd")
@@ -66,7 +67,8 @@ var caps_font: FontVariation
 var code_font: FontVariation
 
 func _ready() -> void:
-    Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+    PointerMode.setup_window(get_tree())
+    PointerMode.release()
     settings = Settings.load_settings()
     Settings.apply(settings,get_viewport())
     Controls.load_and_apply()

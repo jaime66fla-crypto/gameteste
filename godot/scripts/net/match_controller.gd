@@ -1,4 +1,5 @@
 extends Node3D
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Runs an online elimination match inside main.tscn (added by main.gd when
 ## Net.in_match is set). The server owns health; this node mirrors it.
 const NetActorScript = preload("res://scripts/net/net_actor.gd")
@@ -237,14 +238,14 @@ func _open_shop() -> void:
 	shop.call("show_note", "")
 	_refresh_shop()
 	shop.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 
 func _close_shop() -> void:
 	if shop == null or not shop.visible:
 		return
 	shop.visible = false
 	if not local_dead and not finished and not leave_panel.visible:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		PointerMode.capture()
 
 func _refresh_shop() -> void:
 	if shop != null:
@@ -888,7 +889,7 @@ func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int =
 	player.call("give_weapon", weapon, reserve)
 	killer_panel.visible = false
 	if not leave_panel.visible:
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		PointerMode.capture()
 	_toast("DE VOLTA AO COMBATE")
 	if shop != null and data_buy_ms > 0:
 		buy_until_msec = Time.get_ticks_msec() + data_buy_ms
@@ -1060,7 +1061,7 @@ func _on_end(data: Dictionary) -> void:
 	finished = true
 	killer_panel.visible = false
 	Input.action_release("fire")
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 	player.process_mode = Node.PROCESS_MODE_DISABLED
 	if team_mode:
 		_on_team_end(data)
@@ -1517,12 +1518,12 @@ func _open_leave_panel() -> void:
 	leave_panel.visible = true
 	Input.action_release("fire")
 	Input.action_release("aim")
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 	(leave_panel.find_child("StayInMatchButton", true, false) as Button).grab_focus()
 
 func _close_leave_panel() -> void:
 	leave_panel.visible = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	PointerMode.capture()
 
 # ------------------------------------------------------------ placar final ---
 
@@ -1701,7 +1702,7 @@ func _show_results(data: Dictionary, title: String, subtitle: String, outcome: S
 	t.tween_property(results_panel, "modulate:a", 1.0, 0.3)
 	t.tween_callback(func(): results_panel.pivot_offset = results_panel.size * 0.5)
 	t.tween_property(results_panel, "scale", Vector2.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 
 var _back_button: Button
 func _menu_button_ref() -> Button:
@@ -1837,7 +1838,7 @@ func _show_center(title: String, body: String) -> void:
 	center_title.text = title
 	center_body.text = body
 	center_panel.visible = true
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 
 func _back_to_menu() -> void:
 	Net.leave()
@@ -1845,7 +1846,7 @@ func _back_to_menu() -> void:
 
 ## Keep the connection: the menu reopens the same custom room's lobby.
 func _back_to_room() -> void:
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	PointerMode.release()
 	get_tree().change_scene_to_file("res://scenes/menu.tscn")
 
 func _feed(text: String) -> void:
