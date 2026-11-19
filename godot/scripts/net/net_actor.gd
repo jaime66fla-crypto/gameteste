@@ -105,6 +105,48 @@ func setup(id: String, label: String, bot: bool) -> void:
 	display_name = label
 	is_bot = bot
 	name = "Actor_" + id
+	if bot:
+		character_id = bot_character(id)
+
+## Personagem visível deste combatente: jogadores mandam o seu no estado ("ch");
+## bots ganham um fixo pelo id (o mesmo em todos os jogos, sem tráfego de rede).
+var character_id := CharacterRegistry.DEFAULT_ID
+
+static func bot_character(id: String) -> String:
+	var choices: Array[String] = []
+	for definition in CharacterRegistry.all_characters():
+		if CharacterRegistry.is_available(definition.id):
+			choices.append(definition.id)
+	if choices.is_empty():
+		return CharacterRegistry.DEFAULT_ID
+	return choices[posmod(id.hash(), choices.size())]
+
+## Troca o corpo visível (hitboxes e arma vêm junto). Personagem desconhecido
+## ou que não carrega mantém o atual.
+func set_character(id: String) -> void:
+	if id == character_id or id.is_empty() or not is_inside_tree():
+		return
+	var next := CharacterRegistry.create_visual(id)
+	if next == null:
+		return
+	add_child(next)
+	if next.has_method("is_visual_ready") and not bool(next.call("is_visual_ready")):
+		next.queue_free()
+		return
+	character_id = id
+	if visual != null:
+		# Hitboxes live under the old skeleton and the gun under its mount: both go with it.
+		remove_child(visual)
+		visual.queue_free()
+	hitboxes.clear()
+	weapon_model = null
+	visual = next
+	_build_hitboxes()
+	if dead or sleeping:
+		for body in hitboxes:
+			body.collision_layer = 0
+	_set_weapon(weapon_id)
+	_apply_armed()
 
 func _ready() -> void:
 	# Movement capsule: blocks walking, but bullets only see the hitboxes.
@@ -118,7 +160,10 @@ func _ready() -> void:
 	collision.shape = capsule
 	collision.position.y = 0.9
 	add_child(collision)
-	visual = CharacterRegistry.create_visual(CharacterRegistry.DEFAULT_ID)
+	visual = CharacterRegistry.create_visual(character_id)
+	if visual == null and character_id != CharacterRegistry.DEFAULT_ID:
+		character_id = CharacterRegistry.DEFAULT_ID
+		visual = CharacterRegistry.create_visual(character_id)
 	if visual != null:
 		add_child(visual)
 		_build_hitboxes()
@@ -257,6 +302,9 @@ func apply_state(state: Dictionary) -> void:
 		global_position = target_position
 		rotation.y = target_yaw
 		_has_state = true
+	var ch := str(state.get("ch", ""))
+	if not ch.is_empty() and ch != character_id:
+		set_character(ch)
 	var w := str(state.get("w", weapon_id))
 	if w != weapon_id:
 		_set_weapon(w)

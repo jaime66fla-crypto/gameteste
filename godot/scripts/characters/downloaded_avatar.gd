@@ -1,6 +1,18 @@
 extends Node3D
-## Adapter for the user supplied 65-bone Ch31 avatar.
-const AVATAR_SCENE := preload("res://assets/personagens/downloaded/avatar.fbx")
+## Adapter for Mixamo-rigged avatars (default: the 65-bone Ch31).
+## Other Mixamo characters reuse every clip, IK and pose layer here: a subclass
+## sets `model_path` / `source_height` in _init() and the clips (authored on the
+## Ch31 "mixamorig9_" rig) are remapped to the model's own bone prefix.
+## Ch31 rig the shared clips were authored on.
+const CLIP_PREFIX := "mixamorig9_"
+const CLIP_HIPS_HEIGHT := 0.957042 # Ch31 Hips rest height (m), tools/characters/export_shared_run.gd
+const RUN_IN_PLACE := preload("res://assets/personagens/downloaded/movements/run_in_place.tres")
+var model_path := "res://assets/personagens/downloaded/avatar.fbx"
+## Height of the source mesh (m); the model is scaled to the 1.8 m player.
+var source_height := 1.782
+## Mixamo models face +Z; the game character faces -Z.
+var model_yaw := PI
+var bone_prefix := CLIP_PREFIX
 const WALK_WITH_RIFLE := preload("res://assets/personagens/downloaded/movements/walk_with_rifle.tres")
 const RUN_TO_STOP := preload("res://assets/personagens/downloaded/movements/run_to_stop.tres")
 const PUNCH := preload("res://assets/personagens/downloaded/movements/punch.tres")
@@ -28,7 +40,8 @@ static func _has_natural_arms(clip: String) -> bool:
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
 const StaffModel = preload("res://scripts/weapons/staff_model.gd")
-const SOURCE_HEIGHT := 1.782
+## Bones every pose layer needs; a model missing one is rejected (not ready).
+const REQUIRED_BONES := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot", "RightHandMiddle1", "RightHandIndex1", "RightHandPinky1", "LeftHandMiddle1", "LeftHandIndex1", "LeftHandPinky1"]
 var skeleton: Skeleton3D
 var animation_player: AnimationPlayer
 var weapon_mount: Node3D
@@ -48,37 +61,41 @@ var aim_active := false
 var aim_weight := 0.0
 
 func _ready() -> void:
-	var model := AVATAR_SCENE.instantiate() as Node3D
+	var packed := load(model_path) as PackedScene
+	if packed == null:
+		return
+	var model := packed.instantiate() as Node3D
 	model.name = "Avatar"
-	# The imported Mixamo model faces +Z; the game character faces -Z.
-	model.rotation.y = PI
-	# Ch31 source mesh is 1.782 m tall; scale it to the 1.8 m player height.
-	# (2.09 is the procedural Jaime's height and shrank this avatar to ~1.54 m,
-	# making real-size weapons look oversized.)
-	model.scale = Vector3.ONE * (1.8 / SOURCE_HEIGHT)
+	model.rotation.y = model_yaw
+	# Scale the source mesh to the 1.8 m player height (real-size weapons depend on it).
+	model.scale = Vector3.ONE * (1.8 / source_height)
 	add_child(model)
 	skeleton = model.find_child("Skeleton3D", true, false) as Skeleton3D
 	animation_player = model.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	if skeleton == null or skeleton.get_bone_count() != 65 or animation_player == null:
+	if skeleton == null:
 		return
-	if not animation_player.has_animation("Take 001") or not animation_player.has_animation("mixamo_com"):
-		return
-	# The source run cycle travels about 2.8 m per 0.7 s cycle (4 m/s).
-	# Keep the idle Hips horizontal anchor and retain the running vertical bob;
-	# CharacterBody3D remains the only owner of horizontal movement.
-	var library := animation_player.get_animation_library("").duplicate() as AnimationLibrary
-	var hip_bone := skeleton.find_bone("mixamorig9_Hips")
+	if animation_player == null:
+		# Static T-pose exports carry no AnimationPlayer: add one beside the skeleton.
+		animation_player = AnimationPlayer.new()
+		animation_player.name = "AnimationPlayer"
+		model.add_child(animation_player)
+	for bone_name in REQUIRED_BONES:
+		if Grip._bone(skeleton, bone_name) < 0:
+			push_warning("Avatar %s sem o osso %s" % [model_path, bone_name])
+			return
+	var hip_bone := Grip._bone(skeleton, "Hips")
+	bone_prefix = String(skeleton.get_bone_name(hip_bone)).trim_suffix("Hips")
+	var skeleton_path := String(animation_player.get_node(animation_player.root_node).get_path_to(skeleton))
+	var hip_scale := skeleton.get_bone_rest(hip_bone).origin.y / CLIP_HIPS_HEIGHT
+	var retarget := bone_prefix != CLIP_PREFIX or skeleton_path != "Skeleton3D" or absf(hip_scale - 1.0) > 0.01
+	var library := AnimationLibrary.new()
 	# Anchor every clip's Hips horizontally at the skeleton rest position, so the
 	# visible body stays centred on the character origin (collision, camera,
 	# network position). The recorded clips drift up to ~0.76 m forward;
 	# vertical bob is kept. CharacterBody3D owns horizontal movement.
 	var hip_anchor: Vector3 = skeleton.get_bone_rest(hip_bone).origin
-	var run := library.get_animation("mixamo_com").duplicate() as Animation
-	run.loop_mode = Animation.LOOP_LINEAR
-	_make_in_place(run, hip_anchor)
-	library.remove_animation("mixamo_com")
-	library.add_animation("run_in_place", run)
-	var clips := {"idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED}
+	# Shared run cycle (exported from Ch31's FBX): ~2.8 m per 0.7 s cycle (4 m/s).
+	var clips := {"run_in_place": RUN_IN_PLACE, "idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED}
 	for gait in ["walk_unarmed", "jog_unarmed"]:
 		for suffix in DIRECTION_SUFFIXES:
 			var unarmed_clip := load(UNARMED_DIR + gait + suffix + ".tres") as Animation
@@ -87,9 +104,14 @@ func _ready() -> void:
 	for clip_name in clips:
 		# Duplicate: the preloaded resources are shared between avatars.
 		var clip := (clips[clip_name] as Animation).duplicate() as Animation
+		if retarget:
+			_retarget_clip(clip, skeleton_path, hip_scale)
+		if clip_name == "run_in_place":
+			clip.loop_mode = Animation.LOOP_LINEAR
 		_make_in_place(clip, hip_anchor)
 		library.add_animation(clip_name, clip)
-	animation_player.remove_animation_library("")
+	if animation_player.has_animation_library(""):
+		animation_player.remove_animation_library("")
 	animation_player.add_animation_library("", library)
 	animation_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	weapon_mount = Node3D.new()
@@ -105,9 +127,31 @@ func _ready() -> void:
 func is_visual_ready() -> bool:
 	return ready_ok
 
-func _make_in_place(clip: Animation, hip_anchor: Vector3) -> void:
+## Moves a Ch31 clip onto this model's rig: bone names get the model prefix,
+## the skeleton path follows the model hierarchy, and only the Hips keeps its
+## position track (scaled to this rig's hip height). Other position/scale
+## tracks would force Ch31's bone lengths onto a differently built body.
+## Rotations transfer as-is: Mixamo rigs share the T-pose rest orientation.
+func _retarget_clip(clip: Animation, skeleton_path: String, hip_scale: float) -> void:
 	for track in range(clip.get_track_count() - 1, -1, -1):
-		if clip.track_get_type(track) != Animation.TYPE_POSITION_3D or not String(clip.track_get_path(track)).contains("mixamorig9_Hips"):
+		var bone := String(clip.track_get_path(track)).get_slice(":", 1)
+		var suffix := bone.trim_prefix(CLIP_PREFIX)
+		if suffix.begins_with("mixamorig"):
+			suffix = suffix.get_slice(":", 1) if suffix.contains(":") else suffix.substr(suffix.find("_") + 1)
+		var target := bone_prefix + suffix
+		var type := clip.track_get_type(track)
+		if skeleton.find_bone(target) < 0 or type == Animation.TYPE_SCALE_3D or (type == Animation.TYPE_POSITION_3D and suffix != "Hips"):
+			clip.remove_track(track)
+			continue
+		clip.track_set_path(track, NodePath(skeleton_path + ":" + target))
+		if type == Animation.TYPE_POSITION_3D:
+			for key in clip.track_get_key_count(track):
+				clip.track_set_key_value(track, key, (clip.track_get_key_value(track, key) as Vector3) * hip_scale)
+
+func _make_in_place(clip: Animation, hip_anchor: Vector3) -> void:
+	var hips_name := bone_prefix + "Hips"
+	for track in range(clip.get_track_count() - 1, -1, -1):
+		if clip.track_get_type(track) != Animation.TYPE_POSITION_3D or not String(clip.track_get_path(track)).ends_with(":" + hips_name):
 			continue
 		for key in clip.track_get_key_count(track):
 			var position: Vector3 = clip.track_get_key_value(track, key)
@@ -136,6 +180,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
 	_last_delta = delta
 	_airborne = airborne
+	_planar_speed = Vector2(planar_velocity.x, planar_velocity.z).length()
 	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
 	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne and prone_weight < 0.01 and not prone_requested else 0.0, delta * 6.0)
 	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
@@ -228,6 +273,7 @@ func _finish_pose() -> void:
 	_apply_crouch()
 	_apply_foot_ik()
 	_apply_prone()
+	_apply_body_dynamics()
 	if not work_action.is_empty():
 		_apply_work()
 		_update_backpack()
@@ -242,6 +288,85 @@ func _finish_pose() -> void:
 	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
 		_relax_arms(unarmed_weight * (1.0 - _run_arms))
 	_update_backpack()
+
+# ------------------------------------------------------ dinâmica do corpo ---
+# Camada por cima do clipe que dá peso ao movimento:
+# - armado, nas curvas o tronco inclina para dentro (giro × velocidade);
+#   desarmado quem inclina é o player.gd (turn_lean, o corpo todo);
+# - ao acelerar o tronco vai um pouco para a frente, ao frear volta para trás;
+# - mirando, a coluna divide a inclinação vertical da mira (cima/baixo) e a
+#   cabeça completa o resto, então a arma não sobe só com os braços;
+# - sem mirar, a cabeça acompanha de leve o ponto da mira.
+# Tudo amortecido de forma independente do FPS (1 - exp(-k·dt)).
+const BANK_MAX := 0.11 # rad de inclinação lateral nas curvas (só armado)
+const BANK_GAIN := 0.035 # rad por (rad/s × m/s)
+const ACCEL_LEAN_MAX := 0.09 # rad para a frente/trás
+const ACCEL_LEAN_GAIN := 0.018 # rad por m/s²
+const AIM_PITCH_MAX := deg_to_rad(55.0)
+const SPINE_AIM_SHARE := [0.22, 0.24, 0.26] # Spine, Spine1, Spine2 (o resto vai para a cabeça e a arma)
+const HEAD_LOOK_SHARE := 0.35
+var _planar_speed := 0.0
+var _last_yaw := 0.0
+var _has_last_yaw := false
+var _last_speed := 0.0
+var _bank := 0.0
+var _accel_lean := 0.0
+var _aim_pitch := 0.0
+var _look_weight := 0.0
+
+func _damp(current: float, target: float, rate: float) -> float:
+	return lerpf(current, target, 1.0 - exp(-rate * _last_delta))
+
+func _apply_body_dynamics() -> void:
+	if not is_inside_tree() or _last_delta <= 0.0:
+		return
+	var yaw := global_basis.get_euler().y
+	var turn_rate := 0.0
+	if _has_last_yaw:
+		turn_rate = wrapf(yaw - _last_yaw, -PI, PI) / _last_delta
+	_last_yaw = yaw
+	_has_last_yaw = true
+	var speed := _planar_speed
+	var accel := (speed - _last_speed) / _last_delta
+	_last_speed = speed
+	var grounded := not _airborne and prone_weight < 0.01 and work_action.is_empty()
+	# Unarmed, player.gd already rolls the whole avatar into turns (turn_lean):
+	# the spine bank only covers the armed case, where the body follows the camera.
+	var bank_target := clampf(turn_rate * speed * BANK_GAIN, -BANK_MAX, BANK_MAX) * (1.0 - unarmed_weight) if grounded else 0.0
+	var lean_target := clampf(accel * ACCEL_LEAN_GAIN, -ACCEL_LEAN_MAX, ACCEL_LEAN_MAX) if grounded else 0.0
+	_bank = _damp(_bank, bank_target, 6.0)
+	_accel_lean = _damp(_accel_lean, lean_target, 4.0)
+	# Aim pitch in skeleton space (model faces +Z, up +Y): positive = target above the chest.
+	var chest := Grip._bone(skeleton, "Spine2")
+	var pitch_target := 0.0
+	var aiming := aim_weight > 0.001 and armed and grounded and current_clip not in ["punch", "elbow_punch"]
+	var look_valid := aim_active and aim_target != Vector3.ZERO
+	if look_valid and chest >= 0:
+		var local_target := skeleton.to_local(aim_target) - skeleton.get_bone_global_pose(chest).origin
+		var horizontal := Vector2(local_target.x, local_target.z).length()
+		if horizontal > 0.3:
+			pitch_target = clampf(atan2(local_target.y, horizontal), -AIM_PITCH_MAX, AIM_PITCH_MAX)
+	_aim_pitch = _damp(_aim_pitch, pitch_target, 10.0)
+	_look_weight = _damp(_look_weight, 1.0 if look_valid and grounded else 0.0, 4.0)
+	var spine_bones := ["Spine", "Spine1", "Spine2"]
+	for i in spine_bones.size():
+		var bone := Grip._bone(skeleton, spine_bones[i])
+		if bone < 0:
+			continue
+		# +X rotation tips the top forward; the model's forward axis is +Z.
+		var pitch := -_aim_pitch * float(SPINE_AIM_SHARE[i]) * aim_weight if aiming else 0.0
+		var forward_lean := _accel_lean / 3.0
+		# Turning left (yaw grows) leans to the model's left (+X): about -Z by +bank.
+		var roll := _bank / 3.0
+		if absf(pitch + forward_lean) + absf(roll) < 0.0005:
+			continue
+		var turn := Basis(Vector3.FORWARD, roll) * Basis(Vector3.RIGHT, pitch + forward_lean)
+		Grip._set_global_rotation(skeleton, bone, turn * skeleton.get_bone_global_pose(bone).basis)
+	var head := Grip._bone(skeleton, "Head")
+	if head >= 0 and _look_weight > 0.001:
+		var spine_share := 0.72 * aim_weight if aiming else 0.0
+		var head_pitch := -_aim_pitch * clampf(1.0 - spine_share, 0.0, 1.0) * HEAD_LOOK_SHARE * _look_weight
+		Grip._set_global_rotation(skeleton, head, Basis(Vector3.RIGHT, head_pitch) * skeleton.get_bone_global_pose(head).basis)
 
 # -------------------------------------------------------------- deitado ---
 # Deitado de bruços: o quadril gira 90° (cabeça para a frente, rosto para o
@@ -297,7 +422,7 @@ func _apply_prone() -> void:
 
 ## Deitado sem arma: antebraços no chão à frente dos ombros (apoiado nos cotovelos).
 func _prone_arms(weight: float) -> void:
-	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	var chest := Grip._bone(skeleton, "Spine2")
 	if chest < 0:
 		return
 	var torso := skeleton.get_bone_global_pose(chest).origin
@@ -411,7 +536,7 @@ func _ease_in_out(t: float) -> float:
 
 func _apply_work() -> void:
 	var hips := Grip._bone(skeleton, "Hips")
-	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	var chest := Grip._bone(skeleton, "Spine2")
 	var spine := Grip._bone(skeleton, "Spine")
 	var right_arm := Grip._bone(skeleton, "RightArm")
 	if hips < 0 or chest < 0 or right_arm < 0:
@@ -782,7 +907,7 @@ var _run_arms := 0.0
 
 func _relax_arms(weight: float) -> void:
 	var hips := Grip._bone(skeleton, "Hips")
-	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	var chest := Grip._bone(skeleton, "Spine2")
 	if hips < 0 or chest < 0:
 		return
 	var torso := skeleton.get_bone_global_pose(chest).origin
@@ -826,7 +951,7 @@ func _play_clip(clip: String, rate: float) -> void:
 func _update_weapon_mount() -> void:
 	if skeleton == null or weapon_mount == null:
 		return
-	var chest_bone := skeleton.find_bone("mixamorig9_Spine2")
+	var chest_bone := Grip._bone(skeleton, "Spine2")
 	if chest_bone < 0:
 		return
 	var chest := skeleton.get_bone_global_pose(chest_bone)
@@ -926,7 +1051,7 @@ func _relax_left_arm() -> void:
 	var upper := Grip._bone(skeleton, "LeftArm")
 	var hand := Grip._bone(skeleton, "LeftHand")
 	var hips := Grip._bone(skeleton, "Hips")
-	var chest := skeleton.find_bone("mixamorig9_Spine2")
+	var chest := Grip._bone(skeleton, "Spine2")
 	if upper < 0 or hand < 0 or hips < 0 or chest < 0:
 		return
 	var shoulder := skeleton.get_bone_global_pose(upper).origin

@@ -22,3 +22,11 @@ tools/store_identity.json
 
 # Saidas com data do teste de fumaca do MCP do Godot (geradas a cada rodada).
 tools/mcp-godot/.tmp-smoke-project/generation_jobs/
+
+# Remy: FBX original do Mixamo e as texturas que o Godot extrai dele. O jogo usa
+# só remy_modelo.scn + otimizado/*.png, gerados por
+# godot/tools/characters/build_remy_model.gd a partir do FBX.
+/assets/personagens/remy/remy.fbx
+/assets/personagens/remy/remy.fbx.import
+/assets/personagens/remy/remy_*.png
+/assets/personagens/remy/remy_*.png.import

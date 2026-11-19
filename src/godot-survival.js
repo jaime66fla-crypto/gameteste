@@ -17,6 +17,9 @@ import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 
+/** Visible character id (godot/characters/*.tres): short slug or '' (others then show the default). */
+const characterId = (v) => (typeof v === 'string' && /^[a-z0-9_]{1,32}$/.test(v) ? v : '');
+
 export const CAPACITY = 16;
 const MAX_WORLDS = 12;
 const TICK_MS = 3000;
@@ -635,7 +638,7 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '',
+					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '', ch: characterId(d.ch),
 					act: d.act === 'chop' || d.act === 'pry' || d.act === 'swing' ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);

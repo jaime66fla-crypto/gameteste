@@ -107,6 +107,8 @@ function json(data, status = 200) {
 
 const finite = (v, limit) => typeof v === 'number' && Number.isFinite(v) && Math.abs(v) <= limit;
 const vec3 = (v, limit) => (Array.isArray(v) && v.length === 3 && v.every((n) => finite(n, limit)) ? v.map((n) => Math.round(n * 100) / 100) : null);
+/** Visible character id (godot/characters/*.tres): short slug or '' (others then show the default). */
+const characterId = (v) => (typeof v === 'string' && /^[a-z0-9_]{1,32}$/.test(v) ? v : '');
 
 /** Copy only known animation/state fields from a client packet. */
 function cleanState(d) {
@@ -127,6 +129,7 @@ function cleanState(d) {
 		rl: !!d.rl,
 		h: !!d.h, // holstered / no weapon yet
 		l: finite(d.l, 1) ? Math.round(d.l * 100) / 100 : 0, // lean (Q/E while aiming): -1 left .. 1 right
+		ch: characterId(d.ch),
 		v,
 	};
 }

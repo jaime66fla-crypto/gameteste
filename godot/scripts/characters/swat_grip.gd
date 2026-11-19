@@ -97,4 +97,18 @@ static func _close_fingers(skeleton: Skeleton3D, side: String) -> void:
 
 static func _bone(skeleton: Skeleton3D, suffix: String) -> int:
     var bone: int = skeleton.find_bone("mixamorig" + suffix)
-    return bone if bone >= 0 else skeleton.find_bone("mixamorig9_" + suffix)
+    if bone < 0:
+        bone = skeleton.find_bone("mixamorig9_" + suffix)
+    if bone >= 0:
+        return bone
+    # Other Mixamo exports use another prefix ("mixamorig_", "mixamorig1_",
+    # "mixamorig:"): the prefix is whatever precedes "Hips", cached per skeleton.
+    var prefix := str(skeleton.get_meta("_mixamo_prefix", ""))
+    if not skeleton.has_meta("_mixamo_prefix"):
+        for i in skeleton.get_bone_count():
+            var name := String(skeleton.get_bone_name(i))
+            if name.ends_with("Hips"):
+                prefix = name.trim_suffix("Hips")
+                break
+        skeleton.set_meta("_mixamo_prefix", prefix)
+    return skeleton.find_bone(prefix + suffix)

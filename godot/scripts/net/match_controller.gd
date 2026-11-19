@@ -316,7 +316,8 @@ func _physics_process(delta: float) -> void:
 		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": move, "r": player.get("sprinting"),
 			"c": player.get("crouching"), "pr": player.get("prone"), "a": player.get("aiming"), "f": not player.is_on_floor(),
-			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean")})
+			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean"),
+			"ch": player.get("character_id")})
 	_bot_timer -= delta
 	if _bot_timer <= 0.0 and is_host():
 		_bot_timer = BOT_RATE

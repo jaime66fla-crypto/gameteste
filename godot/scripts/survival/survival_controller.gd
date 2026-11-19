@@ -191,7 +191,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": action, "tool": action_tool})
+			"act": action, "tool": action_tool, "ch": player.get("character_id")})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
