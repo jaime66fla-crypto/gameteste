@@ -501,8 +501,9 @@ func _physics_process(delta: float) -> void:
     camera.fov = desired_fov if scope_was_active and not scoped else lerpf(camera.fov, desired_fov, 1.0 - exp(-delta * 14.0))
     scope_was_active = scoped
     hit_shake = move_toward(hit_shake, 0.0, delta * 3.5)
+    _land_dip = move_toward(_land_dip, 0.0, delta * 1.6)
     camera.h_offset = randf_range(-1.0, 1.0) * hit_shake * 0.06
-    camera.v_offset = randf_range(-1.0, 1.0) * hit_shake * 0.06
+    camera.v_offset = randf_range(-1.0, 1.0) * hit_shake * 0.06 - _land_dip
     var spring: SpringArm3D = camera.get_parent()
     var camera_blend := minf(1, delta * 16)
     spring.spring_length = lerpf(spring.spring_length, 0.0 if wants_first_person else (2.15 if aiming else cam_distance), camera_blend)
@@ -523,19 +524,37 @@ func _physics_process(delta: float) -> void:
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
     var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
     var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
+    current_speed *= 1.0 - LAND_SLOWDOWN * clampf(_land_recovery / LAND_RECOVERY_TIME, 0.0, 1.0)
+    _land_recovery = maxf(0.0, _land_recovery - delta)
+    var grounded_before := is_on_floor()
     var horizontal := Vector2(velocity.x, velocity.z)
     var desired_velocity := Vector2(movement.x, movement.z) * current_speed
     var rate := deceleration if desired_velocity.length_squared() < horizontal.length_squared() or horizontal.dot(desired_velocity) < 0.0 else acceleration
+    if not grounded_before:
+        # No ar o impulso do pulo se mantém: só um pouco de correção, sem frear.
+        rate = acceleration * AIR_CONTROL if desired_velocity.length_squared() > 0.01 else 0.0
     horizontal = horizontal.move_toward(desired_velocity, rate * delta)
     velocity.x = horizontal.x
     velocity.z = horizontal.y
-    if not is_on_floor():
-        velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
-    elif Input.is_action_just_pressed("jump") and not crouching and not prone and not stance_changed:
+    # Pulo tolerante: vale apertar um pouco antes de tocar o chão (buffer) e um
+    # pouco depois de sair da beirada (coyote time).
+    _coyote_left = COYOTE_TIME if grounded_before else maxf(0.0, _coyote_left - delta)
+    _jump_buffer_left = maxf(0.0, _jump_buffer_left - delta)
+    if Input.is_action_just_pressed("jump") and not stance_changed:
+        _jump_buffer_left = JUMP_BUFFER_TIME
+    var can_jump := _coyote_left > 0.0 and not crouching and not prone and velocity.y <= 0.5
+    if _jump_buffer_left > 0.0 and can_jump:
         velocity.y = jump_velocity
+        _jump_buffer_left = 0.0
+        _coyote_left = 0.0
+    elif not grounded_before:
+        velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
     else:
         velocity.y = -0.1
+    var fall_speed := -velocity.y
     move_and_slide()
+    if is_on_floor() and not grounded_before:
+        _on_landed(fall_speed)
     var actual_velocity := get_real_velocity()
     _update_body_facing(delta, actual_velocity)
     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
@@ -597,6 +616,33 @@ const BODY_AIM_TURN_RATE := 28.0
 var _body_yaw := 0.0
 var _face_aim_left := 0.0
 
+## Sensação de movimento (estilo do Game Animation Sample): pulo tolerante,
+## pouco controle no ar, aterrissagem com peso e corpo inclinando nas curvas.
+const COYOTE_TIME := 0.12 # ainda pula logo depois de sair da beirada
+const JUMP_BUFFER_TIME := 0.12 # espaço apertado um pouco antes de tocar o chão vale
+const AIR_CONTROL := 0.35 # fração da aceleração no chão disponível no ar
+const LAND_MIN_SPEED := 5.5 # queda mais lenta que isso não tem impacto
+const LAND_HARD_SPEED := 14.0 # queda que dá o impacto máximo
+const LAND_RECOVERY_TIME := 0.35
+const LAND_SLOWDOWN := 0.45 # perde até 45% da velocidade logo após uma queda forte
+const TURN_LEAN_MAX := 0.12 # inclinação máxima do corpo (rad) ao fazer curva correndo
+var _coyote_left := 0.0
+var _jump_buffer_left := 0.0
+var _land_recovery := 0.0
+var _land_dip := 0.0
+var turn_lean := 0.0
+var last_landing_strength := 0.0
+
+func _on_landed(fall_speed: float) -> void:
+    if fall_speed < LAND_MIN_SPEED:
+        return
+    var strength := clampf((fall_speed - LAND_MIN_SPEED) / (LAND_HARD_SPEED - LAND_MIN_SPEED), 0.0, 1.0)
+    last_landing_strength = strength
+    _land_dip = maxf(_land_dip, lerpf(0.05, 0.22, strength))
+    _land_recovery = LAND_RECOVERY_TIME * strength
+    if sound_fx != null and sound_fx.has_method("landing"):
+        sound_fx.call("landing", strength)
+
 func face_aim(seconds: float) -> void:
     _face_aim_left = maxf(_face_aim_left, seconds)
 
@@ -615,6 +661,8 @@ func _update_body_facing(delta: float, planar_velocity: Vector3) -> void:
     if not free_facing:
         _body_yaw = yaw
         avatar.rotation.y = 0.0
+        turn_lean = lerpf(turn_lean, 0.0, minf(1.0, delta * 10.0))
+        avatar.rotation.z = turn_lean
         return
     var planar := Vector2(planar_velocity.x, planar_velocity.z)
     var rate := BODY_TURN_RATE
@@ -624,7 +672,16 @@ func _update_body_facing(delta: float, planar_velocity: Vector3) -> void:
         rate = BODY_AIM_TURN_RATE
     elif planar.length() > 0.4:
         target = atan2(-planar.x, -planar.y) # frente do corpo = -Z
+    var previous_yaw := _body_yaw
     _body_yaw = lerp_angle(_body_yaw, target, minf(1.0, delta * rate))
+    # Inclina para dentro da curva, mais forte quanto mais rápido e mais fechada.
+    var turn_speed := wrapf(_body_yaw - previous_yaw, -PI, PI) / maxf(delta, 0.0001)
+    var speed_factor := clampf(planar.length() / (speed * sprint_multiplier), 0.0, 1.0)
+    var lean_target := 0.0
+    if is_on_floor() and not crouching:
+        lean_target = clampf(turn_speed * 0.05 * speed_factor, -TURN_LEAN_MAX, TURN_LEAN_MAX)
+    turn_lean = lerpf(turn_lean, lean_target, minf(1.0, delta * 8.0))
+    avatar.rotation.z = turn_lean
     # O avatar é filho do jogador (que gira com a câmera): rotação relativa.
     avatar.rotation.y = wrapf(_body_yaw - yaw, -PI, PI)
 

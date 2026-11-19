@@ -126,6 +126,13 @@ func reload() -> void:
 	reload_player.pitch_scale = randf_range(0.97, 1.03)
 	reload_player.play()
 
+## Aterrissou de uma queda. `strength` 0..1: queda forte = baque mais grave e alto.
+func landing(strength: float) -> void:
+	var p := _feedback_player("land", SfxBank.step(0), -14.0)
+	p.volume_db = lerpf(-14.0, -4.0, clampf(strength, 0.0, 1.0))
+	p.pitch_scale = lerpf(0.85, 0.6, clampf(strength, 0.0, 1.0)) * randf_range(0.97, 1.03)
+	p.play()
+
 func update_steps(delta: float, grounded: bool, moving: bool, sprinting: bool, crouching: bool) -> void:
 	if not grounded or not moving:
 		step_timer = 0.0
