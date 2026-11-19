@@ -3,6 +3,14 @@ const Registry = preload("res://scripts/characters/character_registry.gd")
 const WeaponVisuals = preload("res://scripts/weapon_visuals.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 signal selection_requested(id: String)
+## Enquadramento da prévia: corpo inteiro ocupando o quadro, câmera um pouco
+## abaixo do peito (o personagem parece mais imponente) e de frente-direita.
+const PREVIEW_CAMERA := Vector3(0.3, 1.05, -3.7)
+const PREVIEW_LOOK := Vector3(0.0, 0.9, 0.0)
+## O modelo olha para -Z (para a câmera). Girado 40°, o lado do gatilho fica
+## perto da câmera e o fuzil cruza o peito apontando para a direita do quadro,
+## com as duas mãos visíveis (do outro lado, o braço de apoio sumia atrás do corpo).
+const PREVIEW_YAW := deg_to_rad(40.0)
 var definition: Resource
 var selected := false
 var visual: Node3D
@@ -50,7 +58,7 @@ func _ready() -> void:
 
 func _build_preview(column: VBoxContainer) -> void:
     var container := SubViewportContainer.new()
-    container.custom_minimum_size = Vector2(300, 210)
+    container.custom_minimum_size = Vector2(300, 250)
     container.stretch = true
     container.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(container)
@@ -82,9 +90,9 @@ func _build_preview(column: VBoxContainer) -> void:
     world.add_child(fill)
     var camera := Camera3D.new()
     world.add_child(camera)
-    camera.position = Vector3(1.8, 1.2, -2.6)
-    camera.fov = 37
-    camera.look_at(Vector3(0, 0.95, 0))
+    camera.position = PREVIEW_CAMERA
+    camera.fov = 32
+    camera.look_at(PREVIEW_LOOK)
     camera.current = true
     visual = Registry.create_visual(definition.id)
     if visual == null:
@@ -107,7 +115,18 @@ func _build_preview(column: VBoxContainer) -> void:
         else:
             weapon.scale = Vector3.ONE * 0.7
             WeaponVisuals.build(weapon, "rifle")
+    _pose_ready()
     visual.animate(1.0, 0.0, false, false, false, false, false)
+
+## Pose de vitrine: posição de pronto do jogo (fuzil na altura do peito, as
+## duas mãos na arma, cano um pouco para baixo), corpo virado 3/4 para a câmera.
+func _pose_ready() -> void:
+    visual.rotation.y = PREVIEW_YAW
+    if visual.has_method("set_armed"):
+        visual.call("set_armed", true)
+    if visual.has_method("set_aim_target"):
+        var forward := -visual.global_basis.z
+        visual.call("set_aim_target", visual.global_position + forward * 8.0 + Vector3.UP * 0.9, true)
 
 func _process(delta: float) -> void:
     if preview_ready and is_instance_valid(visual):
