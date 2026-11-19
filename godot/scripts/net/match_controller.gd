@@ -49,6 +49,12 @@ var kill_counts: Dictionary = {} # id -> abates (placar ao vivo)
 var respawn_left := 0.0 # segundos até renascer (jogador local morto)
 var match_ends_msec := 0 # Time.get_ticks_msec() em que o tempo acaba
 var dm_kit: Dictionary = {"pistol": 45}
+## Loja: créditos (servidor confirma) e a janela de compra (início / renascer).
+const ShopPanelScript = preload("res://scripts/net/shop_panel.gd")
+var credits := 0
+var buy_window_ms := 20000
+var buy_until_msec := 0
+var shop: Control
 var my_team := -1
 var teams: Dictionary = {} # id -> 0/1
 var team_names: Array = ["Alfa", "Bravo"]
@@ -96,6 +102,16 @@ func _ready() -> void:
 		dm_kit = info["kit"]
 	if info.has("duration"):
 		match_ends_msec = Time.get_ticks_msec() + int(info["duration"])
+	var shop_info: Dictionary = info.get("shop", {}) if info.get("shop") is Dictionary else {}
+	if not shop_info.is_empty():
+		credits = int(shop_info.get("credits", 0))
+		buy_window_ms = int(shop_info.get("window", buy_window_ms))
+		buy_until_msec = Time.get_ticks_msec() + buy_window_ms
+		shop = ShopPanelScript.new()
+		shop.call("setup", shop_info)
+		ui.add_child(shop)
+		shop.connect("buy_requested", _request_buy)
+		shop.connect("close_requested", _close_shop)
 	if info.get("teams") is Array:
 		team_names = info["teams"]
 	for entry in info.get("roster", []):
@@ -133,7 +149,10 @@ func _ready() -> void:
 		actor.connect("bot_heal", _on_bot_heal)
 		main_node.add_child(actor)
 		actors[id] = actor
-		if dm_mode:
+		if bots[id] and entry.has("w"):
+			actor.call("give_weapon", str(entry["w"])) # bots spawn armed (the server picks)
+			actor.set("medkits", int(entry.get("medkits", 0)))
+		elif dm_mode:
 			for weapon_id in dm_kit:
 				actor.call("give_weapon", weapon_id)
 	if dm_mode:
@@ -153,11 +172,12 @@ func _ready() -> void:
 		_feed("Aliados têm o nome em azul (visível através das paredes). Não há fogo amigo.")
 	elif dm_mode:
 		_feed("Mata-mata! %d combatentes — o primeiro a fazer %d abates vence." % [alive_count, kill_goal])
-		_feed("Morreu? Você renasce em poucos segundos com uma pistola. As caixas se reabastecem.")
-		return
+		_feed("Morreu? Você renasce em poucos segundos com uma pistola e a loja abre de novo.")
 	else:
 		_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
-	_feed("Você começa sem arma: procure as caixas de suprimento (E para coletar).")
+	if shop != null:
+		_feed("Loja aberta: %d s para comprar com seus $%d (B abre/fecha). Abates dão créditos." % [int(buy_window_ms / 1000.0), credits])
+		_open_shop()
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
@@ -183,11 +203,80 @@ func _combatants() -> Array:
 			list.append({"id": id, "node": actor, "team": teams.get(id, -1)})
 	return list
 
-## Linha curta acima da munição (HUD): kits e granadas que você carrega.
+## Linha curta acima da munição (HUD): créditos, loja, kits e granadas.
 func hud_extra() -> String:
 	if local_dead or finished:
 		return ""
-	return "KITS %d [F]   GRANADAS %d [G]" % [my_medkits, my_nades]
+	var line := "KITS %d [F]   GRANADAS %d [G]" % [my_medkits, my_nades]
+	if shop != null:
+		line = "$%d   " % credits + line
+		if can_shop():
+			line += "   [B] LOJA %ds" % ceili(_buy_seconds_left())
+	return line
+
+# ------------------------------------------------------------------ loja ---
+
+func _buy_seconds_left() -> float:
+	return maxf(0.0, (buy_until_msec - Time.get_ticks_msec()) / 1000.0)
+
+func can_shop() -> bool:
+	return shop != null and not local_dead and not finished and _buy_seconds_left() > 0.0
+
+## Main/player: the cursor stays free while the shop is open.
+func ui_open() -> bool:
+	return shop != null and shop.visible
+
+func _open_shop() -> void:
+	if not can_shop():
+		if shop != null and not local_dead and not finished:
+			_toast("TEMPO DE COMPRA ENCERRADO")
+		return
+	Input.action_release("fire")
+	Input.action_release("aim")
+	player.set("aiming", false)
+	shop.call("show_note", "")
+	_refresh_shop()
+	shop.visible = true
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+
+func _close_shop() -> void:
+	if shop == null or not shop.visible:
+		return
+	shop.visible = false
+	if not local_dead and not finished and not leave_panel.visible:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+func _refresh_shop() -> void:
+	if shop != null:
+		shop.call("refresh", credits, player.get("owned_weapons"), my_medkits, my_nades, _buy_seconds_left())
+
+func _request_buy(item: String) -> void:
+	if can_shop():
+		Net.send({"t": "buy", "item": item})
+
+func _on_bought(data: Dictionary) -> void:
+	var by := str(data.get("by", ""))
+	var item := str(data.get("item", ""))
+	var is_weapon := WeaponData.DATA.has(item)
+	if by == my_id:
+		credits = int(data.get("credits", credits))
+		if is_weapon:
+			var was_armed := not bool(player.get("weapon_holstered"))
+			player.call("give_weapon", item, int(data.get("ammo", 0)))
+			if was_armed:
+				player.call("_equip_weapon", item) # a compra vai direto para a mão
+			_toast("COMPROU %s" % str(WeaponData.stats(item)["name"]).to_upper())
+		else:
+			_toast("COMPROU %s" % ("KIT MÉDICO" if item == "medkit" else "GRANADA"))
+		player.get("sound_fx").call("reload")
+		_refresh_shop()
+	elif actors.has(by) and is_weapon:
+		actors[by].call("give_weapon", item)
+
+func _on_credits(data: Dictionary) -> void:
+	credits = int(data.get("total", credits))
+	_xp_toast("+$%d  créditos%s" % [int(data.get("amount", 0)), "  (cabeça)" if bool(data.get("head", false)) else ""])
+	_refresh_shop()
 
 ## Aliados vivos, para o minimapa (só em equipes).
 func ally_nodes() -> Array:
@@ -281,6 +370,16 @@ func _on_message(data: Dictionary) -> void:
 			_on_looted(data)
 		"respawn":
 			_on_respawn(data)
+		"bought":
+			_on_bought(data)
+		"buy_denied":
+			credits = int(data.get("credits", credits))
+			if shop != null:
+				shop.call("show_note", str(data.get("message", "")))
+			_toast(str(data.get("message", "")).to_upper())
+			_refresh_shop()
+		"credits":
+			_on_credits(data)
 		"refill":
 			var refilled: Dictionary = data.get("crate", {})
 			var crate = crates.get(str(refilled.get("id", "")))
@@ -747,13 +846,14 @@ func _on_respawn(data: Dictionary) -> void:
 	var weapon := str(data.get("w", "pistol"))
 	alive_count = int(data.get("alive", alive_count))
 	if id == my_id:
-		_revive_local(at, weapon, int(data.get("ammo", 45)))
+		_revive_local(at, weapon, int(data.get("ammo", 45)), int(data.get("buy", 0)))
 	elif actors.has(id):
 		var actor = actors[id]
 		actor.call("revive", at + Vector3(0, 0.1, 0), weapon)
+		actor.set("medkits", int(data.get("medkits", 0)))
 		actor.call("set_controlled", is_host() and actor.is_bot)
 
-func _revive_local(at: Vector3, weapon: String, reserve: int) -> void:
+func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int = 0) -> void:
 	if not local_dead or finished:
 		return
 	local_dead = false
@@ -780,6 +880,9 @@ func _revive_local(at: Vector3, weapon: String, reserve: int) -> void:
 	if not leave_panel.visible:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	_toast("DE VOLTA AO COMBATE")
+	if shop != null and data_buy_ms > 0:
+		buy_until_msec = Time.get_ticks_msec() + data_buy_ms
+		_open_shop()
 
 func _killer_banner(title: String, subtitle: String) -> void:
 	killer_title.text = title
@@ -809,6 +912,11 @@ func _process(delta: float) -> void:
 		if not _victory_finished and _victory_time >= VICTORY_SECONDS:
 			_finish_victory()
 	_update_loot_ui()
+	if shop != null and shop.visible:
+		if can_shop():
+			_refresh_shop() # relógio da loja
+		else:
+			_close_shop() # acabou o tempo (ou morreu / fim da partida)
 	if local_dead and dm_mode:
 		respawn_left = maxf(0.0, respawn_left - delta)
 	if finished:
@@ -886,6 +994,15 @@ func _unhandled_input(event: InputEvent) -> void:
 		_finish_victory()
 		get_viewport().set_input_as_handled()
 		return
+	# B: loja (só na janela de compra). Esc fecha a loja antes de abrir "sair".
+	if event is InputEventKey and event.pressed and not event.echo and shop != null and not finished and not leave_panel.visible:
+		if event.physical_keycode == KEY_B or (event.keycode == KEY_ESCAPE and shop.visible):
+			if shop.visible:
+				_close_shop()
+			elif event.physical_keycode == KEY_B:
+				_open_shop()
+			get_viewport().set_input_as_handled()
+			return
 	# Esc: leave the match at any time (alive or spectating). The player node
 	# is disabled after death, so its own Esc handler no longer runs.
 	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_ESCAPE and not finished:

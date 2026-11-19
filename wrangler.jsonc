@@ -11,7 +11,7 @@
   // 909 = 0.9.9: helmet/vest items, hit point (pt) for the hit check, ping/pong.
   // 10100 = 1.1.0: survival world 720 m (outer ring, parkour towns, new containers).
   "vars": {
-    "GODOT_MIN_BUILD": "10100",
+    "GODOT_MIN_BUILD": "10400",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {

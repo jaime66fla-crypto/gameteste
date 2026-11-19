@@ -238,34 +238,23 @@ test('without bots both teams need a player; leader leaving passes leadership', 
 	assert.equal(b.ws.last('party').leader, b.id);
 });
 
-test('fewer weapon crates; medkits are collected, stack, and F (heal) uses one', async () => {
+test('no loot crates; medkits are bought, stack, and F (heal) uses one', async () => {
 	const match = room();
 	const a = await join(match, { create: true });
 	const b = await join(match);
 	say(match, b, { t: 'ready' });
 	say(match, a, { t: 'start' });
 	const start = a.ws.last('start');
-	const weapons = start.crates.filter((c) => !c.med && !c.tower);
-	const meds = start.crates.filter((c) => c.med);
-	assert.equal(weapons.length, 16);
-	const tower = start.crates.find((c) => c.tower);
-	assert.ok(tower && tower.items.sniper && tower.p[1] >= 5, 'sniper crate on the tower roof');
-	assert.ok(meds.length >= 4);
+	assert.deepEqual(start.crates, [], 'no crates in team matches');
 	const m = match.match;
 	const me = m.players[a.id];
-	// Collect two kits at full health: they go to the inventory.
-	for (const kit of meds.slice(0, 2)) {
-		me.p = [...kit.p];
-		say(match, a, { t: 'loot', crate: kit.id });
-		assert.equal(m.crates[kit.id].open, true);
-	}
+	// Buy two kits at full health: they go to the inventory.
+	say(match, a, { t: 'buy', item: 'medkit' });
+	say(match, a, { t: 'buy', item: 'medkit' });
 	assert.equal(me.medkits, 2);
+	assert.equal(me.credits, 200);
 	assert.equal(me.hp, 100);
 	assert.equal(b.ws.last('medkits').count, 2);
-	// A used crate cannot be looted again.
-	m.players[b.id].p = [...meds[0].p];
-	say(match, b, { t: 'loot', crate: meds[0].id });
-	assert.equal(m.players[b.id].medkits, 0);
 	// Using a kit takes 3 s: heal_start, then heal (server checks the time).
 	const useKit = () => {
 		say(match, a, { t: 'heal_start' });
@@ -289,18 +278,15 @@ test('fewer weapon crates; medkits are collected, stack, and F (heal) uses one',
 	assert.equal(me.medkits, 0);
 	useKit();
 	assert.equal(me.medkits, 0);
-	// Carried kits drop with the player.
+	// Dying loses the carried kits; nothing drops on the ground.
 	me.medkits = 3;
-	me.inv = {};
-	match.dropCrate(me);
-	const drop = b.ws.last('crate').crate;
-	assert.equal(drop.medkits, 3);
-	m.players[b.id].p = [...drop.p];
-	say(match, b, { t: 'loot', crate: drop.id });
-	assert.equal(m.players[b.id].medkits, 3);
+	const bot = Object.values(m.players).find((p) => p.bot && p.team !== me.team);
+	match.damage(bot, me, 999, 'rifle', 'chest');
+	assert.equal(me.medkits, 0);
+	assert.equal(b.ws.last('crate'), undefined, 'no drop crate');
 });
 
-test('grenades: looted, thrown, server-checked blast with falloff, no team damage, self damage without kill credit', async () => {
+test('grenades: bought, thrown, server-checked blast with falloff, no team damage, self damage without kill credit', async () => {
 	const match = room();
 	const a = await join(match, { create: true, name: 'A' });
 	const b = await join(match, { name: 'B' });
@@ -308,14 +294,7 @@ test('grenades: looted, thrown, server-checked blast with falloff, no team damag
 	say(match, a, { t: 'start' });
 	const m = match.match;
 	const me = m.players[a.id];
-	// Tower crate: only from the roof, not from under it.
-	const tower = m.crates.t0;
-	me.p = [tower.p[0], 0, tower.p[2]];
-	say(match, a, { t: 'loot', crate: 't0' });
-	assert.equal(tower.open, false, 'cannot loot the roof crate from the ground');
-	me.p = [tower.p[0], tower.p[1], tower.p[2]];
-	say(match, a, { t: 'loot', crate: 't0' });
-	assert.equal(tower.open, true);
+	say(match, a, { t: 'buy', item: 'grenade' });
 	assert.equal(me.nades, 1);
 	assert.equal(b.ws.last('nades').count, 1);
 	// No grenades: throw ignored.

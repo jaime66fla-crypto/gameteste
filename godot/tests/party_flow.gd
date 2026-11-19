@@ -76,7 +76,9 @@ func _run() -> void:
 	net.set("host_id", "other")
 	net.set("in_match", true)
 	net.set("start_info", {"t": "start", "host": "other", "alive": 4, "party": true, "teams": ["Alfa", "Bravo"],
-		"crates": [{"id": "m0", "p": [-34.0, 0, 18.0], "items": {}, "med": true, "heal": 50, "open": false, "drop": false}],
+		"shop": {"prices": {"pistol": 200, "smg": 1200, "shotgun": 1400, "rifle": 2200, "sniper": 3200, "medkit": 300, "grenade": 300}, "credits": 800, "window": 20000,
+			"ammo": {"pistol": 45, "smg": 90, "rifle": 90, "shotgun": 18, "sniper": 15}, "maxMedkits": 5, "maxNades": 3},
+		"crates": [],
 		"roster": [
 			{"id": "me", "name": "Lider", "bot": false, "spawn": 4, "rank": "Recruta", "team": 0, "sp": [-35.2, 16]},
 			{"id": "bot1", "name": "Cabo Rocha", "bot": true, "spawn": 4, "rank": "", "team": 0, "sp": [-32.8, 16]},
@@ -124,15 +126,13 @@ func _run() -> void:
 		me.call("_unhandled_input", key)
 		_check(str(me.get("current_weapon")) == "pistol", "Empty slot 3 does nothing")
 		_check(str(me.call("status_text")).contains("[1] PISTOLA") and str(me.call("status_text")).contains("2 FUZIL"), "HUD lists pickup slots")
-		# Medkit: collected with E into the inventory, used with F.
-		var crates: Dictionary = controller.get("crates")
-		_check(crates.has("m0") and bool(crates["m0"].get("is_med")), "Medkit crate created")
-		if crates.has("m0"):
-			_check(str(crates["m0"].call("contents_text")).contains("Kit médico"), "Medkit label")
-		controller.call("_on_message", {"t": "looted", "crate": "m0", "by": "me", "items": {}, "med": true, "kits": 1})
+		# Medkit: bought in the shop into the inventory, used with F.
+		_check((controller.get("crates") as Dictionary).is_empty(), "No loot crates in team matches")
+		controller.call("_close_shop")
+		controller.call("_on_message", {"t": "bought", "by": "me", "item": "medkit", "ammo": 0, "credits": 500})
 		controller.call("_on_message", {"t": "medkits", "id": "me", "count": 1})
 		_check(int(controller.get("my_medkits")) == 1, "Medkit goes to the inventory")
-		_check(crates.has("m0") and bool(crates["m0"].get("opened")), "Collected medkit crate opens")
+		_check(int(controller.get("credits")) == 500, "Credits after buying")
 		await process_frame
 		_check(str(controller.call("hud_extra")).contains("KITS 1"), "HUD shows carried kits (next to the ammo)")
 		var heal_key := InputEventKey.new()

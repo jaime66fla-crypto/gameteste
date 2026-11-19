@@ -49,12 +49,14 @@ func _run() -> void:
 	net.set("in_match", true)
 	net.set("start_info", {"t": "start", "host": "me", "alive": 4, "party": false, "mode": "dm", "goal": 15, "duration": 360000, "respawn": 3000,
 		"kit": {"pistol": 45},
-		"crates": [{"id": "c0", "p": [-20.0, 0, 10.0], "items": {"rifle": 90}, "nades": 0, "open": false, "drop": false}],
+		"shop": {"prices": {"pistol": 200, "smg": 1200, "shotgun": 1400, "rifle": 2200, "sniper": 3200, "medkit": 300, "grenade": 300}, "credits": 800, "window": 20000,
+			"ammo": {"pistol": 45, "smg": 90, "rifle": 90, "shotgun": 18, "sniper": 15}, "maxMedkits": 5, "maxNades": 3},
+		"crates": [],
 		"roster": [
 			{"id": "me", "name": "Eu", "bot": false, "spawn": 0, "rank": "Recruta"},
-			{"id": "bot1", "name": "Cabo Rocha", "bot": true, "spawn": 1, "rank": ""},
-			{"id": "bot2", "name": "Sgt. Lima", "bot": true, "spawn": 2, "rank": ""},
-			{"id": "bot3", "name": "Recruta Dias", "bot": true, "spawn": 3, "rank": ""}]})
+			{"id": "bot1", "name": "Cabo Rocha", "bot": true, "spawn": 1, "rank": "", "w": "pistol", "medkits": 1},
+			{"id": "bot2", "name": "Sgt. Lima", "bot": true, "spawn": 2, "rank": "", "w": "rifle", "medkits": 1},
+			{"id": "bot3", "name": "Recruta Dias", "bot": true, "spawn": 3, "rank": "", "w": "smg", "medkits": 1}]})
 	var error := change_scene_to_file("res://scenes/main.tscn")
 	_check(error == OK, "Match scene loads")
 	for i in 4:
@@ -67,7 +69,44 @@ func _run() -> void:
 		_check(bool(controller.get("dm_mode")), "Mata-mata mode on")
 		_check(not bool(controller.get("team_mode")), "Not a team match")
 		_check((me.get("owned_weapons") as Dictionary).has("pistol") and str(me.get("current_weapon")) == "pistol", "Local player starts with the pistol in hand")
-		_check(bool(actors["bot1"].get("armed")) and str(actors["bot1"].get("weapon_id")) == "pistol", "Bots start with the pistol")
+		_check(bool(actors["bot1"].get("armed")) and str(actors["bot1"].get("weapon_id")) == "pistol", "Bots start armed")
+		_check(str(actors["bot2"].get("weapon_id")) == "rifle" and int(actors["bot2"].get("medkits")) == 1, "Bot weapon and medkit come from the roster")
+		# Shop: open at the start, shows credits, buys only through the server.
+		var shop: Control = controller.get("shop")
+		_check(shop != null and shop.visible, "Shop opens at the start")
+		_check(bool(controller.call("ui_open")), "Shop keeps the cursor free")
+		var credits_label := shop.find_child("ShopCredits", true, false) as Label if shop != null else null
+		_check(credits_label != null and credits_label.text == "$ 800", "Shop shows the credits")
+		var rifle_card := shop.find_child("Buy_rifle", true, false) as Button if shop != null else null
+		_check(rifle_card != null and rifle_card.disabled, "Too expensive weapon is disabled")
+		var pistol_card := shop.find_child("Buy_pistol", true, false) as Button if shop != null else null
+		_check(pistol_card != null and pistol_card.disabled and pistol_card.text.contains("COMPRADA"), "Owned pistol shows as bought")
+		_check(str(controller.call("hud_extra")).contains("$800") and str(controller.call("hud_extra")).contains("[B] LOJA"), "HUD shows credits and the shop key")
+		controller.call("_on_message", {"t": "credits", "amount": 400, "total": 1200, "victim": "X", "head": false})
+		_check(int(controller.get("credits")) == 1200, "Kill credits arrive")
+		var smg_card := shop.find_child("Buy_smg", true, false) as Button if shop != null else null
+		_check(smg_card != null and not smg_card.disabled, "Affordable weapon is enabled")
+		controller.call("_on_message", {"t": "bought", "by": "me", "item": "smg", "ammo": 90, "credits": 0})
+		_check((me.get("owned_weapons") as Dictionary).has("smg") and str(me.get("current_weapon")) == "smg", "Bought weapon goes to the hand")
+		_check(int(controller.get("credits")) == 0, "Credits after buying")
+		controller.call("_on_message", {"t": "buy_denied", "item": "rifle", "message": "Créditos insuficientes", "credits": 0})
+		var note := shop.find_child("ShopNote", true, false) as Label
+		_check(note != null and note.text == "Créditos insuficientes", "Server refusal is shown in the shop")
+		controller.call("_on_message", {"t": "bought", "by": "bot3", "item": "shotgun", "ammo": 18, "credits": 0})
+		_check((actors["bot3"].get("owned_weapons") as Dictionary).has("shotgun"), "Others' purchases update their actor")
+		# B closes; when the window is over the shop closes and B no longer opens it.
+		var b_key := InputEventKey.new()
+		b_key.pressed = true
+		b_key.physical_keycode = KEY_B
+		controller.call("_unhandled_input", b_key)
+		_check(not shop.visible, "B closes the shop")
+		controller.call("_unhandled_input", b_key)
+		_check(shop.visible, "B opens it again inside the window")
+		controller.set("buy_until_msec", Time.get_ticks_msec() - 1)
+		await process_frame
+		_check(not shop.visible, "Shop closes when buy time is over")
+		controller.call("_unhandled_input", b_key)
+		_check(not shop.visible, "B does nothing after the window")
 		await process_frame
 		var status: Label = controller.get("status_label")
 		_check(status.text.contains("ABATES 0/15"), "HUD shows kills / goal (got %s)" % status.text)
@@ -92,8 +131,9 @@ func _run() -> void:
 		await process_frame
 		_check(bool(controller.get("local_dead")), "Local player died")
 		_check(status.text.contains("RENASCENDO EM"), "HUD shows the respawn countdown (got %s)" % status.text)
-		controller.call("_on_message", {"t": "respawn", "id": "me", "spawn": 6, "p": [30.0, 0, -28.0], "w": "pistol", "ammo": 45, "safe": 1500, "alive": 4})
+		controller.call("_on_message", {"t": "respawn", "id": "me", "spawn": 6, "p": [30.0, 0, -28.0], "w": "pistol", "ammo": 45, "safe": 1500, "alive": 4, "buy": 20000, "medkits": 0})
 		await process_frame
+		_check(shop.visible, "Shop reopens after respawning")
 		_check(not bool(controller.get("local_dead")), "Local player respawned")
 		_check(is_equal_approx(float(controller.get("my_hp")), 100.0), "Full health after respawning")
 		_check(me.process_mode != Node.PROCESS_MODE_DISABLED, "Player controls work again")
@@ -102,12 +142,7 @@ func _run() -> void:
 		var owned: Dictionary = me.get("owned_weapons")
 		_check(owned.size() == 1 and owned.has("pistol") and str(me.get("current_weapon")) == "pistol", "Respawn gives only the pistol (got %s)" % str(owned.keys()))
 		_check(Vector2(me.global_position.x, me.global_position.z).distance_to(Vector2(30, -28)) < 0.6, "Respawned at the server spot")
-		# Crate refills.
-		var crates: Dictionary = controller.get("crates")
-		controller.call("_on_message", {"t": "looted", "crate": "c0", "by": "bot3", "items": {"rifle": 90}, "med": false, "kits": 0, "nades": 0})
-		_check(bool(crates["c0"].get("opened")), "Crate opened")
-		controller.call("_on_message", {"t": "refill", "crate": {"id": "c0", "p": [-20.0, 0, 10.0], "items": {"smg": 90}, "nades": 1, "open": false, "drop": false}})
-		_check(not bool(crates["c0"].get("opened")) and (crates["c0"].get("items") as Dictionary).has("smg"), "Crate refilled with new contents")
+		_check((controller.get("crates") as Dictionary).is_empty(), "No loot crates")
 		# The end: first to 15.
 		controller.call("_on_message", {"t": "end", "winner": "me", "name": "Eu", "reason": "abates", "mode": "dm", "goal": 15,
 			"board": [{"id": "me", "name": "Eu", "kills": 15, "deaths": 1, "bot": false, "rank": "Recruta", "xp": 400},
