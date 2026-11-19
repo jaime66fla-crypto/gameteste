@@ -7,10 +7,9 @@ signal selection_requested(id: String)
 ## abaixo do peito (o personagem parece mais imponente) e de frente-direita.
 const PREVIEW_CAMERA := Vector3(0.3, 1.05, -3.7)
 const PREVIEW_LOOK := Vector3(0.0, 0.9, 0.0)
-## O modelo olha para -Z (para a câmera). Girado 40°, o lado do gatilho fica
-## perto da câmera e o fuzil cruza o peito apontando para a direita do quadro,
-## com as duas mãos visíveis (do outro lado, o braço de apoio sumia atrás do corpo).
-const PREVIEW_YAW := deg_to_rad(40.0)
+## O modelo olha para -Z (para a câmera); girado só um pouco, quase de frente.
+const PREVIEW_YAW := deg_to_rad(18.0)
+const SHOWCASE_CLIP := "idle_foldarms"
 var definition: Resource
 var selected := false
 var visual: Node3D
@@ -101,6 +100,15 @@ func _build_preview(column: VBoxContainer) -> void:
     preview_ready = not visual.has_method("is_visual_ready") or bool(visual.call("is_visual_ready"))
     if not preview_ready:
         return
+    visual.rotation.y = PREVIEW_YAW
+    if visual.has_method("play_overlay") and visual.has_method("set_armed"):
+        # Pose de vitrine: em pé, braços cruzados (UAL2 idle_foldarms), sem arma.
+        # A pose de mira do jogo é feita para ser vista por trás e fica torta de frente.
+        visual.call("set_armed", false)
+        # Só tronco e braços: as pernas do clipe ficam abertas demais nos modelos Mixamo.
+        visual.call("play_overlay", SHOWCASE_CLIP, "upper", 1.0, 1.0, 1.0e9)
+        visual.animate(1.0, 0.0, false, false, false, false, false)
+        return
     visual.configure_weapon("rifle", 0.7)
     var mount: Node3D = visual.get("weapon_mount")
     if mount:
@@ -115,18 +123,7 @@ func _build_preview(column: VBoxContainer) -> void:
         else:
             weapon.scale = Vector3.ONE * 0.7
             WeaponVisuals.build(weapon, "rifle")
-    _pose_ready()
     visual.animate(1.0, 0.0, false, false, false, false, false)
-
-## Pose de vitrine: posição de pronto do jogo (fuzil na altura do peito, as
-## duas mãos na arma, cano um pouco para baixo), corpo virado 3/4 para a câmera.
-func _pose_ready() -> void:
-    visual.rotation.y = PREVIEW_YAW
-    if visual.has_method("set_armed"):
-        visual.call("set_armed", true)
-    if visual.has_method("set_aim_target"):
-        var forward := -visual.global_basis.z
-        visual.call("set_aim_target", visual.global_position + forward * 8.0 + Vector3.UP * 0.9, true)
 
 func _process(delta: float) -> void:
     if preview_ready and is_instance_valid(visual):
