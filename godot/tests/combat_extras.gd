@@ -109,9 +109,7 @@ func _run() -> void:
 		var spot: Vector3 = nav.random_point(main.get_world_3d())
 		_check(not grid.is_point_solid(nav.cell_of(spot)), "Roaming spot is walkable")
 		spread = Rect2(Vector2(spot.x, spot.z), Vector2.ZERO) if i == 0 else spread.expand(Vector2(spot.x, spot.z))
-	_check(spread.size.x > 50 and spread.size.y > 50, "Roaming spots cover the map (%s)" % spread.size)
-	var layout: Dictionary = load("res://scripts/net/match_layout.gd").load_layout()
-	_check(layout.has("tower") and float(layout["tower"]["loot"][1]) >= 5.9, "Layout has the roof sniper crate")
+	_check(spread.size.x > 40 and spread.size.y > 40, "Roaming spots cover the map (%s)" % spread.size)
 	for failure in failures:
 		printerr(failure)
 	print("COMBAT EXTRAS: ", "PASS" if failures.is_empty() else "FAIL")

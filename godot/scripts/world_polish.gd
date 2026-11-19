@@ -1,14 +1,11 @@
 extends Node3D
 ## One authored 120 m neighborhood. Roads, plots and entrances share one layout.
-## Mapa das partidas online (mata-mata, equipes, sala personalizada) e centro da
-## Sobrevivência; o treino offline usa scripts/training_ground.gd.
+## Centro da Sobrevivência (data/match_layout.json). As partidas online usam os
+## mapas de blocos (scripts/match_map.gd); o treino offline, training_ground.gd.
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
-const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
-## Metade do mapa fechado, onde ficam os muros da borda.
-var map_half := 60.0
 var mat_cache: Dictionary = {}
-## Sobrevivência: a cidade fica no meio do mundo aberto, sem os muros da borda.
-var open_world := false
+## Sempre no meio do mundo aberto (sem muros de borda); mantido por compatibilidade.
+var open_world := true
 
 func _ready() -> void:
     _tune_environment()
@@ -20,9 +17,6 @@ func _ready() -> void:
     _watchtower()
     _cover_walls()
     _perimeter()
-    if not open_world:
-        # Bases de parkour na faixa entre o anel e o muro.
-        add_child(ParkourDistrictScript.new())
 
 func _mat(hex_color: String) -> StandardMaterial3D:
     if mat_cache.has(hex_color):
@@ -356,25 +350,3 @@ func _perimeter() -> void:
         if abs(coordinate) < 50:
             _tree(Vector2(-56, coordinate), 3.4)
             _tree(Vector2(56, coordinate), 3.4)
-    if not open_world:
-        _boundary_walls()
-
-func _boundary_walls() -> void:
-    # The ground ends at +/-map_half (60): a visible 3 m concrete wall on
-    # every edge, plus a tall invisible barrier so nobody can jump or climb
-    # out (the watchtower reaches 7 m, barrier 30 m).
-    var half := map_half - 0.4
-    var thickness := 0.8
-    for side in [-1.0, 1.0]:
-        _box(Vector3(side * half, 1.5, 0), Vector3(thickness, 3.0, half * 2 + thickness), "#9a9a92", true)
-        _box(Vector3(0, 1.5, side * half), Vector3(half * 2 + thickness, 3.0, thickness), "#9a9a92", true)
-        for along in [Vector3(side * half, 15.0, 0), Vector3(0, 15.0, side * half)]:
-            var barrier := StaticBody3D.new()
-            barrier.name = "EdgeBarrier"
-            barrier.position = along
-            add_child(barrier)
-            var collider := CollisionShape3D.new()
-            var shape := BoxShape3D.new()
-            shape.size = Vector3(thickness, 30.0, half * 2 + thickness) if absf(along.x) > 1.0 else Vector3(half * 2 + thickness, 30.0, thickness)
-            collider.shape = shape
-            barrier.add_child(collider)

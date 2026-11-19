@@ -1,5 +1,5 @@
 {
-  "_comment": "Online match layout shared by the Godot client (scripts/net) and the Cloudflare server (src/godot-match.js). Coordinates in metres, [x, z] on the ground. Buildings mirror scripts/world_polish.gd; doors face +Z. Validated by tests/match_layout.gd.",
+  "_comment": "Old city layout, now only the centre of the Survival world (scripts/world_polish.gd, scripts/gen-survival-world.mjs, minimap). Online matches use data/match_maps.json. Coordinates in metres, [x, z] on the ground; doors face +Z.",
   "buildings": [
     {"name": "CASA 01", "center": [-34, -34], "size": [10, 10], "spawn": [-34, -35], "loot": [-31, -37]},
     {"name": "CASA 02", "center": [-16, -34], "size": [10, 10], "spawn": [-16, -35], "loot": [-13, -37]},

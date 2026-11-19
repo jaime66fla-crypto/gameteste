@@ -27,7 +27,7 @@ func _ready() -> void:
 	for lane in [-48.0, 0.0, 48.0]:
 		_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
 		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
-	for b in MatchLayout.load_layout().get("buildings", []):
+	for b in MatchLayout.city_layout().get("buildings", []):
 		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
 	var data := SurvivalData.world()
 	_half = float(data.get("half_size", 240))

@@ -20,11 +20,19 @@ var _warmup := 10
 
 func setup(local_player: Node3D, survival: bool) -> void:
 	player = local_player
-	# Cidade do meio (mapa do mata-mata): avenidas e prédios do layout.
+	if not survival:
+		# Mapa da partida (match_map.gd): o contorno dos blocos de cada mapa.
+		var layout := MatchLayout.load_layout()
+		_half = float(layout.get("map_half_size", 40))
+		meters_per_px = 0.42
+		for f in layout.get("footprints", []):
+			_buildings.append([Vector2(float(f[0]), float(f[1])), Vector2(float(f[2]), float(f[3]))])
+		return
+	# Sobrevivência: a cidade do meio (avenidas e prédios) e o mundo aberto.
 	for lane in [-48.0, 0.0, 48.0]:
 		_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
 		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
-	for b in MatchLayout.load_layout().get("buildings", []):
+	for b in MatchLayout.city_layout().get("buildings", []):
 		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
 	if survival:
 		meters_per_px = 0.95

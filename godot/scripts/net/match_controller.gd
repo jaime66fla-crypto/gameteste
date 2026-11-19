@@ -122,12 +122,12 @@ func _ready() -> void:
 		names[id] = str(entry["name"])
 		bots[id] = bool(entry.get("bot", false))
 		ranks[id] = str(entry.get("rank", ""))
-		# Everyone starts inside a building, facing its door (+Z).
+		# Everyone starts at a spawn of the map, facing the middle of the map.
 		var spawn: Vector3 = MatchLayout.spawn_point(int(entry.get("spawn", 0)))
 		var sp = entry.get("sp")
 		if sp is Array and sp.size() == 2:
 			spawn = Vector3(float(sp[0]), 0, float(sp[1])) # team matches: exact spot from the server
-		var facing := PI
+		var facing := MatchLayout.spawn_yaw(spawn)
 		if id == my_id:
 			player.global_position = spawn + Vector3(0, 0.1, 0)
 			player.set("yaw", facing)
@@ -878,8 +878,9 @@ func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int =
 	player.collision_layer = HitboxScript.LAYER_CHARACTERS
 	player.global_position = at + Vector3(0, 0.1, 0)
 	player.velocity = Vector3.ZERO
-	player.set("yaw", PI)
-	player.rotation.y = PI
+	var facing := MatchLayout.spawn_yaw(at)
+	player.set("yaw", facing)
+	player.rotation.y = facing
 	(player.get("avatar") as Node3D).visible = true # the player re-decides avatar/viewmodel every frame
 	player.process_mode = Node.PROCESS_MODE_INHERIT
 	(player.get("camera") as Camera3D).current = true

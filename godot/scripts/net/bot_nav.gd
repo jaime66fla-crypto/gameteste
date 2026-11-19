@@ -16,12 +16,23 @@ const PROBE_HIGH := 1.7
 static var _grid: AStarGrid2D
 static var _world_id := 0
 static var _half := 60
+static var _half_x := 60.0 # mapas retangulares (Equipes): limites reais de cada eixo
+static var _half_z := 60.0
+
+## Forget the grid: the scenes share the root World3D, so a new map (match_map.gd)
+## must not reuse the previous map's grid.
+static func reset() -> void:
+	_grid = null
+	_world_id = 0
 
 ## Grid for this world, built on first use.
 static func grid_for(world: World3D) -> AStarGrid2D:
 	if _grid != null and _world_id == world.get_instance_id():
 		return _grid
-	_half = int(MatchLayout.load_layout().get("map_half_size", 60))
+	var layout := MatchLayout.load_layout()
+	_half = int(ceil(float(layout.get("map_half_size", 60))))
+	_half_x = float(layout.get("half_x", _half))
+	_half_z = float(layout.get("half_z", _half))
 	var cells := int(_half * 2 / CELL)
 	var grid := AStarGrid2D.new()
 	grid.region = Rect2i(0, 0, cells, cells)
@@ -76,7 +87,7 @@ static func random_point(world: World3D) -> Vector3:
 		var cell := Vector2i(randi() % size.x, randi() % size.y)
 		var center := cell_center(cell)
 		# Stay a few metres inside the boundary walls.
-		if absf(center.x) > _half - 4 or absf(center.z) > _half - 4:
+		if absf(center.x) > _half_x - 4 or absf(center.z) > _half_z - 4:
 			continue
 		if not grid.is_point_solid(cell):
 			return center

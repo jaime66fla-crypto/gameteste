@@ -27,13 +27,17 @@ func _texture_check(material: StandardMaterial3D, title: String) -> void:
     _check(high - low > 0.06, title + " texture must add visible variation")
 func _run() -> void:
     var begin := Time.get_ticks_msec()
-    root.get_node("Net").set("in_match", true) # a cidade (WorldPolish) é o mapa online
+    root.get_node("Net").set("in_match", true) # mapa de blocos da partida (match_map.gd)
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene
-    var world = scene.get_node("WorldPolish")
+    _check(scene.get_node_or_null("MatchMap") != null, "Online match builds the block map")
+    # A cidade texturizada agora é só da Sobrevivência: os materiais dela
+    # continuam testados direto no script.
+    var world = load("res://scripts/world_polish.gd").new()
     for fixture in [["#414950","Asphalt"],["#a9aaa1","Sidewalk"],["#719168","Grass"],["#c7b596","Wall"],["#68503c","Bark"]]:
         _texture_check(world.call("_mat",fixture[0]), fixture[1])
+    world.free()
     var player: Node = scene.get_node("Jaime")
     var avatar: Node = player.get("humanoid_avatar")
     var shirt: MeshInstance3D = avatar.get_node("Hips/Torso/Chest")

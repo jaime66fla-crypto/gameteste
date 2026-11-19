@@ -4,6 +4,8 @@ const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const PlayerScript = preload("res://scripts/player.gd")
 const WorldPolishScript = preload("res://scripts/world_polish.gd")
+const MatchMapScript = preload("res://scripts/match_map.gd")
+const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const ScopeScript = preload("res://scripts/sniper_scope.gd")
 const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
@@ -48,14 +50,20 @@ func _ready() -> void:
     GameSettings.apply(settings,get_viewport())
     var survival := Net.in_match and bool(Net.start_info.get("survival", false))
     _build_world(survival)
-    if Net.in_match:
-        # Mata-mata, equipes, sala personalizada e Sobrevivência: a cidade
-        # (data/match_layout.json, validada pelo servidor).
+    if survival:
+        # Sobrevivência: a cidade antiga (data/match_layout.json) no meio do mundo aberto.
         var world_polish := Node3D.new()
         world_polish.name = "WorldPolish"
         world_polish.set_script(WorldPolishScript)
-        world_polish.set("open_world", survival)
+        world_polish.set("open_world", true)
         add_child(world_polish)
+    elif Net.in_match:
+        # Eliminatória, Mata-mata e Equipes: um mapa de blocos por modo
+        # (data/match_maps.json, o servidor usa os mesmos nascimentos).
+        MatchLayout.use_map(MatchLayout.map_for(Net.start_info))
+        var match_map := Node3D.new()
+        match_map.set_script(MatchMapScript)
+        add_child(match_map)
     var survival_world: Node3D = null
     if survival:
         # Sobrevivência: mundo aberto em volta da cidade do Campo de Fogo.
@@ -209,9 +217,9 @@ func _build_world(survival: bool = false) -> void:
     sun.light_energy = 1.3
     sun.shadow_enabled = true
     add_child(sun)
-    # Partidas online e Sobrevivência: chão de grama da cidade de 120 m. O
-    # treino offline tem o próprio piso (training_ground.gd).
-    if Net.in_match:
+    # Sobrevivência: chão de grama da cidade de 120 m. Os mapas das partidas
+    # (match_map.gd) e o treino offline (training_ground.gd) têm o próprio piso.
+    if survival:
         _block(Vector3(0,-0.5,0), Vector3(120,1,120), Color(0.28,0.39,0.26), true)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
