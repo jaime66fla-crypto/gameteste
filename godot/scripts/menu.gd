@@ -2800,6 +2800,7 @@ func _show_config() -> void:
     fullscreen.name = "FullscreenToggle"
     fullscreen.text = "Tela cheia"
     fullscreen.button_pressed = settings["fullscreen"]
+    fullscreen.visible = not Settings.is_mobile() # celular é sempre tela cheia
     content.add_child(fullscreen)
     _button("Controles (teclas e mouse)","ControlsButton",_show_controls)
     status = _label("",14)

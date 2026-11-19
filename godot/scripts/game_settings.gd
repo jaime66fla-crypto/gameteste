@@ -30,5 +30,12 @@ static func apply(values: Dictionary, viewport: Viewport) -> void:
     viewport.msaa_3d = clean["msaa"]
     AudioServer.set_bus_mute(0, clean["volume"] <= 0.0)
     AudioServer.set_bus_volume_db(0, linear_to_db(maxf(clean["volume"],0.001)))
-    if DisplayServer.get_name() != "headless":
-        DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if clean["fullscreen"] else DisplayServer.WINDOW_MODE_WINDOWED)
+    if DisplayServer.get_name() == "headless":
+        return
+    # Celular: sempre tela cheia. No Android, "janela" desliga o modo imersivo
+    # e a barra de status e os botões de navegação voltam a aparecer.
+    var full: bool = clean["fullscreen"] or is_mobile()
+    DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if full else DisplayServer.WINDOW_MODE_WINDOWED)
+
+static func is_mobile() -> bool:
+    return OS.has_feature("mobile")
