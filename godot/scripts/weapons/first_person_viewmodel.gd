@@ -264,8 +264,13 @@ func _build_arm(side: String, shoulder: Vector3, hand: Vector3) -> void:
             _tube(arms, side + "Roll", roll - forearm_dir * 0.012, roll + forearm_dir * 0.03, 0.052, _sleeve_roll, 0.050)
             _tube(arms, side + "Forearm", roll, wrist, 0.038, _skin, 0.031)
     if _joint:
-        _ball(arms, side + "Wrist", wrist, 0.032, _joint)
-    _tube(arms, side + "GloveCuff", wrist - forearm_dir * 0.012, wrist + forearm_dir * 0.022, 0.036, _glove, 0.035)
+        _ball(arms, side + "WristJoint", wrist - forearm_dir * 0.006, 0.027, _joint)
+    if _glove == _skin:
+        # Bare hand: a slim wrist that blends forearm into the palm.
+        _tube(arms, side + "Wrist", wrist - forearm_dir * 0.01, wrist + forearm_dir * 0.03, 0.031, _skin, 0.027)
+    else:
+        # Snug glove cuff, tapering into the hand (no wide flat ring).
+        _tube(arms, side + "GloveCuff", wrist - forearm_dir * 0.008, wrist + forearm_dir * 0.03, 0.0335, _glove, 0.028)
     _build_fist(side, hand, forearm_dir, outward)
 
 func _solve_elbow(shoulder: Vector3, hand: Vector3, upper_len: float, fore_len: float, pole: Vector3) -> Vector3:
@@ -285,31 +290,40 @@ func _build_fist(side: String, center: Vector3, forearm_dir: Vector3, outward: f
     # -Z follows the forearm; +Y stays near the weapon's top.
     var up_hint := Vector3.UP if absf(forearm_dir.dot(Vector3.UP)) < 0.95 else Vector3.BACK
     fist.basis = Basis.looking_at(forearm_dir, up_hint)
-    # Back of the hand / palm block.
-    _block(fist, "Palm", Vector3(0, 0, 0), Vector3(0.072, 0.05, 0.075), _glove)
-    # Four fingers, two segments each, curled under the weapon.
+    # Back of the hand: a flattened, tapered ellipsoid instead of a box.
+    _ellipsoid(fist, "Palm", Vector3(0, 0, -0.004), Vector3(0.07, 0.044, 0.08), _glove)
+    # Knuckle ridge where the fingers start.
+    _capsule(fist, "Knuckles", Vector3(0, 0.006, -0.036), Vector3.RIGHT, 0.064, 0.014, _glove)
+    # Four rounded fingers, two segments each, curled under the weapon.
     for i in range(4):
-        var x := (-0.027 + i * 0.018)
-        var length := 0.024 if i in [1, 2] else 0.021
+        var x := (-0.0255 + i * 0.017)
+        var length := 0.026 if i in [1, 2] else 0.022
+        var radius := 0.0085 if i in [1, 2] else 0.0078
         var knuckle := Node3D.new()
         knuckle.name = "Finger%d" % i
         fist.add_child(knuckle)
-        knuckle.position = Vector3(x, 0.012, -0.040)
+        knuckle.position = Vector3(x, 0.008, -0.040)
         knuckle.rotation.x = -0.9
-        _block(knuckle, "Proximal", Vector3(0, 0, -length * 0.5), Vector3(0.016, 0.019, length), _glove_detail)
+        _capsule(knuckle, "Proximal", Vector3(0, 0, -length * 0.5), Vector3.FORWARD, length + radius * 2.0, radius, _glove_detail)
         var tip := Node3D.new()
         knuckle.add_child(tip)
         tip.position = Vector3(0, 0, -length)
         tip.rotation.x = -1.1
-        _block(tip, "Distal", Vector3(0, 0, -0.01), Vector3(0.015, 0.017, 0.022), _glove)
+        _capsule(tip, "Distal", Vector3(0, 0, -0.01), Vector3.FORWARD, 0.022 + radius * 1.8, radius * 0.93, _glove)
     # Thumb wraps over the grip on the weapon side.
     var thumb := Node3D.new()
     thumb.name = "Thumb"
     fist.add_child(thumb)
-    thumb.position = Vector3(-0.036 * outward, 0.008, -0.012)
-    thumb.rotation = Vector3(0.25, 0.65 * outward, 0.0)
-    _block(thumb, "ThumbBase", Vector3(0, 0, -0.016), Vector3(0.02, 0.022, 0.034), _glove)
-    _block(thumb, "ThumbTip", Vector3(0, 0, -0.042), Vector3(0.018, 0.019, 0.024), _glove_detail)
+    # Laid along the weapon's side, pointing forward, not sticking up.
+    thumb.position = Vector3(-0.030 * outward, 0.002, -0.014)
+    thumb.rotation = Vector3(-0.12, 0.32 * outward, 0.0)
+    _ellipsoid(thumb, "ThumbPad", Vector3(0.006 * outward, -0.004, 0.008), Vector3(0.026, 0.028, 0.038), _glove)
+    _capsule(thumb, "ThumbBase", Vector3(0, 0, -0.012), Vector3.FORWARD, 0.026 + 0.02, 0.010, _glove)
+    var thumb_tip := Node3D.new()
+    thumb.add_child(thumb_tip)
+    thumb_tip.position = Vector3(0, 0, -0.026)
+    thumb_tip.rotation.y = -0.18 * outward
+    _capsule(thumb_tip, "ThumbTip", Vector3(0, 0, -0.01), Vector3.FORWARD, 0.018 + 0.017, 0.0088, _glove_detail)
 
 func _block(parent: Node3D, node_name: String, pos: Vector3, size: Vector3, material: Material) -> void:
     var mesh := MeshInstance3D.new()
@@ -318,6 +332,39 @@ func _block(parent: Node3D, node_name: String, pos: Vector3, size: Vector3, mate
     box.size = size
     mesh.mesh = box
     mesh.position = pos
+    mesh.material_override = material
+    mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    parent.add_child(mesh)
+
+## Rounded segment centred on pos, lying along axis; length includes the caps.
+func _capsule(parent: Node3D, node_name: String, pos: Vector3, axis: Vector3, length: float, radius: float, material: Material) -> void:
+    var mesh := MeshInstance3D.new()
+    mesh.name = node_name
+    var capsule := CapsuleMesh.new()
+    capsule.radius = radius
+    capsule.height = maxf(length, radius * 2.0)
+    capsule.radial_segments = 12
+    capsule.rings = 4
+    mesh.mesh = capsule
+    mesh.position = pos
+    # CapsuleMesh runs along +Y.
+    mesh.quaternion = Quaternion(Vector3.UP, axis.normalized())
+    mesh.material_override = material
+    mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+    parent.add_child(mesh)
+
+## Sphere stretched to the given full size (width, height, depth).
+func _ellipsoid(parent: Node3D, node_name: String, pos: Vector3, size: Vector3, material: Material) -> void:
+    var mesh := MeshInstance3D.new()
+    mesh.name = node_name
+    var sphere := SphereMesh.new()
+    sphere.radius = 0.5
+    sphere.height = 1.0
+    sphere.radial_segments = 16
+    sphere.rings = 8
+    mesh.mesh = sphere
+    mesh.position = pos
+    mesh.scale = size
     mesh.material_override = material
     mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     parent.add_child(mesh)

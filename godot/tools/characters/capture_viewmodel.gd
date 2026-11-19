@@ -32,15 +32,21 @@ func _run() -> void:
 	camera.fov = 72
 	camera.current = true
 	world.add_child(camera)
-	for entry in Registry.all_characters():
+	# null = default look (tactical sleeves and gloves) for characters without fp_* fields.
+	var entries: Array = [null]
+	entries.append_array(Registry.all_characters())
+	for entry in entries:
 		for weapon in ["pistol", "rifle"]:
 			var viewmodel := FirstPersonViewmodel.new()
 			camera.add_child(viewmodel)
 			viewmodel.apply_character(entry)
 			viewmodel.build(weapon)
+			# Settle into the in-game rest pose.
+			for i in 40:
+				viewmodel.animate(1.0 / 60.0, 0.0, 0.0, false)
+				await physics_frame
 			await process_frame
-			await process_frame
-			var path := "%s_%s_%s.png" % [out, entry.id, weapon]
+			var path := "%s_%s_%s.png" % [out, entry.id if entry else "padrao", weapon]
 			root.get_texture().get_image().save_png(path)
 			print("salvo: ", path)
 			camera.remove_child(viewmodel)
