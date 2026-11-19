@@ -1,5 +1,6 @@
 extends Node
-## Pés nos degraus das escadas do bairro de parkour (treino offline): o jogador
+## Pés nos degraus da escada do campo de treino (treino offline, a mesma técnica
+## das escadas do parkour: degraus na camada dos pés sobre rampa invisível): o jogador
 ## sobe andando e, a cada quadro, mede a altura de cada tornozelo acima do
 ## degrau embaixo dele. Com o IK dos pés o pé de apoio fica na altura de quem
 ## pisa no chão plano e nenhum pé afunda no degrau; sem o IK (controle) os pés
@@ -31,7 +32,7 @@ func _run() -> void:
 	var player: CharacterBody3D = main.get("player")
 	var avatar: Node3D = player.get("humanoid_avatar")
 	var stairs := main.find_children("StairSteps", "", true, false)
-	check(not stairs.is_empty(), "escadas do parkour têm degraus para os pés (%d escadas)" % stairs.size())
+	check(not stairs.is_empty(), "as escadas têm degraus para os pés (%d escadas)" % stairs.size())
 	if stairs.is_empty():
 		get_tree().quit(1)
 		return

@@ -1,5 +1,6 @@
 extends Node3D
-## Treino offline: arena pequena (6,6 x 6,6 m, cercada) no parque com um zumbi preso
+## Treino offline: arena pequena (6,6 x 6,6 m, cercada) no canto sudeste do campo de
+## treino (training_ground.gd) com um zumbi preso
 ## dentro e um suporte com o bastão longo na entrada.
 ## E perto do suporte pega/larga o bastão. Com o bastão na mão a arma de fogo
 ## fica guardada e o clique esquerdo (ou Q) faz o golpe lateral (dano 34,
@@ -14,14 +15,14 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const Melee = preload("res://scripts/melee.gd")
 const StaffModel = preload("res://scripts/weapons/staff_model.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
-const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
-# Parque (world_polish._parks): entre a parede de cobertura alta (x 18,3–21,8 em
-# z 28,5) e o banco de x 29–31 em z 32. tests/training_arena.gd confere o espaço.
-const CENTER := Vector3(25.5, 0, 29.5)
+const TrainingGround = preload("res://scripts/training_ground.gd")
+# Canto sudeste do campo de treino, ao sul da área de cobertura.
+# tests/training_arena.gd confere que o espaço está livre.
+const CENTER := Vector3(30, 0, 32)
 const HALF := 3.3 # arena de 6,6 x 6,6 m
-const DOOR := 1.1 # meia largura da entrada (lado norte, para o caminho do parque)
+const DOOR := 1.1 # meia largura da entrada (lado norte)
 const WALL_H := 1.1
-const RACK := Vector3(27.6, 0, 27.4) # suporte do bastão, logo depois da entrada
+const RACK := CENTER + Vector3(2.1, 0, -2.1) # suporte do bastão, logo depois da entrada
 const PICK_REACH := 2.0
 const STAFF := "long_bat"
 const FIST_DAMAGE := 12.0 # src/godot-survival.js FIST_DAMAGE
@@ -64,14 +65,14 @@ func _ready() -> void:
 		player.set("melee_handler", _melee)
 		player.set("interact_handler", _interact)
 
-func _block(center: Vector3, size: Vector3, color: String, kind: String = "concrete") -> void:
+func _block(center: Vector3, size: Vector3, texture: String) -> void:
 	var body := StaticBody3D.new()
 	body.position = center
 	var mesh := MeshInstance3D.new()
 	var box := BoxMesh.new()
 	box.size = size
 	mesh.mesh = box
-	mesh.material_override = SurfaceMaterials.make(kind, Color(color))
+	mesh.material_override = TrainingGround.material(texture)
 	body.add_child(mesh)
 	var shape := CollisionShape3D.new()
 	var bs := BoxShape3D.new()
@@ -84,26 +85,26 @@ func _block(center: Vector3, size: Vector3, color: String, kind: String = "concr
 func _build_walls() -> void:
 	var t := 0.25
 	var y := WALL_H * 0.5
-	var color := "#8b8f88"
-	_block(CENTER + Vector3(0, y, HALF), Vector3(HALF * 2 + t, WALL_H, t), color)
-	_block(CENTER + Vector3(-HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), color)
-	_block(CENTER + Vector3(HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), color)
+	var wall := "red_grid"
+	_block(CENTER + Vector3(0, y, HALF), Vector3(HALF * 2 + t, WALL_H, t), wall)
+	_block(CENTER + Vector3(-HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), wall)
+	_block(CENTER + Vector3(HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), wall)
 	var side := HALF - DOOR
 	for sign in [-1.0, 1.0]:
-		_block(CENTER + Vector3(sign * (DOOR + side * 0.5), y, -HALF), Vector3(side + t * 0.5, WALL_H, t), color)
+		_block(CENTER + Vector3(sign * (DOOR + side * 0.5), y, -HALF), Vector3(side + t * 0.5, WALL_H, t), wall)
 	# A entrada fica aberta para o jogador; o zumbi é mantido dentro em _process.
-	# Piso de areia (só visual) para marcar a arena.
+	# Piso marcado (só visual) para destacar a arena.
 	var floor_mesh := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(HALF * 2, HALF * 2)
 	floor_mesh.mesh = plane
-	floor_mesh.position = CENTER + Vector3(0, 0.045, 0)
-	floor_mesh.material_override = SurfaceMaterials.make("concrete", Color("#c2ab7c"))
+	floor_mesh.position = CENTER + Vector3(0, 0.02, 0)
+	floor_mesh.material_override = TrainingGround.material("light_marks")
 	add_child(floor_mesh)
 
-## Suporte de madeira com o bastão em pé.
+## Suporte com o bastão em pé.
 func _build_rack() -> void:
-	_block(RACK + Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.3), "#6e5236", "bark")
+	_block(RACK + Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.3), "orange_grid")
 	# Em pé no suporte, ponta com pregos para cima.
 	_rack_staff = StaffModel.build()
 	_rack_staff.position = RACK + Vector3(0, 0.62, 0)

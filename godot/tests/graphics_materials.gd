@@ -27,6 +27,7 @@ func _texture_check(material: StandardMaterial3D, title: String) -> void:
     _check(high - low > 0.06, title + " texture must add visible variation")
 func _run() -> void:
     var begin := Time.get_ticks_msec()
+    root.get_node("Net").set("in_match", true) # a cidade (WorldPolish) é o mapa online
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene

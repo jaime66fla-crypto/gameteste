@@ -4,7 +4,6 @@ extends Control
 ## aliados (partidas em equipe). Inimigos e zumbis não aparecem.
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
-const ParkourDistrict = preload("res://scripts/parkour_district.gd")
 const RADIUS := 92.0
 
 var player: Node3D
@@ -27,14 +26,6 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
 	for b in MatchLayout.load_layout().get("buildings", []):
 		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
-	if not survival and not Net.in_match:
-		# Treino offline: bairro de parkour em volta da cidade (parkour_district.gd).
-		_half = 100.0
-		for road in ParkourDistrict.roads():
-			_roads.append(road)
-		for lot in ParkourDistrict.lots():
-			if String(lot["kind"]) != "pista":
-				_buildings.append([lot["center"], lot["size"]])
 	if survival:
 		meters_per_px = 0.95
 		var data := SurvivalData.world()
@@ -51,6 +42,16 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		for r in data.get("resources", []):
 			if str(r["kind"]) == "tree":
 				_trees.append(Vector2(float(r["p"][0]), float(r["p"][2])))
+
+## Treino offline (training_ground.gd): sem ruas nem prédios da cidade, só os
+## blocos sólidos do campo de prova. Chamar depois de setup, antes de entrar na árvore.
+func use_training_map(blocks: Array, half: float) -> void:
+	_roads.clear()
+	_buildings = blocks.duplicate()
+	_half = half
+	_map_color = Color(0.36, 0.37, 0.4, 1.0) # chão de grade cinza, não grama
+
+var _map_color := Color(0.33, 0.45, 0.27, 1.0)
 
 func _ready() -> void:
 	name = "Minimap"
@@ -158,7 +159,7 @@ func _bake() -> void:
 
 func _paint_map(ci: Control) -> void:
 	ci.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
-	ci.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), Color(0.33, 0.45, 0.27, 1.0))
+	ci.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), _map_color)
 	for g in _grass:
 		ci.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
 	for t in _trees:

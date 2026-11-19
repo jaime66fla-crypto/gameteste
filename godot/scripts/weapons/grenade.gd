@@ -28,6 +28,9 @@ func _ready() -> void:
 	bounce.bounce = 0.35
 	bounce.friction = 0.9
 	physics_material_override = bounce
+	# Contatos para a resistência ao rolar (_integrate_forces).
+	contact_monitor = true
+	max_contacts_reported = 2
 	var shape := CollisionShape3D.new()
 	var sphere := SphereShape3D.new()
 	sphere.radius = 0.07
@@ -105,6 +108,19 @@ static func predict_path(space: PhysicsDirectSpaceState3D, origin: Vector3, star
 				v = Vector3.ZERO # settled
 		points.append(pos)
 	return {"points": points, "first_hit": first_hit, "has_hit": has_hit, "end": pos, "end_normal": end_normal}
+
+## Resistência ao rolar, igual à de predict_path (×0,97 por quadro encostada,
+## parada abaixo de 0,4 m/s): sem isso a esfera rola metros num chão liso
+## (o campo de treino) e explode longe do círculo previsto.
+func _integrate_forces(state: PhysicsDirectBodyState3D) -> void:
+	if state.get_contact_count() == 0:
+		return
+	var keep := pow(0.97, state.step * 60.0)
+	state.linear_velocity *= keep
+	state.angular_velocity *= keep
+	if state.linear_velocity.length() < 0.4:
+		state.linear_velocity = Vector3.ZERO
+		state.angular_velocity = Vector3.ZERO
 
 func _physics_process(delta: float) -> void:
 	_time += delta

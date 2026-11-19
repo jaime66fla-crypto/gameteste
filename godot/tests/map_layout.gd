@@ -5,11 +5,15 @@ func _initialize() -> void:
     call_deferred("_run")
 
 func _run() -> void:
+    # A cidade (world_polish.gd) é o mapa das partidas online; o treino offline
+    # tem o próprio campo (tests/training_ground.gd).
+    root.get_node("Net").set("in_match", true)
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene
     var player: CharacterBody3D = scene.get_node("Jaime")
     player.set_physics_process(false)
+    player.position = Vector3(12, 0.1, -10) # praça da cidade (a partida pode mover o jogador)
     await physics_frame
     await process_frame
     var shape := CapsuleShape3D.new()

@@ -1,11 +1,13 @@
 extends SceneTree
 ## Só o que o jogador pisa/esbarra (os degraus da camada dos pés não contam).
 const WALK_MASK := 1
-## Bairro de parkour: confere em cada lote que as rotas sobem em degraus que
-## o pulo alcança (<= 1,5 m; o pulo sobe ~1,64 m) e que o jogador cabe em pé
-## em cada degrau, pela colisão real.
+## Lotes de parkour (os da Sobrevivência, montados por tests/parkour_fixture.gd):
+## confere em cada lote que as rotas sobem em degraus que o pulo alcança
+## (<= 1,5 m; o pulo sobe ~1,64 m) e que o jogador cabe em pé em cada degrau,
+## pela colisão real.
 ## godot --headless --path godot --script res://tests/parkour_district.gd
 const District = preload("res://scripts/parkour_district.gd")
+const Fixture = preload("res://tests/parkour_fixture.gd")
 const MAX_STEP := 1.5
 var failures: Array[String] = []
 
@@ -32,6 +34,7 @@ func _run() -> void:
 	var player: CharacterBody3D = scene.get_node("Jaime")
 	player.set_physics_process(false)
 	player.global_position = Vector3(0, -40, 0)
+	Fixture.build(scene)
 	await physics_frame
 	await process_frame
 	var space := player.get_world_3d().direct_space_state
@@ -41,11 +44,10 @@ func _run() -> void:
 	var shape_query := PhysicsShapeQueryParameters3D.new()
 	shape_query.shape = capsule
 	shape_query.collision_mask = WALK_MASK
-	var lots := District.lots()
-	if lots.size() < 40:
-		failures.append("Bairro precisa de 40+ lotes, tem %d" % lots.size())
-	if get_nodes_in_group("parkour_house").size() < 25:
-		failures.append("Poucas casas no bairro")
+	var lots := Fixture.lots()
+	var houses := lots.filter(func(lot): return lot["kind"] != "pista").size()
+	if get_nodes_in_group("parkour_house").size() != houses:
+		failures.append("Casas faltando: %d de %d" % [get_nodes_in_group("parkour_house").size(), houses])
 	for lot in lots:
 		var basis := Basis(Vector3.UP, float(lot["yaw"]))
 		var origin := Vector3(lot["center"].x, 0, lot["center"].y)
@@ -133,10 +135,10 @@ func _run() -> void:
 		if player.global_position.y < float(w[3]) - 0.3:
 			failures.append("%s %d: andando, a escada para em y=%.2f (alto %.1f) em %s" % [lot["kind"], lot["index"], player.global_position.y, w[3], player.global_position])
 	player.global_position = Vector3(0, -40, 0)
-	# Bases da faixa da cidade (as mesmas do mata-mata e da sala personalizada).
-	if get_nodes_in_group("parkour_base").size() != District.bases().size():
+	# Bases (as mesmas da faixa da cidade no mata-mata e na sala personalizada).
+	if get_nodes_in_group("parkour_base").size() != Fixture.bases().size():
 		failures.append("Bases de parkour faltando")
-	for spot in District.bases():
+	for spot in Fixture.bases():
 		var basis := Basis(Vector3.UP, float(spot[1]))
 		var origin := Vector3(spot[0].x, 0, spot[0].y)
 		var last := -1.0

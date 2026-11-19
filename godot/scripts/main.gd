@@ -9,6 +9,8 @@ const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
 const TrainingArenaScript = preload("res://scripts/training_arena.gd")
+const TrainingGroundScript = preload("res://scripts/training_ground.gd")
+var training_ground: Node3D # treino offline only
 const SurvivalWorldScript = preload("res://scripts/survival/survival_world.gd")
 const SurvivalControllerScript = preload("res://scripts/survival/survival_controller.gd")
 var player: CharacterBody3D
@@ -46,12 +48,14 @@ func _ready() -> void:
     GameSettings.apply(settings,get_viewport())
     var survival := Net.in_match and bool(Net.start_info.get("survival", false))
     _build_world(survival)
-    var world_polish := Node3D.new()
-    world_polish.name = "WorldPolish"
-    world_polish.set_script(WorldPolishScript)
-    world_polish.set("open_world", survival)
-    world_polish.set("parkour_district", not Net.in_match) # bairro de parkour só no treino offline
-    add_child(world_polish)
+    if Net.in_match:
+        # Mata-mata, equipes, sala personalizada e Sobrevivência: a cidade
+        # (data/match_layout.json, validada pelo servidor).
+        var world_polish := Node3D.new()
+        world_polish.name = "WorldPolish"
+        world_polish.set_script(WorldPolishScript)
+        world_polish.set("open_world", survival)
+        add_child(world_polish)
     var survival_world: Node3D = null
     if survival:
         # Sobrevivência: mundo aberto em volta da cidade do Campo de Fogo.
@@ -64,9 +68,14 @@ func _ready() -> void:
     player = CharacterBody3D.new()
     player.name = "Jaime"
     player.set_script(PlayerScript)
-    player.position = Vector3(12, 0.1, -10) # Clear pedestrian plaza beside the avenues
+    player.position = TrainingGroundScript.SPAWN # praça da cidade online / nascimento do treino
     add_child(player)
     player.mouse_sensitivity *= float(settings["sensitivity"])
+    if not Net.in_match:
+        # Treino offline: campo de prova com as texturas Kenney (training_ground.gd).
+        training_ground = TrainingGroundScript.new()
+        training_ground.set("sound_fx", player.get("sound_fx"))
+        add_child(training_ground)
     _build_ui()
     if survival:
         match_controller = SurvivalControllerScript.new()
@@ -143,6 +152,8 @@ func _build_hud(survival: bool) -> void:
     add_child(layer)
     minimap = MinimapScript.new()
     minimap.call("setup", player, survival)
+    if training_ground != null:
+        minimap.call("use_training_map", training_ground.get("blocks"), TrainingGroundScript.HALF)
     if match_controller != null and match_controller.has_method("ally_nodes"):
         minimap.set("allies", Callable(match_controller, "ally_nodes"))
     layer.add_child(minimap)
@@ -161,10 +172,10 @@ func _build_hud(survival: bool) -> void:
 
 var _hint_time := 0.0
 
-## Offline practice: dummies in front of the spawn (two close, one at 20 m)
-## that show the damage of every weapon and body zone.
+## Offline practice: dummies in the shooting range in front of the spawn (two
+## close, one at 20 m) that show the damage of every weapon and body zone.
 func _spawn_training_dummies() -> void:
-    for spot in [[Vector3(8, 0, -16), "BONECO 1"], [Vector3(16, 0, -16), "BONECO 2"], [Vector3(12, 0, -30), "BONECO DISTANTE (20 m)"]]:
+    for spot in TrainingGroundScript.DUMMIES:
         var dummy := Node3D.new()
         dummy.name = "TrainingDummy"
         dummy.set_script(TrainingDummyScript)
@@ -172,7 +183,7 @@ func _spawn_training_dummies() -> void:
         dummy.set("sound_fx", player.get("sound_fx"))
         dummy.position = spot[0]
         add_child(dummy)
-    # Arena pequena no parque: zumbi preso dentro e o bastão longo no suporte.
+    # Arena pequena no canto sudeste: zumbi preso dentro e o bastão longo no suporte.
     var arena := TrainingArenaScript.new()
     arena.call("setup", player)
     add_child(arena)
@@ -198,10 +209,10 @@ func _build_world(survival: bool = false) -> void:
     sun.light_energy = 1.3
     sun.shadow_enabled = true
     add_child(sun)
-    # Treino offline: cidade + bairro de parkour (200 m). Mata-mata, sala
-    # personalizada e Sobrevivência: cidade de 120 m.
-    var ground := 120.0 if survival or Net.in_match else WorldPolishScript.MAP_HALF * 2.0
-    _block(Vector3(0,-0.5,0), Vector3(ground,1,ground), Color(0.28,0.39,0.26), true)
+    # Partidas online e Sobrevivência: chão de grama da cidade de 120 m. O
+    # treino offline tem o próprio piso (training_ground.gd).
+    if Net.in_match:
+        _block(Vector3(0,-0.5,0), Vector3(120,1,120), Color(0.28,0.39,0.26), true)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()

@@ -1,6 +1,6 @@
 extends SceneTree
 ## Offline training dummies, grenades, lean (Q/E while aiming) and the
-## watchtower ramp, in the real map with real physics.
+## long-range tower ramp, in the real training map with real physics.
 var failures: Array[String] = []
 
 func _initialize() -> void:
@@ -57,21 +57,24 @@ func _run() -> void:
 	for i in 30:
 		await physics_frame
 	_check(absf(float(player.get("lean"))) < 0.05, "Lean returns to centre")
-	# Watchtower: walk up the ramp from the west to the 6 m platform.
-	player.global_position = Vector3(24.0, 0.2, 18.0)
+	# Torre do tiro longo (training_ground.gd): sobe a rampa do leste até a plataforma de 6 m.
+	var ground = load("res://scripts/training_ground.gd")
+	var tower: Vector2 = ground.TOWER
+	var ramp_foot: float = tower.x + float(ground.TOWER_SIZE) * 0.5 + float(ground.TOWER_RAMP) + 1.5
+	player.global_position = Vector3(ramp_foot, 0.2, tower.y)
 	player.velocity = Vector3.ZERO
-	player.set("yaw", -PI * 0.5) # facing +X
+	player.set("yaw", PI * 0.5) # facing -X
 	player.set("pitch", 0.0)
 	Input.action_press("move_forward")
 	var top_y := 0.0
 	for i in 60 * 7:
 		await physics_frame
 		top_y = maxf(top_y, player.global_position.y)
-		if player.global_position.x > 39.0:
+		if player.global_position.x < tower.x + 1.0:
 			break
 	Input.action_release("move_forward")
 	var p := player.global_position
-	_check(top_y > 5.7 and p.x > 37.5, "Player walks up the ramp onto the tower (y %.2f, x %.2f)" % [top_y, p.x])
+	_check(top_y > 5.7 and p.x < tower.x + 2.5, "Player walks up the ramp onto the tower (y %.2f, x %.2f)" % [top_y, p.x])
 	# Reload and medkit take 3 s with the clock under the crosshair.
 	player.global_position = Vector3(12, 0.2, -10)
 	player.call("_equip_weapon", "rifle")

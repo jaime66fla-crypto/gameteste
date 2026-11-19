@@ -13,10 +13,9 @@ func _check(condition: bool, message: String) -> void:
 		failures.append(message)
 
 func _run() -> void:
-	# "-- --online": monta o mapa do mata-mata / sala personalizada (120 m, só as bases).
-	var online := "--online" in OS.get_cmdline_user_args()
-	if online:
-		root.get_node("Net").set("in_match", true)
+	# A cidade só existe nas partidas online (o treino offline tem o próprio
+	# campo, training_ground.gd): monta o mapa do mata-mata / sala personalizada.
+	root.get_node("Net").set("in_match", true)
 	var layout: Dictionary = load("res://scripts/net/match_layout.gd").load_layout()
 	_check(not layout.is_empty(), "match_layout.json must load")
 	var scene = load("res://scenes/main.tscn").instantiate()
@@ -67,10 +66,8 @@ func _run() -> void:
 		for building in buildings:
 			_check(not _inside(building, Vector3(p.x, 0, p.z)), "Outdoor loot inside a building at %s" % p)
 	# Edge walls: a player running outward is stopped before the ground ends.
-	# Online o mapa tem map_half_size (60); o treino offline carregado aqui
-	# tem o bairro de parkour e muros mais longe (world_polish.map_half).
 	var half: float = scene.get_node("WorldPolish").get("map_half")
-	_check(not online or is_equal_approx(half, float(layout["map_half_size"])), "Online map must match map_half_size")
+	_check(is_equal_approx(half, float(layout["map_half_size"])), "Online map must match map_half_size")
 	query.shape = capsule
 	for direction in [Vector3.RIGHT, Vector3.LEFT, Vector3.FORWARD, Vector3.BACK]:
 		query.transform = Transform3D(Basis.IDENTITY, direction * (half - 6.0) + Vector3(0, 0.95, 0))

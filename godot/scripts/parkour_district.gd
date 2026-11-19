@@ -1,8 +1,8 @@
 extends Node3D
-## Bairro de parkour em volta da cidade (mapa de 200 m, só treino e mata-mata).
-## Um anel de rua a 66 m liga as avenidas da cidade a quatro faixas de lotes:
-## sobrados (dois andares, janelas abertas, varanda e laje), casas térreas e
-## pistas de parkour, com caçambas, lixeiras, caixotes, paletes e cercas.
+## Parkour da cidade: bases compactas na faixa entre o anel e o muro (partidas
+## online) e, na Sobrevivência, os lotes de data/survival_world.json: sobrados
+## (dois andares, janelas abertas, varanda e laje), casas térreas e pistas de
+## parkour, com caçambas, lixeiras, caixotes, paletes e cercas.
 ##
 ## O pulo sobe ~1,6 m (jump_velocity 8,5 / gravidade 22), então toda rota
 ## sobe em degraus de no máximo 1,45 m:
@@ -15,54 +15,15 @@ extends Node3D
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 
-const RING := 66.0 # eixo do anel de rua
-const ROAD_W := 6.0
-const BAND := 80.0 # centro das casas
 const LOT := 13.0 # passo entre lotes
 const WALL := 0.25
 const FLOOR_H := 3.4 # piso do 1º andar
 const ROOF_Y := 6.4 # base da laje do sobrado
-const ALONG := [-91.0, -78.0, -65.0, -52.0, -39.0, -26.0, -13.0, 0.0, 13.0, 26.0, 39.0, 52.0, 65.0, 78.0, 91.0]
-const SIDE_ALONG := [-52.0, -39.0, -26.0, -13.0, 0.0, 13.0, 26.0, 39.0, 52.0]
 const HOUSE_COLORS := ["#c7b596", "#acb6af", "#cabd9f", "#a2acb4", "#c9a98e", "#b7b39a", "#9fb0a6"]
 
 var _body: StaticBody3D
 var _tools: Dictionary = {}
 var _tool_mats: Dictionary = {}
-
-## Lotes do bairro: centro no chão, rotação (frente local +Z vira para a
-## cidade), tipo e área ocupada (alinhada aos eixos), para o minimapa também.
-static func lots() -> Array:
-	var result: Array = []
-	var index := 0
-	for band in [[Vector2(0, -BAND), 0.0, true], [Vector2(0, BAND), PI, true], [Vector2(-BAND, 0), PI * 0.5, false], [Vector2(BAND, 0), -PI * 0.5, false]]:
-		var list: Array = ALONG if band[2] else SIDE_ALONG
-		for along in list:
-			var center: Vector2 = band[0] + (Vector2(along, 0) if band[2] else Vector2(0, along))
-			var kind: String = ["sobrado", "sobrado", "pista", "sobrado", "terrea"][index % 5]
-			var size := Vector2(10, 8) if kind == "sobrado" else (Vector2(9, 8) if kind == "terrea" else Vector2(12, 12))
-			if not band[2]:
-				size = Vector2(size.y, size.x)
-			result.append({"center": center, "yaw": band[1], "kind": kind, "index": index, "size": size})
-			index += 1
-	return result
-
-## Ruas do bairro para o minimapa: [de, até, largura].
-static func roads() -> Array:
-	var r := RING
-	var list: Array = [
-		[Vector2(-r - 3, -r), Vector2(r + 3, -r), ROAD_W], [Vector2(-r - 3, r), Vector2(r + 3, r), ROAD_W],
-		[Vector2(-r, -r), Vector2(-r, r), ROAD_W], [Vector2(r, -r), Vector2(r, r), ROAD_W],
-	]
-	for lane in [-48.0, 0.0, 48.0]:
-		for side in [-1.0, 1.0]:
-			list.append([Vector2(lane, side * 52.0), Vector2(lane, side * (r - 3.0)), ROAD_W])
-			list.append([Vector2(side * 52.0, lane), Vector2(side * (r - 3.0), lane), ROAD_W])
-	return list
-
-## false: só as bases de parkour na faixa da cidade (mata-mata e sala
-## personalizada, mapa de 120 m); true: o bairro inteiro (treino offline).
-var full := true
 
 ## Bases compactas na faixa de grama entre a rua do anel (±52) e o muro
 ## (±59,2), entre as árvores da borda: [centro, rotação (frente para a cidade)].
@@ -78,7 +39,7 @@ static func bases() -> Array:
 const BASE_AT := 56.6
 
 ## Sobrevivência: lotes e bases vindos de data/survival_world.json ("parkour",
-## "parkour_bases"); quando preenchido, monta só isso (sem o anel do treino).
+## "parkour_bases"); quando preenchido, monta só isso (sem as bases da cidade).
 var survival_lots: Array = []
 var survival_bases: Array = []
 
@@ -95,12 +56,6 @@ func _ready() -> void:
 	for spot in bases():
 		_base(spot[0], spot[1], n)
 		n += 1
-	if not full:
-		return
-	_streets()
-	for lot in lots():
-		_build_lot(lot)
-	_border_trees()
 
 func _build_lot(lot: Dictionary) -> void:
 	match String(lot["kind"]):
@@ -483,35 +438,3 @@ func _scaffold(top: Vector3) -> void:
 	for sx in [-0.9, 0.9]:
 		for sz in [-0.9, 0.9]:
 			_add(Vector3(top.x + sx, (top.y - 0.16) * 0.5, top.z + sz), Vector3(0.1, top.y - 0.16, 0.1), "#58646a", "metal")
-
-# ------------------------------------------------------------ ruas/árvores ---
-
-func _streets() -> void:
-	_begin(Vector2.ZERO, 0.0, "RuasBairro")
-	for road in roads():
-		var a: Vector2 = road[0]
-		var b: Vector2 = road[1]
-		var width: float = road[2]
-		var mid := (a + b) * 0.5
-		var size := Vector2(absf(b.x - a.x) + (0.0 if absf(b.x - a.x) > 0.1 else width), absf(b.y - a.y) + (0.0 if absf(b.y - a.y) > 0.1 else width))
-		_add(Vector3(mid.x, 0.015, mid.y), Vector3(size.x, 0.02, size.y), "#414950", "asphalt")
-	# Faixa central tracejada no anel.
-	for along in range(-60, 61, 6):
-		for side in [-RING, RING]:
-			_add(Vector3(along, 0.028, side), Vector3(2.2, 0.01, 0.12), "#dbcb96", "paint", false)
-			_add(Vector3(side, 0.028, along), Vector3(0.12, 0.01, 2.2), "#dbcb96", "paint", false)
-	_end()
-
-func _border_trees() -> void:
-	# Árvores entre os fundos dos lotes e o muro (não bloqueiam o beco).
-	_begin(Vector2.ZERO, 0.0, "ArvoresBairro")
-	for along in range(-84, 85, 21):
-		for p in [Vector3(along + 6.5, 0, -97.5), Vector3(along + 6.5, 0, 97.5), Vector3(-97.5, 0, along * 0.6), Vector3(97.5, 0, along * 0.6)]:
-			_add_cyl(p + Vector3(0, 1.7, 0), 0.18, 3.4, "#68503c", "bark")
-			var crown := SphereMesh.new()
-			crown.radius = 1.4
-			crown.height = 2.6
-			crown.radial_segments = 10
-			crown.rings = 5
-			_tool("#487347", "leaf").append_from(crown, 0, Transform3D(Basis.IDENTITY, p + Vector3(0, 3.9, 0)))
-	_end()

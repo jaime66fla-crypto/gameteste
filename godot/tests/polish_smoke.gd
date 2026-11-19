@@ -23,7 +23,9 @@ func _run_smoke() -> void:
     await process_frame
     await physics_frame
     var player: Node = scene.get_node_or_null("Jaime")
-    var world: Node = scene.get_node_or_null("WorldPolish")
+    # Treino offline: campo de prova (training_ground.gd); online seria a cidade.
+    var world: Node = scene.get_node_or_null("TrainingGround")
+    _check(scene.get_node_or_null("WorldPolish") == null, "Offline training does not build the online city")
     var environment_sound: Node = scene.get_node_or_null("EnvironmentAudio")
     _check(player != null, "Player spawns")
     _check(world != null, "Visual environment exists")

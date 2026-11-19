@@ -1,9 +1,11 @@
 extends Node
-## Escada interna dos sobrados do bairro de parkour: o jogador entra pela
-## frente, sobe andando (W) e chega ao piso do 1º andar (3,4 m), saindo para o
-## lado no alto da escada. Mede onde trava, se travar.
+## Escada interna dos sobrados de parkour (os da Sobrevivência, montados por
+## tests/parkour_fixture.gd): o jogador entra pela frente, sobe andando (W) e
+## chega ao piso do 1º andar (3,4 m), saindo para o lado no alto da escada.
+## Mede onde trava, se travar.
 ## godot --headless --path godot res://tests/house_stairs.tscn
 const Parkour = preload("res://scripts/parkour_district.gd")
+const Fixture = preload("res://tests/parkour_fixture.gd")
 
 var failures := 0
 
@@ -25,10 +27,11 @@ func _run() -> void:
 	Net.in_match = false
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main)
+	Fixture.build(main)
 	await _frames(10)
 	var player: CharacterBody3D = main.get("player")
 	var houses := get_tree().get_nodes_in_group("parkour_house").filter(func(n): return str(n.name).begins_with("Sobrado"))
-	check(not houses.is_empty(), "há sobrados no treino (%d)" % houses.size())
+	check(not houses.is_empty(), "há sobrados nos lotes de teste (%d)" % houses.size())
 	if houses.is_empty():
 		get_tree().quit(1)
 		return
