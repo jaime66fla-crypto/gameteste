@@ -520,6 +520,10 @@ func _on_remote_nade(data: Dictionary) -> void:
 	grenade.global_position = o
 	grenade.linear_velocity = v
 	remote_nades[str(data.get("by", "")) + ":" + str(data.get("id", ""))] = grenade
+	# The thrower's body does the overhand throw on everyone's screen.
+	var thrower = actors.get(str(data.get("by", "")))
+	if thrower != null and thrower.get("visual") != null and thrower.visual.has_method("play_action"):
+		thrower.visual.call("play_action", "throw")
 
 func _on_boom(data: Dictionary) -> void:
 	var by := str(data.get("by", ""))
@@ -654,6 +658,10 @@ func _on_local_damaged(amount: float, attacker_id: String) -> void:
 	damage_flash.color.a = clampf(0.18 + amount / 60.0, 0.2, 0.55)
 	player.call("add_hit_shake", clampf(amount / 25.0, 0.25, 1.0))
 	player.get("sound_fx").call("hurt", amount)
+	# Heavy blows make the body recoil (upper body only; legs keep their stride).
+	var body = player.get("humanoid_avatar")
+	if amount >= 20.0 and body != null and body.has_method("play_action"):
+		body.call("play_action", "hit")
 	var attacker = actors.get(attacker_id)
 	if attacker != null:
 		var camera := get_viewport().get_camera_3d()

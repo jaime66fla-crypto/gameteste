@@ -1,0 +1,11 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "manequim"
+display_name = "Manequim"
+description = "Boneco de testes amarelo com juntas roxas, da Universal Animation Library 2."
+visual_scene = "res://scenes/characters/manequim.tscn"
+required_resources = PackedStringArray("res://assets/personagens/manequim/manequim_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")

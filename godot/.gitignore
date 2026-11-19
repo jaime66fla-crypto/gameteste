@@ -30,3 +30,11 @@ tools/mcp-godot/.tmp-smoke-project/generation_jobs/
 /assets/personagens/remy/remy.fbx.import
 /assets/personagens/remy/remy_*.png
 /assets/personagens/remy/remy_*.png.import
+
+# UAL2 (Quaternius, CC0): biblioteca original. O jogo usa só ual2/clips/*.tres e
+# manequim/manequim_modelo.scn, gerados por tools/characters/build_ual2_clips.gd
+# e build_mannequin_model.gd a partir do GLB.
+/assets/personagens/ual2/UAL2_Standard.glb
+/assets/personagens/ual2/UAL2_Standard.glb.import
+/assets/personagens/ual2/*.png
+/assets/personagens/ual2/*.png.import

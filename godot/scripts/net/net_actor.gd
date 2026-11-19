@@ -283,6 +283,9 @@ func receive_hit(zone: String, _amount: float, point: Vector3, normal: Vector3, 
 	_flinch = 1.0 if zone == "head" else 0.6
 	var away := -normal
 	_flinch_side = signf(global_basis.x.dot(away)) * 0.5
+	# Heavy hits also play the knockback recoil on the upper body.
+	if (_amount >= 20.0 or weapon in ["sniper", "shotgun"]) and visual != null and visual.has_method("play_action"):
+		visual.call("play_action", "hit")
 	damaged.emit(actor_id, zone, point, normal, weapon)
 
 ## Legacy entry point (no zone information).

@@ -594,8 +594,10 @@ func _on_use(item: String) -> void:
 		var seconds := float(entry["use_time"])
 		if player.call("start_channel", SurvivalData.item_name(item).to_upper(), seconds, func(): Net.send({"t": "use", "item": item})):
 			Net.send({"t": "use_start", "item": item})
+			_timed_action("consume", seconds)
 		return
 	Net.send({"t": "use", "item": item})
+	_timed_action("consume", 1.1)
 	player.get("sound_fx").call("reload")
 
 func _on_craft(recipe: String) -> void:
@@ -680,7 +682,8 @@ func _interact() -> bool:
 	elif _target["type"] == "repair":
 		driving_ctl.call("request_repair", id)
 	elif _target["type"] == "container":
-		player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id}))
+		if player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id})):
+			_timed_action("open", SEARCH_TIME)
 	else:
 		var seconds := float(_target["time"])
 		var kind := str(_target["kind"])
@@ -702,7 +705,20 @@ func _interact() -> bool:
 				create_tween().tween_property(player, "global_position", spot, 0.25)
 			if kind != "bush":
 				_set_action("chop" if kind == "tree" else "pry", str(_target["tool"]))
+			else:
+				_timed_action("harvest", seconds)
 	return true
+
+## Ação curta vista por todos (revistar, colher, consumir): termina sozinha,
+## mesmo se o canal for cancelado no meio.
+func _timed_action(act: String, seconds: float) -> void:
+	_set_action(act, "")
+	var avatar = player.get("humanoid_avatar")
+	if act == "consume" and avatar != null and avatar.has_method("play_action_for"):
+		avatar.call("play_action_for", act, seconds)
+	get_tree().create_timer(seconds + 0.2).timeout.connect(func():
+		if action == act:
+			_set_action("", ""))
 
 ## Ação de trabalho do personagem (vista por todos): "chop"/"pry" com a ferramenta, "" para.
 var action := ""

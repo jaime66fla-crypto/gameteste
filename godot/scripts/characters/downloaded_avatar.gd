@@ -113,6 +113,7 @@ func _ready() -> void:
 	if animation_player.has_animation_library(""):
 		animation_player.remove_animation_library("")
 	animation_player.add_animation_library("", library)
+	_load_ual_clips(skeleton_path, hip_scale, retarget, hip_anchor)
 	animation_player.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	weapon_mount = Node3D.new()
 	weapon_mount.name = "WeaponMount"
@@ -188,6 +189,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	var moving := move_amount > 0.08 and not airborne
 	locomotion_active = moving
 	_move_amount = move_amount if moving else 0.0
+	_update_idle_fidget(moving)
 	if current_clip in ["punch", "elbow_punch"] and animation_player.is_playing():
 		_apply_crouch()
 		_update_weapon_mount()
@@ -270,14 +272,20 @@ func _play_cycle(clip: String, rate: float) -> void:
 
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
+	_advance_overlay()
 	_apply_crouch()
 	_apply_foot_ik()
 	_apply_prone()
 	_apply_body_dynamics()
 	if not work_action.is_empty():
 		_apply_work()
+		_apply_overlay()
 		_update_backpack()
 		return
+	# An action that uses the hands puts the gun away while it plays.
+	var hands_busy := _overlay_arm_weight() > 0.3
+	if is_instance_valid(bound_weapon):
+		bound_weapon.visible = armed and not hands_busy
 	_update_weapon_mount()
 	# Correndo desarmado, o próprio clipe de corrida já balança os braços
 	# naturalmente: só andando/parado os braços descem para o lado do corpo.
@@ -287,6 +295,7 @@ func _finish_pose() -> void:
 		_prone_arms(unarmed_weight)
 	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
 		_relax_arms(unarmed_weight * (1.0 - _run_arms))
+	_apply_overlay()
 	_update_backpack()
 
 # ------------------------------------------------------ dinâmica do corpo ---
@@ -462,7 +471,19 @@ var _last_delta := 1.0 / 60.0
 var _work_time := 0.0
 var _tool_node: Node3D
 
+## Acts sent over the network that play a UAL2 clip once instead of a tool loop.
+const OVERLAY_ACTS := {"open": "open", "harvest": "harvest", "consume": "consume"}
+var _overlay_act := ""
+
 func set_action(act: String, tool: String) -> void:
+	if OVERLAY_ACTS.has(act):
+		if act != _overlay_act:
+			_overlay_act = act
+			play_action(OVERLAY_ACTS[act])
+		act = ""
+		tool = ""
+	else:
+		_overlay_act = ""
 	if act == work_action and tool == work_tool:
 		return
 	work_action = act
@@ -935,12 +956,228 @@ func _relax_arms(weight: float) -> void:
 		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
 
 func play_action(action: String) -> bool:
-	if not ready_ok or action not in ["punch", "elbow_punch"]:
+	if not ready_ok:
 		return false
-	current_clip = action
-	animation_player.play(action, 0.12)
-	animation_player.speed_scale = 1.0
+	if action in ["punch", "elbow_punch"]:
+		stop_overlay()
+		current_clip = action
+		animation_player.play(action, 0.12)
+		animation_player.speed_scale = 1.0
+		return true
+	if ACTIONS.has(action):
+		var spec: Array = ACTIONS[action]
+		return play_overlay(spec[0], spec[1], float(spec[2]), float(spec[3]), float(spec[4]))
+	if action.begins_with("ual:"):
+		return play_overlay(action.substr(4), "full")
+	return false
+
+## Same as play_action, but held for `seconds` (repeating short clips).
+func play_action_for(action: String, seconds: float) -> bool:
+	if not ready_ok or not ACTIONS.has(action):
+		return false
+	var spec: Array = ACTIONS[action]
+	return play_overlay(spec[0], spec[1], float(spec[2]), float(spec[3]), seconds)
+
+# ------------------------------------------------- camada de ações (UAL2) ---
+# Clipes da Universal Animation Library 2 (Quaternius, CC0), retargetizados para
+# o rig do Ch31 por tools/characters/build_ual2_clips.gd. Tocam POR CIMA da
+# locomoção: cada osso da máscara é amostrado do clipe e misturado com o peso
+# da ação (entra e sai suave), então as pernas continuam andando numa ação de
+# tronco e o IK/mira por baixo não "estala" quando a ação acaba.
+const UAL_DIR := "res://assets/personagens/ual2/clips/"
+const UAL_CLIPS := ["chest_open", "climbup_1m", "consume", "farm_harvest", "farm_plantseed", "farm_watering", "hit_knockback", "idle_foldarms", "idle_lantern", "idle_no", "idle_rail", "idle_rail_call", "idle_shield", "idle_shield_break", "idle_talkingphone", "laytoidle", "melee_hook", "melee_hook_rec", "ninjajump_idle", "ninjajump_land", "ninjajump_start", "overhandthrow", "shield_dash", "shield_oneshot", "slide", "slide_exit", "slide_start", "sword_block", "sword_dash", "sword_heavy_combo", "sword_regular_a", "sword_regular_a_rec", "sword_regular_b", "sword_regular_b_rec", "sword_regular_c", "sword_regular_combo", "treechopping", "walk_carry", "yes", "zombie_idle", "zombie_scratch", "zombie_walk_fwd"]
+## Gatilhos do jogo -> [clipe, máscara, velocidade, peso máximo, segundos (-1 = clipe todo)].
+const ACTIONS := {
+	"throw": ["overhandthrow", "upper", 1.25, 1.0, -1.0], # granada
+	"consume": ["consume", "arms", 1.0, 1.0, -1.0], # comer, beber, remédio
+	"open": ["chest_open", "full", 1.2, 1.0, -1.0], # revistar recipiente / caixa
+	"harvest": ["farm_harvest", "full", 1.3, 1.0, -1.0], # colher fruta do arbusto
+	"plant": ["farm_plantseed", "full", 1.0, 1.0, -1.0],
+	"hit": ["hit_knockback", "upper", 1.0, 0.6, 0.3], # recuo de um golpe forte (sem a queda)
+	"get_up": ["laytoidle", "full", 1.3, 1.0, -1.0], # levantar do chão
+	"climb": ["climbup_1m", "full", 1.0, 1.0, -1.0],
+	"hook": ["melee_hook", "upper", 1.0, 1.0, -1.0],
+	"yes": ["yes", "upper", 1.0, 1.0, 2.5],
+	"no": ["idle_no", "upper", 1.0, 1.0, 2.5],
+	"wave": ["idle_rail_call", "upper", 1.0, 1.0, 2.5],
+	"scratch": ["zombie_scratch", "upper", 1.0, 1.0, -1.0],
+}
+## Parado e desarmado por um tempo: uma destas, uma vez (cancela ao mexer).
+const IDLE_FIDGETS := ["idle_foldarms", "idle_talkingphone", "idle_rail", "idle_no"]
+const IDLE_FIDGET_DELAY := 9.0
+const OVERLAY_FADE_IN := 0.16
+const OVERLAY_FADE_OUT := 0.22
+static var _ual_cache := {} # modelo -> {clip: [Animation, [[track, bone, type], ...]]}
+var ual_clips := {}
+var _overlay_name := ""
+var _overlay_mask := ""
+var _overlay_time := 0.0
+var _overlay_speed := 1.0
+var _overlay_max := 1.0
+var _overlay_weight := 0.0
+var _overlay_until := -1.0 # seconds of a looping clip to play (-1 = one cycle)
+var _overlay_stopping := false
+var _overlay_fidget := false
+var _idle_time := 0.0
+var _fidget_index := 0
+var _masks := {}
+
+func has_action(action: String) -> bool:
+	return ACTIONS.has(action) and ual_clips.has(ACTIONS[action][0])
+
+func is_overlay_playing() -> bool:
+	return not _overlay_name.is_empty()
+
+func play_overlay(clip_name: String, mask: String = "full", speed: float = 1.0, max_weight: float = 1.0, seconds: float = -1.0) -> bool:
+	if not ready_ok or not ual_clips.has(clip_name):
+		return false
+	if current_clip in ["punch", "elbow_punch"]:
+		current_clip = ""
+	# Restarting the same one-shot (two hits in a row) keeps the weight: no pop.
+	if clip_name != _overlay_name:
+		_overlay_weight = 0.0 if _overlay_name.is_empty() else _overlay_weight * 0.5
+	_overlay_name = clip_name
+	_overlay_mask = mask
+	_overlay_time = 0.0
+	_overlay_speed = speed
+	_overlay_max = max_weight
+	_overlay_until = seconds
+	_overlay_stopping = false
+	_overlay_fidget = false
 	return true
+
+## Fade the current action out (it keeps playing while it fades).
+func stop_overlay() -> void:
+	if not _overlay_name.is_empty():
+		_overlay_stopping = true
+
+func _load_ual_clips(skeleton_path: String, hip_scale: float, retarget: bool, hip_anchor: Vector3) -> void:
+	var key := "%s|%s|%.3f" % [model_path, skeleton_path, hip_scale]
+	if not _ual_cache.has(key):
+		var built := {}
+		for clip_name in UAL_CLIPS:
+			var source := load(UAL_DIR + clip_name + ".tres") as Animation
+			if source == null:
+				continue
+			var clip := source.duplicate() as Animation
+			if retarget:
+				_retarget_clip(clip, skeleton_path, hip_scale)
+			_make_in_place(clip, hip_anchor)
+			var tracks := []
+			for t in clip.get_track_count():
+				var bone := skeleton.find_bone(String(clip.track_get_path(t)).get_slice(":", 1))
+				var type := clip.track_get_type(t)
+				if bone >= 0 and (type == Animation.TYPE_ROTATION_3D or type == Animation.TYPE_POSITION_3D):
+					tracks.append([t, bone, type])
+			built[clip_name] = [clip, tracks]
+		_ual_cache[key] = built
+	ual_clips = _ual_cache[key]
+
+## Per-bone weight of a mask: "full" everything; "upper" from the spine up
+## (lower spine blends so the hips keep walking); "arms" shoulders down to the
+## fingers with a little chest and head.
+func _mask_weights(mask: String) -> PackedFloat32Array:
+	if _masks.has(mask):
+		return _masks[mask]
+	var weights := PackedFloat32Array()
+	weights.resize(skeleton.get_bone_count())
+	for bone in skeleton.get_bone_count():
+		var suffix := String(skeleton.get_bone_name(bone)).trim_prefix(bone_prefix)
+		var limb := suffix.contains("Shoulder") or suffix.contains("Arm") or suffix.contains("Hand")
+		var w := 0.0
+		match mask:
+			"full":
+				w = 1.0
+			"upper":
+				if limb or suffix in ["Spine2", "Neck", "Head", "HeadTop_End"]:
+					w = 1.0
+				elif suffix == "Spine1":
+					w = 0.7
+				elif suffix == "Spine":
+					w = 0.4
+			"arms":
+				if limb:
+					w = 1.0
+				elif suffix in ["Neck", "Head"]:
+					w = 0.5
+				elif suffix == "Spine2":
+					w = 0.35
+		weights[bone] = w
+	_masks[mask] = weights
+	return weights
+
+func _smooth(t: float) -> float:
+	t = clampf(t, 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+## Advances the action clock and its blend weight; ends finished actions.
+func _advance_overlay() -> void:
+	if _overlay_name.is_empty():
+		return
+	var clip: Animation = ual_clips[_overlay_name][0]
+	_overlay_time += _last_delta * _overlay_speed
+	# One cycle, or only `_overlay_until` seconds of it (a loop, or the first
+	# part of a one-shot, e.g. the recoil of a knockback without the fall).
+	var looping := clip.loop_mode != Animation.LOOP_NONE
+	var span := _overlay_until if _overlay_until >= 0.0 else (INF if looping else clip.length)
+	var remaining := (span - _overlay_time) / maxf(_overlay_speed, 0.01)
+	if remaining <= OVERLAY_FADE_OUT:
+		_overlay_stopping = true
+	var target := 0.0 if _overlay_stopping else _overlay_max
+	var rate := (1.0 / OVERLAY_FADE_OUT) if _overlay_stopping else (1.0 / OVERLAY_FADE_IN)
+	_overlay_weight = move_toward(_overlay_weight, target, _last_delta * rate * maxf(_overlay_max, 0.01))
+	if _overlay_stopping and _overlay_weight <= 0.001:
+		_overlay_name = ""
+		_overlay_weight = 0.0
+		_overlay_fidget = false
+
+## Weight the arms currently get from the action (0 when none touches them).
+func _overlay_arm_weight() -> float:
+	if _overlay_name.is_empty():
+		return 0.0
+	return _smooth(_overlay_weight / maxf(_overlay_max, 0.01)) * _overlay_max
+
+func _apply_overlay() -> void:
+	if _overlay_name.is_empty() or _overlay_weight <= 0.001:
+		return
+	var entry: Array = ual_clips[_overlay_name]
+	var clip: Animation = entry[0]
+	# A one-shot asked to last longer than itself repeats (eating for 3 s).
+	var repeat := clip.loop_mode != Animation.LOOP_NONE or _overlay_until > clip.length
+	var t := fmod(_overlay_time, clip.length) if repeat else minf(_overlay_time, clip.length)
+	var mask := _mask_weights(_overlay_mask)
+	var weight := _smooth(_overlay_weight / maxf(_overlay_max, 0.01)) * _overlay_max
+	for track_info in entry[1]:
+		var bone: int = track_info[1]
+		var w := mask[bone] * weight
+		if w <= 0.001:
+			continue
+		if track_info[2] == Animation.TYPE_ROTATION_3D:
+			var q := clip.rotation_track_interpolate(track_info[0], t)
+			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, w))
+		else:
+			var p := clip.position_track_interpolate(track_info[0], t)
+			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(p, w))
+
+## Idle fidgets: standing still, unarmed and free for a while plays one idle
+## variation (arms folded, phone call, leaning, head shake), cancelled by any input.
+func _update_idle_fidget(moving: bool) -> void:
+	var calm := not moving and not armed and not _airborne and crouch_weight < 0.01 and prone_weight < 0.01 and work_action.is_empty() and not aim_active and current_clip == "idle_unarmed"
+	if not calm:
+		_idle_time = 0.0
+		if _overlay_fidget:
+			stop_overlay()
+		return
+	if not _overlay_name.is_empty():
+		return
+	_idle_time += _last_delta
+	if _idle_time < IDLE_FIDGET_DELAY:
+		return
+	_idle_time = 0.0
+	var clip_name: String = IDLE_FIDGETS[_fidget_index % IDLE_FIDGETS.size()]
+	_fidget_index += 1
+	if play_overlay(clip_name, "full", 1.0, 1.0, 5.0):
+		_overlay_fidget = true
 
 func _play_clip(clip: String, rate: float) -> void:
 	if current_clip != clip:

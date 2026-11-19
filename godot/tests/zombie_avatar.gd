@@ -52,7 +52,11 @@ func _run() -> void:
 				var head_y := head.y - p.y + 0.12
 				check(zone_at.call(head.x - p.x, head_y) == "head", "tiro na cabeça = cabeça (%s)" % zone_at.call(head.x - p.x, head_y))
 				check(zone_at.call(0.0, 1.2) == "chest", "tiro no peito = tronco (%s)" % zone_at.call(0.0, 1.2))
-				check(zone_at.call(0.1, 0.45) == "leg", "tiro na canela = perna (%s)" % zone_at.call(0.1, 0.45))
+				# Canela pelo osso (a postura das pernas vem do clipe: o arrasto de zumbi abre os pés).
+				var knee: Vector3 = sk.global_transform * sk.get_bone_global_pose(int(avatar.call("_bone", "LeftLeg"))).origin
+				var ankle: Vector3 = sk.global_transform * sk.get_bone_global_pose(int(avatar.call("_bone", "LeftFoot"))).origin
+				var shin := (knee + ankle) * 0.5 - p
+				check(zone_at.call(shin.x, shin.y) == "leg", "tiro na canela = perna (%s)" % zone_at.call(shin.x, shin.y))
 				check(zone_at.call(0.5, 0.3) == "", "tiro entre a perna e a borda da casca passa direto")
 				var query := PhysicsRayQueryParameters3D.create(p + Vector3(0, 1.2, 6), p + Vector3(0, 1.2, -6), 4)
 				var hit := root.get_world_3d().direct_space_state.intersect_ray(query)

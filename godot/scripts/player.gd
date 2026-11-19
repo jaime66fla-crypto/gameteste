@@ -718,7 +718,9 @@ func throw_grenade(grenade_id: String) -> RigidBody3D:
     grenade.linear_velocity = GrenadeScript.throw_velocity(forward, velocity)
     grenade.angular_velocity = Vector3(randf_range(-6, 6), randf_range(-6, 6), randf_range(-6, 6))
     if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
-        humanoid_avatar.call("play_action", "elbow_punch") # quick throwing arm swing
+        # Overhand throw over the legs (UAL2); older adapters fall back to the elbow swing.
+        if not bool(humanoid_avatar.call("play_action", "throw")):
+            humanoid_avatar.call("play_action", "elbow_punch")
     return grenade
 
 func grenade_launch_origin() -> Vector3:

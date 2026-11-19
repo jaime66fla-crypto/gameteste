@@ -7,12 +7,16 @@ extends Node3D
 ## Longe da câmera a animação roda menos vezes e a pose extra é desligada.
 const MODEL := "res://assets/personagens/zumbi/zumbi_modelo.scn"
 const SOURCE_HEIGHT := 1.775
-const AVATAR_FBX := "res://assets/personagens/downloaded/avatar.fbx"
+## Pernas: andar arrastado e parado de zumbi (UAL2, Quaternius, CC0); o tronco,
+## a cabeça e os braços são da pose de zumbi abaixo. Corrida: o ciclo do Ch31.
 const CLIPS := {
-	"idle": "res://assets/personagens/downloaded/movements/idle_with_rifle.tres",
-	"walk": "res://assets/personagens/downloaded/movements/walk_with_rifle.tres",
+	"idle": "res://assets/personagens/ual2/clips/zombie_idle.tres",
+	"walk": "res://assets/personagens/ual2/clips/zombie_walk_fwd.tres",
+	"run": "res://assets/personagens/downloaded/movements/run_in_place.tres",
 	"attack": "res://assets/personagens/downloaded/movements/punch.tres",
 }
+## Velocidade de chão do andar de zumbi (m/s a 1×), medida em build_ual2_clips.gd.
+const WALK_GROUND_SPEED := 0.63
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 # [osso de, osso até, zona, raio]
@@ -110,15 +114,8 @@ static func _shared_library(sk: Skeleton3D) -> AnimationLibrary:
 	var anchor: Vector3 = sk.get_bone_rest(hips).origin if hips >= 0 else Vector3.ZERO
 	var sources := {}
 	for name in CLIPS:
-		sources[name] = load(CLIPS[name]) as Animation
-	# Corrida: o ciclo "mixamo_com" que vem dentro do avatar.fbx.
-	var avatar := load(AVATAR_FBX) as PackedScene
-	if avatar != null:
-		var tmp := avatar.instantiate()
-		var ap := tmp.find_children("*", "AnimationPlayer", true, false)
-		if not ap.is_empty() and (ap[0] as AnimationPlayer).has_animation("mixamo_com"):
-			sources["run"] = (ap[0] as AnimationPlayer).get_animation("mixamo_com")
-		tmp.free()
+		if ResourceLoader.exists(CLIPS[name]):
+			sources[name] = load(CLIPS[name]) as Animation
 	for name in sources:
 		var src: Animation = sources[name]
 		if src == null:
@@ -159,7 +156,8 @@ func animate(delta: float, state: int, move_rate: float, lod: int, frozen: bool 
 		return
 	match state:
 		Anim.IDLE: _play("idle", 0.6)
-		Anim.WALK: _play("walk", 0.55 * move_rate)
+		# move_rate = velocidade / 2,4 (zombie.gd); o arrasto anda 0,63 m/s por ciclo.
+		Anim.WALK: _play("walk", clampf(move_rate * 2.4 / WALK_GROUND_SPEED * 0.8, 0.7, 1.9))
 		Anim.RUN: _play("run" if player.has_animation("run") else "walk", 0.95 * move_rate)
 		Anim.ATTACK: _play("idle", 1.0) # o bote é feito na pose (tronco e braços)
 	_phase += delta
