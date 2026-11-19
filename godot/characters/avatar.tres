@@ -9,3 +9,7 @@ display_name = "Avatar CH31"
 description = "Novo personagem importado, com rig de 65 ossos e animação de corrida."
 visual_scene = "res://scenes/characters/avatar.tscn"
 required_resources = PackedStringArray("res://assets/personagens/downloaded/avatar.fbx")
+fp_sleeve = Color(0.11, 0.125, 0.16, 1)
+fp_sleeve_style = "long"
+fp_skin = Color(0.84, 0.64, 0.53, 1)
+fp_gloves = false

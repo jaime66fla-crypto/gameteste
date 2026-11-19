@@ -58,6 +58,8 @@ var _sleeve_roll: StandardMaterial3D
 var _skin: StandardMaterial3D
 var _glove: StandardMaterial3D
 var _glove_detail: StandardMaterial3D
+var _joint: StandardMaterial3D # null: joints take the surrounding surface
+var _sleeve_style := "rolled"
 
 static func _plain(color: Color, roughness: float) -> StandardMaterial3D:
     var material := StandardMaterial3D.new()
@@ -92,6 +94,25 @@ func _ready() -> void:
     flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
     flash.visible = false
     add_child(flash)
+
+## Dresses the arms like the chosen character (CharacterDefinition fp_* fields).
+func apply_character(definition: Resource) -> void:
+    if definition == null or not ("fp_sleeve" in definition):
+        return
+    var sleeve: Color = definition.fp_sleeve
+    var skin: Color = definition.fp_skin
+    var glove: Color = definition.fp_glove
+    var gloves: bool = definition.fp_gloves
+    var joint: Color = definition.fp_joint
+    # Fabric materials are cached and shared: swap them, never recolour them.
+    _sleeve = SurfaceMaterials.make("fabric", sleeve, false)
+    _sleeve_roll = SurfaceMaterials.make("fabric", sleeve.darkened(0.15), false)
+    _skin = _plain(skin, 0.68)
+    _glove = _plain(glove, 0.72) if gloves else _skin
+    _glove_detail = _plain(glove.lightened(0.08), 0.6) if gloves else _plain(skin.darkened(0.07), 0.7)
+    _joint = _plain(joint, 0.5) if joint.a > 0.0 else null
+    _sleeve_style = str(definition.fp_sleeve_style)
+    # Takes effect on the next build() (the player calls it right after).
 
 func build(id: String) -> void:
     weapon_id = id
@@ -215,13 +236,35 @@ func _build_arm(side: String, shoulder: Vector3, hand: Vector3) -> void:
     var elbow := _solve_elbow(shoulder, hand, upper_len, fore_len, pole)
     var forearm_dir := (hand - elbow).normalized()
     var wrist := hand - forearm_dir * 0.055
-    var roll := elbow.lerp(wrist, 0.62)
-    _tube(arms, side + "UpperArm", shoulder, elbow, 0.056, _sleeve, 0.049)
-    _ball(arms, side + "Elbow", elbow, 0.049, _sleeve)
-    _tube(arms, side + "Sleeve", elbow, roll, 0.049, _sleeve, 0.045)
-    # Rolled-up sleeve band.
-    _tube(arms, side + "Roll", roll - forearm_dir * 0.012, roll + forearm_dir * 0.03, 0.052, _sleeve_roll, 0.050)
-    _tube(arms, side + "Forearm", roll, wrist, 0.038, _skin, 0.031)
+    match _sleeve_style:
+        "long":
+            # Sleeve down to the wrist, with a slightly thicker cuff.
+            var cuff := wrist - forearm_dir * 0.03
+            _tube(arms, side + "UpperArm", shoulder, elbow, 0.056, _sleeve, 0.049)
+            _ball(arms, side + "Elbow", elbow, 0.049, _joint if _joint else _sleeve)
+            _tube(arms, side + "Sleeve", elbow, cuff, 0.049, _sleeve, 0.041)
+            _tube(arms, side + "Cuff", cuff, wrist + forearm_dir * 0.004, 0.043, _sleeve_roll, 0.042)
+        "short", "none":
+            # T-shirt sleeve ending mid upper arm (or no sleeve), bare arm below.
+            var hem := shoulder.lerp(elbow, 0.5)
+            var skin_from := shoulder
+            if _sleeve_style == "short":
+                _tube(arms, side + "UpperArm", shoulder, hem, 0.058, _sleeve, 0.055)
+                _tube(arms, side + "Hem", hem - (elbow - shoulder).normalized() * 0.012, hem + (elbow - shoulder).normalized() * 0.006, 0.059, _sleeve_roll, 0.058)
+                skin_from = hem
+            _tube(arms, side + "Bicep", skin_from, elbow, 0.046, _skin, 0.040)
+            _ball(arms, side + "Elbow", elbow, 0.040, _joint if _joint else _skin)
+            _tube(arms, side + "Forearm", elbow, wrist, 0.040, _skin, 0.031)
+        _:
+            var roll := elbow.lerp(wrist, 0.62)
+            _tube(arms, side + "UpperArm", shoulder, elbow, 0.056, _sleeve, 0.049)
+            _ball(arms, side + "Elbow", elbow, 0.049, _joint if _joint else _sleeve)
+            _tube(arms, side + "Sleeve", elbow, roll, 0.049, _sleeve, 0.045)
+            # Rolled-up sleeve band.
+            _tube(arms, side + "Roll", roll - forearm_dir * 0.012, roll + forearm_dir * 0.03, 0.052, _sleeve_roll, 0.050)
+            _tube(arms, side + "Forearm", roll, wrist, 0.038, _skin, 0.031)
+    if _joint:
+        _ball(arms, side + "Wrist", wrist, 0.032, _joint)
     _tube(arms, side + "GloveCuff", wrist - forearm_dir * 0.012, wrist + forearm_dir * 0.022, 0.036, _glove, 0.035)
     _build_fist(side, hand, forearm_dir, outward)
 

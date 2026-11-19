@@ -9,3 +9,7 @@ display_name = "Manequim"
 description = "Boneco de testes amarelo com juntas roxas, da Universal Animation Library 2."
 visual_scene = "res://scenes/characters/manequim.tscn"
 required_resources = PackedStringArray("res://assets/personagens/manequim/manequim_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
+fp_sleeve_style = "none"
+fp_skin = Color(0.95, 0.75, 0.17, 1)
+fp_gloves = false
+fp_joint = Color(0.64, 0.35, 0.9, 1)

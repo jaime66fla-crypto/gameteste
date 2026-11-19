@@ -1286,6 +1286,8 @@ func _first_person_clearance() -> float:
 func _rebuild_viewmodel() -> void:
     # Built before the camera exists during _make_avatar; _ready calls it again.
     if viewmodel != null and viewmodel.is_inside_tree():
+        # Arms dressed like the chosen character (sleeves, skin, gloves).
+        viewmodel.call("apply_character", CharacterRegistry.definition(character_id))
         viewmodel.call("build", current_weapon)
 
 func _rebuild_legacy_weapon_model() -> void:
