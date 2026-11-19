@@ -369,6 +369,8 @@ func _unhandled_input(event: InputEvent) -> void:
             return
     # Teclas configuráveis (Configurações › Controles): tudo passa pelas ações.
     if (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed() and not event.is_echo():
+        if climbing and (event.is_action("grenade") or event.is_action("melee") or event.is_action("interact") or event.is_action("heal")):
+            return # mãos ocupadas na escalada
         if aiming and (event.is_action("lean_left") or event.is_action("lean_right")):
             return # while aiming, the lean keys lean (handled every physics frame)
         if event.is_action("grenade"):
@@ -520,6 +522,9 @@ func _physics_process(delta: float) -> void:
     viewmodel.visible = first_person_view
     var crouch_offset := 0.0 # Feet stay anchored; crouch belongs to the rig and capsule.
     avatar.position.y = lerpf(avatar.position.y, crouch_offset if crouching else 0.0, minf(1,delta * 10))
+    if climbing:
+        _update_climb(delta)
+        return
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
     var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
@@ -542,6 +547,17 @@ func _physics_process(delta: float) -> void:
     _jump_buffer_left = maxf(0.0, _jump_buffer_left - delta)
     if Input.is_action_just_pressed("jump") and not stance_changed:
         _jump_buffer_left = JUMP_BUFFER_TIME
+    if grounded_before:
+        _last_floor_y = global_position.y
+    # Escalada: espaço de frente para uma borda alta (no chão), ou segurando a
+    # direção contra ela no ar (perto do topo do pulo ou caindo).
+    var climb_ok := not crouching and not prone and not stance_changed
+    if climb_ok and _jump_buffer_left > 0.0 and grounded_before and _try_climb(movement, true):
+        _jump_buffer_left = 0.0
+        return
+    if climb_ok and not grounded_before and input_vec.length() > 0.3 and velocity.y < CLIMB_AIR_MAX_UP_SPEED and _try_climb(movement, false):
+        _jump_buffer_left = 0.0
+        return
     var can_jump := _coyote_left > 0.0 and not crouching and not prone and velocity.y <= 0.5
     if _jump_buffer_left > 0.0 and can_jump:
         velocity.y = jump_velocity
@@ -642,6 +658,166 @@ func _on_landed(fall_speed: float) -> void:
     _land_recovery = LAND_RECOVERY_TIME * strength
     if sound_fx != null and sound_fx.has_method("landing"):
         sound_fx.call("landing", strength)
+
+## Escalada: sobe em bordas mais altas que o pulo (muro, caixote, laje) com o
+## clipe ClimbUp_1m da Universal Animation Library 2. A cápsula segue uma curva
+## (sobe, depois avança por cima da borda) e o clipe mexe braços e pernas; o
+## quadril do clipe não sobe junto (o corpo já sobe com a cápsula).
+const CLIMB_GROUND_MIN := 1.25 # abaixo disso o pulo normal já resolve
+const CLIMB_MAX := 2.5 # topo mais alto que as mãos alcançam (a partir do chão)
+const CLIMB_AIR_MIN := 0.5 # no ar: topo pelo menos isto acima dos pés
+const CLIMB_AIR_MAX_UP_SPEED := 3.0 # no ar, só perto do topo do pulo ou caindo
+const CLIMB_REACH := 0.7 # distância da parede (além do raio da cápsula)
+const CLIMB_TIME_LOW := 0.8 # segundos para subir ~1 m
+const CLIMB_TIME_HIGH := 1.25 # segundos para subir 2,5 m
+const CLIMB_CLIP := "climbup_1m"
+const CLIMB_HUG := 0.2 # centro do corpo a esta distância da parede durante a subida
+var climbing := false
+var _climb_hug := Vector3.ZERO
+var last_climb_height := 0.0
+var _climb_t := 0.0
+var _climb_time := 1.0
+var _climb_from := Vector3.ZERO
+var _climb_to := Vector3.ZERO
+var _climb_yaw := 0.0
+var _last_floor_y := 0.0
+
+## Borda escalável na direção `dir` (horizontal): {target, rise, normal} ou {}.
+## `rise_min`/`rise_max` são a altura do topo em relação aos pés agora.
+func find_climb_ledge(dir: Vector3, rise_min: float, rise_max: float) -> Dictionary:
+    dir.y = 0.0
+    if dir.length_squared() < 0.0001 or body_capsule == null:
+        return {}
+    dir = dir.normalized()
+    var space := get_world_3d().direct_space_state
+    var feet := global_position
+    var radius := body_capsule.radius
+    var exclude: Array[RID] = [get_rid()]
+    # 1) Parede à frente (raios em alturas diferentes: muro baixo ou alto).
+    var wall := {}
+    for h in [0.35, 0.8, 1.3]:
+        if h >= rise_max:
+            break
+        var from: Vector3 = feet + Vector3.UP * h
+        var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(from, from + dir * (radius + CLIMB_REACH), collision_mask, exclude))
+        if not hit.is_empty() and absf((hit["normal"] as Vector3).y) < 0.35:
+            wall = hit
+            break
+    if wall.is_empty():
+        return {}
+    var normal: Vector3 = wall["normal"]
+    normal.y = 0.0
+    normal = normal.normalized()
+    # De frente para a parede (não escala andando de lado colado nela).
+    if dir.dot(-normal) < 0.5:
+        return {}
+    var probe: Vector3 = (wall["position"] as Vector3) - normal * (radius + 0.08)
+    var top_y := feet.y + rise_max + 0.3
+    # 2) Acima da borda está livre (o muro termina antes do alcance, sem marquise).
+    var over_from := Vector3(feet.x, top_y, feet.z)
+    if not space.intersect_ray(PhysicsRayQueryParameters3D.create(over_from, Vector3(probe.x, top_y, probe.z), collision_mask, exclude)).is_empty():
+        return {}
+    # 3) Topo plano da borda.
+    var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(Vector3(probe.x, top_y, probe.z), Vector3(probe.x, feet.y + rise_min, probe.z), collision_mask, exclude))
+    if down.is_empty() or (down["normal"] as Vector3).y < 0.75:
+        return {}
+    var ledge_y: float = (down["position"] as Vector3).y
+    var rise := ledge_y - feet.y
+    if rise < rise_min or rise > rise_max:
+        return {}
+    # 4) Cabe em pé lá em cima e há espaço para subir sem bater a cabeça.
+    var target := Vector3(probe.x, ledge_y + 0.02, probe.z)
+    var query := PhysicsShapeQueryParameters3D.new()
+    query.shape = standing_probe
+    query.collision_mask = collision_mask
+    query.exclude = exclude
+    query.transform = Transform3D(Basis.IDENTITY, target + Vector3.UP * (height * 0.5 + 0.03))
+    if not space.intersect_shape(query, 1).is_empty():
+        return {}
+    var head := feet + Vector3.UP * (body_capsule.height - 0.05)
+    if not space.intersect_ray(PhysicsRayQueryParameters3D.create(head, Vector3(feet.x, ledge_y + height, feet.z), collision_mask, exclude)).is_empty():
+        return {}
+    return {"target": target, "rise": rise, "normal": normal, "wall": wall["position"]}
+
+func _try_climb(movement: Vector3, on_ground: bool) -> bool:
+    if climbing or channel_left > 0.0:
+        return false
+    var dir := movement
+    if dir.length_squared() < 0.01:
+        if not on_ground:
+            return false
+        dir = Vector3.FORWARD.rotated(Vector3.UP, _body_yaw) # parado: para onde o corpo olha
+    var ledge := {}
+    if on_ground:
+        ledge = find_climb_ledge(dir, CLIMB_GROUND_MIN, CLIMB_MAX)
+    else:
+        # No ar o alcance continua contado a partir do último chão.
+        var reach := CLIMB_MAX - (global_position.y - _last_floor_y)
+        if reach > CLIMB_AIR_MIN:
+            ledge = find_climb_ledge(dir, CLIMB_AIR_MIN, reach)
+    if ledge.is_empty():
+        return false
+    start_climb(ledge)
+    return true
+
+func start_climb(ledge: Dictionary) -> void:
+    climbing = true
+    _climb_t = 0.0
+    _climb_from = global_position
+    _climb_to = ledge["target"]
+    var normal: Vector3 = ledge["normal"]
+    _climb_hug = Vector3(ledge["wall"].x, _climb_from.y, ledge["wall"].z) + normal * CLIMB_HUG
+    # Já mais perto que isso: não recua.
+    if (_climb_from - _climb_hug).dot(normal) < 0.0:
+        _climb_hug = _climb_from
+    _climb_yaw = atan2(normal.x, normal.z) # frente do corpo (-Z) para dentro da parede
+    var total_rise := _climb_to.y - _last_floor_y if not is_on_floor() else float(ledge["rise"])
+    last_climb_height = float(ledge["rise"])
+    _climb_time = lerpf(CLIMB_TIME_LOW, CLIMB_TIME_HIGH, clampf((total_rise - 1.0) / (CLIMB_MAX - 1.0), 0.0, 1.0))
+    if not is_on_floor():
+        _climb_time *= 0.85 # já pendurado no alto do pulo: só o puxão final
+    velocity = Vector3.ZERO
+    _coyote_left = 0.0
+    if grenade_aiming:
+        cancel_grenade_aim()
+    Input.action_release("aim")
+    aiming = false
+    if humanoid_avatar != null and humanoid_avatar.has_method("play_climb"):
+        humanoid_avatar.call("play_climb", CLIMB_CLIP, _climb_time)
+    if sound_fx != null and sound_fx.has_method("landing"):
+        sound_fx.call("landing", 0.15) # mãos batendo na borda
+
+func _update_climb(delta: float) -> void:
+    _climb_t = minf(_climb_t + delta / maxf(_climb_time, 0.05), 1.0)
+    # O ClimbUp_1m é "no lugar" (o quadril sobe só 0,25 m e volta): quem sobe
+    # é a cápsula. Ela chega ao topo só quando o clipe estica as pernas em cima
+    # da borda (~80%); antes disso os joelhos encolhidos ficam rente à quina.
+    # Depois o corpo passa por cima da borda.
+    var up := 1.0 - pow(1.0 - clampf(_climb_t / 0.8, 0.0, 1.0), 1.6)
+    # Encosta na parede no começo (o peito rente ao muro, como quem se pendura)
+    # e passa por cima da borda no fim.
+    var pos := _climb_from.lerp(_climb_hug, smoothstep(0.0, 0.3, _climb_t)).lerp(_climb_to, smoothstep(0.55, 1.0, _climb_t))
+    pos.y = lerpf(_climb_from.y, _climb_to.y, up)
+    global_position = pos
+    velocity = Vector3.ZERO
+    _body_yaw = lerp_angle(_body_yaw, _climb_yaw, minf(1.0, delta * 18.0))
+    if avatar != null:
+        avatar.rotation.y = wrapf(_body_yaw - yaw, -PI, PI)
+        turn_lean = 0.0
+        avatar.rotation.z = 0.0
+    _animate_avatar(delta, 0.0, true)
+    _look_delta = Vector2.ZERO
+    if _climb_t >= 1.0:
+        climbing = false
+        global_position = _climb_to
+        _last_floor_y = _climb_to.y
+        _coyote_left = 0.0
+        _jump_buffer_left = 0.0
+        velocity = Vector3(0.0, -0.1, 0.0)
+        # Ainda encostado no topo: deixa o corpo assentar no chão novo.
+        move_and_slide()
+        if sound_fx != null and sound_fx.has_method("landing"):
+            sound_fx.call("landing", 0.1)
 
 func face_aim(seconds: float) -> void:
     _face_aim_left = maxf(_face_aim_left, seconds)

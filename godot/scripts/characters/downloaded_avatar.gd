@@ -274,6 +274,7 @@ func _play_cycle(clip: String, rate: float) -> void:
 func _finish_pose() -> void:
 	_advance_overlay()
 	_apply_crouch()
+	_apply_stand_pose()
 	_apply_foot_ik()
 	_apply_prone()
 	_apply_body_dynamics()
@@ -922,6 +923,112 @@ func _two_bone_ik(upper: int, lower: int, foot: int, target: Vector3, pole: Vect
 	var reach := upper_pose.origin + direction * distance
 	Grip._set_global_rotation(skeleton, lower, Basis(Quaternion(lower_dir, (reach - lower_pose.origin).normalized())) * lower_pose.basis)
 
+# ---------------------------------------------------- pose parada em pé ---
+# Parado e desarmado, todos os personagens ficam na mesma pose: em pé e
+# ereto (coluna e cabeça na vertical), pernas quase esticadas com os pés
+# embaixo do quadril e braços retos caindo ao lado do corpo. Corrige o clipe
+# de respiração (cotovelos dobrados, mãos à frente) e o retarget do Manequim
+# (tronco curvado, joelhos dobrados); a respiração do clipe continua por baixo.
+# Entra e sai suave ao começar/parar de andar.
+const STAND_ARM_REACH := 0.97 # fração do braço esticado (cotovelo quase reto)
+const STAND_LEG_REACH := 0.985 # fração da perna esticada (joelho quase reto)
+const STAND_ARM_OUT := 0.05 # m para fora do ombro: a mão passa ao lado da coxa
+const STAND_ARM_FORWARD := 0.02 # m à frente do ombro
+const STAND_FOOT_OUT := 0.03 # m para fora do quadril (base um pouco aberta)
+const STAND_BLEND_RATE := 4.0
+var stand_weight := 0.0
+var stand_pose_enabled := true
+
+func _apply_stand_pose() -> void:
+	var calm := stand_pose_enabled and current_clip in ["idle_unarmed", "idle_with_rifle"] and not _airborne and crouch_weight < 0.01 and prone_weight < 0.01 and work_action.is_empty()
+	stand_weight = move_toward(stand_weight, 1.0 if calm else 0.0, _last_delta * STAND_BLEND_RATE)
+	var w := _smooth(stand_weight)
+	if w <= 0.001:
+		return
+	# Armado ou não: em pé e ereto. Os braços só caem ao lado do corpo sem
+	# arma; com arma as mãos seguem o cabo (_update_weapon_mount, depois).
+	_stand_legs(w)
+	_stand_upright(w)
+	if unarmed_weight > 0.001:
+		_stand_arms(w * unarmed_weight)
+
+## Pés embaixo do quadril e o quadril sobe até as pernas ficarem quase retas.
+func _stand_legs(w: float) -> void:
+	var hips := Grip._bone(skeleton, "Hips")
+	var hips_origin := skeleton.get_bone_global_pose(hips).origin
+	var plans := []
+	var lift := INF
+	for side in ["Left", "Right"]:
+		var up_leg := Grip._bone(skeleton, side + "UpLeg")
+		var leg := Grip._bone(skeleton, side + "Leg")
+		var foot := Grip._bone(skeleton, side + "Foot")
+		var hip := skeleton.get_bone_global_pose(up_leg).origin
+		var foot_pose := skeleton.get_bone_global_pose(foot)
+		var outward := hip - hips_origin
+		outward.y = 0.0
+		outward = outward.normalized() if outward.length_squared() > 0.000001 else Vector3.ZERO
+		var under := Vector3(hip.x, foot_pose.origin.y, hip.z) + outward * STAND_FOOT_OUT
+		var target := foot_pose.origin.lerp(under, w)
+		var length := (skeleton.get_bone_rest(leg).origin.length() + skeleton.get_bone_rest(foot).origin.length()) * STAND_LEG_REACH
+		var across := Vector2(target.x - hip.x, target.z - hip.z).length()
+		var height := sqrt(maxf(length * length - across * across, 0.0))
+		lift = minf(lift, target.y + height - hip.y)
+		plans.append([side, target, foot_pose.basis])
+	if lift != INF:
+		var raise := Vector3(0, lift * w, 0)
+		var parent := skeleton.get_bone_parent(hips)
+		if parent >= 0:
+			raise = skeleton.get_bone_global_pose(parent).basis.inverse() * raise
+		skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + raise)
+	for plan in plans:
+		_leg_ik(plan[0], plan[1], Vector3(0, 0, 1))
+		Grip._set_global_rotation(skeleton, Grip._bone(skeleton, plan[0] + "Foot"), plan[2])
+
+## Tronco, pescoço e cabeça na vertical (tira a curvatura para a frente/lado).
+func _stand_upright(w: float) -> void:
+	# Só a coluna endireita; a cabeça mantém a orientação do clipe (olhando para
+	# a frente). Endireitar o pescoço jogaria a cabeça para trás (o pescoço
+	# humano é naturalmente inclinado para a frente).
+	var head := Grip._bone(skeleton, "Head")
+	var head_basis := skeleton.get_bone_global_pose(head).basis if head >= 0 else Basis.IDENTITY
+	for link in [["Spine", "Neck", 1.0]]:
+		var bone := Grip._bone(skeleton, link[0])
+		var tip := Grip._bone(skeleton, link[1])
+		if bone < 0 or tip < 0:
+			continue
+		var pose := skeleton.get_bone_global_pose(bone)
+		var along := skeleton.get_bone_global_pose(tip).origin - pose.origin
+		if along.length_squared() < 0.000001:
+			continue
+		along = along.normalized()
+		var wanted := along.lerp(Vector3.UP, w * float(link[2])).normalized()
+		if along.dot(wanted) > 0.99999:
+			continue
+		Grip._set_global_rotation(skeleton, bone, Basis(Quaternion(along, wanted)) * pose.basis)
+	if head >= 0:
+		Grip._set_global_rotation(skeleton, head, head_basis)
+
+## Braços retos, caindo do ombro ao lado do corpo; cotovelo para trás e punho reto.
+func _stand_arms(w: float) -> void:
+	var chest := Grip._bone(skeleton, "Spine2")
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	for side in ["Left", "Right"]:
+		var upper := Grip._bone(skeleton, side + "Arm")
+		var fore := Grip._bone(skeleton, side + "ForeArm")
+		var hand := Grip._bone(skeleton, side + "Hand")
+		var shoulder := skeleton.get_bone_global_pose(upper).origin
+		var lateral := shoulder - torso
+		lateral.y = 0.0
+		if lateral.length_squared() < 0.0001:
+			continue
+		lateral = lateral.normalized()
+		var length := skeleton.get_bone_rest(fore).origin.length() + skeleton.get_bone_rest(hand).origin.length()
+		var target := shoulder + Vector3.DOWN * length * STAND_ARM_REACH + lateral * STAND_ARM_OUT + Vector3(0, 0, STAND_ARM_FORWARD)
+		var current := skeleton.get_bone_global_pose(hand).origin
+		_two_bone_ik(upper, fore, hand, current.lerp(target, w), lateral * 0.3 + Vector3(0, 0, -1))
+		var rest := skeleton.get_bone_rest(hand).basis.get_rotation_quaternion()
+		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_pose_rotation(hand).slerp(rest, w))
+
 # ------------------------------------------------------ braços desarmado ---
 ## Sem arma: mãos ao lado do quadril, balançando ao andar (os clipes seguram um fuzil).
 var _run_arms := 0.0
@@ -1018,6 +1125,7 @@ var _overlay_weight := 0.0
 var _overlay_until := -1.0 # seconds of a looping clip to play (-1 = one cycle)
 var _overlay_stopping := false
 var _overlay_fidget := false
+var overlay_hold_hips := false # a ação não mexe na altura do quadril (escalada)
 var _idle_time := 0.0
 var _fidget_index := 0
 var _masks := {}
@@ -1044,6 +1152,18 @@ func play_overlay(clip_name: String, mask: String = "full", speed: float = 1.0, 
 	_overlay_until = seconds
 	_overlay_stopping = false
 	_overlay_fidget = false
+	overlay_hold_hips = false
+	return true
+
+## Escalada: o clipe inteiro em `seconds`, sem a subida do quadril (quem sobe
+## é a cápsula do jogador; o clipe só mexe braços, pernas e tronco).
+func play_climb(clip_name: String, seconds: float) -> bool:
+	if not ual_clips.has(clip_name):
+		return false
+	var clip: Animation = ual_clips[clip_name][0]
+	if not play_overlay(clip_name, "full", clip.length / maxf(seconds, 0.05)):
+		return false
+	overlay_hold_hips = true
 	return true
 
 ## Fade the current action out (it keeps playing while it fades).
@@ -1155,7 +1275,7 @@ func _apply_overlay() -> void:
 		if track_info[2] == Animation.TYPE_ROTATION_3D:
 			var q := clip.rotation_track_interpolate(track_info[0], t)
 			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, w))
-		else:
+		elif not overlay_hold_hips:
 			var p := clip.position_track_interpolate(track_info[0], t)
 			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(p, w))
 
@@ -1260,6 +1380,92 @@ func _update_weapon_mount() -> void:
 		Grip.solve(skeleton, weapon_mount, side, true)
 	if is_pistol:
 		_relax_left_arm()
+	else:
+		_clear_stock_from_arm()
+
+# Arma longa: o cotovelo direito vem do clipe e, em alguns corpos/armas, o
+# antebraço caía em cima da linha da coronha (a coronha atravessava o braço).
+# Testa o cotovelo cada vez mais para fora (e um pouco para baixo) até braço e
+# antebraço ficarem a STOCK_CLEARANCE da coronha; a mão continua no cabo.
+const STOCK_CLEARANCE := 0.085 # m: meia espessura da coronha + do antebraço
+const STOCK_POLE_STEPS := [0.0, 0.25, 0.5, 0.8, 1.2, 1.8, 2.6]
+
+func _clear_stock_from_arm() -> void:
+	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
+	var grip := bound_weapon.get_node_or_null("RightGrip") as Marker3D
+	if muzzle == null or grip == null:
+		return
+	var back := grip.global_position - muzzle.global_position
+	if back.length_squared() < 0.0001:
+		return
+	back = back.normalized()
+	# Linha do cano/coronha (o cabo fica abaixo dela) até o fim da coronha.
+	var length := float((bound_weapon.get_meta("dimensions_m", Vector3(0, 0, 0.8)) as Vector3).z)
+	var stock_start := muzzle.global_position + back * back.dot(grip.global_position - muzzle.global_position)
+	var stock_end := muzzle.global_position + back * length
+	var upper := Grip._bone(skeleton, "RightArm")
+	var fore := Grip._bone(skeleton, "RightForeArm")
+	var hand := Grip._bone(skeleton, "RightHand")
+	var chest := Grip._bone(skeleton, "Spine2")
+	if _arm_clearance(upper, fore, hand, stock_start, stock_end) >= STOCK_CLEARANCE:
+		return
+	var shoulder := skeleton.get_bone_global_pose(upper).origin
+	var elbow_now := skeleton.get_bone_global_pose(fore).origin - shoulder
+	var lateral := shoulder - skeleton.get_bone_global_pose(chest).origin
+	lateral.y = 0.0
+	if lateral.length_squared() < 0.000001:
+		return
+	lateral = lateral.normalized() * elbow_now.length()
+	var best_pole := elbow_now
+	var best := -INF
+	for step in STOCK_POLE_STEPS:
+		var pole: Vector3 = elbow_now + (lateral + Vector3.DOWN * elbow_now.length() * 0.3) * float(step)
+		Grip.solve(skeleton, weapon_mount, "Right", true, pole)
+		var clearance := _arm_clearance(upper, fore, hand, stock_start, stock_end)
+		if clearance > best:
+			best = clearance
+			best_pole = pole
+		if clearance >= STOCK_CLEARANCE:
+			return
+	Grip.solve(skeleton, weapon_mount, "Right", true, best_pole)
+
+## Menor distância (m, mundo) entre a coronha e o braço/antebraço direitos.
+func _arm_clearance(upper: int, fore: int, hand: int, a: Vector3, b: Vector3) -> float:
+	var shoulder := skeleton.to_global(skeleton.get_bone_global_pose(upper).origin)
+	var elbow := skeleton.to_global(skeleton.get_bone_global_pose(fore).origin)
+	var wrist := skeleton.to_global(skeleton.get_bone_global_pose(hand).origin)
+	# O pulso encosta no cabo de propósito: o antebraço só conta do meio para trás.
+	return minf(_segment_distance(shoulder, elbow, a, b), _segment_distance(elbow, elbow.lerp(wrist, 0.6), a, b))
+
+static func _segment_distance(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3) -> float:
+	var d1 := q1 - p1
+	var d2 := q2 - p2
+	var r := p1 - p2
+	var a := d1.dot(d1)
+	var e := d2.dot(d2)
+	var f := d2.dot(r)
+	var s := 0.0
+	var t := 0.0
+	if a < 0.0000001 and e < 0.0000001:
+		return r.length()
+	if a < 0.0000001:
+		t = clampf(f / e, 0.0, 1.0)
+	else:
+		var c := d1.dot(r)
+		if e < 0.0000001:
+			s = clampf(-c / a, 0.0, 1.0)
+		else:
+			var b := d1.dot(d2)
+			var denom := a * e - b * b
+			s = clampf((b * f - c * e) / denom, 0.0, 1.0) if denom > 0.0000001 else 0.0
+			t = (b * s + f) / e
+			if t < 0.0:
+				t = 0.0
+				s = clampf(-c / a, 0.0, 1.0)
+			elif t > 1.0:
+				t = 1.0
+				s = clampf((b - c) / a, 0.0, 1.0)
+	return ((p1 + d1 * s) - (p2 + d2 * t)).length()
 
 ## Turn the mount so the barrel (-Z of the weapon model) points from the muzzle
 ## to the aim target, pivoting on the trigger grip so the hand stays put.

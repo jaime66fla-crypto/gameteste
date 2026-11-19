@@ -1,20 +1,22 @@
 extends RefCounted
 ## Pure visual hand solver, derived from the validated independent SWAT preview.
-static func solve(skeleton: Skeleton3D, rifle: Node3D, side: String, palm_contact: bool = false) -> void:
-    _solve_arm(skeleton, rifle, side, palm_contact)
+## `pole` (skeleton space, optional): direction the elbow bends towards; by
+## default the elbow stays on the side the animation already put it.
+static func solve(skeleton: Skeleton3D, rifle: Node3D, side: String, palm_contact: bool = false, pole: Vector3 = Vector3.ZERO) -> void:
+    _solve_arm(skeleton, rifle, side, palm_contact, pole)
     _close_fingers(skeleton, side)
 
-static func _solve_arm(skeleton: Skeleton3D, rifle: Node3D, side: String, palm_contact: bool = false) -> void:
+static func _solve_arm(skeleton: Skeleton3D, rifle: Node3D, side: String, palm_contact: bool = false, pole: Vector3 = Vector3.ZERO) -> void:
     var target := rifle.transform * (rifle.get_node(side + "Grip") as Marker3D).position
     var hand_basis := _grip_basis(skeleton, rifle, side)
     if palm_contact:
         target -= hand_basis * palm_offset(skeleton, side)
-    _solve_to_target(skeleton, side, target, hand_basis)
+    _solve_to_target(skeleton, side, target, hand_basis, pole)
 
 static func solve_to_target(skeleton: Skeleton3D, side: String, target: Vector3, hand_basis: Basis) -> void:
     _solve_to_target(skeleton, side, target, hand_basis)
 
-static func _solve_to_target(skeleton: Skeleton3D, side: String, target: Vector3, hand_basis: Basis) -> void:
+static func _solve_to_target(skeleton: Skeleton3D, side: String, target: Vector3, hand_basis: Basis, pole_hint: Vector3 = Vector3.ZERO) -> void:
     var upper: int = _bone(skeleton, side + "Arm")
     var elbow: int = _bone(skeleton, side + "ForeArm")
     var hand: int = _bone(skeleton, side + "Hand")
@@ -25,7 +27,7 @@ static func _solve_to_target(skeleton: Skeleton3D, side: String, target: Vector3
     var offset := target - upper_pose.origin
     var distance := clampf(offset.length(), 0.001, upper_length + lower_length - 0.0001)
     var direction := offset.normalized()
-    var pole := elbow_pose.origin - upper_pose.origin
+    var pole := elbow_pose.origin - upper_pose.origin if pole_hint == Vector3.ZERO else pole_hint
     var bend := pole - direction * pole.dot(direction)
     if bend.length_squared() < 0.00001:
         var fallback := Vector3(-1 if side == "Right" else 1, -0.8, -0.2)
