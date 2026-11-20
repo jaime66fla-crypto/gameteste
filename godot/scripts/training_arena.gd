@@ -37,6 +37,7 @@ const RESPAWN := 4.0
 var player: CharacterBody3D
 var zombie: CharacterBody3D
 var holding := false
+var weapon := "" # arma branca na mão ("" = soco)
 var hits := 0
 var bites := 0
 var kills := 0
@@ -162,8 +163,8 @@ func _process(delta: float) -> void:
 	if _swing_left > 0.0:
 		_swing_left -= delta
 		if _swing_left <= 0.0:
-			# Depois do golpe volta a carregar o bastão no ombro (ou mãos livres).
-			_set_action("hold" if holding else "", STAFF if holding else "")
+			# Depois do golpe volta a carregar a arma branca (ou mãos livres).
+			_set_action("hold" if holding else "", weapon)
 	if _respawn_left > 0.0:
 		_respawn_left -= delta
 		if _respawn_left <= 0.0:
@@ -171,22 +172,30 @@ func _process(delta: float) -> void:
 				zombie.queue_free()
 			_spawn_zombie()
 
-## O bastão está na mão do jogador? (player.melee_weapon; sacar arma larga.)
+## Arma branca na mão do jogador (player.melee_weapon: o bastão daqui ou uma
+## ferramenta do suporte do treino); sacar arma de fogo larga.
 func _sync_holding() -> void:
-	var now := player != null and str(player.get("melee_weapon")) == STAFF
-	if now == holding:
+	var now := str(player.get("melee_weapon")) if player != null else ""
+	if now == weapon:
 		return
-	holding = now
-	_rack_staff.visible = not holding
-	if _swing_left <= 0.0:
-		_set_action("hold" if holding else "", STAFF if holding else "")
+	weapon = now
+	holding = not weapon.is_empty()
+	_rack_staff.visible = weapon != STAFF
+	if _swing_left <= 0.0 and not busy_working():
+		_set_action("", "")
+		_set_action("hold" if holding else "", weapon)
 	_update_board()
+
+## O personagem está cortando/quebrando no suporte de ferramentas (não mexe na pose).
+func busy_working() -> bool:
+	var avatar = player.get("humanoid_avatar") if player != null else null
+	return avatar != null and str(avatar.get("work_action")) in ["chop", "pry"]
 
 ## E: pega ou larga o bastão perto do suporte. Devolve true se tratou a tecla.
 func _interact() -> bool:
 	if player == null or _flat(player.global_position, RACK) > PICK_REACH:
 		return false
-	if player.get("melee_weapon") == STAFF:
+	if weapon == STAFF:
 		player.set("melee_weapon", "")
 	else:
 		# Guarda a arma de fogo antes: o clique esquerdo passa a golpear com o bastão.
@@ -202,18 +211,20 @@ func _melee() -> void:
 	if _cooldown > 0.0 or player == null:
 		return
 	_cooldown = MELEE_COOLDOWN
-	var weapon := STAFF if holding else ""
-	# O bastão longo saiu do catálogo da Sobrevivência (mundo de floresta): sem ele, vale o do treino.
+	_sync_holding()
+	# Dano e alcance do catálogo da Sobrevivência; o bastão longo saiu de lá (vale o do treino).
 	var entry := SurvivalData.item(weapon)
-	var reach := float(entry.get("reach", STAFF_REACH)) if holding else FIST_REACH
+	var reach := float(entry.get("reach", STAFF_REACH if weapon == STAFF else 2.4)) if holding else FIST_REACH
 	var damage := float(entry.get("melee", STAFF_DAMAGE)) if holding else FIST_DAMAGE
 	if holding:
-		# O Q já começou o clipe de soco (player.gd); com o bastão vale o golpe lateral.
+		# Arma branca: o golpe dela no lugar do clipe de soco.
 		var avatar = player.get("humanoid_avatar")
 		if avatar != null and avatar.get("current_clip") in ["punch", "elbow_punch"]:
 			avatar.set("current_clip", "")
+		if player.has_method("cancel_channel"):
+			player.call("cancel_channel") # golpear interrompe o corte da árvore/pedra
 		_set_action("", "")
-		_set_action("swing", STAFF)
+		_set_action("swing", weapon)
 		# O corpo vira para a mira durante o golpe (andando, ele olha para onde vai).
 		if player.has_method("face_aim"):
 			player.call("face_aim", SWING_TIME + 0.15)
@@ -237,7 +248,7 @@ func _melee() -> void:
 	if body.has_method("resolve_ray"):
 		zone = str((body.call("resolve_ray", from, forward) as Dictionary).get("zone", "chest"))
 	var amount := damage * (1.5 if zone == "head" else 1.0)
-	var what := "BASTÃO LONGO" if holding else "SOCO"
+	var what := ("BASTÃO LONGO" if weapon == STAFF else SurvivalData.item_name(weapon).to_upper()) if holding else "SOCO"
 	if target == zombie:
 		_hit_zombie(amount, zone, hit["position"], hit["normal"])
 	elif target.get_parent() != null and target.get_parent().has_method("melee_hit"):
@@ -251,7 +262,7 @@ func _hit_zombie(amount: float, zone: String, point: Vector3, normal: Vector3) -
 	if bool(zombie.get("dead")):
 		return
 	hits += 1
-	zombie.call("receive_hit", zone, amount, point, normal, STAFF if holding else "fist")
+	zombie.call("receive_hit", zone, amount, point, normal, weapon if holding else "fist")
 	zombie.set("hp", maxf(0.0, float(zombie.get("hp")) - amount))
 	_damage_number(point + normal * 0.05, amount, zone == "head")
 	if float(zombie.get("hp")) <= 0.0:
@@ -290,7 +301,7 @@ func _update_board() -> void:
 		return
 	var hp := 0.0 if zombie == null or bool(zombie.get("dead")) else float(zombie.get("hp"))
 	board.text = "ARENA DO ZUMBI\n%s  •  [clique esquerdo] golpear\nzumbi: %d/%d de vida   acertos: %d   mordidas: %d   abates: %d" % [
-		"COM BASTÃO: clique esquerdo golpeia (dano 34, alcance 3,2 m)" if holding else "SOCO (dano 12)  •  pegue o bastão no suporte [E]",
+		("COM BASTÃO: clique esquerdo golpeia (dano 34, alcance 3,2 m)" if weapon == STAFF else "COM %s (dano %d)" % [SurvivalData.item_name(weapon).to_upper(), int(SurvivalData.item(weapon).get("melee", 0))]) if holding else "SOCO (dano 12)  •  pegue o bastão no suporte [E]",
 		roundi(hp), roundi(ZOMBIE_HP), hits, bites, kills]
 
 static func _flat(a: Vector3, b: Vector3) -> float:

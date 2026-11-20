@@ -39,7 +39,7 @@ static func _has_natural_arms(clip: String) -> bool:
 	return clip in NATURAL_ARM_CLIPS or clip.begins_with("walk_unarmed") or clip.begins_with("jog_unarmed")
 const Grip = preload("res://scripts/characters/swat_grip.gd")
 const BackpackModel = preload("res://scripts/survival/backpack_model.gd")
-const StaffModel = preload("res://scripts/weapons/staff_model.gd")
+const ToolModel = preload("res://scripts/weapons/tool_model.gd")
 ## Bones every pose layer needs; a model missing one is rejected (not ready).
 const REQUIRED_BONES := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot", "RightHandMiddle1", "RightHandIndex1", "RightHandPinky1", "LeftHandMiddle1", "LeftHandIndex1", "LeftHandPinky1"]
 var skeleton: Skeleton3D
@@ -456,25 +456,6 @@ func _prone_arms(weight: float) -> void:
 # desce rápido na frente (machado na árvore); "pry" é um golpe mais baixo
 # (pé de cabra na pedra ou no carro). As mãos seguem o cabo por IK.
 const WORK_CYCLE := 0.95
-const TOOL_LOOK := {
-	"axe": {"handle": 0.78, "color": Color("#8a6238"), "head": "axe"},
-	"improvised_axe": {"handle": 0.70, "color": Color("#6e5236"), "head": "stone"},
-	"crowbar": {"handle": 0.80, "color": Color("#2f3b52"), "head": "hook"},
-	"bat": {"handle": 0.82, "color": Color("#b08a5a"), "head": "bat"},
-	"long_bat": {"handle": 1.12, "color": Color("#7a5634"), "head": "bat"},
-	# Ferramentas primitivas da floresta (cabo de galho, cabeça de pedra amarrada com fibra).
-	"stone_axe": {"handle": 0.66, "color": Color("#6b5034"), "head": "stone"},
-	"stone_pick": {"handle": 0.72, "color": Color("#6b5034"), "head": "pick"},
-	"club": {"handle": 0.78, "color": Color("#5e4630"), "head": "bat"},
-	"stone_knife": {"handle": 0.16, "color": Color("#6b5034"), "head": "blade"},
-	# Era do metal (forja).
-	"iron_axe": {"handle": 0.74, "color": Color("#5c4128"), "head": "axe"},
-	"iron_pick": {"handle": 0.76, "color": Color("#5c4128"), "head": "pick"},
-	"iron_knife": {"handle": 0.16, "color": Color("#3e3226"), "head": "blade"},
-	"machete": {"handle": 0.14, "color": Color("#3e3226"), "head": "machete"},
-	"wood_spear": {"handle": 1.1, "color": Color("#6b5034"), "head": "blade"},
-	"nail_bat": {"handle": 0.82, "color": Color("#6a5238"), "head": "bat"},
-}
 # Golpe de arma branca (Q): "swing" arma atrás do ombro direito e varre de lado
 # na frente do corpo, uma vez só (SWING_CYCLE segundos), girando o tronco.
 const SWING_CYCLE := 0.55
@@ -507,79 +488,9 @@ func set_action(act: String, tool: String) -> void:
 		_tool_node = null
 	if is_instance_valid(bound_weapon):
 		bound_weapon.visible = act.is_empty() and armed
-	if not act.is_empty() and TOOL_LOOK.has(tool) and skeleton != null:
-		_tool_node = _build_tool(tool)
+	if not act.is_empty() and ToolModel.has(tool) and skeleton != null:
+		_tool_node = ToolModel.build(tool)
 		skeleton.add_child(_tool_node)
-
-func _tool_mat(color: Color, metal: bool) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = color
-	m.metallic = 0.85 if metal else 0.0
-	m.roughness = 0.3 if metal else 0.8
-	return m
-
-func _tool_box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, rot: Vector3 = Vector3.ZERO) -> void:
-	var mesh := MeshInstance3D.new()
-	var box := BoxMesh.new()
-	box.size = size
-	mesh.mesh = box
-	mesh.position = pos
-	mesh.rotation = rot
-	mesh.material_override = mat
-	parent.add_child(mesh)
-
-## Ferramenta com o cabo ao longo de +Y (base em 0) e a lâmina para -Z.
-func _build_tool(tool: String) -> Node3D:
-	if tool == "long_bat":
-		var staff := StaffModel.build(float(TOOL_LOOK[tool]["handle"]))
-		staff.name = "WorkTool"
-		return staff
-	var look: Dictionary = TOOL_LOOK[tool]
-	var node := Node3D.new()
-	node.name = "WorkTool"
-	var length := float(look["handle"])
-	var handle := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.018
-	cyl.bottom_radius = 0.022
-	cyl.height = length
-	cyl.radial_segments = 8
-	handle.mesh = cyl
-	handle.position.y = length * 0.5
-	handle.material_override = _tool_mat(look["color"], tool == "crowbar")
-	node.add_child(handle)
-	var steel := _tool_mat(Color("#9aa0a4"), true)
-	match str(look["head"]):
-		"axe":
-			_tool_box(node, Vector3(0, length - 0.05, -0.05), Vector3(0.03, 0.09, 0.16), steel)
-			_tool_box(node, Vector3(0, length - 0.05, -0.15), Vector3(0.012, 0.17, 0.06), steel) # gume
-			_tool_box(node, Vector3(0, length - 0.05, 0.05), Vector3(0.04, 0.06, 0.05), steel) # olho/martelo
-		"stone":
-			_tool_box(node, Vector3(0, length - 0.06, -0.07), Vector3(0.05, 0.1, 0.16), _tool_mat(Color("#77746c"), false), Vector3(0.2, 0, 0))
-			_tool_box(node, Vector3(0, length - 0.06, 0.0), Vector3(0.06, 0.07, 0.06), _tool_mat(Color("#c9b98a"), false)) # amarração de corda
-		"hook":
-			_tool_box(node, Vector3(0, length + 0.03, -0.04), Vector3(0.022, 0.022, 0.1), handle.material_override)
-			_tool_box(node, Vector3(0, -0.02, -0.03), Vector3(0.02, 0.02, 0.07), handle.material_override, Vector3(0.6, 0, 0))
-		"bat":
-			handle.mesh = cyl.duplicate()
-			(handle.mesh as CylinderMesh).top_radius = 0.035
-		"pick":
-			# Pedra comprida atravessada no cabo (ponta para os dois lados), amarrada com fibra.
-			var rock := _tool_mat(Color("#6f6c64"), false)
-			_tool_box(node, Vector3(0, length - 0.05, -0.1), Vector3(0.045, 0.06, 0.16), rock, Vector3(0.25, 0, 0))
-			_tool_box(node, Vector3(0, length - 0.05, 0.08), Vector3(0.04, 0.05, 0.1), rock, Vector3(-0.25, 0, 0))
-			_tool_box(node, Vector3(0, length - 0.05, 0.0), Vector3(0.06, 0.07, 0.06), _tool_mat(Color("#c9b98a"), false))
-		"blade":
-			# Lasca de pedra afiada presa num cabo curto.
-			_tool_box(node, Vector3(0, length + 0.07, 0), Vector3(0.012, 0.15, 0.045), _tool_mat(Color("#5d5b55"), false))
-			_tool_box(node, Vector3(0, length, 0), Vector3(0.035, 0.035, 0.035), _tool_mat(Color("#c9b98a"), false))
-		"machete":
-			# Lâmina longa de ferro, mais larga perto da ponta, gume para -Z.
-			var iron := _tool_mat(Color("#8c9094"), true)
-			_tool_box(node, Vector3(0, length + 0.2, -0.005), Vector3(0.008, 0.4, 0.045), iron)
-			_tool_box(node, Vector3(0, length + 0.34, -0.012), Vector3(0.008, 0.14, 0.06), iron)
-			_tool_box(node, Vector3(0, length + 0.005, 0), Vector3(0.03, 0.012, 0.07), iron) # guarda
-	return node
 
 func _ease_in_out(t: float) -> float:
 	return t * t * (3.0 - 2.0 * t)
@@ -844,6 +755,13 @@ func _apply_hold(chest: int, right_arm: int) -> void:
 	var forward := Vector3(0, 0, 1)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
 	var torso := skeleton.get_bone_global_pose(chest).origin
+	if tool_family(work_tool) in ["knife", "machete"]:
+		# Uma mão só: faca/facão na mão direita ao lado do quadril, lâmina para a frente e para baixo.
+		var hand_pos := torso + right * 0.24 - up * 0.42 + forward * 0.12
+		var blade := (forward * 0.75 - up * 0.65).normalized()
+		_grip_on_staff("Right", hand_pos, blade, -right, right * 0.6 - forward * 0.3)
+		_place_tool(blade, -up, hand_pos - blade * 0.08)
+		return
 	var h := (up * 0.85 - forward * 0.35 + right * 0.15).normalized()
 	var right_hand := torso + right * 0.17 - up * 0.30 + forward * 0.22
 	var left_hand := right_hand + h * 0.17

@@ -11,6 +11,7 @@ const AmbientAudioScript = preload("res://scripts/ambient_audio.gd")
 const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
 const TrainingArenaScript = preload("res://scripts/training_arena.gd")
+const TrainingToolsScript = preload("res://scripts/training_tools.gd")
 const TrainingGroundScript = preload("res://scripts/training_ground.gd")
 const TrainingBuildScript = preload("res://scripts/training_build.gd")
 var training_ground: Node3D # treino offline only
@@ -217,6 +218,10 @@ func _spawn_training_dummies() -> void:
     var arena := TrainingArenaScript.new()
     arena.call("setup", player)
     add_child(arena)
+    # Árvore, pedra e suporte com as ferramentas, para testar as animações.
+    var tools := TrainingToolsScript.new()
+    tools.call("setup", player)
+    add_child(tools)
     # Construção da Sobrevivência (B) com material infinito, para testar as peças.
     training_build = TrainingBuildScript.new()
     training_build.call("setup", self, player)
