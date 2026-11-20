@@ -9,6 +9,8 @@ extends RefCounted
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 
 const TREE_VARIANTS := ["pine_a", "pine_b", "oak_a", "oak_b", "birch"]
+const ORE_VEIN := Color("#7a4a2c") # veio de ferro: ferrugem escura
+const SALT_VEIN := Color("#c9c3b0") # salitre: crosta esbranquiçada
 
 static var _cache: Dictionary = {}
 static var _bark: StandardMaterial3D
@@ -51,6 +53,8 @@ static func _build(variant: String, far: bool) -> ArrayMesh:
 		"birch": _birch(bark, leaf, rng, far)
 		"stump": _stump(bark, rng)
 		"rock": _rock(bark, rng, far)
+		"rock_ore": _rock(bark, rng, far, ORE_VEIN)
+		"rock_salt": _rock(bark, rng, far, SALT_VEIN)
 		"bush_full": _bush(leaf, bark, rng, true)
 		"bush_empty": _bush(leaf, bark, rng, false)
 		"stick": _sticks(bark, rng)
@@ -96,6 +100,10 @@ static func _build_silhouette(variant: String) -> ArrayMesh:
 			_blob(st, Vector3(0, 6.3, -0.1), 1.9, rng, 0, Color("#7a9a44"), 1.55)
 		"rock":
 			_rock(st, rng, true)
+		"rock_ore":
+			_rock(st, rng, true, ORE_VEIN)
+		"rock_salt":
+			_rock(st, rng, true, SALT_VEIN)
 		_:
 			return _build(variant, true)
 	st.generate_normals()
@@ -256,7 +264,9 @@ static func _stump(bark: SurfaceTool, rng: RandomNumberGenerator) -> void:
 		_tri(bark, ring[(s + 1) % 9], ring[s], top + Vector3(0, 0.02, 0), wood.darkened(0.15), wood.darkened(0.15), wood)
 
 ## Pedra: esfera facetada amassada, achatada e com veios de cor.
-static func _rock(st: SurfaceTool, rng: RandomNumberGenerator, far: bool) -> void:
+## `vein` (alfa > 0): manchas dessa cor onde o ruído passa do limite
+## (ferro = ferrugem alaranjada, salitre = crosta branca).
+static func _rock(st: SurfaceTool, rng: RandomNumberGenerator, far: bool, vein: Color = Color(0, 0, 0, 0)) -> void:
 	var verts := _icosphere(0 if far else 1)
 	var noise := FastNoiseLite.new()
 	noise.seed = 9
@@ -271,7 +281,12 @@ static func _rock(st: SurfaceTool, rng: RandomNumberGenerator, far: bool) -> voi
 		for k in 3:
 			var p: Vector3 = shaped[i + k]
 			var g := 0.42 + clampf(p.y, 0.0, 1.0) * 0.12 + noise.get_noise_3dv(p * 3.0) * 0.06
-			cols.append(Color(g, g * 0.99, g * 0.95))
+			var c := Color(g, g * 0.99, g * 0.95)
+			if vein.a > 0.0:
+				var spot := noise.get_noise_3dv(p * 5.0 + Vector3(7, 3, 1))
+				if spot > 0.05:
+					c = c.lerp(vein, clampf((spot - 0.05) * 5.0, 0.0, 0.85))
+			cols.append(c)
 		_tri(st, shaped[i], shaped[i + 1], shaped[i + 2], cols[0], cols[1], cols[2])
 
 ## Arbusto: três tufos e, se tiver, frutinhas vermelhas.

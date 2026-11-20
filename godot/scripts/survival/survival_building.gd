@@ -13,8 +13,9 @@ const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const Rules = preload("res://scripts/survival/building_rules.gd")
 const Model = preload("res://scripts/survival/building_model.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
-const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "campfire", "chest", "bed"]
+const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "campfire", "chest", "bed", "workbench", "forge", "workshop", "chem_table"]
 const DEMOLISH_TIME := 1.5
+const BAR_SHOWN := 9 # peças visíveis de uma vez na barra de construção
 const USE_REACH := 2.6 # porta/baú/fogueira com E
 
 var controller: Node # survival_controller.gd
@@ -101,7 +102,7 @@ func _place(entry: Dictionary) -> void:
 				if bool(old.get("open", false)) != bool(entry.get("open", false)):
 					Model.set_door_open(nodes[id], bool(entry.get("open", false)), int(entry.get("r", 0)))
 					_door_sound(rules.center(entry))
-			"campfire":
+			"campfire", "forge":
 				Model.set_fire(nodes[id], bool(entry.get("on", false)))
 		return
 	var node := Model.build(entry, rules)
@@ -150,7 +151,7 @@ func interact_target(me: Vector3) -> Dictionary:
 	for id in rules.pieces:
 		var piece: Dictionary = rules.pieces[id]
 		var kind := str(piece.get("kind", ""))
-		if not kind in ["door", "chest", "campfire"]:
+		if not kind in ["door", "chest", "campfire", "forge", "workbench", "workshop", "chem_table"]:
 			continue
 		var c: Vector3 = rules.center(piece)
 		if absf(c.y - me.y) > 2.2:
@@ -172,6 +173,10 @@ func interact_target(me: Vector3) -> Dictionary:
 				label = "[E] Abrir o baú"
 			"campfire":
 				label = "[E] " + ("Apagar" if bool(piece.get("on", false)) else "Acender") + " a fogueira"
+			"forge":
+				label = "[E] " + ("Apagar" if bool(piece.get("on", false)) else "Acender") + " a forja   •   [L] Manual"
+			"workbench", "workshop", "chem_table":
+				label = "[E] %s: abrir o manual" % str(rules.defs.get(kind, {}).get("name", kind))
 		best = {"type": "build", "id": id, "kind": kind, "label": label + _hp_note(piece)}
 	return best
 
@@ -186,8 +191,10 @@ func interact(id: String) -> void:
 		"chest":
 			if player.call("start_channel", "ABRINDO", 0.5, func(): Net.send({"t": "search", "k": id})):
 				controller.call("_timed_action", "open", 0.5)
-		"campfire":
+		"campfire", "forge":
 			Net.send({"t": "fire", "b": id})
+		"workbench", "workshop", "chem_table":
+			controller.call("open_manual", str(piece.get("kind", "")))
 
 func _hp_note(piece: Dictionary) -> String:
 	var max_hp := float(rules.defs.get(str(piece.get("kind", "")), {}).get("hp", 100))
@@ -610,7 +617,9 @@ func _refresh_bar() -> void:
 	for child in _bar_row.get_children():
 		child.queue_free()
 	var inv: Dictionary = controller.get("inv")
-	for index in ORDER.size():
+	# Muitas peças: mostra uma janela de até BAR_SHOWN em volta da escolhida (cabe em telas menores).
+	var first := clampi(selected - BAR_SHOWN / 2, 0, maxi(0, ORDER.size() - BAR_SHOWN))
+	for index in range(first, mini(ORDER.size(), first + BAR_SHOWN)):
 		var kind: String = ORDER[index]
 		var def: Dictionary = rules.defs.get(kind, {})
 		var card := PanelContainer.new()
@@ -640,8 +649,22 @@ func _refresh_bar() -> void:
 		cost_label.add_theme_color_override("font_color", UiTheme.GOOD if enough else UiTheme.DANGER)
 		col.add_child(cost_label)
 		_bar_row.add_child(card)
+	if first > 0:
+		_bar_row.add_child(_more_label("‹ %d" % first))
+		_bar_row.move_child(_bar_row.get_child(_bar_row.get_child_count() - 1), 0)
+	var after := ORDER.size() - (first + BAR_SHOWN)
+	if after > 0:
+		_bar_row.add_child(_more_label("%d ›" % after))
 	_hint.text = "Clique constrói  •  roda do mouse / %s %s troca  •  %s gira  •  %s (segure) desmonta  •  %s conserta  •  %s sai" % [
 		_key("build_prev"), _key("build_next"), _key("build_rotate"), _key("build_remove"), _key("build_repair"), _key("build")]
+
+static func _more_label(text: String) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", UiTheme.MUTED)
+	return l
 
 static func _short(item: String) -> String:
 	return str({"wood": "tora", "stone": "pedra", "fiber": "fibra", "rope": "corda", "stick": "galho"}.get(item, SurvivalData.item_name(item).to_lower()))

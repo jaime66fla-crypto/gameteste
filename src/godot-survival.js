@@ -27,7 +27,7 @@ const ANIMAL = catalog.animal_rules || {};
 const BUILD = catalog.build_rules;
 const BUILDS = catalog.builds;
 /** Folga ao redor de cada recurso com colisão: a fundação não pode cobrir árvore/rocha/arbusto. */
-const BLOCKING_RESOURCES = { tree: 0.5, rock: 1.3, bush: 0.7, car: 2.5 };
+const BLOCKING_RESOURCES = { tree: 0.5, rock: 1.3, ore: 1.3, saltpeter: 1.3, bush: 0.7, car: 2.5 };
 
 /** Marca pública do dono das construções (não expõe a conta): FNV-1a em base 36. */
 export function ownerTag(account) {
@@ -83,6 +83,10 @@ const NIGHT_START = 20;
 const NIGHT_END = 6;
 // Versão do mundo salvo: mundo de outra versão (a cidade antiga) recomeça do zero.
 export const WORLD_VERSION = 2;
+/** Chance de um zumbi morto deixar a glândula podre. */
+export const ZOMBIE_GLAND_CHANCE = 0.3;
+/** De dia, zumbis só nas áreas 'day' (cidades), no máximo esta fração da noite. */
+const ZOMBIE_DAY_SHARE = 0.5;
 const ZOMBIE_SPAWN_MIN = 55; // nunca nascem na cara de ninguém
 const ZOMBIE_SAFE_START = 60; // ao entrar/renascer, some zumbi que estiver mais perto que isso
 const ZOMBIE_FIGHT_KEEP = 25; // ...a não ser que outro jogador esteja brigando com ele
@@ -598,12 +602,14 @@ export class GodotSurvival {
 	}
 
 	restore(saved) {
-		if (saved.dead) return { ...this.newCharacter(), inv: {}, dead: true, respawnAt: Date.now() };
+		// Receitas aprendidas nas páginas do manual ficam até depois da morte.
+		const known = Array.isArray(saved.known) ? saved.known.filter((id) => RECIPES[id]?.page) : [];
+		if (saved.dead) return { ...this.newCharacter(), inv: {}, dead: true, respawnAt: Date.now(), known };
 		// A infecção fica "pausada" enquanto o jogador está fora do jogo.
 		const left = Math.max(0, Math.min(INFECTION_MS, Number(saved.infectedLeft) || 0));
 		return {
 			p: saved.p, y: saved.y || 0, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', head: saved.head || '', chest: saved.chest || '', dead: false,
-			infectedAt: left > 0 ? Date.now() - (INFECTION_MS - left) : 0,
+			infectedAt: left > 0 ? Date.now() - (INFECTION_MS - left) : 0, known,
 		};
 	}
 
@@ -648,7 +654,7 @@ export class GodotSurvival {
 	}
 
 	invPacket(player) {
-		return { inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back) };
+		return { inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back), known: player.known || [] };
 	}
 
 	sendInv(player) {
@@ -824,6 +830,8 @@ export class GodotSurvival {
 			attacker.zkills++;
 			this.credit(attacker, XP.zombie);
 			this.broadcast({ t: 'zdead', id: zombie.id, by: attacker.id, zone, w: weapon });
+			// Às vezes o zumbi deixa a glândula podre (soro anti-infecção, mesa de química).
+			if (Math.random() < ZOMBIE_GLAND_CHANCE) this.makeBag(zombie.p, { zombie_gland: 1 }, '', 'Restos de zumbi');
 			this.save();
 			return;
 		}
@@ -1000,20 +1008,27 @@ export class GodotSurvival {
 				gone.push(zombie.id);
 			}
 		}
-		// De dia não nasce zumbi; os que sobraram da noite somem aos poucos.
-		if (players.length && !this.isNight()) {
+		// De dia só há zumbis nas cidades; os do mato somem aos poucos.
+		const night = this.isNight();
+		const dayZones = (world.zombie_zones || []).filter((z) => z.day);
+		const inDayZone = (p) => dayZones.some((z) => Math.hypot(p[0] - z.x, p[2] - z.z) < z.r + 10);
+		if (players.length && !night) {
 			for (const zombie of Object.values(s.zombies)) {
-				if (Math.random() >= ZOMBIE_DAWN_FADE) continue;
+				if (inDayZone(zombie.p) || Math.random() >= ZOMBIE_DAWN_FADE) continue;
 				delete s.zombies[zombie.id];
 				gone.push(zombie.id);
 			}
 		}
 		if (gone.length) this.broadcast({ t: 'zgone', l: gone });
-		if (!players.length || !this.isNight()) return;
-		const target = Math.min(ZOMBIE_MAX, ZOMBIE_BASE + ZOMBIE_PER_PLAYER * players.length);
+		if (!players.length) return;
+		// De dia: só nasce zumbi em cidade com alguém por perto.
+		const dayPlayers = night ? players : players.filter((p) => dayZones.some((z) => Math.hypot(p.p[0] - z.x, p.p[2] - z.z) < ZOMBIE_SPAWN_MAX + z.r));
+		if (!dayPlayers.length) return;
+		const full = Math.min(ZOMBIE_MAX, ZOMBIE_BASE + ZOMBIE_PER_PLAYER * players.length);
+		const target = night ? full : Math.ceil(full * ZOMBIE_DAY_SHARE);
 		const born = [];
 		for (let i = 0; i < ZOMBIE_SPAWN_BATCH && count - gone.length + born.length < target; i++) {
-			const spot = this.zombieSpot(players);
+			const spot = this.zombieSpot(dayPlayers, !night);
 			if (!spot) break;
 			const [kind] = weighted(Object.entries(ZOMBIE_KINDS), ([, k]) => k.weight);
 			const zombie = { id: 'z' + ++s.zSeq, kind, hp: ZOMBIE_KINDS[kind].hp, p: spot };
@@ -1024,12 +1039,13 @@ export class GodotSurvival {
 	}
 
 	/** Ponto numa área de zumbis (cidades pesam mais), longe de todos e perto de alguém. */
-	zombieSpot(players) {
-		const zones = world.zombie_zones.filter((z) => players.some((p) => Math.hypot(p.p[0] - z.x, p.p[2] - z.z) < ZOMBIE_SPAWN_MAX + z.r));
+	zombieSpot(players, dayOnly = false) {
+		const zones = world.zombie_zones.filter((z) => (!dayOnly || z.day) && players.some((p) => Math.hypot(p.p[0] - z.x, p.p[2] - z.z) < ZOMBIE_SPAWN_MAX + z.r));
+		if (dayOnly && !zones.length) return null;
 		for (let attempt = 0; attempt < 12; attempt++) {
 			let x;
 			let z;
-			if (zones.length && Math.random() < 0.75) {
+			if (zones.length && (dayOnly || Math.random() < 0.75)) {
 				const zone = weighted(zones, (zz) => zz.weight);
 				const a = Math.random() * Math.PI * 2;
 				const d = Math.sqrt(Math.random()) * zone.r;
@@ -1266,6 +1282,18 @@ export class GodotSurvival {
 			if (me.useItem !== d.item || waited < item.use_time * 1000 - 300 || waited > item.use_time * 1000 + 6000) return;
 			me.useAt = 0;
 		}
+		// Página do manual: aprende uma receita da era da pólvora que ainda não sabia.
+		if (item.read) {
+			const known = me.known || (me.known = []);
+			const left = catalog.recipes.filter((r) => r.page && !r.soon && !known.includes(r.id));
+			if (!left.length) return note('Você já sabe tudo que as páginas ensinam.');
+			const learned = left[Math.floor(Math.random() * left.length)];
+			removeItems(me.inv, d.item, 1);
+			known.push(learned.id);
+			this.save();
+			this.sendInv(me);
+			return note(`Aprendeu a fazer: ${learned.name} (veja no manual, L).`);
+		}
 		if (item.use.cure && !me.infectedAt) return note('Você não está infectado.');
 		if (item.use.hp && !item.use.cure && !item.use.hunger && !item.use.thirst && me.hp >= 100) return note('Vida cheia.');
 		removeItems(me.inv, d.item, 1);
@@ -1327,10 +1355,16 @@ export class GodotSurvival {
 	craft(me, d, note) {
 		const recipe = RECIPES[d.recipe];
 		if (!recipe) return;
-		// Assar: só perto de uma fogueira acesa.
-		if (recipe.station === 'campfire') {
-			const lit = [...this.grid.pieces.values()].some((b) => b.kind === 'campfire' && b.on && flat(b.p, me.p) < REACH && Math.abs(b.p[1] - (me.p[1] || 0)) < 2);
-			if (!lit) return note('Chegue perto de uma fogueira acesa (E acende).');
+		if (recipe.soon) return note('Essa receita ainda não existe no jogo.');
+		if (recipe.page && !(me.known || []).includes(recipe.id)) return note('Falta a página do manual dessa receita (ache nas cidades).');
+		// Estação (fogueira, bancada, forja...): perto de uma, acesa se ela acende.
+		if (recipe.station) {
+			const station = BUILDS[recipe.station] || {};
+			const near = [...this.grid.pieces.values()].some((b) => b.kind === recipe.station && (!station.lit || b.on) && b.p && flat(b.p, me.p) < REACH && Math.abs(b.p[1] - (me.p[1] || 0)) < 2);
+			if (!near) {
+				const name = (station.name || 'estação').toLowerCase();
+				return note(station.lit ? `Chegue perto de uma ${name} acesa (E acende).` : `Chegue perto de uma ${name}.`);
+			}
 		}
 		for (const [item, n] of Object.entries(recipe.needs)) {
 			if ((me.inv[item] || 0) < n) return note(`Falta ${ITEMS[item]?.name || item}.`);
@@ -1361,15 +1395,19 @@ export class GodotSurvival {
 			this.sendStats(me);
 			return note(me.thirst >= 100 ? 'Bebeu água. Sede saciada.' : 'Bebeu água.');
 		}
-		const hasTool = (kind) => Object.keys(me.inv).some((item) => ITEMS[item]?.tool === kind);
-		if (rule.needs && !hasTool(rule.needs)) {
+		// Melhor ferramenta do tipo na mochila: 0 = nenhuma, 1 = pedra, 2 = ferro.
+		const toolTier = (kind) => Object.keys(me.inv).reduce((best, item) => (ITEMS[item]?.tool === kind ? Math.max(best, ITEMS[item].tier || 1) : best), 0);
+		if (rule.needs && !toolTier(rule.needs)) {
 			const tool = Object.values(ITEMS).find((item) => item.tool === rule.needs);
 			return note(`Precisa de ${tool ? tool.name.toLowerCase() : 'uma ferramenta'}.`);
 		}
-		const tooled = !rule.needs && rule.tool && hasTool(rule.tool);
+		// Sem 'needs': qualquer ferramenta do tipo rende mais. Com 'needs': só a de ferro.
+		const tooled = rule.needs ? toolTier(rule.needs) >= 2 && !!rule.bonus : rule.tool && toolTier(rule.tool) > 0;
 		const [min, max] = tooled ? rule.bonus : rule.base;
 		const gained = { [rule.gives]: randInt(min, max) };
 		if (rule.extra && Math.random() < rule.extra[1]) gained[rule.extra[0]] = 1;
+		// Carro velho: cada peça tem a sua chance (peças, borracha, vidro...).
+		for (const [item, chance] of rule.extras || []) if (Math.random() < chance) gained[item] = (gained[item] || 0) + 1;
 		const got = [];
 		for (const [item, n] of Object.entries(gained)) {
 			const fits = roomFor(me, item, n);
@@ -1398,7 +1436,7 @@ export class GodotSurvival {
 			if (b.o) out.o = b.o;
 		}
 		if (b.kind === 'door') out.open = !!b.open;
-		if (b.kind === 'campfire') out.on = !!b.on;
+		if (BUILDS[b.kind]?.lit) out.on = !!b.on;
 		if (b.kind === 'bed') out.cd = Math.max(0, Math.ceil(((b.used || 0) + BUILD.bed_cooldown * 1000 - Date.now()) / 1000));
 		return out;
 	}
@@ -1496,6 +1534,7 @@ export class GodotSurvival {
 	build(me, d, note) {
 		const def = BUILDS[d.kind];
 		if (!def) return;
+		if (def.soon) return note('Essa construção ainda não existe no jogo.');
 		const s = this.state;
 		const p = { kind: d.kind };
 		if (def.slot === 'free') {
@@ -1660,7 +1699,7 @@ export class GodotSurvival {
 
 	toggleFire(me, d, note) {
 		const b = this.grid.pieces.get(d.b);
-		if (b?.kind !== 'campfire') return;
+		if (!b || !BUILDS[b.kind]?.lit) return;
 		if (flat(me.p, b.p) > REACH) return note('Longe demais.');
 		b.on = !b.on;
 		this.buildDirty.add(b.id);
@@ -1793,7 +1832,7 @@ export class GodotSurvival {
 					sid: 'sl' + crypto.randomUUID().slice(0, 8), name: player.name, rank: player.rank,
 					p: player.p, y: player.y || 0, hp: player.hp, hunger: player.hunger, thirst: player.thirst,
 					inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', dead: player.dead, savedAt: Date.now(),
-					infectedLeft: this.infectionLeft(player),
+					infectedLeft: this.infectionLeft(player), known: player.known || [],
 				};
 				s.chars[player.account] = sleeper;
 			}

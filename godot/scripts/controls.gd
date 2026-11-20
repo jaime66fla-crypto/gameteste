@@ -32,6 +32,7 @@ const ACTIONS := [
 	["interact", "Interagir / entrar e sair do carro", "Geral", KEY_E],
 	["inventory", "Inventário", "Sobrevivência", KEY_TAB],
 	["map", "Mapa", "Sobrevivência", KEY_M],
+	["manual", "Manual de sobrevivência", "Sobrevivência", KEY_L],
 	["refuel", "Abastecer o carro", "Sobrevivência", KEY_T],
 	["build", "Construir (abrir/fechar)", "Construção", KEY_B],
 	["build_next", "Próxima peça", "Construção", KEY_C],

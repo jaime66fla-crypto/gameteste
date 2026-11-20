@@ -46,6 +46,12 @@ static func _mat(key: String) -> Material:
 		"cloth": m = _flat("#5f5a44")
 		"pillow": m = _flat("#8a846c")
 		"iron": m = _flat("#2b2d2e", 0.5, 0.6)
+		"rust": m = _flat("#5a3524", 0.85, 0.3)
+		"glass":
+			var g := _flat("#7f9a8e", 0.1, 0.0)
+			g.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			g.albedo_color.a = 0.55
+			m = g
 		_: m = _flat("#ff00ff")
 	_mats[key] = m
 	return m
@@ -153,6 +159,10 @@ static func build(p: Dictionary, rules) -> Node3D:
 		"campfire": _campfire(root, body, bool(p.get("on", false)))
 		"chest": _chest(root, body)
 		"bed": _bed(root, body)
+		"workbench": _workbench(root, body)
+		"forge": _forge(root, body, bool(p.get("on", false)))
+		"workshop": _workshop(root, body)
+		"chem_table": _chem_table(root, body)
 	return root
 
 static func _foundation(root: Node3D, body: StaticBody3D, S: float, base: float) -> void:
@@ -330,14 +340,16 @@ static func _campfire(root: Node3D, body: StaticBody3D, on: bool) -> void:
 	body.add_child(col)
 	set_fire(root, on)
 
-## Acende/apaga a fogueira: luz quente que tremula e chamas (partículas).
+## Acende/apaga a fogueira (ou a forja): luz quente que tremula e chamas (partículas).
+## A altura do fogo vem da meta "fire_y" (forja: dentro da boca de pedra).
 static func set_fire(root: Node3D, on: bool) -> void:
 	var light := root.get_node_or_null("FireLight") as OmniLight3D
 	var flames := root.get_node_or_null("Flames") as CPUParticles3D
+	var fire_y := float(root.get_meta("fire_y", 0.0))
 	if on and light == null:
 		light = OmniLight3D.new()
 		light.name = "FireLight"
-		light.position.y = 0.7
+		light.position.y = 0.7 + fire_y
 		light.light_color = Color("#ff9a4a")
 		light.light_energy = 2.2
 		light.omni_range = 11.0
@@ -348,7 +360,7 @@ static func set_fire(root: Node3D, on: bool) -> void:
 		flames.name = "Flames"
 		flames.amount = 26
 		flames.lifetime = 0.7
-		flames.position.y = 0.12
+		flames.position.y = 0.12 + fire_y
 		flames.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 		flames.emission_sphere_radius = 0.16
 		flames.direction = Vector3.UP
@@ -402,6 +414,112 @@ static func _bed(root: Node3D, body: StaticBody3D) -> void:
 	_box(root, null, Vector3(0, 0.36, 0.1), Vector3(0.9, 0.14, 1.75), "cloth")
 	_box(root, null, Vector3(0, 0.47, -0.7), Vector3(0.6, 0.1, 0.32), "pillow")
 	_box(root, null, Vector3(0, 0.45, -0.97), Vector3(1.0, 0.6, 0.08), "wood_dark")
+
+## Bancada: tampo grosso de tábuas em quatro pernas, prateleira embaixo,
+## morsa de ferro num canto e ferramentas penduradas no fundo.
+static func _workbench(root: Node3D, body: StaticBody3D) -> void:
+	_box(root, body, Vector3(0, 0.86, 0), Vector3(1.6, 0.1, 0.8), "plank")
+	for x in [-0.72, 0.72]:
+		for z in [-0.32, 0.32]:
+			_box(root, null, Vector3(x, 0.41, z), Vector3(0.1, 0.82, 0.1), "wood_dark")
+	_box(root, null, Vector3(0, 0.22, 0), Vector3(1.44, 0.05, 0.62), "wood_local")
+	_shape(body, Vector3(0, 0.41, 0), Vector3(1.6, 0.82, 0.8))
+	# Fundo com ferramentas penduradas.
+	_box(root, null, Vector3(0, 1.22, -0.36), Vector3(1.6, 0.62, 0.05), "wood_dark")
+	_box(root, null, Vector3(-0.45, 1.25, -0.32), Vector3(0.05, 0.4, 0.03), "wood")
+	_box(root, null, Vector3(-0.45, 1.42, -0.31), Vector3(0.18, 0.08, 0.03), "iron")
+	_box(root, null, Vector3(0.1, 1.2, -0.32), Vector3(0.04, 0.34, 0.03), "wood")
+	_box(root, null, Vector3(0.45, 1.24, -0.32), Vector3(0.3, 0.05, 0.03), "iron")
+	# Morsa no canto e uma tora em cima.
+	_box(root, null, Vector3(0.62, 0.98, 0.22), Vector3(0.16, 0.14, 0.2), "iron")
+	_box(root, null, Vector3(0.62, 1.07, 0.22), Vector3(0.06, 0.06, 0.26), "iron")
+	var log_mesh := CylinderMesh.new()
+	log_mesh.top_radius = 0.08
+	log_mesh.bottom_radius = 0.08
+	log_mesh.height = 0.6
+	log_mesh.radial_segments = 7
+	_mesh(root, log_mesh, Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(-0.3, 0.99, 0.1)), _mat("wood_dark"))
+
+## Forja: bloco de pedra com a boca do fogo na frente, chaminé atrás e uma
+## bigorna de ferro ao lado. Acesa, o fogo fica dentro da boca.
+static func _forge(root: Node3D, body: StaticBody3D, on: bool) -> void:
+	root.set_meta("fire_y", 0.42)
+	_box(root, body, Vector3(-0.15, 0.4, 0), Vector3(1.1, 0.8, 1.0), "stone")
+	_box(root, null, Vector3(-0.15, 0.6, 0.47), Vector3(0.5, 0.36, 0.08), "ash")
+	_box(root, null, Vector3(-0.15, 0.82, 0.05), Vector3(1.16, 0.08, 1.06), "rock")
+	_box(root, body, Vector3(-0.15, 1.35, -0.25), Vector3(0.4, 1.0, 0.4), "stone")
+	_box(root, null, Vector3(-0.15, 1.88, -0.25), Vector3(0.46, 0.08, 0.46), "rock")
+	# Bigorna num toco.
+	var stump := CylinderMesh.new()
+	stump.top_radius = 0.17
+	stump.bottom_radius = 0.2
+	stump.height = 0.5
+	stump.radial_segments = 8
+	_mesh(root, stump, Transform3D(Basis.IDENTITY, Vector3(0.68, 0.25, 0.15)), _mat("wood_dark"))
+	_box(root, null, Vector3(0.68, 0.58, 0.15), Vector3(0.16, 0.16, 0.2), "iron")
+	_box(root, null, Vector3(0.68, 0.7, 0.15), Vector3(0.24, 0.08, 0.42), "iron")
+	_shape(body, Vector3(0.68, 0.37, 0.15), Vector3(0.4, 0.74, 0.44))
+	set_fire(root, on)
+
+## Oficina mecânica: bancada de chapa de ferro sobre cavaletes, morsa grande,
+## esmeril, um pneu encostado e um tambor ao lado.
+static func _workshop(root: Node3D, body: StaticBody3D) -> void:
+	_box(root, body, Vector3(0, 0.9, 0), Vector3(2.0, 0.08, 0.9), "iron")
+	for x in [-0.85, 0.85]:
+		_box(root, null, Vector3(x, 0.43, 0), Vector3(0.12, 0.86, 0.8), "wood_dark")
+	_shape(body, Vector3(0, 0.43, 0), Vector3(2.0, 0.86, 0.9))
+	_box(root, null, Vector3(-0.7, 1.02, 0.2), Vector3(0.22, 0.16, 0.24), "iron")
+	_box(root, null, Vector3(-0.7, 1.12, 0.2), Vector3(0.08, 0.08, 0.36), "iron")
+	# Esmeril: motor e dois discos.
+	_box(root, null, Vector3(0.55, 1.04, -0.15), Vector3(0.3, 0.2, 0.18), "rock")
+	for side in [-1.0, 1.0]:
+		var disc := CylinderMesh.new()
+		disc.top_radius = 0.1
+		disc.bottom_radius = 0.1
+		disc.height = 0.04
+		disc.radial_segments = 10
+		_mesh(root, disc, Transform3D(Basis(Vector3.FORWARD, PI * 0.5), Vector3(0.55 + side * 0.2, 1.07, -0.15)), _mat("iron"))
+	# Pneu encostado na perna e tambor de óleo.
+	var tire := TorusMesh.new()
+	tire.inner_radius = 0.2
+	tire.outer_radius = 0.34
+	tire.rings = 12
+	tire.ring_segments = 6
+	_mesh(root, tire, Transform3D(Basis(Vector3.RIGHT, PI * 0.5).rotated(Vector3.UP, 0.3), Vector3(1.2, 0.34, 0.25)), _mat("ash"))
+	var drum := CylinderMesh.new()
+	drum.top_radius = 0.28
+	drum.bottom_radius = 0.28
+	drum.height = 0.85
+	drum.radial_segments = 10
+	_mesh(root, drum, Transform3D(Basis.IDENTITY, Vector3(-1.3, 0.43, -0.1)), _mat("rust"))
+	_shape(body, Vector3(-1.3, 0.43, -0.1), Vector3(0.56, 0.85, 0.56))
+
+## Mesa de química: mesa de madeira com tampo de chapa, frascos de vidro,
+## um fogareiro e uma prateleira de potes no fundo.
+static func _chem_table(root: Node3D, body: StaticBody3D) -> void:
+	_box(root, body, Vector3(0, 0.84, 0), Vector3(1.5, 0.06, 0.75), "iron")
+	for x in [-0.68, 0.68]:
+		for z in [-0.3, 0.3]:
+			_box(root, null, Vector3(x, 0.41, z), Vector3(0.08, 0.82, 0.08), "wood_dark")
+	_shape(body, Vector3(0, 0.41, 0), Vector3(1.5, 0.82, 0.75))
+	_box(root, null, Vector3(0, 1.25, -0.34), Vector3(1.5, 0.04, 0.2), "wood_dark")
+	for x in [-0.6, -0.35, -0.1, 0.2, 0.5]:
+		_box(root, null, Vector3(x, 1.34, -0.34), Vector3(0.1, 0.16, 0.1), "glass")
+	for spot in [[Vector3(-0.4, 0.97, 0.1), 0.08, 0.2], [Vector3(-0.15, 0.95, 0.15), 0.06, 0.16], [Vector3(0.1, 1.0, 0.05), 0.05, 0.26]]:
+		var flask := CylinderMesh.new()
+		flask.top_radius = float(spot[1]) * 0.45
+		flask.bottom_radius = float(spot[1])
+		flask.height = float(spot[2])
+		flask.radial_segments = 8
+		_mesh(root, flask, Transform3D(Basis.IDENTITY, spot[0]), _mat("glass"))
+	# Fogareiro com uma panelinha.
+	_box(root, null, Vector3(0.5, 0.92, 0.12), Vector3(0.26, 0.1, 0.26), "iron")
+	var pot := CylinderMesh.new()
+	pot.top_radius = 0.1
+	pot.bottom_radius = 0.09
+	pot.height = 0.12
+	pot.radial_segments = 10
+	_mesh(root, pot, Transform3D(Basis.IDENTITY, Vector3(0.5, 1.03, 0.12)), _mat("rust"))
 
 ## Prévia: o mesmo modelo, sem colisão, todo na cor verde/vermelha.
 static func make_ghost(p: Dictionary, rules) -> Node3D:

@@ -87,9 +87,19 @@ function gather(room, p, res) {
 	say(room, p, { t: 'gather', r: res.id });
 }
 
-test('world data: only nature, every resource kind has a rule, recipes use known items', () => {
+test('world data: nature plus three abandoned cities; every resource kind has a rule, recipes use known items', () => {
 	assert.equal(world.spawns.length, 16);
-	for (const key of ['containers', 'vehicles', 'buildings', 'roads', 'towns']) assert.deepEqual(world[key], [], key);
+	assert.equal(world.towns.length, 3);
+	for (const key of ['containers', 'buildings', 'roads']) assert.ok(world[key].length > 0, key);
+	for (const c of world.containers) assert.ok(catalog.loot[c.type], `loot table ${c.type}`);
+	for (const table of Object.values(catalog.loot)) for (const [item] of table.table) assert.ok(catalog.items[item] && !catalog.items[item].soon, `loot ${item}`);
+	for (const v of world.vehicles) assert.ok(catalog.vehicles[v.kind], v.kind);
+	// Cidades nas pontas do mapa, sem nascimento dentro.
+	for (const t of world.towns) {
+		assert.ok(Math.hypot(...t.center) > world.half_size * 0.6, `${t.name} far from the middle`);
+		for (const [x, z] of world.spawns) assert.ok(Math.hypot(x - t.center[0], z - t.center[1]) > 50, `spawn away from ${t.name}`);
+	}
+	assert.ok(world.resources.filter((r) => r.kind === 'car').length > world.vehicles.length * 10, 'wrecks far outnumber working cars');
 	for (const r of world.resources) assert.ok(catalog.resources[r.kind], r.kind);
 	for (const kind of ['tree', 'rock', 'bush', 'stick', 'pebble', 'fiber', 'herb', 'pond']) {
 		assert.ok(world.resources.some((r) => r.kind === kind), `map has ${kind}`);
@@ -119,7 +129,8 @@ test('joining spawns at once with empty hands; 16 players fill a world', async (
 	assert.equal(start.survival, true);
 	assert.equal(start.host, first.id);
 	assert.deepEqual(start.you.inv, {});
-	assert.deepEqual(start.vehicles, []);
+	assert.equal(start.vehicles.length, world.vehicles.length, 'the rare working cars are sent');
+	assert.equal(world.vehicles.length, world.towns.length, 'one working car per city');
 	for (let i = 1; i < CAPACITY; i++) assert.equal((await join(room)).status, 101);
 	assert.equal((await join(room)).status, 409);
 });
@@ -264,6 +275,162 @@ test('from nothing to a stone axe: sticks, pebbles and fiber are enough', async 
 	say(room, p, { t: 'craft', recipe: 'rope' });
 	say(room, p, { t: 'craft', recipe: 'stone_axe' });
 	assert.deepEqual(p.me().inv, { stone_axe: 1 });
+});
+
+test('manual catalog: eras, stations and "soon" entries are consistent', () => {
+	const eraIds = catalog.eras.map((e) => e.id);
+	for (const recipe of catalog.recipes) {
+		assert.ok(eraIds.includes(recipe.era), `${recipe.id} has a known era`);
+		if (recipe.station) assert.ok(catalog.builds[recipe.station]?.station, `${recipe.id} station ${recipe.station}`);
+		// Receita que já vale no jogo não pode pedir nem dar coisa que ainda não existe.
+		if (!recipe.soon && !catalog.builds[recipe.station]?.soon) {
+			for (const item of [...Object.keys(recipe.needs), recipe.gives[0]]) assert.ok(!catalog.items[item].soon, `${recipe.id} uses soon item ${item}`);
+		}
+	}
+	for (const [kind, def] of Object.entries(catalog.builds)) {
+		for (const item of Object.keys(def.cost)) {
+			assert.ok(catalog.items[item], `${kind} cost ${item}`);
+			if (!def.soon) assert.ok(!catalog.items[item].soon, `${kind} costs soon item ${item}`);
+		}
+	}
+	// Todo item que existe no jogo tem de onde vir (coleta, caça ou receita que já vale).
+	const reachable = new Set();
+	for (const rule of Object.values(catalog.resources)) {
+		if (rule.gives) reachable.add(rule.gives);
+		if (rule.extra) reachable.add(rule.extra[0]);
+		for (const [item] of rule.extras || []) reachable.add(item);
+	}
+	for (const table of Object.values(catalog.loot)) for (const [item] of table.table) reachable.add(item);
+	reachable.add('zombie_gland'); // cai dos zumbis
+	for (const animal of Object.values(catalog.animals)) for (const item of Object.keys(animal.loot)) reachable.add(item);
+	for (const recipe of catalog.recipes) if (!recipe.soon && !catalog.builds[recipe.station]?.soon) reachable.add(recipe.gives[0]);
+	for (const [id, item] of Object.entries(catalog.items)) if (!item.soon) assert.ok(reachable.has(id), `${id} can be obtained`);
+	for (const kind of ['ore', 'saltpeter']) assert.ok(world.resources.some((r) => r.kind === kind), `map has ${kind}`);
+});
+
+test('stations: workbench must be near, the forge must be lit; soon recipes and builds are refused', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	at(p, [20, 0, 20]);
+	p.me().inv = { hide: 6, rope: 4, iron_ore: 2, charcoal: 1, scrap: 3 };
+	say(room, p, { t: 'craft', recipe: 'leather_vest' });
+	assert.match(p.ws.last('note').message, /perto de uma bancada/);
+	room.grid.add({ id: 'W1', kind: 'workbench', p: [21, 0, 20], y: 0, hp: 250, ow: 'x' });
+	say(room, p, { t: 'craft', recipe: 'leather_vest' });
+	assert.equal(p.me().inv.leather_vest, 1);
+
+	say(room, p, { t: 'craft', recipe: 'iron_bar' });
+	assert.match(p.ws.last('note').message, /forja acesa/);
+	room.grid.add({ id: 'G1', kind: 'forge', p: [19, 0, 20], y: 0, hp: 400, ow: p.me().tag, on: false });
+	say(room, p, { t: 'craft', recipe: 'iron_bar' });
+	assert.match(p.ws.last('note').message, /forja acesa/, 'cold forge does not smelt');
+	say(room, p, { t: 'fire', b: 'G1' });
+	assert.equal(room.grid.pieces.get('G1').on, true, 'E lights the forge');
+	assert.equal(room.buildPacket(room.grid.pieces.get('G1')).on, true);
+	say(room, p, { t: 'craft', recipe: 'iron_bar' });
+	assert.equal(p.me().inv.iron_bar, 1);
+
+	p.me().inv.glass = 1;
+	p.me().inv.gasoline = 1;
+	p.me().inv.cloth = 1;
+	p.me().inv.charcoal = 1;
+	say(room, p, { t: 'craft', recipe: 'molotov' });
+	assert.match(p.ws.last('note').message, /ainda não existe/);
+	assert.equal(p.me().inv.glass, 1);
+	say(room, p, { t: 'craft', recipe: 'scrap_iron' });
+	assert.equal(p.me().inv.iron_bar, 2, 'scrap melts into iron at the forge');
+});
+
+test('cities: crowbar strips old cars into scrap and parts; containers hold city loot', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const car = world.resources.find((r) => r.kind === 'car');
+	at(p, car.p);
+	gather(room, p, car);
+	assert.match(p.ws.last('note').message, /pé de cabra/);
+	p.me().inv = { crowbar: 1 };
+	gather(room, p, car);
+	assert.ok(p.me().inv.scrap >= 2, 'scrap from the wreck');
+	let parts = 0;
+	for (const wreck of world.resources.filter((r) => r.kind === 'car').slice(1, 12)) {
+		at(p, wreck.p);
+		p.me().inv = { crowbar: 1 };
+		gather(room, p, wreck);
+		parts += Object.keys(p.me().inv).filter((k) => !['crowbar', 'scrap'].includes(k)).length;
+	}
+	assert.ok(parts > 0, 'wrecks also give parts, rubber, glass...');
+	const box = world.containers.find((c) => c.type === 'gun_locker');
+	assert.ok(box, 'a police station has a gun locker');
+});
+
+test('manual pages teach page recipes for good; without one the workshop refuses', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	at(p, [20, 0, 20]);
+	room.grid.add({ id: 'O1', kind: 'workshop', p: [21, 0, 20], y: 0, hp: 500, ow: 'x' });
+	p.me().inv = { gunpowder: 4, scrap: 4 };
+	say(room, p, { t: 'craft', recipe: 'ammo_9mm' });
+	assert.match(p.ws.last('note').message, /página do manual/);
+	const pages = catalog.recipes.filter((r) => r.page && !r.soon);
+	p.me().inv.manual_page = pages.length + 1;
+	for (let i = 0; i < pages.length; i++) say(room, p, { t: 'use', item: 'manual_page' });
+	assert.deepEqual([...p.me().known].sort(), pages.map((r) => r.id).sort());
+	assert.deepEqual(p.ws.last('inv').known.length, pages.length, 'the client learns what is known');
+	say(room, p, { t: 'use', item: 'manual_page' });
+	assert.match(p.ws.last('note').message, /já sabe tudo/);
+	assert.equal(p.me().inv.manual_page, 1, 'a useless page is kept');
+	say(room, p, { t: 'craft', recipe: 'ammo_9mm' });
+	assert.equal(p.me().inv.a_9mm, 8);
+	room.damagePlayer(p.me(), 500, 'z1', 'zombie');
+	assert.equal(p.me().known.length, pages.length, 'knowledge survives death');
+});
+
+test('zombie kills sometimes leave a rotten gland; cities have zombies in daylight too', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	at(p, [0, 0, 0]);
+	p.me().inv = { machete: 1 };
+	for (let i = 0; i < 40; i++) {
+		room.state.zombies['zz' + i] = { id: 'zz' + i, kind: 'walker', hp: 1, p: [1, 0, 0] };
+		room.hitLog.clear();
+		say(room, p, { t: 'melee', target: 'zz' + i, item: 'machete' });
+	}
+	const glands = Object.values(room.state.bags).filter((b) => b.items.zombie_gland);
+	assert.ok(glands.length > 0 && glands.length < 40, `some glands (${glands.length}/40)`);
+	assert.equal(glands[0].title, 'Restos de zumbi');
+	// Meio-dia: no mato não nasce zumbi; perto de uma cidade, sim.
+	setHour(room, 12);
+	room.state.zombies = {};
+	room.state.bags = {};
+	await room.alarm();
+	assert.equal(Object.keys(room.state.zombies).length, 0, 'no zombies in the woods by day');
+	const town = world.towns[0].center;
+	at(p, [town[0], 0, town[1] + 60]);
+	for (let i = 0; i < 6; i++) await room.alarm();
+	assert.ok(Object.keys(room.state.zombies).length > 0, 'the city has zombies by day');
+});
+
+test('iron tools gather more than stone ones; iron veins need a pick', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const ore = world.resources.find((r) => r.kind === 'ore');
+	at(p, ore.p);
+	gather(room, p, ore);
+	assert.match(p.ws.last('note').message, /picareta de pedra/);
+	p.me().inv = { stone_pick: 1 };
+	gather(room, p, ore);
+	const got = p.me().inv.iron_ore;
+	assert.ok(got >= 1 && got <= 2);
+	const rocks = world.resources.filter((r) => r.kind === 'rock');
+	p.me().inv = { iron_pick: 1 };
+	let total = 0;
+	for (const rock of rocks.slice(0, 5)) {
+		at(p, rock.p);
+		p.me().inv = { iron_pick: 1 }; // esvazia os bolsos (10 kg) a cada rocha
+		gather(room, p, rock);
+		total += p.me().inv.stone || 0;
+	}
+	assert.ok(total >= 5 * catalog.resources.rock.bonus[0], 'iron pick yields the bonus');
 });
 
 test('berries feed, bandages heal, the herbal cure needs its 2 s and an infection', async () => {

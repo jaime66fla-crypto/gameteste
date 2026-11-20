@@ -467,6 +467,13 @@ const TOOL_LOOK := {
 	"stone_pick": {"handle": 0.72, "color": Color("#6b5034"), "head": "pick"},
 	"club": {"handle": 0.78, "color": Color("#5e4630"), "head": "bat"},
 	"stone_knife": {"handle": 0.16, "color": Color("#6b5034"), "head": "blade"},
+	# Era do metal (forja).
+	"iron_axe": {"handle": 0.74, "color": Color("#5c4128"), "head": "axe"},
+	"iron_pick": {"handle": 0.76, "color": Color("#5c4128"), "head": "pick"},
+	"iron_knife": {"handle": 0.16, "color": Color("#3e3226"), "head": "blade"},
+	"machete": {"handle": 0.2, "color": Color("#3e3226"), "head": "blade"},
+	"wood_spear": {"handle": 1.1, "color": Color("#6b5034"), "head": "blade"},
+	"nail_bat": {"handle": 0.82, "color": Color("#6a5238"), "head": "bat"},
 }
 # Golpe de arma branca (Q): "swing" arma atrás do ombro direito e varre de lado
 # na frente do corpo, uma vez só (SWING_CYCLE segundos), girando o tronco.

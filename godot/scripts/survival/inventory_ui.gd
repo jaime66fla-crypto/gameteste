@@ -43,6 +43,7 @@ const GOOD := UiTheme.GOOD
 const BAD := UiTheme.DANGER
 
 var inv: Dictionary = {}
+var known: Array = [] # receitas de página aprendidas
 var weight := 0.0
 var cap := 10.0
 var back := "" # mochila equipada nas costas
@@ -408,7 +409,7 @@ func _sorted(items: Dictionary) -> Array:
 		return ca < cb if ca != cb else SurvivalData.item_name(a) < SurvivalData.item_name(b))
 	return list
 
-func _describe(id: String) -> String:
+static func _describe(id: String) -> String:
 	var entry := SurvivalData.item(id)
 	var parts: Array[String] = []
 	var use: Dictionary = entry.get("use", {})
@@ -421,7 +422,7 @@ func _describe(id: String) -> String:
 	if entry.has("melee"):
 		parts.append("Dano %d" % int(entry["melee"]) + ("  •  alcance longo" if entry.has("reach") else ""))
 	if entry.has("tool"):
-		parts.append(str({"wood": "Corta árvores", "stone": "Quebra rochas", "cut": "Corta mais capim"}.get(str(entry["tool"]), "Ferramenta")))
+		parts.append(str({"wood": "Corta árvores", "stone": "Quebra rochas", "cut": "Corta mais capim", "scrap": "Desmonta carros velhos"}.get(str(entry["tool"]), "Ferramenta")))
 	if entry.has("carry"):
 		parts.append("+%d kg de carga nas costas" % int(entry["carry"]))
 	if entry.has("armor"):
@@ -676,6 +677,10 @@ func _refresh_recipes() -> void:
 	_side_head.add_child(only_box)
 	var shown := 0
 	for recipe in SurvivalData.recipes():
+		if bool(recipe.get("soon", false)):
+			continue # ainda não existe: só no Manual (L)
+		if bool(recipe.get("page", false)) and not known.has(str(recipe["id"])):
+			continue # falta ler a página do manual
 		var gives: Array = recipe["gives"]
 		var cat := str(SurvivalData.item(str(gives[0])).get("cat", "material"))
 		var cats: Array = FILTERS[_filter][1]
@@ -729,8 +734,9 @@ func _recipe_card(recipe: Dictionary, have_all: bool) -> Control:
 		amount.add_theme_color_override("font_color", GOOD if have >= need else BAD)
 		chip.add_child(amount)
 		needs_row.add_child(chip)
-	if str(recipe.get("station", "")) == "campfire":
-		text.add_child(_label("Perto de uma fogueira acesa", 10, Color("#d9925a")))
+	var station_note := SurvivalData.station_note(str(recipe.get("station", "")))
+	if not station_note.is_empty():
+		text.add_child(_label(station_note, 10, Color("#d9925a")))
 	var make := _button("Fabricar", true)
 	make.disabled = not have_all
 	make.size_flags_vertical = Control.SIZE_SHRINK_CENTER

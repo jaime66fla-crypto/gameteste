@@ -21,7 +21,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var data := SurvivalData.world()
-	check(data.get("containers", []).is_empty() and data.get("buildings", []).is_empty(), "floresta: sem prédios nem recipientes")
+	check(data.get("towns", []).size() == 3 and not data.get("buildings", []).is_empty() and not data.get("containers", []).is_empty(), "três cidades abandonadas com prédios e recipientes")
 	check(data.get("ponds", []).size() > 5, "mundo com lagos")
 	check(SurvivalData.best_melee({"stone_knife": 1, "club": 1})[0] == "club", "clava é a melhor arma branca")
 	var root3d := Node3D.new()
@@ -31,6 +31,7 @@ func _run() -> void:
 	await process_frame
 	check(world.containers.size() == data["containers"].size(), "todos os recipientes montados")
 	check(world.resources.size() == data["resources"].size(), "todos os recursos montados")
+	check(world.get_tree().get_nodes_in_group("map_building").size() == data["buildings"].size(), "todos os prédios das cidades montados")
 	for kind in ["tree", "rock", "stick", "pebble", "fiber", "herb"]:
 		var rid := ""
 		for id in world.resources:

@@ -33,6 +33,18 @@ static func item_name(id: String) -> String:
 static func recipes() -> Array:
 	return catalog().get("recipes", [])
 
+## Construção pelo id ("forge" -> {name, cost, station, lit...}).
+static func build_def(kind: String) -> Dictionary:
+	return catalog().get("builds", {}).get(kind, {})
+
+## "Perto de uma forja acesa" / "Perto de uma bancada" / "" (na mão).
+static func station_note(station: String) -> String:
+	if station.is_empty():
+		return ""
+	var def := build_def(station)
+	var name := str(def.get("name", station)).to_lower()
+	return ("Perto de uma %s acesa" if bool(def.get("lit", false)) else "Perto de uma %s") % name
+
 static func resource_rule(kind: String) -> Dictionary:
 	return catalog().get("resources", {}).get(kind, {})
 

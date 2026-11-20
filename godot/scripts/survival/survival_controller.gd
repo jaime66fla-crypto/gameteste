@@ -12,6 +12,7 @@ const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
 const Melee = preload("res://scripts/melee.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
+const ManualUI = preload("res://scripts/survival/survival_manual.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 const BuildingScript = preload("res://scripts/survival/survival_building.gd")
 const AnimalScript = preload("res://scripts/survival/animal.gd")
@@ -67,6 +68,7 @@ var _target: Dictionary = {} # o que está ao alcance do E
 
 var ui: CanvasLayer
 var inventory: Control
+var manual: Control # Manual de sobrevivência (L)
 var bars: Dictionary = {}
 var clock_label: Label
 var prompt: Label
@@ -145,8 +147,8 @@ func _ready() -> void:
 	if bool(you.get("dead", false)):
 		_on_local_death()
 	_feed("Você acordou na floresta sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
-	_feed("E coletar/beber  •  TAB inventário e fabricar  •  B construir  •  M mapa  •  Q golpe  •  F curativo")
-	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato.")
+	_feed("E coletar/beber  •  TAB inventário  •  L manual  •  B construir  •  M mapa  •  Q golpe  •  F curativo")
+	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato. Nas 3 cidades abandonadas (pontas do mapa) há zumbis até de dia.")
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
@@ -593,6 +595,8 @@ func _on_local_death() -> void:
 	local_dead = true
 	_respawn_left = 8.0
 	inventory.call("close")
+	if manual != null and manual.visible:
+		manual.call("close")
 	if building_ctl != null:
 		building_ctl.call("set_building", false)
 		if bool(building_ctl.call("ui_open")):
@@ -641,6 +645,9 @@ func _apply_inventory(data: Dictionary) -> void:
 	carried = weight
 	carry_cap = cap
 	inventory.call("set_inventory", inv, weight, cap, back, head, chest)
+	if manual != null:
+		manual.call("set_inventory", inv, data.get("known", []))
+	inventory.set("known", data.get("known", []))
 	_dress(player.get("humanoid_avatar"), back)
 	var owned: Dictionary = player.get("owned_weapons")
 	for item in inv:
@@ -771,7 +778,7 @@ func _find_target() -> Dictionary:
 			if rule.has("drink"):
 				label = "[E] Beber água do lago"
 			else:
-				var verb: String = str({"tree": "Cortar", "rock": "Quebrar", "car": "Desmontar", "bush": "Colher", "fiber": "Arrancar", "herb": "Colher"}.get(kind, "Pegar"))
+				var verb: String = str({"tree": "Cortar", "rock": "Quebrar", "ore": "Quebrar", "saltpeter": "Quebrar", "car": "Desmontar", "bush": "Colher", "fiber": "Arrancar", "herb": "Colher"}.get(kind, "Pegar"))
 				var tool_note := ""
 				if missing:
 					tool_note = "  —  precisa de " + SurvivalData.item_name(_tool_item(needs)).to_lower()
@@ -832,11 +839,11 @@ func _interact() -> bool:
 			_timed_action("open", SEARCH_TIME)
 	else:
 		if bool(_target.get("missing", false)):
-			_toast("PRECISA DE " + SurvivalData.item_name(_tool_item(str(_target["needs"]))).to_upper() + " (TAB › FABRICAR)")
+			_toast("PRECISA DE " + SurvivalData.item_name(_tool_item(str(_target["needs"]))).to_upper() + " (L › MANUAL)")
 			return true
 		var seconds := float(_target["time"])
 		var kind := str(_target["kind"])
-		var label: String = str({"tree": "CORTANDO", "rock": "QUEBRANDO", "car": "DESMONTANDO", "bush": "COLHENDO", "herb": "COLHENDO", "fiber": "ARRANCANDO", "pond": "BEBENDO"}.get(kind, "PEGANDO"))
+		var label: String = str({"tree": "CORTANDO", "rock": "QUEBRANDO", "ore": "QUEBRANDO", "saltpeter": "QUEBRANDO", "car": "DESMONTANDO", "bush": "COLHENDO", "herb": "COLHENDO", "fiber": "ARRANCANDO", "pond": "BEBENDO"}.get(kind, "PEGANDO"))
 		var done := func():
 			Net.send({"t": "gather", "r": id})
 			_set_action("", "")
@@ -847,12 +854,12 @@ func _interact() -> bool:
 			to.y = 0.0
 			player.set("yaw", atan2(-to.x, -to.z))
 			# Chega perto do tronco para o golpe acertar (árvore: ~1,1 m do centro).
-			var wanted := {"tree": 1.15, "rock": 1.3, "car": 1.9}.get(kind, 0.0) as float
+			var wanted := {"tree": 1.15, "rock": 1.3, "ore": 1.3, "saltpeter": 1.3, "car": 1.9}.get(kind, 0.0) as float
 			if wanted > 0.0 and to.length() > wanted + 0.15:
 				var spot: Vector3 = (_target["pos"] as Vector3) - to.normalized() * wanted
 				spot.y = player.global_position.y
 				create_tween().tween_property(player, "global_position", spot, 0.25)
-			if kind in ["tree", "rock", "car"]:
+			if kind in ["tree", "rock", "ore", "saltpeter", "car"]:
 				_set_action("chop" if kind == "tree" else "pry", str(_target["tool"]))
 			else:
 				_timed_action("harvest", seconds)
@@ -959,7 +966,7 @@ var _daylight_timer := 0.0
 
 ## Alguma janela da sobrevivência precisa do cursor (mochila aberta ou tela de morte).
 func ui_open() -> bool:
-	return (inventory != null and inventory.visible) or (death_panel != null and death_panel.visible) \
+	return (inventory != null and inventory.visible) or (manual != null and manual.visible) or (death_panel != null and death_panel.visible) \
 		or (building_ctl != null and bool(building_ctl.call("ui_open")))
 
 ## Infecção (mordida de zumbi): `left` segundos até virar zumbi; 0 = curado.
@@ -1041,7 +1048,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if driving_ctl != null and bool(driving_ctl.call("handle_input", event)):
 		get_viewport().set_input_as_handled()
 		return
-	if building_ctl != null and not local_dead and not is_driving() and not inventory.visible and bool(building_ctl.call("handle_input", event)):
+	if building_ctl != null and not local_dead and not is_driving() and not inventory.visible and not manual.visible and bool(building_ctl.call("handle_input", event)):
 		get_viewport().set_input_as_handled()
 		return
 	if _pressed(event, "refuel") and not local_dead:
@@ -1061,14 +1068,37 @@ func _unhandled_input(event: InputEvent) -> void:
 		PointerMode.release() # ESC também libera o mouse (botão de menu)
 		get_viewport().set_input_as_handled()
 		return
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_ESCAPE and manual.visible:
+		manual.call("close")
+		PointerMode.release()
+		get_viewport().set_input_as_handled()
+		return
+	if _pressed(event, "manual"):
+		if local_dead:
+			return
+		if inventory.visible:
+			inventory.call("close")
+		manual.call("toggle")
+		get_viewport().set_input_as_handled()
+		return
 	if _pressed(event, "inventory"):
 		if local_dead:
 			return
+		if manual.visible:
+			manual.call("close")
 		if inventory.visible:
 			inventory.call("close")
 		else:
 			inventory.call("open")
 		get_viewport().set_input_as_handled()
+
+## Abre o manual (L) numa estação: chamado ao usar a bancada (E).
+func open_manual(station: String = "") -> void:
+	if local_dead or manual == null:
+		return
+	if inventory.visible:
+		inventory.call("close")
+	manual.call("open", station)
 
 ## Tecla/botão configurável (Configurações › Controles) apertado agora.
 func _pressed(event: InputEvent, action: String) -> bool:
@@ -1168,6 +1198,9 @@ func _build_ui() -> void:
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
 	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
 	inventory.connect("store_requested", func(k, item): Net.send({"t": "store", "k": k, "item": item}))
+	manual = ManualUI.new()
+	ui.add_child(manual)
+	manual.connect("craft_requested", _on_craft)
 	death_panel = PanelContainer.new()
 	death_panel.visible = false
 	death_panel.set_anchors_preset(Control.PRESET_CENTER)

@@ -111,6 +111,135 @@ static func draw(ci: CanvasItem, id: String, r: Rect2, cat: String = "") -> void
 		"hide":
 			poly.call([[0.2, 0.24], [0.4, 0.3], [0.6, 0.3], [0.8, 0.22], [0.76, 0.46], [0.86, 0.66], [0.66, 0.68], [0.6, 0.86], [0.4, 0.86], [0.34, 0.68], [0.14, 0.66], [0.24, 0.46]], LEATHER)
 			poly.call([[0.4, 0.4], [0.6, 0.4], [0.62, 0.64], [0.38, 0.64]], LEATHER.lightened(0.15))
+		"charcoal":
+			poly.call([[0.16, 0.6], [0.3, 0.38], [0.56, 0.32], [0.7, 0.5], [0.6, 0.74], [0.3, 0.78]], Color("#2a2724"))
+			poly.call([[0.5, 0.56], [0.66, 0.36], [0.84, 0.42], [0.86, 0.66], [0.7, 0.8]], Color("#353130"))
+			line.call([0.34, 0.46], [0.48, 0.42], 0.02, Color("#5a524b"))
+			dot.call(0.74, 0.6, 0.035, Color("#c0582a"))
+		"iron_ore", "saltpeter":
+			poly.call([[0.16, 0.64], [0.26, 0.34], [0.5, 0.2], [0.76, 0.3], [0.86, 0.58], [0.68, 0.8], [0.36, 0.82]], STONE_DARK)
+			var fleck := Color("#9a5a32") if id == "iron_ore" else Color("#ddd6c2")
+			for f in [[0.36, 0.44, 0.07], [0.6, 0.38, 0.05], [0.52, 0.62, 0.08], [0.72, 0.58, 0.04], [0.32, 0.66, 0.04]]:
+				dot.call(f[0], f[1], f[2], fleck)
+		"iron_bar":
+			poly.call([[0.12, 0.6], [0.3, 0.42], [0.88, 0.42], [0.7, 0.6]], Color("#8c9094"))
+			poly.call([[0.12, 0.6], [0.7, 0.6], [0.7, 0.72], [0.12, 0.72]], Color("#5f6367"))
+			poly.call([[0.7, 0.6], [0.88, 0.42], [0.88, 0.54], [0.7, 0.72]], Color("#4a4d50"))
+		"nails":
+			for n in [[0.28, 0.0], [0.5, 0.08], [0.72, -0.04]]:
+				line.call([n[0], 0.24 + n[1]], [n[0] + 0.04, 0.8 + n[1] * 0.3], 0.04, Color("#9a9ea2"))
+				line.call([n[0] - 0.07, 0.24 + n[1]], [n[0] + 0.07, 0.24 + n[1]], 0.05, Color("#b5b9bc"))
+		"wood_spear":
+			line.call([0.14, 0.9], [0.74, 0.3], 0.07, WOOD)
+			poly.call([[0.68, 0.3], [0.9, 0.1], [0.74, 0.38]], STONE)
+			line.call([0.64, 0.4], [0.72, 0.3], 0.08, Color("#c9b27a"))
+		"iron_knife", "machete":
+			var blade_end := [0.86, 0.14] if id == "iron_knife" else [0.9, 0.1]
+			line.call([0.18, 0.84], [0.4, 0.62], 0.1, Color("#4a3a2c"))
+			poly.call([[0.38, 0.58], blade_end, [0.5, 0.7] if id == "iron_knife" else [0.62, 0.72], [0.44, 0.66]], Color("#a3a8ac"))
+		"iron_axe":
+			line.call([0.24, 0.86], [0.66, 0.2], 0.08, WOOD_DARK)
+			poly.call([[0.5, 0.2], [0.84, 0.1], [0.9, 0.5], [0.64, 0.4]], Color("#8f9498"))
+		"iron_pick":
+			line.call([0.3, 0.88], [0.56, 0.28], 0.08, WOOD_DARK)
+			poly.call([[0.1, 0.36], [0.4, 0.2], [0.56, 0.24], [0.72, 0.2], [0.94, 0.38], [0.62, 0.32], [0.5, 0.34], [0.36, 0.3]], Color("#8f9498"))
+		"nail_bat":
+			poly.call([[0.2, 0.86], [0.28, 0.9], [0.84, 0.32], [0.76, 0.14], [0.62, 0.16]], WOOD)
+			for k in [[0.62, 0.22], [0.72, 0.3], [0.68, 0.14], [0.8, 0.22]]:
+				line.call(k, [k[0] + 0.07, k[1] - 0.06], 0.02, Color("#b5b9bc"))
+		"leather_cap", "iron_helmet":
+			var cap_color := LEATHER if id == "leather_cap" else Color("#7d8286")
+			poly.call([[0.18, 0.66], [0.22, 0.42], [0.36, 0.24], [0.64, 0.24], [0.78, 0.42], [0.82, 0.66]], cap_color)
+			poly.call([[0.14, 0.66], [0.86, 0.66], [0.82, 0.74], [0.18, 0.74]], cap_color.darkened(0.25))
+			if id == "iron_helmet":
+				line.call([0.5, 0.26], [0.5, 0.64], 0.04, cap_color.lightened(0.2))
+		"leather_vest", "iron_vest":
+			var vest := LEATHER if id == "leather_vest" else Color("#6c7175")
+			poly.call([[0.26, 0.2], [0.42, 0.2], [0.5, 0.34], [0.58, 0.2], [0.74, 0.2], [0.84, 0.36], [0.78, 0.86], [0.22, 0.86], [0.16, 0.36]], vest)
+			if id == "iron_vest":
+				for y in [0.46, 0.62, 0.78]:
+					line.call([0.24, y], [0.76, y], 0.02, vest.darkened(0.35))
+			else:
+				line.call([0.5, 0.36], [0.5, 0.84], 0.02, vest.darkened(0.35))
+		"scrap":
+			poly.call([[0.14, 0.62], [0.32, 0.3], [0.58, 0.38], [0.5, 0.62]], Color("#6e6a64"))
+			poly.call([[0.46, 0.7], [0.62, 0.36], [0.86, 0.48], [0.76, 0.82]], Color("#7a4a30"))
+			line.call([0.22, 0.56], [0.4, 0.4], 0.02, Color("#9a958d"))
+		"mech_parts":
+			dot.call(0.42, 0.52, 0.22, Color("#6f7377"))
+			dot.call(0.42, 0.52, 0.08, Color("#2a2c2e"))
+			for k in 8:
+				var a := TAU * k / 8.0
+				dot.call(0.42 + cos(a) * 0.25, 0.52 + sin(a) * 0.25, 0.045, Color("#6f7377"))
+			line.call([0.6, 0.8], [0.86, 0.3], 0.06, Color("#8c9094"))
+		"rubber":
+			ci.draw_arc(p.call(0.5, 0.5), s * 0.3, 0, TAU, 28, OUTLINE, s * 0.2 + 2.0, true)
+			ci.draw_arc(p.call(0.5, 0.5), s * 0.3, 0, TAU, 28, Color("#26272a"), s * 0.18, true)
+			dot.call(0.5, 0.5, 0.09, Color("#6f7377"))
+		"glass":
+			poly.call([[0.22, 0.2], [0.78, 0.2], [0.7, 0.84], [0.3, 0.84]], Color(0.55, 0.68, 0.64, 0.6))
+			line.call([0.34, 0.3], [0.42, 0.66], 0.025, Color(1, 1, 1, 0.5))
+		"cloth":
+			poly.call([[0.14, 0.34], [0.86, 0.26], [0.8, 0.74], [0.2, 0.8]], Color("#6d6552"))
+			line.call([0.2, 0.5], [0.82, 0.44], 0.02, Color("#4e483a"))
+			line.call([0.22, 0.64], [0.8, 0.6], 0.02, Color("#4e483a"))
+		"copper_wire":
+			for k in 3:
+				ci.draw_arc(p.call(0.5, 0.5), s * (0.3 - k * 0.07), 0.3, TAU - 0.3, 24, OUTLINE, s * 0.05 + 2.0, true)
+				ci.draw_arc(p.call(0.5, 0.5), s * (0.3 - k * 0.07), 0.3, TAU - 0.3, 24, Color("#b8733a"), s * 0.04, true)
+		"gasoline":
+			poly.call([[0.24, 0.3], [0.66, 0.3], [0.78, 0.42], [0.78, 0.86], [0.24, 0.86]], Color("#7a2a22"))
+			line.call([0.66, 0.3], [0.8, 0.16], 0.06, Color("#3a3a3a"))
+			line.call([0.34, 0.24], [0.56, 0.24], 0.06, Color("#3a3a3a"))
+		"manual_page":
+			poly.call([[0.24, 0.14], [0.7, 0.14], [0.8, 0.26], [0.78, 0.86], [0.22, 0.86]], Color("#c9bf9f"))
+			for y in [0.34, 0.46, 0.58, 0.7]:
+				line.call([0.32, y], [0.68, y], 0.015, Color("#6b6250"))
+		"gunpowder":
+			poly.call([[0.2, 0.8], [0.32, 0.56], [0.5, 0.48], [0.7, 0.56], [0.82, 0.8]], Color("#2f2d2b"))
+			dot.call(0.5, 0.3, 0.12, Color("#8a8070"))
+		"pipe":
+			line.call([0.16, 0.76], [0.84, 0.24], 0.16, Color("#6f7377"))
+			dot.call(0.84, 0.24, 0.07, Color("#2a2c2e"))
+		"crowbar":
+			line.call([0.22, 0.86], [0.7, 0.2], 0.07, Color("#3f4a5e"))
+			line.call([0.7, 0.2], [0.84, 0.26], 0.07, Color("#3f4a5e"))
+			line.call([0.22, 0.86], [0.14, 0.8], 0.07, Color("#3f4a5e"))
+		"repair_kit":
+			poly.call([[0.14, 0.4], [0.86, 0.4], [0.86, 0.82], [0.14, 0.82]], Color("#7a2a22"))
+			line.call([0.38, 0.4], [0.38, 0.28], 0.05, Color("#3a3a3a"))
+			line.call([0.62, 0.4], [0.62, 0.28], 0.05, Color("#3a3a3a"))
+			line.call([0.38, 0.28], [0.62, 0.28], 0.05, Color("#3a3a3a"))
+		"scrap_vest":
+			poly.call([[0.26, 0.2], [0.42, 0.2], [0.5, 0.34], [0.58, 0.2], [0.74, 0.2], [0.84, 0.36], [0.78, 0.86], [0.22, 0.86], [0.16, 0.36]], Color("#5d5a54"))
+			poly.call([[0.3, 0.46], [0.5, 0.42], [0.48, 0.62], [0.28, 0.64]], Color("#7a4a30"))
+			poly.call([[0.54, 0.56], [0.74, 0.52], [0.72, 0.74], [0.52, 0.76]], Color("#6e6a64"))
+		"canned_food":
+			poly.call([[0.26, 0.24], [0.74, 0.24], [0.74, 0.82], [0.26, 0.82]], Color("#8c9094"))
+			poly.call([[0.26, 0.38], [0.74, 0.38], [0.74, 0.66], [0.26, 0.66]], Color("#8a5a2a"))
+		"water_bottle":
+			poly.call([[0.36, 0.3], [0.64, 0.3], [0.68, 0.86], [0.32, 0.86]], Color(0.45, 0.62, 0.72, 0.8))
+			poly.call([[0.42, 0.14], [0.58, 0.14], [0.6, 0.3], [0.4, 0.3]], Color("#2e5f86"))
+		"w_pistol", "w_smg", "w_shotgun", "w_rifle":
+			var length := {"w_pistol": 0.5, "w_smg": 0.62, "w_shotgun": 0.78, "w_rifle": 0.8}[id] as float
+			var x0 := 0.5 - length * 0.5
+			poly.call([[x0, 0.36], [x0 + length, 0.36], [x0 + length, 0.48], [x0, 0.48]], Color("#2d2f31"))
+			poly.call([[x0 + 0.04, 0.48], [x0 + 0.16, 0.48], [x0 + 0.12, 0.74], [x0, 0.74]], Color("#3e3226") if id != "w_pistol" else Color("#2d2f31"))
+			if id in ["w_smg", "w_rifle"]:
+				poly.call([[x0 + length * 0.45, 0.48], [x0 + length * 0.55, 0.48], [x0 + length * 0.55, 0.68], [x0 + length * 0.45, 0.68]], Color("#2d2f31"))
+		"a_9mm", "a_12g", "a_556":
+			var shell_color := Color("#8a2a22") if id == "a_12g" else Color("#b8923a")
+			for k in 3:
+				var x := 0.3 + k * 0.2
+				poly.call([[x - 0.07, 0.4], [x + 0.07, 0.4], [x + 0.07, 0.82], [x - 0.07, 0.82]], shell_color)
+				poly.call([[x - 0.07, 0.4], [x, 0.24], [x + 0.07, 0.4]], Color("#9a7a52") if id != "a_12g" else Color("#c9b27a"))
+		"zombie_gland":
+			poly.call([[0.2, 0.56], [0.3, 0.32], [0.56, 0.24], [0.78, 0.38], [0.8, 0.64], [0.56, 0.8], [0.3, 0.76]], Color("#5a6a3a"))
+			dot.call(0.46, 0.5, 0.08, Color("#7c8a3e"))
+			dot.call(0.62, 0.6, 0.05, Color("#3c4a28"))
+		"zombie_serum":
+			poly.call([[0.4, 0.26], [0.6, 0.26], [0.62, 0.86], [0.38, 0.86]], Color(0.55, 0.68, 0.4, 0.85))
+			poly.call([[0.4, 0.14], [0.6, 0.14], [0.6, 0.26], [0.4, 0.26]], Color("#c44a4a"))
 		_:
 			var c: Color = CAT_COLOR.get(cat, Color("#9a9389"))
 			var box := Rect2(p.call(0.18, 0.18), Vector2(s, s) * 0.64)

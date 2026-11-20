@@ -52,6 +52,7 @@ func _ready() -> void:
 	for town in data.get("towns", []):
 		_town_sign(town)
 	grass_patches = data.get("grass", [])
+	_prepare_pavement(data)
 	_short_grass()
 	for patch in grass_patches:
 		_tall_grass(patch)
@@ -90,6 +91,7 @@ func _in_character(node: Node) -> bool:
 # Grama baixa espalhada pelo campo (só visual, some de longe) e manchas de
 # grama alta (1,3–1,7 m): agachado dentro delas, zumbis só te veem bem de perto.
 var grass_patches: Array = []
+var _pavement: Dictionary = {"roads": [], "buildings": []}
 var _grass_material: ShaderMaterial
 const GRASS_SHADER := """
 shader_type spatial;
@@ -173,7 +175,7 @@ func _short_grass() -> void:
 				var p := Vector3(x + rng.randf() * tile, 0, z + rng.randf() * tile)
 				if absf(p.x) < center_half + 1 and absf(p.z) < center_half + 1:
 					continue
-				if in_pond(p, 0.5):
+				if in_pond(p, 0.5) or _on_pavement(p):
 					continue
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4))
 				list.append(Transform3D(basis, p))
@@ -182,6 +184,37 @@ func _short_grass() -> void:
 				node.name = "ShortGrass"
 			z += tile
 		x += tile
+
+## Ponto em cima de estrada ou dentro de prédio? (sem capim no asfalto nem no piso)
+func _on_pavement(p: Vector3) -> bool:
+	for b in _pavement["buildings"]:
+		var r: Rect2 = b
+		if r.has_point(Vector2(p.x, p.z)):
+			return true
+	for road in _pavement["roads"]:
+		var a: Vector2 = road[0]
+		var b2: Vector2 = road[1]
+		var box: Rect2 = road[3]
+		if not box.has_point(Vector2(p.x, p.z)):
+			continue
+		var q := Geometry2D.get_closest_point_to_segment(Vector2(p.x, p.z), a, b2)
+		if q.distance_to(Vector2(p.x, p.z)) < float(road[2]):
+			return true
+	return false
+
+## Estradas e prédios do mapa, prontos para _on_pavement (com caixa para descartar rápido).
+func _prepare_pavement(data: Dictionary) -> void:
+	_pavement = {"roads": [], "buildings": []}
+	for road in data.get("roads", []):
+		var a := Vector2(float(road["from"][0]), float(road["from"][1]))
+		var b := Vector2(float(road["to"][0]), float(road["to"][1]))
+		var half := float(road.get("width", 6)) * 0.5 + 0.3
+		var box := Rect2(a, Vector2.ZERO).expand(b).grow(half)
+		_pavement["roads"].append([a, b, half, box])
+	for building in data.get("buildings", []):
+		var size := Vector2(float(building["size"][0]), float(building["size"][1]))
+		var center := Vector2(float(building["center"][0]), float(building["center"][1]))
+		_pavement["buildings"].append(Rect2(center - size * 0.5, size))
 
 func _tall_grass(patch: Dictionary) -> void:
 	var mesh := _clump_mesh(7, 1.45, 0.09, Color("#4a5b2a"), Color("#b8b46a"))
@@ -423,6 +456,7 @@ const CONTAINER_LOOK := {
 	"car_trunk": [Vector3(1.0, 0.55, 0.7), "#3a3f44", "metal"],
 	"gun_locker": [Vector3(1.0, 1.9, 0.55), "#3d4a3a", "metal"],
 	"military": [Vector3(1.2, 0.6, 0.7), "#55603f", "wood"],
+	"fuel": [Vector3(0.7, 1.0, 0.7), "#5a3524", "metal"],
 }
 
 func _container(spot: Dictionary) -> void:
@@ -506,8 +540,9 @@ func _resource(res: Dictionary) -> void:
 			slots["full"] = _slot(variant, xform, true)
 			slots["empty"] = _slot("stump", xform, false)
 			_collider(body, CylinderShape3D.new(), Vector3(0, 1.5, 0), 0.32 * tree_scale, 3.0)
-		"rock":
-			slots["full"] = _slot("rock", xform, true)
+		"rock", "ore", "saltpeter":
+			var rock_variant: String = {"rock": "rock", "ore": "rock_ore", "saltpeter": "rock_salt"}[kind]
+			slots["full"] = _slot(rock_variant, xform, true)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.35 * s, 0), 1.0 * s, 0.0)
 		"car":
 			# Carro abandonado realista (ferrugem, vidro sujo, pneu murcho às vezes).
@@ -591,7 +626,7 @@ func in_pond(point: Vector3, margin: float = 0.0) -> bool:
 # por quadrado de 120 m (o motor descarta quadrados fora da câmera).
 # Esconder = escala zero naquela posição do lote (em todos os níveis).
 const CHUNK := 120.0
-const HAS_SILHOUETTE := ["pine_a", "pine_b", "oak_a", "oak_b", "birch", "rock"]
+const HAS_SILHOUETTE := ["pine_a", "pine_b", "oak_a", "oak_b", "birch", "rock", "rock_ore", "rock_salt"]
 var _batches: Dictionary = {} # "modelo|cx|cz" -> {variant, center, list, mms}
 
 func _slot(variant: String, xform: Transform3D, visible: bool) -> Array:
@@ -706,7 +741,7 @@ func set_depleted(id: String, value: bool) -> void:
 		"tree", "bush":
 			_set_slot(slots.get("full", []), not value)
 			_set_slot(slots.get("empty", []), value)
-		"rock":
+		"rock", "ore", "saltpeter":
 			_set_slot(slots.get("full", []), true, 0.45 if value else 1.0)
 			entry["node"].scale = Vector3.ONE * (0.45 if value else 1.0)
 		"car":
