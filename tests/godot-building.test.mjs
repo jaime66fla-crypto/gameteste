@@ -139,6 +139,48 @@ test('grid: stairs and floors do not overlap; a roof caps the walls', () => {
 	assert.match(put({ kind: 'wall', i: 2, j: 0, k: 1, o: 'v' }), /telhado|Precisa/);
 });
 
+test('grid: a torch stands on the ground or hangs on a wall, and falls with the wall', () => {
+	const g = new BuildGrid(RULES, catalog.builds);
+	let n = 0;
+	const put = (p) => {
+		const err = g.check(p);
+		if (!err) g.add({ id: 'p' + ++n, ...p });
+		return err;
+	};
+	assert.equal(put({ kind: 'torch', p: [20, 0, 20], y: 0 }), '', 'planted on the ground');
+	const y = RULES.base + 1.6;
+	assert.match(put({ kind: 'torch', wall: true, p: [1.5, y, 0.12], y: 0 }), /Precisa/, 'no wall there yet');
+	put({ kind: 'foundation', i: 0, j: 0, k: 0 });
+	put({ kind: 'wall', i: 0, j: 0, k: 0, o: 'h' });
+	assert.equal(put({ kind: 'torch', wall: true, p: [1.5, y, 0.12], y: 0 }), '', 'hangs on the wall face');
+	assert.match(put({ kind: 'torch', wall: true, p: [1.5, y, 1.0], y: 0 }), /Precisa/, 'away from the wall it has nothing to hang on');
+	const wall = [...g.pieces.values()].find((p) => p.kind === 'wall');
+	const gone = g.remove(wall.id).map((p) => p.kind);
+	assert.deepEqual(gone, ['wall', 'torch'], 'the wall torch drops with its wall; the ground one stays');
+});
+
+test('the torch: crafted by hand, placed from the bag on a wall, and seen lit in hand by others', async () => {
+	const { room } = makeWorld();
+	const a = await join(room);
+	const b = await join(room);
+	at(a, near(0, 0));
+	at(b, near(0, 0));
+	a.me().inv = { stick: 1, fiber: 2, charcoal: 1, wood: 200, stone: 100, rope: 20 };
+	say(room, a, { t: 'craft', recipe: 'torch' });
+	assert.equal(a.me().inv.torch, 1, 'a torch is made in hand');
+	say(room, a, { t: 's', p: near(0, 0), y: 0, tc: true });
+	assert.equal(b.ws.last('s').tc, true, 'others see the torch lit in hand');
+	say(room, a, { t: 'build', kind: 'foundation', i: SPOT.i, j: SPOT.j, k: 0 });
+	say(room, a, { t: 'build', kind: 'wall', i: SPOT.i, j: SPOT.j, k: 0, o: 'h' });
+	say(room, a, { t: 'build', kind: 'torch', wall: true, p: [(SPOT.i + 0.5) * S, RULES.base + 1.6, SPOT.j * S - 0.12], y: Math.PI });
+	const placed = b.ws.last('bp').b;
+	assert.equal(placed.kind, 'torch');
+	assert.equal(placed.wall, true);
+	assert.ok(!a.me().inv.torch, 'the torch left the bag');
+	say(room, a, { t: 's', p: near(0, 0), y: 0, tc: true });
+	assert.equal(b.ws.last('s').tc, false, 'no torch in the bag, no torch in hand');
+});
+
 test('placing costs materials, needs reach and support, and is seen by everyone', async () => {
 	const { room, store } = makeWorld();
 	const a = await join(room);

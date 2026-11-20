@@ -103,6 +103,52 @@ func _run() -> void:
 		if str(rules.pieces[id]["kind"]) == "campfire":
 			fires += 1
 	_check(fires == 1, "a fogueira da bancada foi montada")
+	# Baú no treino: E abre o inventário com o baú; guardar e pegar movem a pilha.
+	var chest_spot := player.global_position + Vector3(-2, 0, 0)
+	ctl.set("bench_pick", "chest")
+	_put(ctl, {"kind": "chest", "p": [chest_spot.x, 0.0, chest_spot.z], "y": 0.0})
+	var chest_id := ""
+	for id in rules.pieces:
+		if str(rules.pieces[id]["kind"]) == "chest":
+			chest_id = id
+	_check(not chest_id.is_empty(), "o baú foi montado no treino")
+	var inv_ui: Control = training.get("inventory")
+	ctl.call("interact", chest_id)
+	_check(inv_ui.visible and str(inv_ui.get("container_id")) == chest_id, "E no baú abre o inventário com o baú")
+	var inv: Dictionary = training.get("inv")
+	var wood := int(inv.get("wood", 0))
+	inv_ui.emit_signal("store_requested", chest_id, "wood")
+	_check(not inv.has("wood") and int(rules.pieces[chest_id]["items"].get("wood", 0)) == wood, "guardar leva a madeira para o baú")
+	inv_ui.emit_signal("take_requested", chest_id, "wood", true)
+	_check(int(inv.get("wood", 0)) == wood and not rules.pieces[chest_id]["items"].has("wood"), "pegar traz a madeira de volta")
+	inv_ui.call("close")
+	training.call("open_manual", "chem_table")
+	_check((training.get("manual") as Control).visible, "o manual abre no treino")
+	(training.get("manual") as Control).call("close")
+	# Tocha: acesa na mão, fincada no chão e presa numa parede (sai da mochila).
+	training.call("set_torch", true)
+	_check(player.get_node_or_null("HandTorch") != null, "a tocha acende na mão")
+	await process_frame
+	var hand := player.get_node_or_null("HandTorch") as Node3D
+	_check(hand != null and hand.global_position.distance_to(player.global_position) < 2.5, "a tocha da mão fica junto do corpo")
+	_check(hand != null and hand.find_child("TorchLight", true, false) != null, "a tocha da mão ilumina")
+	var torches := int(inv.get("torch", 0))
+	ctl.set("bench_pick", "torch")
+	_put(ctl, {"kind": "torch", "p": [chest_spot.x + 2.0, 0.0, chest_spot.z], "y": 0.0})
+	_put(ctl, {"kind": "foundation", "i": 30, "j": 30, "k": 0})
+	_put(ctl, {"kind": "wall", "i": 30, "j": 30, "k": 0, "o": "h"})
+	var wall_z: float = 30 * float(rules.S) - 0.12
+	_put(ctl, {"kind": "torch", "wall": true, "p": [30.5 * float(rules.S), float(rules.base) + 1.6, wall_z], "y": PI})
+	var lit := 0
+	for id in rules.pieces:
+		if str(rules.pieces[id]["kind"]) == "torch":
+			lit += 1
+			_check((ctl.get("nodes")[id] as Node).get_node_or_null("FireLight") != null, "a tocha colocada tem luz")
+	_check(lit == 2, "duas tochas colocadas, chão e parede (%d)" % lit)
+	_check(int(inv.get("torch", 0)) == torches - 2, "cada tocha colocada sai da mochila")
+	training.call("set_torch", false)
+	await process_frame
+	_check(player.get_node_or_null("HandTorch") == null or player.get_node("HandTorch").is_queued_for_deletion(), "a tocha da mão apaga")
 	ctl.call("cycle", 1)
 	_check(str(ctl.call("selected_kind")) in order, "trocar de peça volta para a barra de estrutura")
 	ctl.call("set_building", false)

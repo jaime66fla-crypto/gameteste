@@ -164,10 +164,28 @@ func supporters(p: Dictionary) -> Array:
 			var f := floor_at(i, j, k)
 			return [f] if not f.is_empty() else []
 	var point := center(p)
+	if bool(p.get("wall", false)):
+		return wall_behind(point)
 	if point.y < 0.25:
 		return [] if not cell_under(point).is_empty() else ["ground"]
 	var under := cell_under(point)
 	return [under] if not under.is_empty() and absf(top(int(under["k"])) - point.y) < 0.3 else []
+
+## Parede/vão encostado no ponto (tocha presa na parede): [parede] ou [].
+func wall_behind(point: Vector3) -> Array:
+	var k := floori((point.y - base) / H)
+	if k < 0 or k > MAX_LEVEL:
+		return []
+	for o in ["h", "v"]:
+		var i := floori(point.x / S) if o == "h" else roundi(point.x / S)
+		var j := roundi(point.z / S) if o == "h" else floori(point.z / S)
+		var gap := absf(point.z - j * S) if o == "h" else absf(point.x - i * S)
+		if gap > 0.3:
+			continue
+		var w := edge_at(o, i, j, k)
+		if not w.is_empty():
+			return [w]
+	return []
 
 ## Motivo para não poder construir ("" = pode). `owns` diz se quem constrói
 ## pode se apoiar na peça (dono ou liberado).

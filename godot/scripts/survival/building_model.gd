@@ -166,7 +166,46 @@ static func build(p: Dictionary, rules) -> Node3D:
 		"forge": _forge(root, body, bool(p.get("on", false)))
 		"workshop": _workshop(root, body)
 		"chem_table": _chem_table(root, body)
+		"torch": _torch(root, body, bool(p.get("wall", false)))
 	return root
+
+## Tocha fincada no chão (pé de pedras) ou presa na parede (suporte de ferro,
+## inclinada para fora). Sempre acesa. Na parede, o +Z local aponta para fora.
+static func _torch(root: Node3D, body: StaticBody3D, on_wall: bool) -> void:
+	var tilt := Basis(Vector3.RIGHT, deg_to_rad(28)) if on_wall else Basis.IDENTITY
+	var base := Vector3(0, -0.15, 0.1) if on_wall else Vector3.ZERO
+	if on_wall:
+		_box(root, null, Vector3(0, -0.12, 0.015), Vector3(0.1, 0.22, 0.03), "iron")
+		_box(root, null, Vector3(0, -0.06, 0.07), Vector3(0.05, 0.04, 0.12), "iron")
+	else:
+		var stone := SphereMesh.new()
+		stone.radius = 0.06
+		stone.height = 0.08
+		stone.radial_segments = 6
+		stone.rings = 3
+		for i in 4:
+			var a := TAU * i / 4.0 + 0.4
+			_mesh(root, stone, Transform3D(Basis.IDENTITY, Vector3(cos(a) * 0.07, 0.03, sin(a) * 0.07)), _mat("rock"))
+	var length := 0.55 if on_wall else 0.8
+	var handle := CylinderMesh.new()
+	handle.top_radius = 0.025
+	handle.bottom_radius = 0.02
+	handle.height = length
+	handle.radial_segments = 6
+	_mesh(root, handle, Transform3D(tilt, base + tilt * Vector3(0, length * 0.5, 0)), _mat("wood_dark"))
+	var head := CylinderMesh.new()
+	head.top_radius = 0.045
+	head.bottom_radius = 0.035
+	head.height = 0.12
+	head.radial_segments = 6
+	var tip := base + tilt * Vector3(0, length, 0)
+	_mesh(root, head, Transform3D(tilt, tip - tilt * Vector3(0, 0.04, 0)), _mat("ash"))
+	_shape(body, base + tilt * Vector3(0, length * 0.5, 0), Vector3(0.12, length, 0.12), tilt)
+	root.set_meta("fire_pos", tip)
+	root.set_meta("fire_scale", 0.2)
+	root.set_meta("smoke", false)
+	root.set_meta("light_range", 8.0)
+	set_fire(root, true)
 
 static func _foundation(root: Node3D, body: StaticBody3D, S: float, base: float) -> void:
 	var h := base + 0.35 # enterrada 35 cm
@@ -360,66 +399,210 @@ static func _campfire(root: Node3D, body: StaticBody3D, on: bool) -> void:
 	set_fire(root, on)
 
 ## Acende/apaga a fogueira (ou a forja): luz quente que tremula e chamas (partículas).
-## A altura do fogo vem da meta "fire_y" (forja: dentro da boca de pedra).
+## Onde e de que tamanho fica o fogo vem das metas "fire_pos", "fire_scale" e
+## "smoke_pos" (forja: chama pequena na boca de pedra, fumaça saindo da chaminé).
 static func set_fire(root: Node3D, on: bool) -> void:
 	var light := root.get_node_or_null("FireLight") as OmniLight3D
-	var flames := root.get_node_or_null("Flames") as CPUParticles3D
-	var fire_y := float(root.get_meta("fire_y", 0.0))
+	var fire_pos: Vector3 = root.get_meta("fire_pos", Vector3(0, 0.1, 0))
+	var fire_scale := float(root.get_meta("fire_scale", 1.0))
+	var smoke_pos: Vector3 = root.get_meta("smoke_pos", fire_pos + Vector3(0, 0.55, 0))
 	if on and light == null:
 		light = OmniLight3D.new()
 		light.name = "FireLight"
-		light.position.y = 0.7 + fire_y
+		light.position = fire_pos + Vector3(0, 0.6 * fire_scale, 0.15 * (1.0 - fire_scale))
 		light.light_color = Color("#ff9a4a")
-		light.light_energy = 2.2
-		light.omni_range = 11.0
+		light.light_energy = 2.2 * lerpf(0.6, 1.0, fire_scale)
+		light.omni_range = float(root.get_meta("light_range", 11.0 * lerpf(0.6, 1.0, fire_scale)))
 		light.shadow_enabled = false
 		light.set_script(preload("res://scripts/survival/fire_flicker.gd"))
 		root.add_child(light)
-		flames = CPUParticles3D.new()
-		flames.name = "Flames"
-		flames.amount = 26
-		flames.lifetime = 0.7
-		flames.position.y = 0.12 + fire_y
-		flames.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-		flames.emission_sphere_radius = 0.16
-		flames.direction = Vector3.UP
-		flames.spread = 12.0
-		flames.gravity = Vector3(0, 1.4, 0)
-		flames.initial_velocity_min = 0.4
-		flames.initial_velocity_max = 0.9
-		flames.scale_amount_min = 0.18
-		flames.scale_amount_max = 0.34
-		var quad := QuadMesh.new()
-		quad.size = Vector2(1, 1.4)
-		var mat := StandardMaterial3D.new()
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		mat.vertex_color_use_as_albedo = true
-		# Mancha redonda e macia (sem ela cada chama vira um quadrado).
-		var soft := GradientTexture2D.new()
-		soft.fill = GradientTexture2D.FILL_RADIAL
-		soft.fill_from = Vector2(0.5, 0.5)
-		soft.fill_to = Vector2(0.5, 0.0)
-		soft.width = 64
-		soft.height = 64
-		var falloff := Gradient.new()
-		falloff.set_color(0, Color(1, 1, 1, 1))
-		falloff.set_color(1, Color(1, 1, 1, 0))
-		soft.gradient = falloff
-		mat.albedo_texture = soft
-		quad.material = mat
-		flames.mesh = quad
-		var ramp := Gradient.new()
-		ramp.set_color(0, Color(1.0, 0.75, 0.3, 0.9))
-		ramp.set_color(1, Color(0.8, 0.15, 0.02, 0.0))
-		flames.color_ramp = ramp
-		root.add_child(flames)
+		root.add_child(_fire_fx(fire_pos, fire_scale, smoke_pos, bool(root.get_meta("smoke", true))))
 	elif not on and light != null:
 		light.queue_free()
-		if flames != null:
-			flames.queue_free()
+		var fx := root.get_node_or_null("Flames")
+		if fx != null:
+			fx.queue_free()
+
+static var _flame_tex: ImageTexture
+static var _soft_tex: ImageTexture
+
+## Fogo em camadas: miolo amarelo-claro, corpo laranja em línguas que afinam
+## para cima, fagulhas soltas e fumaça escura subindo devagar.
+static func _fire_fx(fire_pos: Vector3, fire_scale: float, smoke_pos: Vector3, with_smoke: bool = true) -> Node3D:
+	var fx := Node3D.new()
+	fx.name = "Flames"
+	var fire := Node3D.new()
+	fire.name = "Fire"
+	fire.position = fire_pos
+	fire.scale = Vector3.ONE * fire_scale
+	fx.add_child(fire)
+	var flame_mat := _particle_mat(_flame_texture(), true)
+	var soft_mat := _particle_mat(_soft_texture(), true)
+	var smoke_mat := _particle_mat(_soft_texture(), false)
+	# Corpo da chama: línguas laranja que sobem, encolhem e somem em vermelho.
+	var body := _particles("Body", 34, 0.85, flame_mat, Vector2(0.55, 0.9))
+	body.emission_sphere_radius = 0.17
+	body.spread = 8.0
+	body.gravity = Vector3(0, 1.2, 0)
+	body.initial_velocity_min = 0.35
+	body.initial_velocity_max = 0.75
+	body.tangential_accel_min = -0.6
+	body.tangential_accel_max = 0.6
+	body.damping_min = 0.4
+	body.damping_max = 0.8
+	body.angle_min = -12.0
+	body.angle_max = 12.0
+	body.scale_amount_min = 0.45
+	body.scale_amount_max = 0.8
+	body.scale_amount_curve = _curve([Vector2(0, 0.55), Vector2(0.25, 1.0), Vector2(1, 0.15)])
+	body.color_ramp = _ramp([
+		[0.0, Color(1.0, 0.62, 0.18, 0.0)],
+		[0.12, Color(1.0, 0.55, 0.14, 0.55)],
+		[0.5, Color(0.95, 0.3, 0.05, 0.4)],
+		[1.0, Color(0.5, 0.06, 0.01, 0.0)]])
+	body.color_initial_ramp = _ramp([[0.0, Color(1, 1, 1)], [1.0, Color(1.0, 0.8, 0.7)]])
+	fire.add_child(body)
+	# Miolo: baixo, quente, quase branco-amarelado.
+	var core := _particles("Core", 16, 0.45, flame_mat, Vector2(0.4, 0.6))
+	core.emission_sphere_radius = 0.1
+	core.spread = 5.0
+	core.gravity = Vector3(0, 0.8, 0)
+	core.initial_velocity_min = 0.2
+	core.initial_velocity_max = 0.45
+	core.scale_amount_min = 0.4
+	core.scale_amount_max = 0.6
+	core.scale_amount_curve = _curve([Vector2(0, 0.7), Vector2(0.3, 1.0), Vector2(1, 0.2)])
+	core.color_ramp = _ramp([
+		[0.0, Color(1.0, 0.95, 0.7, 0.0)],
+		[0.2, Color(1.0, 0.85, 0.45, 0.6)],
+		[1.0, Color(1.0, 0.45, 0.1, 0.0)]])
+	fire.add_child(core)
+	# Brasa: brilho baixo e largo sobre as toras.
+	var glow := _particles("Glow", 4, 1.2, soft_mat, Vector2(1.1, 0.5))
+	glow.emission_sphere_radius = 0.05
+	glow.gravity = Vector3.ZERO
+	glow.initial_velocity_max = 0.0
+	glow.color_ramp = _ramp([
+		[0.0, Color(1.0, 0.35, 0.05, 0.0)],
+		[0.5, Color(1.0, 0.35, 0.05, 0.22)],
+		[1.0, Color(1.0, 0.3, 0.05, 0.0)]])
+	fire.add_child(glow)
+	# Fagulhas: pontinhos que sobem rápido, oscilam e apagam.
+	var sparks := _particles("Sparks", 14, 1.6, soft_mat, Vector2(0.035, 0.035))
+	sparks.emission_sphere_radius = 0.2
+	sparks.spread = 22.0
+	sparks.gravity = Vector3(0, 0.6, 0)
+	sparks.initial_velocity_min = 1.0
+	sparks.initial_velocity_max = 2.4
+	sparks.damping_min = 0.6
+	sparks.damping_max = 1.2
+	sparks.tangential_accel_min = -1.5
+	sparks.tangential_accel_max = 1.5
+	sparks.randomness = 0.6
+	sparks.color_ramp = _ramp([
+		[0.0, Color(1.0, 0.8, 0.4, 1.0)],
+		[0.6, Color(1.0, 0.4, 0.08, 0.9)],
+		[1.0, Color(0.6, 0.1, 0.02, 0.0)]])
+	fire.add_child(sparks)
+	# Fumaça: cinza-escuro, sobe devagar acima das chamas e se abre.
+	var smoke := _particles("Smoke", 10, 3.2, smoke_mat, Vector2(0.7, 0.7))
+	smoke.position = smoke_pos
+	smoke.local_coords = false
+	smoke.emission_sphere_radius = 0.12
+	smoke.spread = 10.0
+	smoke.gravity = Vector3(0.12, 0.35, 0.05)
+	smoke.initial_velocity_min = 0.25
+	smoke.initial_velocity_max = 0.45
+	smoke.angle_min = -180.0
+	smoke.angle_max = 180.0
+	smoke.angular_velocity_min = -25.0
+	smoke.angular_velocity_max = 25.0
+	smoke.scale_amount_curve = _curve([Vector2(0, 0.4), Vector2(1, 2.2)])
+	smoke.color_ramp = _ramp([
+		[0.0, Color(0.15, 0.13, 0.12, 0.0)],
+		[0.2, Color(0.16, 0.14, 0.13, 0.28)],
+		[1.0, Color(0.2, 0.2, 0.2, 0.0)]])
+	if with_smoke:
+		fx.add_child(smoke)
+	else:
+		smoke.free()
+	return fx
+
+static func _particles(pname: String, amount: int, life: float, mat: Material, size: Vector2) -> CPUParticles3D:
+	var p := CPUParticles3D.new()
+	p.name = pname
+	p.amount = amount
+	p.lifetime = life
+	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	p.direction = Vector3.UP
+	p.local_coords = true
+	var quad := QuadMesh.new()
+	quad.size = size
+	# Pivô na base: a chama cresce para cima a partir do ponto de emissão.
+	quad.center_offset = Vector3(0, size.y * 0.4, 0)
+	quad.material = mat
+	p.mesh = quad
+	return p
+
+static func _particle_mat(tex: Texture2D, additive: bool) -> StandardMaterial3D:
+	var mat := StandardMaterial3D.new()
+	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mat.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
+	mat.billboard_keep_scale = true
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mat.blend_mode = BaseMaterial3D.BLEND_MODE_ADD if additive else BaseMaterial3D.BLEND_MODE_MIX
+	mat.vertex_color_use_as_albedo = true
+	mat.albedo_texture = tex
+	mat.no_depth_test = false
+	mat.disable_receive_shadows = true
+	mat.shadow_to_opacity = false
+	return mat
+
+static func _curve(points: Array) -> Curve:
+	var c := Curve.new()
+	for pt in points:
+		c.add_point(pt)
+	return c
+
+static func _ramp(stops: Array) -> Gradient:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array(stops.map(func(s): return s[0]))
+	g.colors = PackedColorArray(stops.map(func(s): return s[1]))
+	return g
+
+## Gota de chama: base larga e redonda, ponta fina em cima, borda macia.
+static func _flame_texture() -> ImageTexture:
+	if _flame_tex != null:
+		return _flame_tex
+	var w := 48
+	var h := 96
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var v := 1.0 - float(y) / float(h - 1) # 0 = base, 1 = ponta
+		var half := 0.5 * pow(clampf(1.0 - v, 0.0, 1.0), 0.65) * sin(clampf(v * 3.6 + 0.25, 0.0, PI * 0.5))
+		for x in w:
+			var u := absf(float(x) / float(w - 1) - 0.5)
+			var a := 0.0
+			if half > 0.001:
+				a = clampf(1.0 - u / half, 0.0, 1.0)
+			a = a * a * (3.0 - 2.0 * a)
+			a *= clampf(v * 6.0, 0.0, 1.0) # base suave, sem corte reto
+			img.set_pixel(x, y, Color(1, 1, 1, a))
+	_flame_tex = ImageTexture.create_from_image(img)
+	return _flame_tex
+
+static func _soft_texture() -> ImageTexture:
+	if _soft_tex != null:
+		return _soft_tex
+	var s := 64
+	var img := Image.create(s, s, false, Image.FORMAT_RGBA8)
+	for y in s:
+		for x in s:
+			var d := Vector2(x - s * 0.5 + 0.5, y - s * 0.5 + 0.5).length() / (s * 0.5)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a))
+	_soft_tex = ImageTexture.create_from_image(img)
+	return _soft_tex
 
 static func _chest(root: Node3D, body: StaticBody3D) -> void:
 	_box(root, body, Vector3(0, 0.3, 0), Vector3(1.0, 0.6, 0.6), "wood_local")
@@ -462,7 +645,10 @@ static func _workbench(root: Node3D, body: StaticBody3D) -> void:
 ## Forja: bloco de pedra com a boca do fogo na frente, chaminé atrás e uma
 ## bigorna de ferro ao lado. Acesa, o fogo fica dentro da boca.
 static func _forge(root: Node3D, body: StaticBody3D, on: bool) -> void:
-	root.set_meta("fire_y", 0.42)
+	# Chama pequena colada na boca (frente do bloco), fumaça pela chaminé.
+	root.set_meta("fire_pos", Vector3(-0.15, 0.44, 0.53))
+	root.set_meta("fire_scale", 0.42)
+	root.set_meta("smoke_pos", Vector3(-0.15, 1.95, -0.25))
 	_box(root, body, Vector3(-0.15, 0.4, 0), Vector3(1.1, 0.8, 1.0), "stone")
 	_box(root, null, Vector3(-0.15, 0.6, 0.47), Vector3(0.5, 0.36, 0.08), "ash")
 	_box(root, null, Vector3(-0.15, 0.82, 0.05), Vector3(1.16, 0.08, 1.06), "rock")
@@ -522,6 +708,10 @@ static func _chem_table(root: Node3D, body: StaticBody3D) -> void:
 			_box(root, null, Vector3(x, 0.41, z), Vector3(0.08, 0.82, 0.08), "wood_dark")
 	_shape(body, Vector3(0, 0.41, 0), Vector3(1.5, 0.82, 0.75))
 	_box(root, null, Vector3(0, 1.25, -0.34), Vector3(1.5, 0.04, 0.2), "wood_dark")
+	# Prateleira apoiada: dois montantes do tampo até ela e um fundo de tábua.
+	for x in [-0.71, 0.71]:
+		_box(root, null, Vector3(x, 1.06, -0.34), Vector3(0.06, 0.4, 0.2), "wood_dark")
+	_box(root, null, Vector3(0, 1.06, -0.43), Vector3(1.48, 0.4, 0.02), "wood_dark")
 	for x in [-0.6, -0.35, -0.1, 0.2, 0.5]:
 		_box(root, null, Vector3(x, 1.34, -0.34), Vector3(0.1, 0.16, 0.1), "glass")
 	for spot in [[Vector3(-0.4, 0.97, 0.1), 0.08, 0.2], [Vector3(-0.15, 0.95, 0.15), 0.06, 0.16], [Vector3(0.1, 1.0, 0.05), 0.05, 0.26]]:

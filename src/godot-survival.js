@@ -705,7 +705,7 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', dv: me.vehicle || '', ch: characterId(d.ch),
+					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, dv: me.vehicle || '', ch: characterId(d.ch),
 					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
@@ -1431,6 +1431,7 @@ export class GodotSurvival {
 		if (b.p) {
 			out.p = b.p;
 			out.y = b.y || 0;
+			if (b.wall) out.wall = true;
 		} else {
 			Object.assign(out, { i: b.i, j: b.j, k: b.k, r: b.r || 0 });
 			if (b.o) out.o = b.o;
@@ -1487,6 +1488,7 @@ export class GodotSurvival {
 		for (const pl of this.living()) {
 			const [x, y, z] = pl.p;
 			if (def.slot === 'free') {
+				if (p.wall) continue; // tocha na parede fica acima da cabeça de quem passa
 				if (Math.hypot(x - p.p[0], z - p.p[2]) < def.r + 0.25 && Math.abs(y - p.p[1]) < 1.6) return true;
 				continue;
 			}
@@ -1541,6 +1543,7 @@ export class GodotSurvival {
 			p.p = vec3(d.p, 600);
 			if (!p.p) return;
 			p.y = finite(d.y, 100) ? Math.round(d.y * 100) / 100 : 0;
+			if (def.wall && d.wall === true) p.wall = true; // tocha presa na parede
 		} else {
 			Object.assign(p, { i: d.i, j: d.j, k: d.k, r: Number.isInteger(d.r) ? ((d.r % 4) + 4) % 4 : 0 });
 			if (def.slot === 'edge' || def.slot === 'door') p.o = d.o;

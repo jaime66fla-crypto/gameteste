@@ -17,7 +17,9 @@ const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 const BuildingScript = preload("res://scripts/survival/survival_building.gd")
 const AnimalScript = preload("res://scripts/survival/animal.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const HandTorch = preload("res://scripts/survival/hand_torch.gd")
 var death_title: Label
+var torch_in_hand := false # tocha acesa na mão (os outros veem pelo "tc" do estado)
 var animals: Dictionary = {} # id -> Animal
 var driving_ctl: Node # carros (survival_driving.gd)
 var building_ctl: Node # construção (survival_building.gd)
@@ -212,7 +214,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": action, "tool": action_tool, "ch": player.get("character_id")})
+			"act": action, "tool": action_tool, "ch": player.get("character_id"), "tc": torch_in_hand})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -593,6 +595,7 @@ func _on_local_death() -> void:
 	_set_action("", "")
 	_set_infected(0.0)
 	local_dead = true
+	set_torch(false)
 	_respawn_left = 8.0
 	inventory.call("close")
 	if manual != null and manual.visible:
@@ -648,6 +651,8 @@ func _apply_inventory(data: Dictionary) -> void:
 	if manual != null:
 		manual.call("set_inventory", inv, data.get("known", []))
 	inventory.set("known", data.get("known", []))
+	if torch_in_hand and int(inv.get("torch", 0)) <= 0:
+		set_torch(false) # fincou, guardou ou largou a última tocha
 	_dress(player.get("humanoid_avatar"), back)
 	var owned: Dictionary = player.get("owned_weapons")
 	for item in inv:
@@ -699,8 +704,27 @@ func _on_take_all(container_id: String) -> void:
 func _on_drop(item: String, _all: bool) -> void:
 	Net.send({"t": "drop", "item": item})
 
+## Acende/apaga a tocha da mão (só com uma tocha na mochila).
+func set_torch(on: bool) -> void:
+	torch_in_hand = on and int(inv.get("torch", 0)) > 0 and not local_dead
+	HandTorch.set_on(player, torch_in_hand)
+	inventory.set("torch_lit", torch_in_hand)
+	if inventory.visible:
+		inventory.call("_refresh")
+
+## Tocha: fecha o inventário e entra no modo de colocar (chão ou parede).
+func _on_place(item: String) -> void:
+	if int(inv.get(item, 0)) <= 0 or local_dead or is_driving():
+		return
+	inventory.call("close")
+	building_ctl.call("pick_bench", item)
+
 func _on_use(item: String) -> void:
 	var entry := SurvivalData.item(item)
+	if item == "torch":
+		set_torch(not torch_in_hand)
+		_toast("TOCHA ACESA NA MÃO" if torch_in_hand else "TOCHA APAGADA")
+		return
 	if item == "repair_kit":
 		var car := str(driving_ctl.call("repairable_near", player.global_position))
 		if car.is_empty():
@@ -1198,6 +1222,7 @@ func _build_ui() -> void:
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
 	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
 	inventory.connect("store_requested", func(k, item): Net.send({"t": "store", "k": k, "item": item}))
+	inventory.connect("place_requested", _on_place)
 	manual = ManualUI.new()
 	ui.add_child(manual)
 	manual.connect("craft_requested", _on_craft)

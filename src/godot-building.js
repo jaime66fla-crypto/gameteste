@@ -152,10 +152,28 @@ export class BuildGrid {
 			const f = this.floorAt(p.i, p.j, p.k);
 			return f ? [f] : [];
 		}
+		// Peça livre presa na parede (tocha): a parede/vão encostado nela.
+		if (p.wall) return this.wallBehind(p.p);
 		// Peça livre: no chão (y ≈ 0) ou em cima de uma fundação/piso.
 		if (p.p[1] < 0.25) return this.cellUnder(p.p) ? [] : ['ground'];
 		const f = this.cellUnder(p.p);
 		return f && Math.abs(this.top(f.k) - p.p[1]) < 0.3 ? [f] : [];
+	}
+
+	/** Parede/vão encostado num ponto (tocha presa na parede): [parede] ou []. */
+	wallBehind(point) {
+		const [x, y, z] = point;
+		const k = Math.floor((y - this.base) / this.H);
+		if (k < 0 || k > MAX_LEVEL) return [];
+		for (const o of ['h', 'v']) {
+			const i = o === 'h' ? Math.floor(x / this.S) : Math.round(x / this.S);
+			const j = o === 'h' ? Math.round(z / this.S) : Math.floor(z / this.S);
+			const gap = o === 'h' ? Math.abs(z - j * this.S) : Math.abs(x - i * this.S);
+			if (gap > 0.3) continue;
+			const w = this.edgeAt(o, i, j, k);
+			if (w) return [w];
+		}
+		return [];
 	}
 
 	/** Fundação/piso embaixo de um ponto (o mais alto que não passa do ponto). */

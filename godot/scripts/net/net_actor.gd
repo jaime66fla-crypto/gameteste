@@ -10,6 +10,7 @@ signal bot_loot(actor_id: String, crate_id: String)
 signal bot_heal(actor_id: String) # use a carried medkit
 
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
+const HandTorch = preload("res://scripts/survival/hand_torch.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
@@ -319,6 +320,10 @@ func apply_state(state: Dictionary) -> void:
 	if now_armed != armed:
 		armed = now_armed
 		_apply_armed()
+	# Sobrevivência: tocha acesa na mão.
+	var torch_on := bool(state.get("tc", false))
+	if torch_on != HandTorch.is_on(self):
+		HandTorch.set_on(self, torch_on)
 
 ## Sobrevivência: golpe de trabalho (machado/pé de cabra) visto pelos outros.
 func set_action(act: String, tool: String) -> void:
@@ -344,6 +349,7 @@ func die() -> void:
 		body.collision_layer = 0
 	name_tag.visible = false
 	_death_timer = 0.0
+	HandTorch.set_on(self, false)
 
 ## Mata-mata: volta à partida noutro lugar, com vida cheia e só a pistola.
 func revive(at: Vector3, weapon: String) -> void:

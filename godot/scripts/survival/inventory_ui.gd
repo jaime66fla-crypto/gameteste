@@ -21,6 +21,9 @@ signal craft_requested(recipe: String)
 signal equip_requested(item: String)
 signal unequip_requested(slot: String)
 signal store_requested(container_id: String, item: String)
+signal place_requested(item: String) # tocha: fincar no chão / prender na parede
+
+var torch_lit := false # tocha acesa na mão (muda o texto do botão)
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CAT_ORDER := ["weapon", "ammo", "armor", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
@@ -551,7 +554,7 @@ func _primary(id: String) -> void:
 	var entry := SurvivalData.item(id)
 	if container_store and not container_id.is_empty():
 		store_requested.emit(container_id, id)
-	elif entry.has("use") or entry.has("repair"):
+	elif entry.has("use") or entry.has("repair") or id == "torch":
 		use_requested.emit(id)
 	elif str(entry.get("slot", "")) in ["back", "head", "chest"]:
 		equip_requested.emit(id)
@@ -593,6 +596,14 @@ func _refresh_detail() -> void:
 		var use := _button("Usar" if cat != "food" else "Comer", not container_store)
 		use.pressed.connect(func(): use_requested.emit(id))
 		actions.add_child(use)
+	if id == "torch":
+		# Tocha: acende na mão (luz que anda com você) ou finca/prende para iluminar o lugar.
+		var hold := _button("Apagar a da mão" if torch_lit else "Acender na mão", not container_store)
+		hold.pressed.connect(func(): use_requested.emit(id))
+		actions.add_child(hold)
+		var place := _button("Fincar / prender na parede")
+		place.pressed.connect(func(): place_requested.emit(id))
+		actions.add_child(place)
 	if str(entry.get("slot", "")) == "back":
 		var eq := _button("Equipar nas costas", true)
 		eq.pressed.connect(func(): equip_requested.emit(id))

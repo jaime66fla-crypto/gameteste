@@ -205,11 +205,11 @@ func interact(id: String) -> void:
 				lit["on"] = not bool(piece.get("on", false))
 				_place(lit)
 			"chest":
-				controller.call("_toast", "BAÚ VAZIO (TREINO)")
+				controller.call("open_chest", id)
 			"workbench":
 				open_bench()
-			_:
-				controller.call("_toast", "MANUAL SÓ NA SOBREVIVÊNCIA")
+			"workshop", "chem_table":
+				controller.call("open_manual", str(piece.get("kind", "")))
 		return
 	match str(piece.get("kind", "")):
 		"door":
@@ -337,6 +337,18 @@ func _place_selected() -> void:
 			piece["r"] = 0
 		if kind == "chest":
 			piece["items"] = {}
+		if kind == "torch":
+			# Treino: a tocha sai da mochila de exemplo (o resto é grátis).
+			var bag: Dictionary = controller.get("inv")
+			if int(bag.get("torch", 0)) <= 0:
+				controller.call("_toast", "ACABARAM AS TOCHAS")
+				set_building(false)
+				return
+			bag["torch"] = int(bag["torch"]) - 1
+			if int(bag["torch"]) <= 0:
+				bag.erase("torch")
+			if controller.has_method("_sync_inventory"):
+				controller.call("_sync_inventory")
 		_place(piece)
 		return
 	var msg := {"t": "build"}
@@ -537,6 +549,11 @@ func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
 			if not rules.edge_at(o, int(p["i"]), int(p["j"]), k).is_empty():
 				p["k"] = k + 1
 			return p
+	# Tocha mirando uma parede: presa nela, um pouco acima de onde se mira, virada para fora.
+	if bool(rules.defs.get(kind, {}).get("wall", false)) and bool(aim.get("hit", false)) and absf((aim["normal"] as Vector3).y) < 0.3 and aimed_slot == "edge":
+		var n: Vector3 = aim["normal"]
+		var spot: Vector3 = aim["surface"] + n * 0.01
+		return {"kind": kind, "wall": true, "p": [snappedf(spot.x, 0.01), snappedf(spot.y, 0.01), snappedf(spot.z, 0.01)], "y": snappedf(atan2(n.x, n.z), 0.01)}
 	# Peça livre: no chão ou em cima de piso, virada para quem constrói.
 	if not bool(aim.get("hit", false)) or (aim["normal"] as Vector3).y < 0.7:
 		return {}
@@ -842,11 +859,7 @@ func _build_ui() -> void:
 	manual.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	manual.pressed.connect(func():
 		_bench_panel.visible = false
-		if offline:
-			controller.call("_toast", "MANUAL SÓ NA SOBREVIVÊNCIA")
-			PointerMode.capture()
-		else:
-			controller.call("open_manual", "workbench"))
+		controller.call("open_manual", "workbench"))
 	bench_buttons.add_child(manual)
 	var bench_close := Button.new()
 	bench_close.text = "Fechar"
@@ -860,6 +873,9 @@ func _refresh_bar() -> void:
 	if not bench_pick.is_empty():
 		# Peça escolhida na bancada: só ela na barra; trocar de peça volta para a estrutura.
 		_bar_row.add_child(_bar_card(bench_pick, true))
+		if bench_pick == "torch":
+			_hint.text = "Mire no chão para fincar ou numa parede para prender  •  clique coloca  •  %s sai" % _key("build")
+			return
 		_hint.text = "Feito na bancada  •  clique constrói  •  %s gira  •  roda do mouse / %s %s volta para a estrutura  •  %s sai%s" % [
 			_key("build_rotate"), _key("build_prev"), _key("build_next"), _key("build"), "  •  material grátis (treino)" if offline else ""]
 		return
