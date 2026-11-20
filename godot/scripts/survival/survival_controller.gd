@@ -15,6 +15,8 @@ const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 const BuildingScript = preload("res://scripts/survival/survival_building.gd")
 const AnimalScript = preload("res://scripts/survival/animal.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+var death_title: Label
 var animals: Dictionary = {} # id -> Animal
 var driving_ctl: Node # carros (survival_driving.gd)
 var building_ctl: Node # construção (survival_building.gd)
@@ -1094,20 +1096,16 @@ func _build_ui() -> void:
 	ui.add_child(box)
 	for spec in [["hp", "VIDA", Color("#c8402f")], ["hunger", "FOME", Color("#d9a441")], ["thirst", "SEDE", Color("#4a9fd9")], ["weight", "PESO", Color("#8c8c7a")]]:
 		var row := HBoxContainer.new()
-		var label := Label.new()
-		label.text = spec[1]
+		row.add_theme_constant_override("separation", 8)
+		var label := UiTheme.caps(spec[1], 12, UiTheme.TEXT)
 		label.custom_minimum_size.x = 52
-		label.add_theme_color_override("font_shadow_color", Color.BLACK)
+		label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.85))
+		label.add_theme_constant_override("shadow_offset_y", 1)
 		row.add_child(label)
-		var bar := ProgressBar.new()
-		bar.custom_minimum_size = Vector2(220, 16)
-		bar.show_percentage = false
-		var fill := StyleBoxFlat.new()
-		fill.bg_color = spec[2]
-		bar.add_theme_stylebox_override("fill", fill)
-		var bg := StyleBoxFlat.new()
-		bg.bg_color = Color(0, 0, 0, 0.55)
-		bar.add_theme_stylebox_override("background", bg)
+		var bar := UiTheme.bar(ProgressBar.new(), spec[2], 12)
+		bar.custom_minimum_size.x = 220
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		row.add_child(bar)
 		box.add_child(row)
 		bars[spec[0]] = bar
@@ -1118,6 +1116,7 @@ func _build_ui() -> void:
 	clock_label.offset_top = 64
 	clock_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	clock_label.offset_right = -20
+	clock_label.add_theme_font_override("font", UiTheme.font(600))
 	clock_label.add_theme_font_size_override("font_size", 16)
 	clock_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	ui.add_child(clock_label)
@@ -1129,7 +1128,8 @@ func _build_ui() -> void:
 	prompt.offset_right = 300
 	prompt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	prompt.add_theme_font_size_override("font_size", 18)
-	prompt.add_theme_color_override("font_color", Color("#ffe08a"))
+	prompt.add_theme_font_override("font", UiTheme.font(600))
+	prompt.add_theme_color_override("font_color", UiTheme.ACCENT)
 	prompt.add_theme_color_override("font_shadow_color", Color.BLACK)
 	ui.add_child(prompt)
 	toast_label = Label.new()
@@ -1139,6 +1139,7 @@ func _build_ui() -> void:
 	toast_label.offset_left = -360
 	toast_label.offset_right = 360
 	toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	toast_label.add_theme_font_override("font", UiTheme.font(700))
 	toast_label.add_theme_font_size_override("font_size", 18)
 	toast_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	toast_label.modulate.a = 0.0
@@ -1172,21 +1173,27 @@ func _build_ui() -> void:
 	death_panel.set_anchors_preset(Control.PRESET_CENTER)
 	death_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	death_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
-	death_panel.custom_minimum_size = Vector2(460, 200)
+	death_panel.custom_minimum_size = Vector2(480, 220)
+	death_panel.add_theme_stylebox_override("panel", UiTheme.card(28))
 	ui.add_child(death_panel)
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 10)
+	column.add_theme_constant_override("separation", 12)
 	death_panel.add_child(column)
-	death_label = Label.new()
+	death_title = UiTheme.title("", 30, UiTheme.TEXT)
+	death_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(death_title)
+	death_label = UiTheme.label("", 15, UiTheme.MUTED)
 	death_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	death_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	column.add_child(death_label)
 	respawn_button = Button.new()
-	respawn_button.custom_minimum_size.y = 40
+	respawn_button.custom_minimum_size.y = 44
+	UiTheme.primary(respawn_button, 16)
 	respawn_button.pressed.connect(func(): Net.send({"t": "respawn"}))
 	column.add_child(respawn_button)
 	bed_button = Button.new()
-	bed_button.custom_minimum_size.y = 40
+	bed_button.custom_minimum_size.y = 44
+	UiTheme.secondary(bed_button, 15)
 	bed_button.visible = false
 	bed_button.pressed.connect(func(): Net.send({"t": "respawn", "bed": true}))
 	column.add_child(bed_button)
@@ -1206,7 +1213,8 @@ func _update_bars() -> void:
 		inventory.call("set_status", my_hp, hunger, thirst, weapon_name)
 
 func _show_death(title: String, body: String, can_respawn: bool) -> void:
-	death_label.text = title + "\n\n" + body
+	death_title.text = title.to_upper()
+	death_label.text = body
 	respawn_button.visible = can_respawn
 	death_panel.visible = true
 	PointerMode.release()

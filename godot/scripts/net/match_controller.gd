@@ -1592,14 +1592,7 @@ func _build_ui() -> void:
 	feed.offset_bottom = -18
 	center_panel = PanelContainer.new()
 	center_panel.visible = false
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.06, 0.1, 0.11, 0.92)
-	box.set_corner_radius_all(12)
-	box.content_margin_left = 30
-	box.content_margin_right = 30
-	box.content_margin_top = 24
-	box.content_margin_bottom = 24
-	center_panel.add_theme_stylebox_override("panel", box)
+	center_panel.add_theme_stylebox_override("panel", UiTheme.card(30))
 	ui.add_child(center_panel)
 	center_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	center_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -1608,6 +1601,7 @@ func _build_ui() -> void:
 	column.add_theme_constant_override("separation", 12)
 	center_panel.add_child(column)
 	center_title = Label.new()
+	center_title.add_theme_font_override("font", UiTheme.font(700))
 	center_title.add_theme_font_size_override("font_size", 34)
 	center_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(center_title)
@@ -1617,6 +1611,7 @@ func _build_ui() -> void:
 	var back_button := Button.new()
 	back_button.text = "Voltar ao menu"
 	back_button.custom_minimum_size = Vector2(220, 46)
+	UiTheme.primary(back_button, 16).focus_mode = Control.FOCUS_ALL
 	back_button.pressed.connect(_back_to_menu)
 	column.add_child(back_button)
 	# Custom rooms survive the match: back to the same lobby and code.
@@ -1624,6 +1619,7 @@ func _build_ui() -> void:
 	room_button.name = "BackToRoomButton"
 	room_button.text = "Voltar para a sala"
 	room_button.custom_minimum_size = Vector2(220, 46)
+	UiTheme.secondary(room_button, 15).focus_mode = Control.FOCUS_ALL
 	room_button.visible = false
 	room_button.pressed.connect(_back_to_room)
 	column.add_child(room_button)
@@ -1652,6 +1648,7 @@ func _build_ui() -> void:
 
 # ------------------------------------------------ fim de round (tema do menu) ---
 
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const MENU_ACCENT := Color("#f0a23b")
 const MENU_HOT := Color("#e0705e")
 const TEAM_TINTS := [Color("#5ea8d0"), Color("#d07a5e")]
@@ -1921,14 +1918,7 @@ func _build_leave_panel() -> void:
 	leave_panel = PanelContainer.new()
 	leave_panel.name = "LeavePanel"
 	leave_panel.visible = false
-	var box := StyleBoxFlat.new()
-	box.bg_color = Color(0.06, 0.1, 0.11, 0.94)
-	box.border_color = Color("#49615b")
-	box.set_border_width_all(1)
-	box.set_corner_radius_all(12)
-	for side in ["left", "right", "top", "bottom"]:
-		box.set("content_margin_" + side, 26)
-	leave_panel.add_theme_stylebox_override("panel", box)
+	leave_panel.add_theme_stylebox_override("panel", UiTheme.card(28))
 	ui.add_child(leave_panel)
 	leave_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
 	leave_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
@@ -1939,23 +1929,26 @@ func _build_leave_panel() -> void:
 	var title := Label.new()
 	title.text = "SAIR DA PARTIDA?"
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_override("font", UiTheme.font(700))
 	title.add_theme_font_size_override("font_size", 28)
 	column.add_child(title)
 	leave_text = Label.new()
 	leave_text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	leave_text.add_theme_font_size_override("font_size", 16)
-	leave_text.add_theme_color_override("font_color", Color("#c9d3cc"))
+	leave_text.add_theme_color_override("font_color", UiTheme.MUTED)
 	column.add_child(leave_text)
 	var leave_button := Button.new()
 	leave_button.name = "LeaveMatchButton"
 	leave_button.text = "Sair para o menu"
 	leave_button.custom_minimum_size = Vector2(260, 46)
+	UiTheme.primary(leave_button, 16).focus_mode = Control.FOCUS_ALL
 	leave_button.pressed.connect(_back_to_menu)
 	column.add_child(leave_button)
 	var stay := Button.new()
 	stay.name = "StayInMatchButton"
 	stay.text = "Continuar na partida"
 	stay.custom_minimum_size = Vector2(260, 46)
+	UiTheme.secondary(stay, 15).focus_mode = Control.FOCUS_ALL
 	stay.pressed.connect(_close_leave_panel)
 	column.add_child(stay)
 

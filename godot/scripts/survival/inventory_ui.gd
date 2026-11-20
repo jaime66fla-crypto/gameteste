@@ -1,13 +1,17 @@
 extends Control
 const PointerMode = preload("res://scripts/pointer_mode.gd")
-## Inventário da Sobrevivência (TAB). Cobre a tela com um fundo escurecido e
-## um painel centralizado que sempre cabe na tela (o conteúdo rola por dentro).
+const ItemIcons = preload("res://scripts/survival/item_icons.gd")
+## Inventário da Sobrevivência (TAB), no estilo dos jogos de sobrevivência:
+## fundo escurecido e um painel centralizado que sempre cabe na tela.
 ##
-##  ┌ INVENTÁRIO ──────────── carga [■■■■□□] 9,4 / 34 kg ─────────── [X] ┐
-##  │ EQUIPADO     │ INVENTÁRIO (por categoria)  │ [Chão/recipiente|Fabricar]│
-##  │ costas/arma  │ cartões de item com ações   │ lista + Pegar tudo        │
-##  │ status       │                             │ receitas                  │
-##  └──────────────┴─────────────────────────────┴───────────────────────────┘
+##  ┌ INVENTÁRIO ─────────────────────── CARGA [■■■□□□] 1,4 / 10 kg ───── [✕] ┐
+##  │ PERSONAGEM    │ MOCHILA (grade de espaços)        │ [Fabricar|Chão/baú]   │
+##  │ vida/fome/sede│ ▢▢▢▢▢▢                            │ filtros               │
+##  │ EQUIPADO      │ ▢▢▢▢▢▢                            │ receitas com os       │
+##  │ costas, arma  │ ─ detalhes do item escolhido ─    │ ingredientes em ícone │
+##  │               │ ícone, nome, efeito, ações        │                       │
+##  └───────────────┴───────────────────────────────────┴───────────────────────┘
+## Clique escolhe o item; duplo clique usa/equipa (ou guarda, com o baú aberto).
 ## Só mostra e pede; o servidor confirma tudo (respostas "inv" e "container").
 signal take_requested(container_id: String, item: String, all: bool)
 signal take_all_requested(container_id: String)
@@ -20,19 +24,23 @@ signal store_requested(container_id: String, item: String)
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CAT_ORDER := ["weapon", "ammo", "armor", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
-const CAT_NAME := {"weapon": "Armas", "ammo": "Munição", "armor": "Proteção", "melee": "Armas brancas e ferramentas", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "fuel": "Combustível", "material": "Materiais"}
-const CAT_COLOR := {"weapon": Color("#d0574a"), "ammo": Color("#d6a23e"), "armor": Color("#6f8fb0"), "melee": Color("#b9824f"), "medical": Color("#e05a6a"), "food": Color("#8fbf5a"), "drink": Color("#4aa3d8"), "gear": Color("#7f9a5b"), "fuel": Color("#e08a2e"), "material": Color("#9a9389")}
-const CAT_GLYPH := {"weapon": "A", "ammo": "M", "armor": "P", "melee": "F", "medical": "+", "food": "C", "drink": "B", "gear": "E", "fuel": "G", "material": "•"}
+const CAT_NAME := {"weapon": "Arma", "ammo": "Munição", "armor": "Proteção", "melee": "Ferramenta / arma branca", "medical": "Cura", "food": "Comida", "drink": "Bebida", "gear": "Equipamento", "fuel": "Combustível", "material": "Material"}
 const ARMOR_PART := {"head": "na cabeça", "chest": "no peito e quadril"}
-# Paleta
-const BG := Color("#14181c")
-const PANEL := Color("#1c2228")
-const CARD := Color("#232a31")
-const CARD_HOVER := Color("#2b343c")
-const LINE := Color("#323b44")
-const TEXT := Color("#e8e6df")
-const MUTED := Color("#8e979e")
-const ACCENT := Color("#d9b44a")
+## Filtros das receitas: [nome, categorias do item fabricado].
+const FILTERS := [["Tudo", []], ["Ferramentas", ["melee", "weapon"]], ["Cura", ["medical"]], ["Comida", ["food", "drink"]], ["Equip.", ["gear", "armor"]], ["Material", ["material", "ammo", "fuel"]]]
+const MIN_SLOTS := 24
+const SLOT := 64.0
+# Paleta do menu principal (scripts/ui/ui_theme.gd).
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const BG := Color(0.035, 0.05, 0.06, 0.97)
+const PANEL := Color(1, 1, 1, 0.03)
+const LINE := UiTheme.LINE
+const TEXT := UiTheme.TEXT
+const MUTED := UiTheme.MUTED
+const FAINT := UiTheme.DIM
+const ACCENT := UiTheme.ACCENT
+const GOOD := UiTheme.GOOD
+const BAD := UiTheme.DANGER
 
 var inv: Dictionary = {}
 var weight := 0.0
@@ -46,20 +54,87 @@ var container_id := ""
 var container_title := ""
 var container_items: Dictionary = {}
 var container_store := false # baú: dá para guardar itens nele
-var _tab := 0 # 0 = recipiente, 1 = fabricar
+var _tab := 0 # 0 = recipiente (chão/baú), 1 = fabricar
+var _selected := ""
+var _filter := 0
+var _only_ready := false
 
 var _panel: PanelContainer
 var _weight_bar: ProgressBar
 var _weight_label: Label
-var _equip_box: VBoxContainer
 var _status_box: VBoxContainer
-var _items: VBoxContainer
-var _items_title: Label
+var _equip_box: VBoxContainer
+var _grid: HFlowContainer
+var _bag_title: Label
+var _detail: PanelContainer
 var _side: VBoxContainer
-var _side_title: Label
-var _tab_box: Button
+var _side_head: VBoxContainer
 var _tab_craft: Button
-var _take_all: Button
+var _tab_box: Button
+
+# ------------------------------------------------------------ espaço (slot) ---
+
+## Um espaço da grade: ícone do item, quantidade no canto, destaque no hover/escolhido.
+class SlotTile extends Control:
+	const Icons = preload("res://scripts/survival/item_icons.gd")
+	signal clicked(id: String)
+	signal double_clicked(id: String)
+	var id := ""
+	var count := 0
+	var selected := false
+	var dim := false # receita: falta este ingrediente
+	var cat := ""
+	var _hover := false
+
+	func _init(item_id: String = "", n: int = 0, size_px: float = 64.0) -> void:
+		id = item_id
+		count = n
+		custom_minimum_size = Vector2(size_px, size_px)
+		mouse_filter = Control.MOUSE_FILTER_STOP if not id.is_empty() else Control.MOUSE_FILTER_IGNORE
+		mouse_entered.connect(func():
+			_hover = true
+			queue_redraw())
+		mouse_exited.connect(func():
+			_hover = false
+			queue_redraw())
+
+	func _gui_input(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not id.is_empty():
+			if event.double_click:
+				double_clicked.emit(id)
+			else:
+				clicked.emit(id)
+			accept_event()
+
+	func _draw() -> void:
+		var r := Rect2(Vector2.ZERO, size)
+		var box := StyleBoxFlat.new()
+		box.set_corner_radius_all(6)
+		box.anti_aliasing = true
+		# Cores do menu: vidro escuro, borda clara fina, laranja no escolhido/hover.
+		box.bg_color = Color(0.94, 0.64, 0.23, 0.13) if (_hover and not id.is_empty()) else Color(1, 1, 1, 0.045)
+		if id.is_empty():
+			box.bg_color = Color(1, 1, 1, 0.018)
+		box.border_color = Color("#f0a23b") if selected else Color(1, 1, 1, 0.10 if not id.is_empty() else 0.05)
+		box.set_border_width_all(2 if selected else 1)
+		if selected:
+			box.shadow_color = Color(0.94, 0.64, 0.23, 0.25)
+			box.shadow_size = 6
+		box.draw(get_canvas_item(), r)
+		if id.is_empty():
+			return
+		var pad := size.x * 0.14
+		Icons.draw(self, id, r.grow(-pad), cat)
+		if dim:
+			draw_rect(r.grow(-1), Color(0.07, 0.08, 0.09, 0.55))
+		if count > 1:
+			var font: Font = load("res://scripts/ui/ui_theme.gd").font(700)
+			var text := str(count)
+			var fs := int(maxf(11.0, size.x * 0.2))
+			var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+			var at := Vector2(size.x - w - 5, size.y - 5)
+			draw_string(font, at + Vector2(1, 1), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0, 0, 0, 0.9))
+			draw_string(font, at, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color("#f2efe6"))
 
 # ---------------------------------------------------------------- estilos ---
 
@@ -76,9 +151,10 @@ static func _style(color: Color, radius: int = 6, border: Color = Color(0, 0, 0,
 	s.content_margin_bottom = pad * 0.6
 	return s
 
-func _label(text: String, size_px: int = 14, color: Color = TEXT, wrap: bool = false) -> Label:
+func _label(text: String, size_px: int = 14, color: Color = TEXT, wrap: bool = false, weight: int = 400) -> Label:
 	var l := Label.new()
 	l.text = text
+	l.add_theme_font_override("font", UiTheme.font(weight))
 	l.add_theme_font_size_override("font_size", size_px)
 	l.add_theme_color_override("font_color", color)
 	if wrap:
@@ -93,20 +169,12 @@ func _label(text: String, size_px: int = 14, color: Color = TEXT, wrap: bool = f
 func _button(text: String, primary: bool = false) -> Button:
 	var b := Button.new()
 	b.text = text
-	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_size_override("font_size", 13)
-	var base := Color("#3a4652") if not primary else ACCENT.darkened(0.15)
-	b.add_theme_stylebox_override("normal", _style(base, 4, Color(0, 0, 0, 0), 8))
-	b.add_theme_stylebox_override("hover", _style(base.lightened(0.15), 4, Color(0, 0, 0, 0), 8))
-	b.add_theme_stylebox_override("pressed", _style(base.darkened(0.2), 4, Color(0, 0, 0, 0), 8))
-	b.add_theme_stylebox_override("disabled", _style(Color("#262d33"), 4, Color(0, 0, 0, 0), 8))
-	b.add_theme_color_override("font_color", Color("#101316") if primary else TEXT)
-	b.add_theme_color_override("font_disabled_color", Color("#5b636a"))
-	return b
+	return UiTheme.primary(b, 13) if primary else UiTheme.secondary(b, 13)
 
 func _section(text: String) -> Label:
-	var l := _label(text.to_upper(), 12, MUTED)
-	l.add_theme_constant_override("line_spacing", 0)
+	var l := UiTheme.caps(text, 11, MUTED)
+	l.clip_text = true
+	l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	return l
 
 func _scroll() -> Array:
@@ -120,6 +188,13 @@ func _scroll() -> Array:
 	scroll.add_child(list)
 	return [scroll, list]
 
+func _tile(id: String, n: int, size_px: float = SLOT) -> SlotTile:
+	var t := SlotTile.new(id, n, size_px)
+	t.cat = str(SurvivalData.item(id).get("cat", "material"))
+	if not id.is_empty():
+		t.tooltip_text = "%s\n%s" % [SurvivalData.item_name(id), _describe(id)]
+	return t
+
 # -------------------------------------------------------------- montagem ---
 
 func _ready() -> void:
@@ -128,11 +203,10 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.55)
+	dim.color = Color(0, 0, 0, 0.6)
 	dim.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(dim)
 	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	# O painel fica num MarginContainer: nunca passa das bordas da tela.
 	var margin := MarginContainer.new()
 	margin.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(margin)
@@ -143,54 +217,59 @@ func _ready() -> void:
 	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	margin.add_child(center)
 	_panel = PanelContainer.new()
-	_panel.add_theme_stylebox_override("panel", _style(BG, 10, LINE, 16))
+	_panel.add_theme_stylebox_override("panel", UiTheme.card(20, BG))
 	center.add_child(_panel)
 	var root := VBoxContainer.new()
-	root.add_theme_constant_override("separation", 12)
+	root.add_theme_constant_override("separation", 14)
 	_panel.add_child(root)
 	root.add_child(_build_header())
 	var body := HBoxContainer.new()
-	body.add_theme_constant_override("separation", 12)
+	body.add_theme_constant_override("separation", 14)
 	body.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	root.add_child(body)
 	body.add_child(_build_left())
 	body.add_child(_build_middle())
 	body.add_child(_build_right())
-	var footer := _label("TAB fecha   •   passe o mouse num item para ver detalhes   •   o servidor confirma cada ação", 12, MUTED)
+	var footer := _label("TAB fecha   •   clique escolhe   •   duplo clique usa / equipa   •   o servidor confirma cada ação", 11, FAINT)
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(footer)
 	get_viewport().size_changed.connect(_fit)
 	_fit()
 	_refresh()
 
-## Tamanho do painel: até 1180 x 640, sempre dentro da tela (com margem).
+## Tamanho do painel: até 1200 x 660, sempre dentro da tela (com margem).
 func _fit() -> void:
 	var screen := get_viewport_rect().size
-	_panel.custom_minimum_size = Vector2(minf(1180.0, screen.x - 56.0), minf(640.0, screen.y - 56.0))
+	_panel.custom_minimum_size = Vector2(minf(1200.0, screen.x - 56.0), minf(660.0, screen.y - 56.0))
 
 func _build_header() -> Control:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 14)
-	var title := _label("INVENTÁRIO", 22, ACCENT)
-	title.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	title.custom_minimum_size.x = 170
-	row.add_child(title)
+	var titles := VBoxContainer.new()
+	titles.add_theme_constant_override("separation", -2)
+	var title := UiTheme.title("Inventário", 24, TEXT)
+	title.custom_minimum_size.x = 200
+	titles.add_child(title)
+	titles.add_child(UiTheme.caps("Sobrevivência  •  mochila e fabricação", 10, ACCENT))
+	row.add_child(titles)
 	var spacer := Control.new()
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(spacer)
-	var carga := _label("CARGA", 12, MUTED)
+	var carga := _label("CARGA", 11, MUTED)
 	carga.size_flags_horizontal = Control.SIZE_SHRINK_END
-	carga.custom_minimum_size.x = 50
+	carga.custom_minimum_size.x = 46
+	carga.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(carga)
 	_weight_bar = ProgressBar.new()
 	_weight_bar.show_percentage = false
-	_weight_bar.custom_minimum_size = Vector2(220, 12)
+	_weight_bar.custom_minimum_size = Vector2(240, 10)
 	_weight_bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_weight_bar.add_theme_stylebox_override("background", _style(Color("#0c0f12"), 6, LINE, 0))
+	UiTheme.bar(_weight_bar, GOOD, 10)
 	row.add_child(_weight_bar)
 	_weight_label = _label("", 14, TEXT)
 	_weight_label.size_flags_horizontal = Control.SIZE_SHRINK_END
-	_weight_label.custom_minimum_size.x = 120
+	_weight_label.custom_minimum_size.x = 110
+	_weight_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(_weight_label)
 	var close := _button("✕  Fechar")
 	close.pressed.connect(close_inventory)
@@ -199,61 +278,73 @@ func _build_header() -> Control:
 
 func _column(min_width: float, ratio: float) -> VBoxContainer:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _style(PANEL, 8, LINE, 12))
+	panel.add_theme_stylebox_override("panel", UiTheme.inset(14))
 	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	panel.size_flags_stretch_ratio = ratio
 	panel.custom_minimum_size.x = min_width
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 8)
+	column.add_theme_constant_override("separation", 10)
 	panel.add_child(column)
 	return column
 
 func _build_left() -> Control:
-	var column := _column(220, 0.8)
+	var column := _column(230, 0.72)
+	column.add_child(_section("Personagem"))
+	_status_box = VBoxContainer.new()
+	_status_box.add_theme_constant_override("separation", 8)
+	column.add_child(_status_box)
+	column.add_child(_divider())
 	column.add_child(_section("Equipado"))
 	_equip_box = VBoxContainer.new()
-	_equip_box.add_theme_constant_override("separation", 6)
+	_equip_box.add_theme_constant_override("separation", 8)
 	column.add_child(_equip_box)
-	column.add_child(HSeparator.new())
-	column.add_child(_section("Estado"))
-	_status_box = VBoxContainer.new()
-	_status_box.add_theme_constant_override("separation", 6)
-	column.add_child(_status_box)
 	return column.get_parent()
 
+func _divider() -> Control:
+	var line := ColorRect.new()
+	line.color = LINE
+	line.custom_minimum_size.y = 1
+	return line
+
 func _build_middle() -> Control:
-	var column := _column(360, 1.4)
-	_items_title = _section("Inventário")
-	column.add_child(_items_title)
-	var scroll := _scroll()
-	column.add_child(scroll[0])
-	_items = scroll[1]
+	var column := _column(380, 1.35)
+	_bag_title = _section("Mochila")
+	column.add_child(_bag_title)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	column.add_child(scroll)
+	_grid = HFlowContainer.new()
+	_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_grid.add_theme_constant_override("h_separation", 6)
+	_grid.add_theme_constant_override("v_separation", 6)
+	scroll.add_child(_grid)
+	_detail = PanelContainer.new()
+	_detail.add_theme_stylebox_override("panel", UiTheme.inset(12, true))
+	_detail.custom_minimum_size.y = 128
+	column.add_child(_detail)
 	return column.get_parent()
 
 func _build_right() -> Control:
-	var column := _column(300, 1.1)
+	var column := _column(360, 1.15)
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 6)
 	column.add_child(tabs)
-	_tab_box = _button("Chão / mochila")
-	_tab_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_tab_box.pressed.connect(func():
-		_tab = 0
-		_refresh())
-	tabs.add_child(_tab_box)
 	_tab_craft = _button("Fabricar")
 	_tab_craft.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tab_craft.pressed.connect(func():
 		_tab = 1
 		_refresh())
 	tabs.add_child(_tab_craft)
-	var head := HBoxContainer.new()
-	column.add_child(head)
-	_side_title = _label("", 15, TEXT)
-	head.add_child(_side_title)
-	_take_all = _button("Pegar tudo", true)
-	_take_all.pressed.connect(func(): take_all_requested.emit(container_id))
-	head.add_child(_take_all)
+	_tab_box = _button("Chão / baú")
+	_tab_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_tab_box.pressed.connect(func():
+		_tab = 0
+		_refresh())
+	tabs.add_child(_tab_box)
+	_side_head = VBoxContainer.new()
+	_side_head.add_theme_constant_override("separation", 6)
+	column.add_child(_side_head)
 	var scroll := _scroll()
 	column.add_child(scroll[0])
 	_side = scroll[1]
@@ -264,7 +355,7 @@ func _build_right() -> Control:
 func open() -> void:
 	visible = true
 	PointerMode.release()
-	# Mochila no chão aberta: mostra o conteúdo; senão abre direto nas receitas.
+	# Mochila/baú aberto: mostra o conteúdo; senão abre direto nas receitas.
 	_tab = 0 if not container_id.is_empty() else 1
 	_fit()
 	_refresh()
@@ -283,6 +374,8 @@ func set_inventory(new_inv: Dictionary, new_weight: float, new_cap: float, new_b
 	back = new_back
 	head = new_head
 	chest = new_chest
+	if not inv.has(_selected):
+		_selected = ""
 	_refresh()
 
 func set_status(hp: float, hunger: float, thirst: float, weapon_name: String = "") -> void:
@@ -328,82 +421,33 @@ func _describe(id: String) -> String:
 	if entry.has("melee"):
 		parts.append("Dano %d" % int(entry["melee"]) + ("  •  alcance longo" if entry.has("reach") else ""))
 	if entry.has("tool"):
-		parts.append("Rende mais em " + ("árvores" if str(entry["tool"]) == "wood" else "pedras e carros"))
+		parts.append(str({"wood": "Corta árvores", "stone": "Quebra rochas", "cut": "Corta mais capim"}.get(str(entry["tool"]), "Ferramenta")))
 	if entry.has("carry"):
-		parts.append("+%d kg de carga (equipar nas costas)" % int(entry["carry"]))
+		parts.append("+%d kg de carga nas costas" % int(entry["carry"]))
 	if entry.has("armor"):
-		parts.append("−%d%% de dano %s (vestir)" % [roundi(float(entry["armor"]) * 100), ARMOR_PART.get(str(entry.get("slot", "")), "")])
+		parts.append("−%d%% de dano %s" % [roundi(float(entry["armor"]) * 100), ARMOR_PART.get(str(entry.get("slot", "")), "")])
 	if entry.has("ammo"):
 		parts.append("Usa " + SurvivalData.item_name(str(entry["ammo"])))
 	if entry.has("fuel"):
-		parts.append("+%d%% no tanque (T perto de um carro)" % int(entry["fuel"]))
+		parts.append("+%d%% no tanque" % int(entry["fuel"]))
 	return "  •  ".join(parts)
-
-## Ícone: quadrado na cor da categoria com uma letra.
-func _icon(cat: String) -> Control:
-	var icon := PanelContainer.new()
-	icon.custom_minimum_size = Vector2(34, 34)
-	icon.add_theme_stylebox_override("panel", _style(CAT_COLOR.get(cat, MUTED).darkened(0.35), 6, CAT_COLOR.get(cat, MUTED), 0))
-	var glyph := Label.new()
-	glyph.text = str(CAT_GLYPH.get(cat, "•"))
-	glyph.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	glyph.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	glyph.add_theme_font_size_override("font_size", 16)
-	glyph.add_theme_color_override("font_color", CAT_COLOR.get(cat, MUTED).lightened(0.4))
-	icon.add_child(glyph)
-	return icon
-
-## Cartão de item: ícone, nome, detalhe (qtd · peso · efeito) e botões.
-func _card(id: String, n: int, buttons: Array) -> Control:
-	var entry := SurvivalData.item(id)
-	var cat := str(entry.get("cat", "material"))
-	var card := PanelContainer.new()
-	card.tooltip_text = "%s\n%s" % [SurvivalData.item_name(id), _describe(id)]
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var normal := _style(CARD, 6, Color(0, 0, 0, 0), 8)
-	var hover := _style(CARD_HOVER, 6, Color(0, 0, 0, 0), 8)
-	card.add_theme_stylebox_override("panel", normal)
-	card.mouse_entered.connect(func(): card.add_theme_stylebox_override("panel", hover))
-	card.mouse_exited.connect(func(): card.add_theme_stylebox_override("panel", normal))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 10)
-	card.add_child(row)
-	row.add_child(_icon(cat))
-	var text := VBoxContainer.new()
-	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text.add_theme_constant_override("separation", 0)
-	row.add_child(text)
-	text.add_child(_label(SurvivalData.item_name(id) + ("   ×%d" % n if n > 1 else ""), 14, TEXT))
-	var detail := "%.2f kg" % (float(entry.get("weight", 0)) * n)
-	var effect := _describe(id)
-	text.add_child(_label(detail + ("   •   " + effect if not effect.is_empty() else ""), 11, MUTED))
-	for spec in buttons:
-		var b := _button(spec[0], spec.size() > 2 and bool(spec[2]))
-		b.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		b.pressed.connect(spec[1])
-		row.add_child(b)
-	return card
-
-func _empty(text: String) -> Label:
-	var l := _label(text, 13, MUTED, true)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	return l
 
 func _clear(box: Node) -> void:
 	for child in box.get_children():
 		child.queue_free()
 
 func _refresh() -> void:
-	if _items == null:
+	if _grid == null:
 		return
 	_weight_bar.max_value = cap
 	_weight_bar.value = minf(weight, cap)
 	var ratio := weight / maxf(cap, 0.1)
-	var fill_color := Color("#7fbf5a") if ratio < 0.75 else (Color("#e0b03e") if ratio < 0.95 else Color("#e05a4a"))
-	_weight_bar.add_theme_stylebox_override("fill", _style(fill_color, 6, Color(0, 0, 0, 0), 0))
+	var fill_color := GOOD if ratio < 0.75 else (Color("#d6a23e") if ratio < 0.95 else BAD)
+	_weight_bar.add_theme_stylebox_override("fill", UiTheme.box(fill_color, Color.TRANSPARENT, 0, 3))
 	_weight_label.text = "%.1f / %.0f kg" % [weight, cap]
 	_refresh_left()
-	_refresh_items()
+	_refresh_grid()
+	_refresh_detail()
 	_refresh_side()
 
 ## Algum item do catálogo tem `key` (com o valor `value`, se não for vazio)?
@@ -415,158 +459,282 @@ static func _catalog_has(key: String, value: String) -> bool:
 	return false
 
 func _refresh_left() -> void:
-	_clear(_equip_box)
 	_clear(_status_box)
-	# Cabeça, peito e costas (cabeça/peito só se o mundo tiver capacete e colete)
-	if not head.is_empty() or _catalog_has("slot", "head"):
-		_equip_box.add_child(_slot_card("Cabeça", "head", head, "armor", "Sem capacete"))
-	if not chest.is_empty() or _catalog_has("slot", "chest"):
-		_equip_box.add_child(_slot_card("Peito", "chest", chest, "armor", "Sem colete"))
-	_equip_box.add_child(_slot_card("Costas", "back", back, "gear", "Só bolsos (%d kg)" % int(SurvivalData.catalog().get("carry_base", 10))))
-	# Arma (só com armas de fogo no mundo) e ferramenta
-	var cards := [["Melhor arma branca / ferramenta", _best_melee_name(), "melee"]]
-	if not weapon.is_empty() or _catalog_has("weapon", ""):
-		cards.push_front(["Arma na mão", weapon if not weapon.is_empty() else "Nenhuma", "weapon"])
-	for spec in cards:
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
-		var r := HBoxContainer.new()
-		r.add_theme_constant_override("separation", 8)
-		card.add_child(r)
-		r.add_child(_icon(spec[2]))
-		var t := VBoxContainer.new()
-		t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		t.add_theme_constant_override("separation", 0)
-		r.add_child(t)
-		t.add_child(_label(spec[0], 11, MUTED))
-		t.add_child(_label(spec[1], 13, TEXT))
-		_equip_box.add_child(card)
-	for spec in [["Vida", "hp", Color("#d0574a")], ["Fome", "hunger", Color("#d6a23e")], ["Sede", "thirst", Color("#4aa3d8")]]:
+	_clear(_equip_box)
+	for spec in [["Vida", "hp", Color("#c9574b")], ["Fome", "hunger", Color("#d1a043")], ["Sede", "thirst", Color("#4b9fd3")]]:
+		var value := float(status.get(spec[1], 100))
+		var block := VBoxContainer.new()
+		block.add_theme_constant_override("separation", 3)
 		var line := HBoxContainer.new()
-		line.add_theme_constant_override("separation", 8)
-		var name_label := _label(spec[0], 12, MUTED)
-		name_label.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-		name_label.custom_minimum_size.x = 44
-		line.add_child(name_label)
+		line.add_child(_label(spec[0], 12, MUTED))
+		var number := _label("%d" % int(value), 12, TEXT if value > 25 else BAD)
+		number.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		line.add_child(number)
+		block.add_child(line)
 		var bar := ProgressBar.new()
 		bar.show_percentage = false
-		bar.custom_minimum_size.y = 10
-		bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		bar.value = float(status.get(spec[1], 100))
-		bar.add_theme_stylebox_override("background", _style(Color("#0c0f12"), 5, Color(0, 0, 0, 0), 0))
-		bar.add_theme_stylebox_override("fill", _style(spec[2], 5, Color(0, 0, 0, 0), 0))
-		line.add_child(bar)
-		var value := _label("%d" % int(float(status.get(spec[1], 100))), 12, TEXT)
-		value.size_flags_horizontal = Control.SIZE_SHRINK_END
-		value.custom_minimum_size.x = 28
-		value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		line.add_child(value)
-		_status_box.add_child(line)
+		bar.custom_minimum_size.y = 6
+		bar.value = value
+		UiTheme.bar(bar, spec[2], 6)
+		block.add_child(bar)
+		_status_box.add_child(block)
+	if not head.is_empty() or _catalog_has("slot", "head"):
+		_equip_box.add_child(_slot_row("Cabeça", "head", head, "Sem capacete"))
+	if not chest.is_empty() or _catalog_has("slot", "chest"):
+		_equip_box.add_child(_slot_row("Peito", "chest", chest, "Sem colete"))
+	_equip_box.add_child(_slot_row("Costas", "back", back, "Só bolsos (%d kg)" % int(SurvivalData.catalog().get("carry_base", 10))))
+	var best: Array = SurvivalData.best_melee(inv)
+	var tool_text := "Soco  ·  %d" % int(best[1]) if str(best[0]).is_empty() else "%s  ·  %d" % [SurvivalData.item_name(str(best[0])), int(best[1])]
+	_equip_box.add_child(_info_row("Melhor golpe (Q)  ·  dano",str(best[0]), tool_text))
+	if not weapon.is_empty() or _catalog_has("weapon", ""):
+		_equip_box.add_child(_info_row("Arma na mão", "", weapon if not weapon.is_empty() else "Nenhuma"))
 
-## Cartão de um espaço do corpo: o que está vestido, o efeito e o botão Tirar.
-func _slot_card(title: String, slot: String, item_id: String, cat: String, empty_text: String) -> Control:
-	var card := PanelContainer.new()
-	card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
+## Linha de um espaço do corpo: quadrado com o item, nome/efeito e "Tirar".
+func _slot_row(title: String, slot: String, item_id: String, empty_text: String) -> Control:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	card.add_child(row)
-	row.add_child(_icon(cat))
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_tile(item_id, 1, 48))
 	var text := VBoxContainer.new()
 	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.alignment = BoxContainer.ALIGNMENT_CENTER
 	text.add_theme_constant_override("separation", 0)
 	row.add_child(text)
-	text.add_child(_label(title, 11, MUTED))
+	text.add_child(_label(title.to_upper(), 10, FAINT))
 	if item_id.is_empty():
-		text.add_child(_label(empty_text, 13, TEXT))
-		return card
+		text.add_child(_label(empty_text, 13, MUTED))
+		return row
 	var entry := SurvivalData.item(item_id)
 	text.add_child(_label(SurvivalData.item_name(item_id), 13, TEXT))
 	var effect := "+%d kg de carga" % int(entry.get("carry", 0)) if entry.has("carry") else "−%d%% de dano" % roundi(float(entry.get("armor", 0)) * 100)
-	text.add_child(_label(effect, 11, Color("#8fbf8a")))
+	text.add_child(_label(effect, 11, GOOD))
 	var off := _button("Tirar")
 	off.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	off.pressed.connect(func(): unequip_requested.emit(slot))
 	row.add_child(off)
-	return card
+	return row
 
-func _best_melee_name() -> String:
-	var best: Array = SurvivalData.best_melee(inv)
-	return "Soco (%d)" % int(best[1]) if str(best[0]).is_empty() else "%s (%d)" % [SurvivalData.item_name(str(best[0])), int(best[1])]
+func _info_row(title: String, item_id: String, value: String) -> Control:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(_tile(item_id, 1, 48))
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.alignment = BoxContainer.ALIGNMENT_CENTER
+	text.add_theme_constant_override("separation", 0)
+	row.add_child(text)
+	text.add_child(_label(title.to_upper(), 10, FAINT))
+	text.add_child(_label(value, 13, TEXT))
+	return row
 
-func _refresh_items() -> void:
-	_clear(_items)
+func _refresh_grid() -> void:
+	_clear(_grid)
 	var count := 0
 	for id in inv:
 		count += int(inv[id])
-	_items_title.text = "INVENTÁRIO  •  %d itens" % count
-	if inv.is_empty():
-		_items.add_child(_empty("Vazio. Revista armários, geladeiras, carros e mochilas no chão (E)."))
+	_bag_title.text = "MOCHILA   •   %d itens" % count
+	var ids := _sorted(inv)
+	for id in ids:
+		var tile := _tile(id, int(inv[id]))
+		tile.selected = id == _selected
+		tile.clicked.connect(func(item):
+			_selected = item if _selected != item else ""
+			_refresh_grid()
+			_refresh_detail())
+		tile.double_clicked.connect(_primary)
+		_grid.add_child(tile)
+	for i in maxi(0, MIN_SLOTS - ids.size()):
+		_grid.add_child(_tile("", 0))
+
+## Ação do duplo clique: guardar no baú aberto; senão usar, equipar ou vestir.
+func _primary(id: String) -> void:
+	var entry := SurvivalData.item(id)
+	if container_store and not container_id.is_empty():
+		store_requested.emit(container_id, id)
+	elif entry.has("use") or entry.has("repair"):
+		use_requested.emit(id)
+	elif str(entry.get("slot", "")) in ["back", "head", "chest"]:
+		equip_requested.emit(id)
+
+func _refresh_detail() -> void:
+	for child in _detail.get_children():
+		child.queue_free()
+	if _selected.is_empty() or not inv.has(_selected):
+		var hint := _label("Escolha um item para ver os detalhes.\nDuplo clique usa, equipa ou guarda no baú.", 13, FAINT, true)
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_detail.add_child(hint)
 		return
-	var last_cat := ""
-	for id in _sorted(inv):
-		var entry := SurvivalData.item(id)
-		var cat := str(entry.get("cat", "material"))
-		if cat != last_cat:
-			last_cat = cat
-			var header := _label(str(CAT_NAME.get(cat, cat)).to_upper(), 11, CAT_COLOR.get(cat, MUTED))
-			_items.add_child(header)
-		var buttons: Array = []
-		if entry.has("use") or entry.has("repair"):
-			buttons.append(["Usar", func(): use_requested.emit(id), true])
-		if str(entry.get("slot", "")) == "back":
-			buttons.append(["Equipar", func(): equip_requested.emit(id), true])
-		elif str(entry.get("slot", "")) in ["head", "chest"]:
-			buttons.append(["Vestir", func(): equip_requested.emit(id), true])
-		if container_store and not container_id.is_empty():
-			buttons.append(["Guardar", func(): store_requested.emit(container_id, id), true])
-		buttons.append(["Largar", func(): drop_requested.emit(id, false)])
-		_items.add_child(_card(id, int(inv[id]), buttons))
+	var id := _selected
+	var entry := SurvivalData.item(id)
+	var n := int(inv[id])
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 14)
+	_detail.add_child(row)
+	row.add_child(_tile(id, n, 84))
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 2)
+	row.add_child(text)
+	text.add_child(_label(SurvivalData.item_name(id) + ("   ×%d" % n if n > 1 else ""), 17, TEXT))
+	var cat := str(entry.get("cat", "material"))
+	text.add_child(_label("%s   •   %.2f kg cada   •   %.2f kg no total" % [CAT_NAME.get(cat, cat), float(entry.get("weight", 0)), float(entry.get("weight", 0)) * n], 11, MUTED))
+	var desc := _describe(id)
+	if not desc.is_empty():
+		text.add_child(_label(desc, 12, GOOD if entry.has("use") and int(entry["use"].get("hp", 0)) >= 0 else Color("#c9c4b4"), true))
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 6)
+	text.add_child(actions)
+	if container_store and not container_id.is_empty():
+		var store := _button("Guardar no baú", true)
+		store.pressed.connect(func(): store_requested.emit(container_id, id))
+		actions.add_child(store)
+	if entry.has("use") or entry.has("repair"):
+		var use := _button("Usar" if cat != "food" else "Comer", not container_store)
+		use.pressed.connect(func(): use_requested.emit(id))
+		actions.add_child(use)
+	if str(entry.get("slot", "")) == "back":
+		var eq := _button("Equipar nas costas", true)
+		eq.pressed.connect(func(): equip_requested.emit(id))
+		actions.add_child(eq)
+	elif str(entry.get("slot", "")) in ["head", "chest"]:
+		var wear := _button("Vestir", true)
+		wear.pressed.connect(func(): equip_requested.emit(id))
+		actions.add_child(wear)
+	var drop := _button("Largar" if n == 1 else "Largar todos")
+	drop.pressed.connect(func(): drop_requested.emit(id, true))
+	actions.add_child(drop)
+
+# ----------------------------------------------------------- lado direito ---
 
 func _refresh_side() -> void:
 	_clear(_side)
-	_tab_box.add_theme_stylebox_override("normal", _style(ACCENT.darkened(0.45) if _tab == 0 else Color("#3a4652"), 4, Color(0, 0, 0, 0), 8))
-	_tab_craft.add_theme_stylebox_override("normal", _style(ACCENT.darkened(0.45) if _tab == 1 else Color("#3a4652"), 4, Color(0, 0, 0, 0), 8))
+	_clear(_side_head)
+	for pair in [[_tab_craft, 1], [_tab_box, 0]]:
+		var on: bool = _tab == pair[1]
+		var b: Button = pair[0]
+		UiTheme.tab(b, on, 13)
+	_tab_box.text = "Baú" if container_store else ("Chão / mochila" if container_id.is_empty() else container_title.get_slice(" ", 0))
 	if _tab == 0:
-		_side_title.text = container_title if not container_id.is_empty() else "Nada aberto"
-		_take_all.visible = not container_id.is_empty() and not container_items.is_empty()
-		if container_id.is_empty():
-			_side.add_child(_empty("Chegue perto de um armário, geladeira, porta-malas ou mochila no chão e aperte E para revistar."))
-		elif container_items.is_empty():
-			_side.add_child(_empty("Vazio."))
-		for id in _sorted(container_items):
-			_side.add_child(_card(id, int(container_items[id]), [["Pegar", func(): take_requested.emit(container_id, id, true), true]]))
+		_refresh_container()
+	else:
+		_refresh_recipes()
+
+func _refresh_container() -> void:
+	var head_row := HBoxContainer.new()
+	head_row.add_theme_constant_override("separation", 6)
+	_side_head.add_child(head_row)
+	head_row.add_child(_label(container_title if not container_id.is_empty() else "Nada aberto", 15, TEXT))
+	if not container_id.is_empty() and not container_items.is_empty():
+		var all := _button("Pegar tudo", true)
+		all.pressed.connect(func(): take_all_requested.emit(container_id))
+		head_row.add_child(all)
+	if container_id.is_empty():
+		var hint := _label("Chegue perto de uma mochila no chão, carcaça ou baú e aperte E para abrir.", 13, FAINT, true)
+		_side.add_child(hint)
 		return
-	_side_title.text = "Receitas"
-	_take_all.visible = false
+	if container_items.is_empty():
+		_side.add_child(_label("Vazio.", 13, FAINT))
+	var grid := HFlowContainer.new()
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	_side.add_child(grid)
+	for id in _sorted(container_items):
+		var tile := _tile(id, int(container_items[id]))
+		tile.tooltip_text += "\nClique para pegar"
+		tile.clicked.connect(func(item): take_requested.emit(container_id, item, true))
+		grid.add_child(tile)
+	if container_store:
+		_side.add_child(_label("Para guardar: escolha um item da mochila e use \"Guardar no baú\" (ou duplo clique).", 11, FAINT, true))
+
+func _refresh_recipes() -> void:
+	# Filtros por categoria do que se fabrica + "só o que dá para fazer".
+	# Linhas fixas (HFlow guardava a altura de quando a janela era estreita e o painel passava da tela).
+	var chips := HBoxContainer.new()
+	chips.add_theme_constant_override("separation", 4)
+	_side_head.add_child(chips)
+	for index in FILTERS.size():
+		var chip := Button.new()
+		chip.text = FILTERS[index][0]
+		chip.focus_mode = Control.FOCUS_NONE
+
+		var on := index == _filter
+		UiTheme.tab(chip, on, 10)
+		var i: int = index
+		chip.pressed.connect(func():
+			_filter = i
+			_refresh_side())
+		chips.add_child(chip)
+	var only_box := CheckBox.new()
+	only_box.text = "Só o que dá"
+	only_box.focus_mode = Control.FOCUS_NONE
+	only_box.button_pressed = _only_ready
+	only_box.add_theme_font_size_override("font_size", 11)
+	only_box.add_theme_color_override("font_color", MUTED)
+	only_box.toggled.connect(func(on):
+		_only_ready = on
+		_refresh_side())
+	_side_head.add_child(only_box)
+	var shown := 0
 	for recipe in SurvivalData.recipes():
+		var gives: Array = recipe["gives"]
+		var cat := str(SurvivalData.item(str(gives[0])).get("cat", "material"))
+		var cats: Array = FILTERS[_filter][1]
+		if not cats.is_empty() and not cats.has(cat):
+			continue
 		var needs: Dictionary = recipe["needs"]
 		var have_all := true
-		var parts: Array[String] = []
 		for item in needs:
-			var have := int(inv.get(item, 0))
-			have_all = have_all and have >= int(needs[item])
-			parts.append("%s %d/%d" % [SurvivalData.item_name(item), have, int(needs[item])])
-		var rid := str(recipe["id"])
-		var gives: Array = recipe["gives"]
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-		card.add_child(row)
-		row.add_child(_icon(str(SurvivalData.item(str(gives[0])).get("cat", "material"))))
-		var text := VBoxContainer.new()
-		text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		text.add_theme_constant_override("separation", 0)
-		row.add_child(text)
-		text.add_child(_label(str(recipe["name"]), 14, TEXT))
-		var needs_text := ", ".join(parts)
-		if str(recipe.get("station", "")) == "campfire":
-			needs_text += "  •  perto de uma fogueira acesa"
-		text.add_child(_label(needs_text, 11, Color("#8fbf8a") if have_all else MUTED))
-		var make := _button("Fabricar", true)
-		make.disabled = not have_all
-		make.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		make.pressed.connect(func(): craft_requested.emit(rid))
-		row.add_child(make)
-		_side.add_child(card)
+			have_all = have_all and int(inv.get(item, 0)) >= int(needs[item])
+		if _only_ready and not have_all:
+			continue
+		_side.add_child(_recipe_card(recipe, have_all))
+		shown += 1
+	if shown == 0:
+		_side.add_child(_label("Nenhuma receita aqui ainda. Junte mais material.", 13, FAINT, true))
+
+## Receita: ícone do resultado, nome, ingredientes em ícone (verde tem, vermelho falta), Fabricar.
+func _recipe_card(recipe: Dictionary, have_all: bool) -> Control:
+	var gives: Array = recipe["gives"]
+	var out_id := str(gives[0])
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UiTheme.inset(8, have_all))
+	card.tooltip_text = "%s\n%s" % [str(recipe["name"]), _describe(out_id)]
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	card.add_child(row)
+	var icon := _tile(out_id, int(gives[1]), 46)
+	icon.dim = not have_all
+	row.add_child(icon)
+	var text := VBoxContainer.new()
+	text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text.add_theme_constant_override("separation", 3)
+	row.add_child(text)
+	text.add_child(_label(str(recipe["name"]), 14, TEXT if have_all else Color("#b9b5aa")))
+	var needs_row := HBoxContainer.new()
+	needs_row.add_theme_constant_override("separation", 8)
+	text.add_child(needs_row)
+	var needs: Dictionary = recipe["needs"]
+	for item in needs:
+		var have := int(inv.get(item, 0))
+		var need := int(needs[item])
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 2)
+		chip.tooltip_text = SurvivalData.item_name(str(item))
+		var small := _tile(str(item), 0, 24)
+		small.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(small)
+		var amount := Label.new()
+		amount.text = "%d/%d" % [mini(have, 99), need]
+		amount.add_theme_font_size_override("font_size", 11)
+		amount.add_theme_color_override("font_color", GOOD if have >= need else BAD)
+		chip.add_child(amount)
+		needs_row.add_child(chip)
+	if str(recipe.get("station", "")) == "campfire":
+		text.add_child(_label("Perto de uma fogueira acesa", 10, Color("#d9925a")))
+	var make := _button("Fabricar", true)
+	make.disabled = not have_all
+	make.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var rid := str(recipe["id"])
+	make.pressed.connect(func(): craft_requested.emit(rid))
+	row.add_child(make)
+	return card

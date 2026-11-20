@@ -12,6 +12,7 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const Rules = preload("res://scripts/survival/building_rules.gd")
 const Model = preload("res://scripts/survival/building_model.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "campfire", "chest", "bed"]
 const DEMOLISH_TIME := 1.5
 const USE_REACH := 2.6 # porta/baú/fogueira com E
@@ -498,7 +499,7 @@ func _refresh_auth() -> void:
 	if auth.is_empty():
 		var empty := Label.new()
 		empty.text = "Ninguém liberado ainda."
-		empty.add_theme_color_override("font_color", Color("#8e979e"))
+		empty.add_theme_color_override("font_color", UiTheme.MUTED)
 		_auth_list.add_child(empty)
 	for entry in auth:
 		var row := HBoxContainer.new()
@@ -508,7 +509,7 @@ func _refresh_auth() -> void:
 		row.add_child(label)
 		var remove := Button.new()
 		remove.text = "Tirar"
-		remove.focus_mode = Control.FOCUS_NONE
+		UiTheme.secondary(remove, 13)
 		var tag := str(entry.get("tag", ""))
 		remove.pressed.connect(func(): Net.send({"t": "auth_del", "tag": tag}))
 		row.add_child(remove)
@@ -539,14 +540,7 @@ func _build_ui() -> void:
 	_bar.grow_vertical = Control.GROW_DIRECTION_BEGIN
 	_bar.offset_bottom = -14
 	_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color(0.08, 0.09, 0.1, 0.82)
-	style.set_corner_radius_all(8)
-	style.content_margin_left = 10
-	style.content_margin_right = 10
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
-	_bar.add_theme_stylebox_override("panel", style)
+	_bar.add_theme_stylebox_override("panel", UiTheme.card(12))
 	ui.add_child(_bar)
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 6)
@@ -557,7 +551,7 @@ func _build_ui() -> void:
 	_hint = Label.new()
 	_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_hint.add_theme_font_size_override("font_size", 13)
-	_hint.add_theme_color_override("font_color", Color("#c9c4b4"))
+	_hint.add_theme_color_override("font_color", UiTheme.MUTED)
 	column.add_child(_hint)
 	_status = Label.new()
 	_status.visible = false
@@ -569,7 +563,8 @@ func _build_ui() -> void:
 	_status.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_status.add_theme_font_size_override("font_size", 16)
-	_status.add_theme_color_override("font_color", Color("#ffe08a"))
+	_status.add_theme_font_override("font", UiTheme.font(600))
+	_status.add_theme_color_override("font_color", UiTheme.ACCENT)
 	_status.add_theme_color_override("font_shadow_color", Color.BLACK)
 	_status.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ui.add_child(_status)
@@ -580,29 +575,18 @@ func _build_ui() -> void:
 	_auth_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
 	_auth_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	_auth_panel.custom_minimum_size = Vector2(420, 260)
-	var panel_style := style.duplicate() as StyleBoxFlat
-	panel_style.bg_color = Color("#14181c")
-	panel_style.set_border_width_all(1)
-	panel_style.border_color = Color("#323b44")
-	panel_style.content_margin_left = 16
-	panel_style.content_margin_right = 16
-	panel_style.content_margin_top = 14
-	panel_style.content_margin_bottom = 14
-	_auth_panel.add_theme_stylebox_override("panel", panel_style)
+	_auth_panel.add_theme_stylebox_override("panel", UiTheme.card(22))
 	ui.add_child(_auth_panel)
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
 	_auth_panel.add_child(box)
-	var title := Label.new()
-	title.text = "LIBERAR A BASE"
-	title.add_theme_font_size_override("font_size", 20)
-	title.add_theme_color_override("font_color", Color("#d9b44a"))
-	box.add_child(title)
+	box.add_child(UiTheme.title("Liberar a base", 22))
+	box.add_child(UiTheme.caps("Amigos da sua construção", 11, UiTheme.ACCENT))
 	var about := Label.new()
 	about.text = "Quem você liberar abre todas as suas portas, constrói junto e conserta. Só você desmonta."
 	about.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	about.add_theme_font_size_override("font_size", 13)
-	about.add_theme_color_override("font_color", Color("#c9c4b4"))
+	about.add_theme_color_override("font_color", UiTheme.MUTED)
 	box.add_child(about)
 	_auth_list = VBoxContainer.new()
 	_auth_list.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -612,13 +596,13 @@ func _build_ui() -> void:
 	box.add_child(buttons)
 	var add := Button.new()
 	add.text = "Liberar quem está perto (6 m)"
-	add.focus_mode = Control.FOCUS_NONE
+	UiTheme.primary(add, 14)
 	add.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add.pressed.connect(func(): Net.send({"t": "auth_add"}))
 	buttons.add_child(add)
 	var close := Button.new()
 	close.text = "Fechar"
-	close.focus_mode = Control.FOCUS_NONE
+	UiTheme.secondary(close, 14)
 	close.pressed.connect(close_auth)
 	buttons.add_child(close)
 
@@ -631,15 +615,9 @@ func _refresh_bar() -> void:
 		var def: Dictionary = rules.defs.get(kind, {})
 		var card := PanelContainer.new()
 		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var s := StyleBoxFlat.new()
-		s.set_corner_radius_all(6)
-		s.bg_color = Color("#3b3326") if index == selected else Color("#20262c")
-		s.border_color = Color("#d9b44a") if index == selected else Color("#323b44")
-		s.set_border_width_all(2 if index == selected else 1)
-		s.content_margin_left = 8
-		s.content_margin_right = 8
-		s.content_margin_top = 4
-		s.content_margin_bottom = 4
+		var s := UiTheme.inset(8, index == selected)
+		if index == selected:
+			s.set_border_width_all(2)
 		card.add_theme_stylebox_override("panel", s)
 		var col := VBoxContainer.new()
 		col.add_theme_constant_override("separation", 0)
@@ -647,7 +625,8 @@ func _refresh_bar() -> void:
 		var name_label := Label.new()
 		name_label.text = str(def.get("name", kind))
 		name_label.add_theme_font_size_override("font_size", 13)
-		name_label.add_theme_color_override("font_color", Color("#f0e6c8") if index == selected else Color("#c9c4b4"))
+		name_label.add_theme_font_override("font", UiTheme.font(600))
+		name_label.add_theme_color_override("font_color", UiTheme.ACCENT if index == selected else UiTheme.TEXT)
 		col.add_child(name_label)
 		var parts: Array[String] = []
 		var enough := true
@@ -658,7 +637,7 @@ func _refresh_bar() -> void:
 		var cost_label := Label.new()
 		cost_label.text = " · ".join(parts)
 		cost_label.add_theme_font_size_override("font_size", 11)
-		cost_label.add_theme_color_override("font_color", Color("#8fbf8a") if enough else Color("#b36a5e"))
+		cost_label.add_theme_color_override("font_color", UiTheme.GOOD if enough else UiTheme.DANGER)
 		col.add_child(cost_label)
 		_bar_row.add_child(card)
 	_hint.text = "Clique constrói  •  roda do mouse / %s %s troca  •  %s gira  •  %s (segure) desmonta  •  %s conserta  •  %s sai" % [

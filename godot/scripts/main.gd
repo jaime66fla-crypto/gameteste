@@ -42,9 +42,12 @@ const MinimapScript = preload("res://scripts/ui/minimap.gd")
 const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
 const TouchControlsScript = preload("res://scripts/ui/touch_controls.gd")
 const Controls = preload("res://scripts/controls.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 
 func _ready() -> void:
     PointerMode.setup_window(get_tree())
+    # Todos os menus e botões do jogo com o tema do menu principal (fonte, cores, botões).
+    get_tree().root.theme = UiTheme.theme()
     _register_inputs()
     Input.action_release("fire")
     Input.action_release("aim")
@@ -125,7 +128,14 @@ func _build_quit_dialog(survival: bool) -> void:
     quit_dialog.ok_button_text = "Sair"
     quit_dialog.cancel_button_text = "Continuar jogando"
     quit_dialog.exclusive = true
+    quit_dialog.theme = UiTheme.theme()
     add_child(quit_dialog)
+    # Botões no estilo do menu: sair em laranja, continuar discreto.
+    UiTheme.primary(quit_dialog.get_ok_button(), 15)
+    UiTheme.secondary(quit_dialog.get_cancel_button(), 15)
+    quit_dialog.get_ok_button().focus_mode = Control.FOCUS_ALL # Enter confirma
+    quit_dialog.get_cancel_button().focus_mode = Control.FOCUS_ALL
+    quit_dialog.get_label().add_theme_color_override("font_color", UiTheme.TEXT)
     quit_dialog.confirmed.connect(func():
         if _quit_to_desktop:
             Net.leave()
@@ -306,6 +316,7 @@ func _build_ui() -> void:
     menu_button.name = "ReturnToMenuButton"
     menu_button.text = "Menu principal"
     menu_button.custom_minimum_size = Vector2(150,40)
+    UiTheme.secondary(menu_button, 14)
     layer.add_child(menu_button)
     menu_button.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT)
     menu_button.offset_left = -170
