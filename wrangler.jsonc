@@ -10,8 +10,10 @@
   // 903 = 0.9.3: everyone online on the itch release (ADS aim, 8-way unarmed locomotion).
   // 909 = 0.9.9: helmet/vest items, hit point (pt) for the hit check, ping/pong.
   // 10100 = 1.1.0: survival world 720 m (outer ring, parkour towns, new containers).
+  // 10800 = 1.8.0: online block maps (match_maps.json).
+  // 11300 = 1.13.0: custom rooms play best of 5 rounds (round_end / round messages).
   "vars": {
-    "GODOT_MIN_BUILD": "10800",
+    "GODOT_MIN_BUILD": "11300",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {
