@@ -239,6 +239,8 @@ func toggle() -> void:
 
 func set_building(on: bool) -> void:
 	building = on
+	if player != null:
+		player.set("attack_blocked", on) # o clique coloca a peça em vez de socar
 	_bar.visible = on
 	_status.visible = on
 	if not on:

@@ -15,10 +15,9 @@ const ACTIONS := [
 	["sprint", "Correr", "Movimento", KEY_SHIFT],
 	["walk", "Andar devagar", "Movimento", KEY_ALT],
 	["crouch", "Agachar", "Movimento", KEY_CTRL],
-	["fire", "Atirar", "Combate", -MOUSE_BUTTON_LEFT],
+	["fire", "Atirar / soco (mãos vazias)", "Combate", -MOUSE_BUTTON_LEFT],
 	["aim", "Mirar", "Combate", -MOUSE_BUTTON_RIGHT],
 	["reload", "Recarregar", "Combate", KEY_R],
-	["melee", "Soco / arma branca", "Combate", KEY_Q],
 	["grenade", "Granada (segure e solte)", "Combate", KEY_G],
 	["heal", "Curar", "Combate", KEY_F],
 	["holster", "Guardar a arma", "Combate", KEY_H],
@@ -41,9 +40,10 @@ const ACTIONS := [
 	["build_remove", "Desmontar (segure)", "Construção", KEY_X],
 	["build_repair", "Consertar / liberar a base", "Construção", KEY_V],
 ]
-## Pares que podem dividir a mesma tecla (mirando, Q/E inclinam; sem mirar, socam/interagem;
-## construindo, R gira a peça em vez de recarregar).
-const SHARED := [["lean_left", "melee"], ["lean_right", "interact"], ["build_rotate", "reload"]]
+## Pares que podem dividir a mesma tecla (mirando, E inclina; sem mirar, interage;
+## construindo, R gira a peça em vez de recarregar). O soco é o clique esquerdo
+## de mãos vazias (ação "fire"), não tem tecla própria.
+const SHARED := [["lean_right", "interact"], ["build_rotate", "reload"]]
 ## Teclas que não podem ser usadas (abrem menus / ajuda).
 const RESERVED := [KEY_ESCAPE, KEY_F1]
 
@@ -168,7 +168,7 @@ static func key_name(code: int) -> String:
 ## Texto de ajuda (F1) com as teclas atuais.
 static func help_text() -> String:
 	var k := func(action: String) -> String: return key_name(binding(action))
-	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s atirar  %s recarregar  %s guardar arma\n%s-%s armas  %s soco  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  %s construir  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
+	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s atirar (sem arma: soco)  %s recarregar  %s guardar arma\n%s-%s armas  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  %s construir  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
 		k.call("move_forward"), k.call("move_left"), k.call("move_back"), k.call("move_right"), k.call("walk"), k.call("sprint"), k.call("crouch"), k.call("jump"),
 		k.call("aim"), k.call("lean_left"), k.call("lean_right"), k.call("fire"), k.call("reload"), k.call("holster"),
-		k.call("weapon_1"), k.call("weapon_5"), k.call("melee"), k.call("interact"), k.call("heal"), k.call("grenade"), k.call("inventory"), k.call("map"), k.call("build")]
+		k.call("weapon_1"), k.call("weapon_5"), k.call("interact"), k.call("heal"), k.call("grenade"), k.call("inventory"), k.call("map"), k.call("build")]

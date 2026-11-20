@@ -471,7 +471,7 @@ const TOOL_LOOK := {
 	"iron_axe": {"handle": 0.74, "color": Color("#5c4128"), "head": "axe"},
 	"iron_pick": {"handle": 0.76, "color": Color("#5c4128"), "head": "pick"},
 	"iron_knife": {"handle": 0.16, "color": Color("#3e3226"), "head": "blade"},
-	"machete": {"handle": 0.2, "color": Color("#3e3226"), "head": "blade"},
+	"machete": {"handle": 0.14, "color": Color("#3e3226"), "head": "machete"},
 	"wood_spear": {"handle": 1.1, "color": Color("#6b5034"), "head": "blade"},
 	"nail_bat": {"handle": 0.82, "color": Color("#6a5238"), "head": "bat"},
 }
@@ -573,6 +573,12 @@ func _build_tool(tool: String) -> Node3D:
 			# Lasca de pedra afiada presa num cabo curto.
 			_tool_box(node, Vector3(0, length + 0.07, 0), Vector3(0.012, 0.15, 0.045), _tool_mat(Color("#5d5b55"), false))
 			_tool_box(node, Vector3(0, length, 0), Vector3(0.035, 0.035, 0.035), _tool_mat(Color("#c9b98a"), false))
+		"machete":
+			# Lâmina longa de ferro, mais larga perto da ponta, gume para -Z.
+			var iron := _tool_mat(Color("#8c9094"), true)
+			_tool_box(node, Vector3(0, length + 0.2, -0.005), Vector3(0.008, 0.4, 0.045), iron)
+			_tool_box(node, Vector3(0, length + 0.34, -0.012), Vector3(0.008, 0.14, 0.06), iron)
+			_tool_box(node, Vector3(0, length + 0.005, 0), Vector3(0.03, 0.012, 0.07), iron) # guarda
 	return node
 
 func _ease_in_out(t: float) -> float:
@@ -586,54 +592,250 @@ func _apply_work() -> void:
 	if hips < 0 or chest < 0 or right_arm < 0:
 		return
 	_work_time += _last_delta
-	if work_action == "swing":
-		_apply_swing(chest, spine, right_arm)
-		return
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	var family := tool_family(work_tool)
 	if work_action == "hold":
 		_apply_hold(chest, right_arm)
 		return
+	if work_action == "swing":
+		match family:
+			"axe", "pick":
+				_apply_heavy_attack(family, chest, spine, right)
+			"knife":
+				_apply_stab(chest, spine, right)
+			"machete":
+				_apply_slash(chest, spine, right)
+			"spear":
+				_apply_thrust(chest, spine, right)
+			_:
+				_apply_swing(chest, spine, right_arm)
+		return
+	# Trabalho em loop (WORK_CYCLE): 0–50% prepara devagar, 50–64% golpe
+	# acelerando, 64–100% tranco do impacto e volta um pouco.
 	var t := fmod(_work_time, WORK_CYCLE) / WORK_CYCLE
-	var raised := -0.55 if work_action == "chop" else 0.7
-	var struck := 2.15 if work_action == "chop" else 2.5
-	# 0–55%: levanta devagar; 55–70%: desce rápido; 70–100%: segura no impacto e volta.
+	var p: Dictionary = WORK_STROKES["mine" if work_action == "pry" and family == "pick" else ("chop" if work_action == "chop" else "pry")]
+	var raised := float(p["raised"])
+	var struck := float(p["struck"])
 	var theta := 0.0
-	var lean := 0.0
-	if t < 0.55:
-		theta = lerpf(struck, raised, _ease_in_out(t / 0.55))
-	elif t < 0.7:
-		var k := (t - 0.55) / 0.15
+	var impact := 0.0 # 0 preparando → 1 no impacto
+	if t < 0.5:
+		var k := _ease_in_out(t / 0.5)
+		theta = lerpf(struck - 0.25, raised, k)
+		impact = 0.0
+	elif t < 0.64:
+		var k := (t - 0.5) / 0.14
 		theta = lerpf(raised, struck, k * k)
-		lean = k
+		impact = k * k
 	else:
-		theta = struck
-		lean = 1.0 - (t - 0.7) / 0.3
+		var k := (t - 0.64) / 0.36
+		# Tranco: a ferramenta para no alvo, quica um pouco e vai voltando.
+		theta = struck - 0.08 * sin(PI * minf(k * 3.0, 1.0)) - 0.25 * _ease_in_out(k)
+		impact = 1.0 - _ease_in_out(k)
+	_stroke_two_hands(p, theta, impact, chest, spine, right)
+
+## Como cada ferramenta é usada: "axe" e "pick" com as duas mãos, "knife" e
+## "machete" com uma mão, "spear" estocando; o resto (bastões) varre de lado.
+static func tool_family(tool: String) -> String:
+	if tool in ["axe", "improvised_axe", "stone_axe", "iron_axe"]:
+		return "axe"
+	if tool in ["stone_pick", "iron_pick"]:
+		return "pick"
+	if tool in ["stone_knife", "iron_knife"]:
+		return "knife"
+	if tool == "machete":
+		return "machete"
+	if tool == "wood_spear":
+		return "spear"
+	return "blunt"
+
+# Golpes de trabalho com as duas mãos no cabo, num plano inclinado por `tilt`
+# (0 = de cima para baixo; ~1.3 = quase de lado). `theta` gira o cabo nesse
+# plano: negativo = para trás do ombro direito, ~1.6 = apontando para a frente.
+#  chop: machadada lateral no tronco, vindo do ombro direito para a cintura;
+#  mine: picareta levantada acima da cabeça, desce na pedra com os joelhos dobrados;
+#  pry: pé de cabra baixo (pedra/carro).
+const WORK_STROKES := {
+	"chop": {"tilt_raised": 0.8, "tilt_struck": 1.3, "raised": -0.75, "struck": 1.62,
+		"reach_raised": 0.30, "reach_struck": 0.47, "twist_raised": 0.55, "twist_struck": -0.2,
+		"lean": 0.15, "dip": 0.22, "pivot_up": -0.2},
+	"mine": {"tilt_raised": 0.12, "tilt_struck": 0.05, "raised": -0.35, "struck": 2.5,
+		"reach_raised": 0.30, "reach_struck": 0.5, "twist_raised": 0.15, "twist_struck": 0.0,
+		"lean": 0.45, "dip": 0.42, "pivot_up": 0.02},
+	"pry": {"tilt_raised": 0.0, "tilt_struck": 0.0, "raised": 0.7, "struck": 2.5,
+		"reach_raised": 0.28, "reach_struck": 0.46, "twist_raised": 0.0, "twist_struck": 0.0,
+		"lean": 0.3, "dip": 0.1, "pivot_up": 0.02},
+}
+var _work_dip := 0.0 # joelhos dobrando no golpe (somado ao agachar no quadro seguinte)
+
+## Corpo + mãos + ferramenta para um golpe de duas mãos. `impact` 0..1 dá o
+## peso do corpo: tronco inclina, gira para a esquerda e os joelhos dobram.
+func _stroke_two_hands(p: Dictionary, theta: float, impact: float, chest: int, spine: int, right: Vector3) -> void:
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1) # frente do modelo no espaço do esqueleto
-	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
-	if spine >= 0:
-		var spine_basis := skeleton.get_bone_global_pose(spine).basis
-		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, 0.3 * lean) * spine_basis)
+	var raised := float(p["raised"])
+	var struck := float(p["struck"])
+	var progress := clampf((theta - raised) / (struck - raised), 0.0, 1.0)
+	var tilt := lerpf(float(p["tilt_raised"]), float(p["tilt_struck"]), progress)
+	var twist := lerpf(float(p["twist_raised"]), float(p["twist_struck"]), progress)
+	_work_dip = float(p["dip"]) * impact
+	_turn_spine(spine, twist * signf(right.x), float(p["lean"]) * maxf(impact, progress * 0.5))
 	var torso := skeleton.get_bone_global_pose(chest).origin
-	var pivot := torso + right * 0.12 + up * 0.02 + forward * 0.14
-	var h := (up * cos(theta) + forward * sin(theta)).normalized()
-	var swing := (forward * cos(theta) - up * sin(theta)).normalized()
-	# Na descida os braços esticam (mãos mais longe do peito); no alto ficam junto à cabeça.
-	var reach := lerpf(0.28, 0.46, clampf((theta - raised) / (struck - raised), 0.0, 1.0))
+	var pivot := torso + right * 0.12 + up * float(p["pivot_up"]) + forward * 0.14
+	var a := (up * cos(tilt) + right * sin(tilt)).normalized()
+	var h := (a * cos(theta) + forward * sin(theta)).normalized()
+	var swing := (-a * sin(theta) + forward * cos(theta)).normalized()
+	# No alto as mãos ficam junto ao ombro; no impacto os braços esticam.
+	var reach := lerpf(float(p["reach_raised"]), float(p["reach_struck"]), progress)
 	var right_hand := pivot + h * reach
 	var left_hand := pivot + h * (reach - 0.17)
 	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
-		var side: String = spec[0]
-		var upper := Grip._bone(skeleton, side + "Arm")
-		var lower := Grip._bone(skeleton, side + "ForeArm")
-		var hand := Grip._bone(skeleton, side + "Hand")
 		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.3 - up * 0.4
-		_two_bone_ik(upper, lower, hand, spec[1], pole)
+		_grip_on_staff(spec[0], spec[1], h, -swing, pole)
+	_place_tool(h, -swing, pivot + h * (reach - 0.24))
+
+## Gira o tronco (Spine) em volta do eixo vertical e inclina para a frente.
+func _turn_spine(spine: int, yaw: float, lean: float) -> void:
+	if spine < 0:
+		return
+	var basis := skeleton.get_bone_global_pose(spine).basis
+	Grip._set_global_rotation(skeleton, spine, Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, lean) * basis)
+
+## Ferramenta com o cabo em `axis` (base em `base`) e a lâmina/ponta virada para `edge`.
+func _place_tool(axis: Vector3, edge: Vector3, base: Vector3) -> void:
+	if _tool_node == null:
+		return
+	var y := axis.normalized()
+	var z := -(edge - y * edge.dot(y)).normalized()
+	if z.length_squared() < 0.01:
+		z = Vector3(0, 0, 1)
+	var x := y.cross(z).normalized()
+	_tool_node.transform = Transform3D(Basis(x, y, z), base)
+
+## Mão esquerda em guarda na frente do peito (golpes de uma mão).
+func _left_guard(torso: Vector3, right: Vector3, amount: float) -> void:
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var target := torso - right * 0.14 + forward * lerpf(0.22, 0.3, amount) - up * lerpf(0.12, 0.05, amount)
+	var hand := Grip._bone(skeleton, "LeftHand")
+	_two_bone_ik(Grip._bone(skeleton, "LeftArm"), Grip._bone(skeleton, "LeftForeArm"), hand, target, -right * 0.6 - up * 0.5)
+	if hand >= 0:
 		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
-	if _tool_node != null:
-		var y := h
-		var z := -swing
-		var x := y.cross(z).normalized()
-		_tool_node.transform = Transform3D(Basis(x, y, z), pivot + h * (reach - 0.24))
+
+## Machadada de ataque (machado/picareta no Q): um golpe só, diagonal de cima do
+## ombro direito até a altura da cintura do alvo; picareta mais de cima para baixo.
+func _apply_heavy_attack(family: String, chest: int, spine: int, right: Vector3) -> void:
+	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
+	var p := {"tilt_raised": 0.75, "tilt_struck": 0.95, "raised": -0.8, "struck": 1.95,
+		"reach_raised": 0.3, "reach_struck": 0.48, "twist_raised": 0.5, "twist_struck": -0.35,
+		"lean": 0.25, "dip": 0.2, "pivot_up": 0.0}
+	if family == "pick":
+		p = {"tilt_raised": 0.2, "tilt_struck": 0.1, "raised": -0.4, "struck": 2.1,
+			"reach_raised": 0.3, "reach_struck": 0.5, "twist_raised": 0.2, "twist_struck": -0.05,
+			"lean": 0.35, "dip": 0.25, "pivot_up": 0.02}
+	var rest := 1.2 # cabo apontando para a frente/baixo antes e depois do golpe
+	var theta := 0.0
+	var impact := 0.0
+	if t < 0.4:
+		theta = lerpf(rest, float(p["raised"]), _ease_in_out(t / 0.4))
+	elif t < 0.58:
+		var k := (t - 0.4) / 0.18
+		theta = lerpf(float(p["raised"]), float(p["struck"]), k * k)
+		impact = k * k
+	else:
+		var k := (t - 0.58) / 0.42
+		theta = lerpf(float(p["struck"]), rest + 0.3, _ease_in_out(k))
+		impact = 1.0 - _ease_in_out(k)
+	_stroke_two_hands(p, theta, impact, chest, spine, right)
+
+## Facada: puxa a faca para o quadril direito, estoca reto para a frente na
+## altura do peito (o ombro vai junto) e volta para a guarda.
+func _apply_stab(chest: int, spine: int, right: Vector3) -> void:
+	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var draw := 0.0 # 0 guarda, -1 puxada, 1 estocada
+	if t < 0.3:
+		draw = -_ease_in_out(t / 0.3)
+	elif t < 0.48:
+		var k := (t - 0.3) / 0.18
+		draw = lerpf(-1.0, 1.0, k * k * (3.0 - 2.0 * k))
+	else:
+		draw = 1.0 - _ease_in_out((t - 0.48) / 0.52)
+	var thrust := maxf(draw, 0.0)
+	var back := maxf(-draw, 0.0)
+	_work_dip = 0.15 * thrust
+	_turn_spine(spine, (0.3 * back - 0.35 * thrust) * signf(right.x), 0.2 * thrust)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var hand_pos := torso + right * lerpf(0.2, 0.06, thrust) + right * 0.04 * back \
+		+ forward * (0.26 + 0.32 * thrust - 0.18 * back) - up * (0.12 + 0.08 * back - 0.04 * thrust)
+	var axis := (forward + up * 0.08 - right * 0.1 * thrust).normalized()
+	_grip_on_staff("Right", hand_pos, axis, -up, right * 0.6 - up * 0.5 - forward * 0.2)
+	_left_guard(torso, right, thrust)
+	_place_tool(axis, up, hand_pos - axis * 0.08)
+
+## Golpe de facão com uma mão: lâmina sobe por cima do ombro direito e corta
+## em diagonal até a frente do quadril esquerdo.
+func _apply_slash(chest: int, spine: int, right: Vector3) -> void:
+	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var raised := -0.5
+	var struck := 2.3
+	var rest := 1.3
+	var theta := 0.0
+	var impact := 0.0
+	if t < 0.35:
+		theta = lerpf(rest, raised, _ease_in_out(t / 0.35))
+	elif t < 0.55:
+		var k := (t - 0.35) / 0.2
+		theta = lerpf(raised, struck, k * k)
+		impact = k * k
+	else:
+		var k := (t - 0.55) / 0.45
+		theta = lerpf(struck, rest, _ease_in_out(k))
+		impact = 1.0 - _ease_in_out(k)
+	var progress := clampf((theta - raised) / (struck - raised), 0.0, 1.0)
+	_work_dip = 0.12 * impact
+	_turn_spine(spine, lerpf(0.45, -0.4, progress) * signf(right.x), 0.2 * impact)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var shoulder := torso + right * 0.2 + up * 0.08
+	var tilt := 0.8
+	var a := (up * cos(tilt) + right * sin(tilt)).normalized()
+	var h := (a * cos(theta) + forward * sin(theta)).normalized()
+	var swing := (-a * sin(theta) + forward * cos(theta)).normalized()
+	var hand_pos := shoulder + h * lerpf(0.36, 0.5, progress) + forward * 0.1
+	_grip_on_staff("Right", hand_pos, h, -swing, right * 0.6 - up * 0.4 - forward * 0.2)
+	_left_guard(torso, right, impact)
+	_place_tool(h, swing, hand_pos - h * 0.1)
+
+## Estocada de lança com as duas mãos: lança deitada na altura do peito, mão
+## direita atrás e esquerda na frente; recua, avança o corpo e estoca.
+func _apply_thrust(chest: int, spine: int, right: Vector3) -> void:
+	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var draw := 0.0
+	if t < 0.32:
+		draw = -_ease_in_out(t / 0.32)
+	elif t < 0.5:
+		var k := (t - 0.32) / 0.18
+		draw = lerpf(-1.0, 1.0, k * k * (3.0 - 2.0 * k))
+	else:
+		draw = 1.0 - _ease_in_out((t - 0.5) / 0.5)
+	var thrust := maxf(draw, 0.0)
+	var back := maxf(-draw, 0.0)
+	_work_dip = 0.25 * thrust
+	_turn_spine(spine, (0.25 * back - 0.15 * thrust) * signf(right.x), 0.28 * thrust - 0.05 * back)
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	# Mãos perto do corpo para os dois braços alcançarem o cabo; a lança anda
+	# para a frente com o tronco e os braços na estocada.
+	var axis := (forward - up * 0.03 - right * 0.06).normalized()
+	var base := torso + right * 0.14 - up * 0.13 + forward * (-0.5 + 0.32 * thrust - 0.12 * back)
+	var right_hand := base + axis * 0.3
+	var left_hand := base + axis * 0.6
+	_grip_on_staff("Right", right_hand, axis, -up, right * 0.6 - up * 0.5)
+	_grip_on_staff("Left", left_hand, axis, -up, -right * 0.6 - up * 0.5)
+	_place_tool(axis, up, base)
 
 ## Carregando a arma branca ("hold"): as duas mãos no cabo na frente do quadril
 ## direito e a arma deitada para trás por cima do ombro direito.
@@ -811,7 +1013,10 @@ var unarmed_weight := 0.0
 var _move_amount := 0.0
 
 func _apply_crouch() -> void:
-	if crouch_weight <= 0.001:
+	if work_action.is_empty():
+		_work_dip = 0.0
+	var w := maxf(crouch_weight, _work_dip)
+	if w <= 0.001:
 		return
 	var hips := Grip._bone(skeleton, "Hips")
 	var spine := Grip._bone(skeleton, "Spine")
@@ -829,7 +1034,7 @@ func _apply_crouch() -> void:
 	if up_leg >= 0 and leg >= 0 and foot_bone >= 0:
 		leg_length = skeleton.get_bone_rest(leg).origin.length() + skeleton.get_bone_rest(foot_bone).origin.length()
 	# Desce o quadril no espaço do esqueleto (Y para cima), convertido para o espaço do pai.
-	var drop := Vector3(0, -leg_length * CROUCH_DROP * crouch_weight, 0)
+	var drop := Vector3(0, -leg_length * CROUCH_DROP * w, 0)
 	var parent := skeleton.get_bone_parent(hips)
 	if parent >= 0:
 		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop

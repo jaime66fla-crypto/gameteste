@@ -202,6 +202,21 @@ func _run() -> void:
 	print("sem arma, andando para a direita: corpo %.0f°, clipe %s" % [rad_to_deg(turned_free), clip_free])
 	check(absf(wrapf(turned_free + PI * 0.5, -PI, PI)) < 0.25 and not clip_free.ends_with("_right"), "sem arma, andar para o lado vira o corpo e corre de frente (%.0f°, %s)" % [rad_to_deg(turned_free), clip_free])
 	await _frames(15)
+	# Soco de mãos vazias (clique esquerdo chama player._punch): tira vida do zumbi.
+	var dir_f := fresh.global_position - Arena.CENTER
+	dir_f.y = 0.0
+	player.global_position = fresh.global_position - (dir_f.normalized() if dir_f.length() > 0.1 else Vector3(0, 0, 1)) * 1.6 + Vector3(0, 0.1, 0)
+	await _frames(3)
+	await _aim_at(player, fresh.global_position + Vector3(0, 1.2, 0))
+	arena.set("_cooldown", 0.0)
+	var punch_before := float(fresh.get("hp"))
+	player.call("_punch")
+	var punched := punch_before - float(fresh.get("hp"))
+	check(is_equal_approx(punched, 12.0) or is_equal_approx(punched, 18.0), "soco de mãos vazias dá dano (tirou %.0f)" % punched)
+	player.set("attack_blocked", true)
+	check(bool(player.get("attack_blocked")), "modo construção bloqueia o soco do clique")
+	player.set("attack_blocked", false)
+	await _frames(40)
 	player.global_position = Arena.RACK + Vector3(-0.8, 0.1, 0.3)
 	await _frames(3)
 	# Pegar de novo e sacar a pistola (tecla 3): o bastão volta para o suporte.

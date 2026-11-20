@@ -223,6 +223,7 @@ func _process(delta: float) -> void:
 
 ## No modo de construção o clique coloca a peça: guarda a arma e o bastão.
 func _arm_for_building(on: bool) -> void:
+	player.set("attack_blocked", on)
 	if on:
 		_forced_holster = not bool(player.get("weapon_holstered"))
 		if _forced_holster:

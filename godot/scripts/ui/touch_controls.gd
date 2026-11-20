@@ -34,7 +34,7 @@ const BUTTONS := [
 	["weapon_1", "1", "weapon_1", "hold", Vector2(0.89, 0.13), 34.0],
 	["weapon_2", "2", "weapon_2", "hold", Vector2(0.83, 0.25), 25.0],
 	["weapon_3", "3", "weapon_3", "hold", Vector2(0.89, 0.25), 25.0],
-	["melee", "SOCO", "melee", "hold", Vector2(0.95, 0.25), 25.0],
+	["melee", "SOCO", "fire", "hold", Vector2(0.95, 0.25), 25.0],
 	["weapon_4", "4", "weapon_4", "hold", Vector2(0.83, 0.37), 22.0],
 	["weapon_5", "5", "weapon_5", "hold", Vector2(0.89, 0.37), 22.0],
 	["pause", "II", "", "pause", Vector2(0.97, 0.05), 20.0],

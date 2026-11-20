@@ -149,7 +149,7 @@ func _ready() -> void:
 	if bool(you.get("dead", false)):
 		_on_local_death()
 	_feed("Você acordou na floresta sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
-	_feed("E coletar/beber  •  TAB inventário  •  L manual  •  B construir  •  M mapa  •  Q golpe  •  F curativo")
+	_feed("E coletar/beber  •  TAB inventário  •  L manual  •  B construir  •  M mapa  •  CLIQUE golpe  •  F curativo")
 	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato. Nas 3 cidades abandonadas (pontas do mapa) há zumbis até de dia.")
 
 func _exit_tree() -> void:

@@ -58,6 +58,17 @@ var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
 ## Arma branca na mão (ex.: "long_bat" na arena do treino): a arma de fogo fica
 ## guardada e o clique esquerdo golpeia (melee_handler). Trocar de arma (1-5) larga.
 var melee_weapon := ""
+## Modo de construção ligado: o clique esquerdo coloca peças, não soca.
+var attack_blocked := false
+
+## Soco (clique esquerdo de mãos vazias, ou a tecla de soco): vira para a mira,
+## toca o clipe e o melee_handler do modo aplica o dano (Combate, Sobrevivência, treino).
+func _punch() -> void:
+    if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
+        face_aim(0.6) # o soco sai para a mira, mesmo correndo para outro lado
+        humanoid_avatar.call("play_action", "punch")
+    if melee_handler.is_valid():
+        melee_handler.call()
 var ui_blocking: Callable # true enquanto uma janela (mochila, confirmação) precisa do cursor
 ## G: grenade. Online the match controller decides (inventory); offline it is
 ## unlimited with a short cooldown.
@@ -128,7 +139,7 @@ var humanoid_avatar: Node3D
 
 func _ready() -> void:
     # Keys chosen in Settings > Controls (also when the player runs without main.gd, e.g. in tests).
-    if not InputMap.has_action("melee"):
+    if not InputMap.has_action("fire"):
         Controls.load_and_apply()
     # Characters share a layer: they block each other but bullets ignore the
     # capsules and hit body-part hitboxes instead.
@@ -371,20 +382,13 @@ func _unhandled_input(event: InputEvent) -> void:
     # Teclas configuráveis (Configurações › Controles): tudo passa pelas ações.
     # InputEventAction: os botões de toque apertam as mesmas ações.
     if (event is InputEventKey or event is InputEventMouseButton or event is InputEventAction) and event.is_pressed() and not event.is_echo():
-        if climbing and (event.is_action("grenade") or event.is_action("melee") or event.is_action("interact") or event.is_action("heal")):
+        if climbing and (event.is_action("grenade") or event.is_action("interact") or event.is_action("heal")):
             return # mãos ocupadas na escalada
         if aiming and (event.is_action("lean_left") or event.is_action("lean_right")):
             return # while aiming, the lean keys lean (handled every physics frame)
         if event.is_action("grenade"):
             if not grenade_aiming and _can_start_grenade_aim():
                 grenade_aiming = true
-            return
-        if event.is_action("melee") and humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
-            face_aim(0.6) # o soco sai para a mira, mesmo correndo para outro lado
-            humanoid_avatar.call("play_action", "punch")
-            # Sobrevivência: o soco (ou a arma branca da mochila) acerta zumbis.
-            if melee_handler.is_valid():
-                melee_handler.call()
             return
         if event.is_action("interact"):
             # Collects loot when a crate is in reach; otherwise elbow strike.
@@ -616,6 +620,10 @@ func _physics_process(delta: float) -> void:
         # Bastão na mão: clique esquerdo golpeia (um golpe por clique).
         if not grenade_aiming and Input.is_action_just_pressed("fire") and PointerMode.is_captured() and channel_left <= 0.0 and melee_handler.is_valid():
             melee_handler.call()
+    elif weapon_holstered:
+        # Mãos vazias: clique esquerdo dá soco (ou golpe com a arma branca da mochila).
+        if not grenade_aiming and not attack_blocked and not climbing and Input.is_action_just_pressed("fire") and PointerMode.is_captured() and channel_left <= 0.0:
+            _punch()
     elif not weapon_holstered and not grenade_aiming and Input.is_action_pressed("fire") and PointerMode.is_captured() and fire_delay <= 0 and not reloading and channel_left <= 0.0:
         _shoot()
     if grenade_aiming:

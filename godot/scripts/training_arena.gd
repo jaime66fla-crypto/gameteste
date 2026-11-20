@@ -289,7 +289,7 @@ func _update_board() -> void:
 	if board == null:
 		return
 	var hp := 0.0 if zombie == null or bool(zombie.get("dead")) else float(zombie.get("hp"))
-	board.text = "ARENA DO ZUMBI\n%s  •  [Q] golpear\nzumbi: %d/%d de vida   acertos: %d   mordidas: %d   abates: %d" % [
+	board.text = "ARENA DO ZUMBI\n%s  •  [clique esquerdo] golpear\nzumbi: %d/%d de vida   acertos: %d   mordidas: %d   abates: %d" % [
 		"COM BASTÃO: clique esquerdo golpeia (dano 34, alcance 3,2 m)" if holding else "SOCO (dano 12)  •  pegue o bastão no suporte [E]",
 		roundi(hp), roundi(ZOMBIE_HP), hits, bites, kills]
 

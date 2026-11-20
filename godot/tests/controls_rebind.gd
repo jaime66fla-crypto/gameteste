@@ -24,7 +24,11 @@ func _run() -> void:
 	var path := "user://controls_test_%d.cfg" % OS.get_process_id()
 	Controls.load_and_apply(path)
 	_check(_key(KEY_E).is_action("interact"), "Default: E interacts")
-	_check(_key(KEY_Q).is_action("melee") and _key(KEY_Q).is_action("lean_left"), "Default: Q punches and leans (shared on purpose)")
+	_check(not InputMap.has_action("melee") and _key(KEY_Q).is_action("lean_left"), "Default: Q only leans (punch is the left click)")
+	var click := InputEventMouseButton.new()
+	click.button_index = MOUSE_BUTTON_LEFT
+	click.pressed = true
+	_check(click.is_action("fire") and Controls.label_of("fire").contains("soco"), "Left click fires / punches")
 	# Trocar interagir para F: F era de curar, então curar fica com E.
 	var swapped := Controls.set_binding("interact", KEY_F)
 	_check(_key(KEY_F).is_action("interact") and not _key(KEY_E).is_action("interact"), "Interact moved to F")
