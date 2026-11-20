@@ -13,7 +13,10 @@ const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const Rules = preload("res://scripts/survival/building_rules.gd")
 const Model = preload("res://scripts/survival/building_model.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
-const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "campfire", "chest", "bed", "workbench", "forge", "workshop", "chem_table"]
+## Barra do B: só estrutura (e a bancada, que é por onde se fazem as outras).
+const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "workbench"]
+## Feitos na bancada (E nela): estações e móveis de uso.
+const BENCH := ["campfire", "chest", "bed", "forge", "workshop", "chem_table"]
 const DEMOLISH_TIME := 1.5
 const BAR_SHOWN := 9 # peças visíveis de uma vez na barra de construção
 const USE_REACH := 2.6 # porta/baú/fogueira com E
@@ -27,7 +30,14 @@ var my_tag := ""
 var auth: Array = [] # quem eu liberei: [{tag, name}]
 var allowed: Array = [] # donos que me liberaram
 var building := false
+## Treino offline (training_build.gd): sem servidor, peças montadas aqui mesmo e
+## material infinito. As regras de encaixe e apoio continuam as mesmas.
+var offline := false
+var _offline_seq := 0
 var selected := 0
+var bench_pick := "" # peça escolhida na bancada (vazio = a barra de estrutura)
+var _bench_panel: PanelContainer
+var _bench_grid: GridContainer
 var rotation_step := 0
 var bed_ready_at := 0.0 # Time (s) em que a minha cama fica pronta
 
@@ -165,7 +175,7 @@ func interact_target(me: Vector3) -> Dictionary:
 			"door":
 				if owns(piece):
 					label = "[E] " + ("Fechar" if bool(piece.get("open", false)) else "Abrir") + " a porta"
-					if str(piece.get("ow", "")) == my_tag:
+					if str(piece.get("ow", "")) == my_tag and not offline:
 						label += "   •   [%s] Liberar a base para amigos" % _key("build_repair")
 				else:
 					label = "Porta trancada (de outro jogador)"
@@ -175,13 +185,32 @@ func interact_target(me: Vector3) -> Dictionary:
 				label = "[E] " + ("Apagar" if bool(piece.get("on", false)) else "Acender") + " a fogueira"
 			"forge":
 				label = "[E] " + ("Apagar" if bool(piece.get("on", false)) else "Acender") + " a forja   •   [L] Manual"
-			"workbench", "workshop", "chem_table":
+			"workbench":
+				label = "[E] Bancada: fogueira, baú, cama, forja e outras estações"
+			"workshop", "chem_table":
 				label = "[E] %s: abrir o manual" % str(rules.defs.get(kind, {}).get("name", kind))
 		best = {"type": "build", "id": id, "kind": kind, "label": label + _hp_note(piece)}
 	return best
 
 func interact(id: String) -> void:
 	var piece: Dictionary = rules.pieces.get(id, {})
+	if offline:
+		match str(piece.get("kind", "")):
+			"door":
+				var open_door := piece.duplicate()
+				open_door["open"] = not bool(piece.get("open", false))
+				_place(open_door)
+			"campfire", "forge":
+				var lit := piece.duplicate()
+				lit["on"] = not bool(piece.get("on", false))
+				_place(lit)
+			"chest":
+				controller.call("_toast", "BAÚ VAZIO (TREINO)")
+			"workbench":
+				open_bench()
+			_:
+				controller.call("_toast", "MANUAL SÓ NA SOBREVIVÊNCIA")
+		return
 	match str(piece.get("kind", "")):
 		"door":
 			if owns(piece):
@@ -193,7 +222,9 @@ func interact(id: String) -> void:
 				controller.call("_timed_action", "open", 0.5)
 		"campfire", "forge":
 			Net.send({"t": "fire", "b": id})
-		"workbench", "workshop", "chem_table":
+		"workbench":
+			open_bench()
+		"workshop", "chem_table":
 			controller.call("open_manual", str(piece.get("kind", "")))
 
 func _hp_note(piece: Dictionary) -> String:
@@ -211,6 +242,7 @@ func set_building(on: bool) -> void:
 	_bar.visible = on
 	_status.visible = on
 	if not on:
+		bench_pick = ""
 		_clear_ghost()
 	else:
 		_refresh_bar()
@@ -223,15 +255,26 @@ func _clear_ghost() -> void:
 	_candidate = {}
 
 func selected_kind() -> String:
-	return ORDER[selected]
+	return bench_pick if not bench_pick.is_empty() else ORDER[selected]
 
 func cycle(step: int) -> void:
+	if not bench_pick.is_empty():
+		# Saiu da peça da bancada: volta para a barra de estrutura onde estava.
+		bench_pick = ""
+		rotation_step = 0
+		_refresh_bar()
+		return
 	selected = posmod(selected + step, ORDER.size())
 	rotation_step = 0
 	_refresh_bar()
 
 ## Teclas do modo (e V fora dele). Devolve true se usou o evento.
 func handle_input(event: InputEvent) -> bool:
+	if _bench_panel.visible:
+		if event is InputEventKey and event.pressed and (event.physical_keycode == KEY_ESCAPE or _pressed(event, "interact")):
+			close_bench()
+			return true
+		return false
 	if _auth_panel.visible:
 		if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
 			close_auth()
@@ -241,7 +284,7 @@ func handle_input(event: InputEvent) -> bool:
 		toggle()
 		return true
 	if not building:
-		if _pressed(event, "build_repair"):
+		if _pressed(event, "build_repair") and not offline:
 			var target := interact_target(player.global_position)
 			if not target.is_empty() and str(target["kind"]) == "door" and str(rules.pieces[target["id"]].get("ow", "")) == my_tag:
 				open_auth()
@@ -285,9 +328,32 @@ func _place_selected() -> void:
 	if not _candidate_error.is_empty():
 		controller.call("_toast", _candidate_error.to_upper())
 		return
+	if offline:
+		_offline_seq += 1
+		var piece := _candidate.duplicate()
+		var kind := str(piece["kind"])
+		piece.merge({"id": "T%d" % _offline_seq, "hp": float(rules.defs[kind].get("hp", 100)), "ow": my_tag})
+		if rules.slot_type(kind) != "free" and not piece.has("r"):
+			piece["r"] = 0
+		if kind == "chest":
+			piece["items"] = {}
+		_place(piece)
+		return
 	var msg := {"t": "build"}
 	msg.merge(_candidate)
 	Net.send(msg)
+
+## Offline: some a peça e tudo que ficou sem apoio (como o servidor faz).
+func _offline_remove(id: String) -> void:
+	_remove(id)
+	var changed := true
+	while changed:
+		changed = false
+		for other in rules.pieces.keys():
+			if rules.supporters(rules.pieces[other]).is_empty():
+				_remove(str(other))
+				changed = true
+				break
 
 func _demolish_aimed() -> void:
 	var piece: Dictionary = rules.pieces.get(_aimed_id, {})
@@ -298,12 +364,19 @@ func _demolish_aimed() -> void:
 		controller.call("_toast", "SÓ O DONO PODE DESMONTAR")
 		return
 	var id := _aimed_id
+	if offline:
+		player.call("start_channel", "DESMONTANDO", DEMOLISH_TIME, func(): _offline_remove(id))
+		return
 	player.call("start_channel", "DESMONTANDO", DEMOLISH_TIME, func(): Net.send({"t": "bdel", "b": id}))
 
 func _repair_aimed() -> void:
 	var piece: Dictionary = rules.pieces.get(_aimed_id, {})
 	if piece.is_empty():
 		controller.call("_toast", "MIRE NUMA PEÇA PARA CONSERTAR")
+		return
+	if offline:
+		piece["hp"] = float(rules.defs.get(str(piece.get("kind", "")), {}).get("hp", 100))
+		controller.call("_toast", "CONSERTADO")
 		return
 	Net.send({"t": "brep", "b": _aimed_id})
 
@@ -368,6 +441,8 @@ func _aimed_text() -> String:
 	return text
 
 func _missing(kind: String) -> String:
+	if offline:
+		return "" # treino: material infinito
 	var cost: Dictionary = rules.defs[kind].get("cost", {})
 	var inv: Dictionary = controller.get("inv")
 	for item in cost:
@@ -496,7 +571,129 @@ func close_auth() -> void:
 	PointerMode.capture()
 
 func ui_open() -> bool:
-	return _auth_panel != null and _auth_panel.visible
+	return (_auth_panel != null and _auth_panel.visible) or (_bench_panel != null and _bench_panel.visible)
+
+# ---------------------------------------------------------------- bancada ---
+
+## E na bancada: escolhe uma estação/móvel e entra no modo de construção com ela.
+func open_bench() -> void:
+	_refresh_bench()
+	_bench_panel.visible = true
+	PointerMode.release()
+
+func close_bench() -> void:
+	_bench_panel.visible = false
+	PointerMode.capture()
+
+func pick_bench(kind: String) -> void:
+	_bench_panel.visible = false
+	PointerMode.capture()
+	bench_pick = kind
+	rotation_step = 0
+	_ghost_key = ""
+	if not building:
+		set_building(true)
+	else:
+		_refresh_bar()
+
+func _refresh_bench() -> void:
+	for child in _bench_grid.get_children():
+		child.queue_free()
+	for kind in BENCH:
+		_bench_grid.add_child(_bench_card(kind))
+
+const BENCH_DESC := {"chest": "Guarda até 80 kg de itens", "bed": "Você renasce nela depois de morrer"}
+
+## Cartão da janela da bancada: nome, para que serve e os materiais em chips.
+func _bench_card(kind: String) -> PanelContainer:
+	var def: Dictionary = rules.defs.get(kind, {})
+	var card := PanelContainer.new()
+	card.custom_minimum_size = Vector2(232, 0)
+	card.size_flags_vertical = Control.SIZE_FILL
+	card.mouse_filter = Control.MOUSE_FILTER_STOP
+	card.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+	var normal := UiTheme.inset(12)
+	var hover := UiTheme.inset(12, true)
+	card.add_theme_stylebox_override("panel", normal)
+	card.mouse_entered.connect(func(): card.add_theme_stylebox_override("panel", hover))
+	card.mouse_exited.connect(func(): card.add_theme_stylebox_override("panel", normal))
+	card.gui_input.connect(func(e: InputEvent):
+		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+			pick_bench(kind))
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	col.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(col)
+	var name_label := Label.new()
+	name_label.text = str(def.get("name", kind))
+	name_label.add_theme_font_size_override("font_size", 15)
+	name_label.add_theme_font_override("font", UiTheme.font(600))
+	name_label.add_theme_color_override("font_color", UiTheme.TEXT)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(name_label)
+	var desc_label := Label.new()
+	desc_label.text = str(def.get("desc", BENCH_DESC.get(kind, "")))
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.custom_minimum_size = Vector2(208, 30)
+	desc_label.add_theme_font_size_override("font_size", 11)
+	desc_label.add_theme_color_override("font_color", UiTheme.MUTED)
+	desc_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(desc_label)
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(spacer)
+	var line := ColorRect.new()
+	line.color = UiTheme.LINE
+	line.custom_minimum_size.y = 1
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	col.add_child(line)
+	col.add_child(_cost_chips(def))
+	return card
+
+## Materiais como chips pequenos que quebram linha (nunca vazam do cartão).
+func _cost_chips(def: Dictionary) -> HFlowContainer:
+	var inv: Dictionary = controller.get("inv")
+	var flow := HFlowContainer.new()
+	flow.add_theme_constant_override("h_separation", 4)
+	flow.add_theme_constant_override("v_separation", 4)
+	flow.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var cost: Dictionary = def.get("cost", {})
+	for item in cost:
+		var have := int(inv.get(item, 0)) >= int(cost[item])
+		var color: Color = UiTheme.TEXT if offline else (UiTheme.GOOD if have else UiTheme.DANGER)
+		var chip := PanelContainer.new()
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var s := UiTheme.box(Color(color, 0.08), Color(color, 0.22), 1, 4)
+		s.content_margin_left = 6
+		s.content_margin_right = 6
+		s.content_margin_top = 1
+		s.content_margin_bottom = 2
+		chip.add_theme_stylebox_override("panel", s)
+		var l := Label.new()
+		l.text = "%d %s" % [int(cost[item]), _short(str(item))]
+		l.add_theme_font_size_override("font_size", 10)
+		l.add_theme_color_override("font_color", Color(color, 0.85))
+		l.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		chip.add_child(l)
+		flow.add_child(chip)
+	return flow
+
+## Materiais da peça em letra pequena (verde = tem, vermelho = falta; treino é grátis).
+func _cost_label(def: Dictionary) -> Label:
+	var inv: Dictionary = controller.get("inv")
+	var cost: Dictionary = def.get("cost", {})
+	var parts: Array[String] = []
+	var enough := true
+	for item in cost:
+		parts.append("%d %s" % [int(cost[item]), _short(str(item))])
+		enough = enough and int(inv.get(item, 0)) >= int(cost[item])
+	var label := Label.new()
+	label.text = " · ".join(parts)
+	label.add_theme_font_size_override("font_size", 10)
+	var color: Color = UiTheme.MUTED if offline else (UiTheme.GOOD if enough else UiTheme.DANGER)
+	label.add_theme_color_override("font_color", color)
+	return label
 
 func _refresh_auth() -> void:
 	if _auth_list == null:
@@ -612,51 +809,93 @@ func _build_ui() -> void:
 	UiTheme.secondary(close, 14)
 	close.pressed.connect(close_auth)
 	buttons.add_child(close)
+	# Janela da bancada: estações e móveis que só se fazem nela.
+	_bench_panel = PanelContainer.new()
+	_bench_panel.visible = false
+	_bench_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_bench_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_bench_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_bench_panel.add_theme_stylebox_override("panel", UiTheme.card(22))
+	ui.add_child(_bench_panel)
+	var bench_box := VBoxContainer.new()
+	bench_box.add_theme_constant_override("separation", 10)
+	_bench_panel.add_child(bench_box)
+	bench_box.add_child(UiTheme.title("Bancada", 22))
+	bench_box.add_child(UiTheme.caps("Estações e móveis  •  escolha um e coloque perto", 11, UiTheme.ACCENT))
+	_bench_grid = GridContainer.new()
+	_bench_grid.columns = 3
+	_bench_grid.add_theme_constant_override("h_separation", 10)
+	_bench_grid.add_theme_constant_override("v_separation", 10)
+	bench_box.add_child(_bench_grid)
+	var bench_hint := Label.new()
+	bench_hint.text = "Clique num cartão para construir  •  %s ou Esc fecha%s" % [_key("interact"), "  •  treino: material grátis" if offline else ""]
+	bench_hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	bench_hint.add_theme_font_size_override("font_size", 11)
+	bench_hint.add_theme_color_override("font_color", UiTheme.DIM)
+	bench_box.add_child(bench_hint)
+	var bench_buttons := HBoxContainer.new()
+	bench_buttons.add_theme_constant_override("separation", 8)
+	bench_box.add_child(bench_buttons)
+	var manual := Button.new()
+	manual.text = "Manual da bancada (lança, couro, arco)"
+	UiTheme.secondary(manual, 14)
+	manual.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	manual.pressed.connect(func():
+		_bench_panel.visible = false
+		if offline:
+			controller.call("_toast", "MANUAL SÓ NA SOBREVIVÊNCIA")
+			PointerMode.capture()
+		else:
+			controller.call("open_manual", "workbench"))
+	bench_buttons.add_child(manual)
+	var bench_close := Button.new()
+	bench_close.text = "Fechar"
+	UiTheme.secondary(bench_close, 14)
+	bench_close.pressed.connect(close_bench)
+	bench_buttons.add_child(bench_close)
 
 func _refresh_bar() -> void:
 	for child in _bar_row.get_children():
 		child.queue_free()
-	var inv: Dictionary = controller.get("inv")
+	if not bench_pick.is_empty():
+		# Peça escolhida na bancada: só ela na barra; trocar de peça volta para a estrutura.
+		_bar_row.add_child(_bar_card(bench_pick, true))
+		_hint.text = "Feito na bancada  •  clique constrói  •  %s gira  •  roda do mouse / %s %s volta para a estrutura  •  %s sai%s" % [
+			_key("build_rotate"), _key("build_prev"), _key("build_next"), _key("build"), "  •  material grátis (treino)" if offline else ""]
+		return
 	# Muitas peças: mostra uma janela de até BAR_SHOWN em volta da escolhida (cabe em telas menores).
 	var first := clampi(selected - BAR_SHOWN / 2, 0, maxi(0, ORDER.size() - BAR_SHOWN))
 	for index in range(first, mini(ORDER.size(), first + BAR_SHOWN)):
-		var kind: String = ORDER[index]
-		var def: Dictionary = rules.defs.get(kind, {})
-		var card := PanelContainer.new()
-		card.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var s := UiTheme.inset(8, index == selected)
-		if index == selected:
-			s.set_border_width_all(2)
-		card.add_theme_stylebox_override("panel", s)
-		var col := VBoxContainer.new()
-		col.add_theme_constant_override("separation", 0)
-		card.add_child(col)
-		var name_label := Label.new()
-		name_label.text = str(def.get("name", kind))
-		name_label.add_theme_font_size_override("font_size", 13)
-		name_label.add_theme_font_override("font", UiTheme.font(600))
-		name_label.add_theme_color_override("font_color", UiTheme.ACCENT if index == selected else UiTheme.TEXT)
-		col.add_child(name_label)
-		var parts: Array[String] = []
-		var enough := true
-		var cost: Dictionary = def.get("cost", {})
-		for item in cost:
-			parts.append("%d %s" % [int(cost[item]), _short(str(item))])
-			enough = enough and int(inv.get(item, 0)) >= int(cost[item])
-		var cost_label := Label.new()
-		cost_label.text = " · ".join(parts)
-		cost_label.add_theme_font_size_override("font_size", 11)
-		cost_label.add_theme_color_override("font_color", UiTheme.GOOD if enough else UiTheme.DANGER)
-		col.add_child(cost_label)
-		_bar_row.add_child(card)
+		_bar_row.add_child(_bar_card(ORDER[index], index == selected))
 	if first > 0:
 		_bar_row.add_child(_more_label("‹ %d" % first))
 		_bar_row.move_child(_bar_row.get_child(_bar_row.get_child_count() - 1), 0)
 	var after := ORDER.size() - (first + BAR_SHOWN)
 	if after > 0:
 		_bar_row.add_child(_more_label("%d ›" % after))
-	_hint.text = "Clique constrói  •  roda do mouse / %s %s troca  •  %s gira  •  %s (segure) desmonta  •  %s conserta  •  %s sai" % [
-		_key("build_prev"), _key("build_next"), _key("build_rotate"), _key("build_remove"), _key("build_repair"), _key("build")]
+	_hint.text = "Clique constrói  •  roda do mouse / %s %s troca  •  %s gira  •  %s (segure) desmonta  •  %s conserta  •  %s sai%s" % [
+		_key("build_prev"), _key("build_next"), _key("build_rotate"), _key("build_remove"), _key("build_repair"), _key("build"),
+		"  •  material grátis (treino)" if offline else ""]
+
+func _bar_card(kind: String, chosen: bool) -> PanelContainer:
+	var def: Dictionary = rules.defs.get(kind, {})
+	var card := PanelContainer.new()
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var s := UiTheme.inset(8, chosen)
+	if chosen:
+		s.set_border_width_all(2)
+	card.add_theme_stylebox_override("panel", s)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 0)
+	card.add_child(col)
+	var name_label := Label.new()
+	name_label.text = str(def.get("name", kind))
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.add_theme_font_override("font", UiTheme.font(600))
+	name_label.add_theme_color_override("font_color", UiTheme.ACCENT if chosen else UiTheme.TEXT)
+	col.add_child(name_label)
+	col.add_child(_cost_label(def))
+	return card
 
 static func _more_label(text: String) -> Label:
 	var l := Label.new()

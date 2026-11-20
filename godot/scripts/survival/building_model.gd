@@ -151,7 +151,10 @@ static func build(p: Dictionary, rules) -> Node3D:
 		"foundation": _foundation(root, body, S, rules.base)
 		"floor": _floor(root, body, S)
 		"wall": _wall(root, body, S, H)
-		"doorway": _doorway(root, body, S, H)
+		"doorway":
+			_doorway(root, body, S, H)
+			if k == 0:
+				_door_ramps(root, body, rules.base)
 		"window": _window(root, body, S, H)
 		"door": _door(root, p)
 		"stairs": _stairs(root, body, S, H)
@@ -180,27 +183,45 @@ static func _floor(root: Node3D, body: StaticBody3D, S: float) -> void:
 	for x in [-1.0, 0.0, 1.0]:
 		_box(root, null, Vector3(x * S * 0.33, -0.26, 0), Vector3(0.16, 0.14, S - 0.05), "wood_dark")
 
-## Parede maciça de toras com frisos escuros.
+## Parede maciça de toras (lisa, sem frisos).
 static func _wall(root: Node3D, body: StaticBody3D, S: float, H: float) -> void:
 	_box(root, body, Vector3(0, H * 0.5, 0), Vector3(S, H, WALL_T), "wood")
-	_seams(root, -S * 0.5, S * 0.5, 0.0, H)
-
-static func _seams(root: Node3D, x0: float, x1: float, y0: float, y1: float) -> void:
-	var y := y0 + 0.5
-	while y < y1 - 0.2:
-		_box(root, null, Vector3((x0 + x1) * 0.5, y, 0), Vector3(x1 - x0, 0.04, WALL_T + 0.02), "seam")
-		y += 0.5
 
 static func _doorway(root: Node3D, body: StaticBody3D, S: float, H: float) -> void:
 	var side := (S - DOOR_W) * 0.5
 	for s in [-1.0, 1.0]:
 		var cx: float = s * (DOOR_W * 0.5 + side * 0.5)
 		_box(root, body, Vector3(cx, H * 0.5, 0), Vector3(side, H, WALL_T), "wood")
-		_seams(root, cx - side * 0.5, cx + side * 0.5, 0.0, H)
 		# Batente escuro.
 		_box(root, null, Vector3(s * (DOOR_W * 0.5 + 0.05), DOOR_H * 0.5, 0), Vector3(0.1, DOOR_H, WALL_T + 0.04), "wood_dark")
 	_box(root, body, Vector3(0, DOOR_H + (H - DOOR_H) * 0.5, 0), Vector3(DOOR_W, H - DOOR_H, WALL_T), "wood")
 	_box(root, null, Vector3(0, DOOR_H + 0.05, 0), Vector3(DOOR_W + 0.2, 0.1, WALL_T + 0.04), "wood_dark")
+
+const RAMP_LEN := 1.3 # rampa de acesso da porta do térreo (40 cm em 1,3 m ≈ 17°)
+
+## Porta no térreo: a fundação fica `base` acima do chão e o corpo não sobe
+## degrau, então o vão vem com uma rampa de tábuas dos dois lados. Do lado de
+## dentro ela fica escondida dentro da fundação; do lado de fora desce até o chão.
+static func _door_ramps(root: Node3D, body: StaticBody3D, base: float) -> void:
+	var width := DOOR_W + 0.3
+	for s in [-1.0, 1.0]:
+		var top := Vector3(0, 0, 0)
+		var foot := Vector3(0, -base, s * RAMP_LEN)
+		var dir := (foot - top).normalized()
+		var right := Vector3.RIGHT
+		var up := dir.cross(right).normalized()
+		if up.y < 0.0:
+			up = -up
+		# Eixo Z = comprimento da rampa (sinal não importa, a caixa é simétrica);
+		# right × up mantém a base sem espelhar (a colisão não aceita escala negativa).
+		var basis := Basis(right, up, right.cross(up))
+		var length := top.distance_to(foot) + 0.15
+		var thick := 0.12
+		var center := (top + foot) * 0.5 - up * thick * 0.5 + Vector3(0, 0.005, 0)
+		_box(root, body, center, Vector3(width, thick, length), "plank", basis)
+		# Bordas escuras dos lados (lê-se como rampa, não como chão).
+		for side in [-1.0, 1.0]:
+			_box(root, null, center + right * side * (width * 0.5 - 0.05) + up * 0.03, Vector3(0.1, thick + 0.04, length), "wood_dark", basis)
 
 static func _window(root: Node3D, body: StaticBody3D, S: float, H: float) -> void:
 	_box(root, body, Vector3(0, WINDOW_SILL * 0.5, 0), Vector3(S, WINDOW_SILL, WALL_T), "wood")
@@ -208,8 +229,6 @@ static func _window(root: Node3D, body: StaticBody3D, S: float, H: float) -> voi
 	var side := (S - WINDOW_W) * 0.5
 	for s in [-1.0, 1.0]:
 		_box(root, body, Vector3(s * (WINDOW_W * 0.5 + side * 0.5), (WINDOW_SILL + WINDOW_TOP) * 0.5, 0), Vector3(side, WINDOW_TOP - WINDOW_SILL, WALL_T), "wood")
-	_seams(root, -S * 0.5, S * 0.5, 0.0, WINDOW_SILL)
-	_seams(root, -S * 0.5, S * 0.5, WINDOW_TOP - 0.5, H)
 	# Grade de galhos na janela (dá para ver e atirar, não para passar).
 	for x in [-0.3, 0.0, 0.3]:
 		_box(root, null, Vector3(x, (WINDOW_SILL + WINDOW_TOP) * 0.5, 0), Vector3(0.05, WINDOW_TOP - WINDOW_SILL, 0.05), "wood_dark")

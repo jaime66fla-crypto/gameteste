@@ -12,7 +12,9 @@ const MatchControllerScript = preload("res://scripts/net/match_controller.gd")
 const TrainingDummyScript = preload("res://scripts/training_dummy.gd")
 const TrainingArenaScript = preload("res://scripts/training_arena.gd")
 const TrainingGroundScript = preload("res://scripts/training_ground.gd")
+const TrainingBuildScript = preload("res://scripts/training_build.gd")
 var training_ground: Node3D # treino offline only
+var training_build: Node # treino offline: construção com material infinito
 const SurvivalWorldScript = preload("res://scripts/survival/survival_world.gd")
 const SurvivalControllerScript = preload("res://scripts/survival/survival_controller.gd")
 var player: CharacterBody3D
@@ -100,6 +102,8 @@ func _ready() -> void:
     # O mouse não é recapturado enquanto a mochila ou a confirmação estão abertas.
     player.set("ui_blocking", func() -> bool:
         if quit_dialog != null and quit_dialog.visible:
+            return true
+        if training_build != null and bool(training_build.call("ui_open")):
             return true
         return match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open")))
     # Fechar a janela (X / Alt+F4) também pergunta antes de sair da partida.
@@ -213,6 +217,10 @@ func _spawn_training_dummies() -> void:
     var arena := TrainingArenaScript.new()
     arena.call("setup", player)
     add_child(arena)
+    # Construção da Sobrevivência (B) com material infinito, para testar as peças.
+    training_build = TrainingBuildScript.new()
+    training_build.call("setup", self, player)
+    add_child(training_build)
 
 ## Teclas do jogador (padrão ou as escolhidas em Configurações › Controles).
 func _register_inputs() -> void:
