@@ -190,8 +190,27 @@ func _run() -> void:
 		# Rounds (melhor de 5): fim do round mostra o placar; o próximo traz todos de volta.
 		controller.call("_on_message", {"t": "round_end", "round": 1, "team": 1, "name": "Equipe Bravo", "reason": "eliminacao", "score": [0, 1], "total": 5, "last": false, "next": 5000})
 		_check(bool(controller.get("round_break")), "Round break starts")
-		_check((controller.get("center_panel") as Control).visible and str(controller.get("center_title").text).begins_with("ROUND 1"), "Round result banner (got %s)" % controller.get("center_title").text)
-		_check(str(controller.get("center_body").text).contains("ALFA 0  x  1 BRAVO"), "Banner shows the round score")
+		var round_panel := controller.get("round_panel") as Control
+		_check(round_panel.visible and not (controller.get("center_panel") as Control).visible, "Round result panel shows (not the old center panel)")
+		var round_title := round_panel.find_child("RoundTitle", true, false) as Label
+		_check(round_title != null and round_title.text == "DERROTA", "Round panel headline (got %s)" % (round_title.text if round_title != null else "nada"))
+		var round_menu := round_panel.find_child("RoundMenuButton", true, false) as Button
+		_check(round_menu != null and round_menu.get_combined_minimum_size().y <= 30.0, "Round panel has a small menu button")
+		# TAB: placar ao vivo com abates e mortes.
+		controller.call("_on_message", {"t": "hp", "id": "bot2", "hp": 0, "by": "me", "w": "pistol", "killed": true, "kills": 1, "alive": 3})
+		var tab_key := InputEventKey.new()
+		tab_key.physical_keycode = KEY_TAB
+		tab_key.pressed = true
+		controller.call("_input", tab_key)
+		var board := controller.get("score_panel") as Control
+		_check(board.visible, "TAB opens the scoreboard")
+		var board_text := ""
+		for label in board.find_children("*", "Label", true, false):
+			board_text += (label as Label).text + "|"
+		_check(board_text.contains("MORTES") and board_text.contains("ABATES"), "Scoreboard shows kills and deaths columns")
+		tab_key.pressed = false
+		controller.call("_input", tab_key)
+		_check(not board.visible, "Releasing TAB closes the scoreboard")
 		controller.call("_on_message", {"t": "round", "round": 2, "total": 5, "toWin": 3, "score": [0, 1], "host": "other", "alive": 4, "buy": 30000, "duration": 150000,
 			"roster": [{"id": "me", "sp": [-32.8, 16], "spawn": 4, "revived": true, "medkits": 0, "nades": 0},
 				{"id": "bot1", "sp": [-35.2, 16], "spawn": 4, "revived": false, "w": "pistol", "medkits": 1},
