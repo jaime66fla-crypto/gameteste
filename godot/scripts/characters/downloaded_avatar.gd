@@ -748,25 +748,27 @@ func _apply_thrust(chest: int, spine: int, right: Vector3) -> void:
 	_grip_on_staff("Left", left_hand, axis, -up, -right * 0.6 - up * 0.5)
 	_place_tool(axis, up, base)
 
-## Carregando a arma branca ("hold"): as duas mãos no cabo na frente do quadril
-## direito e a arma deitada para trás por cima do ombro direito.
+## Carregando a arma branca ("hold"): pronta para usar, afastada do corpo — as
+## duas mãos no cabo à frente da cintura e a cabeça da ferramenta apontando
+## para a frente e para cima, longe do rosto (visível da câmera de ombro).
 func _apply_hold(chest: int, right_arm: int) -> void:
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
 	var torso := skeleton.get_bone_global_pose(chest).origin
 	if tool_family(work_tool) in ["knife", "machete"]:
-		# Uma mão só: faca/facão na mão direita ao lado do quadril, lâmina para a frente e para baixo.
-		var hand_pos := torso + right * 0.24 - up * 0.42 + forward * 0.12
-		var blade := (forward * 0.75 - up * 0.65).normalized()
-		_grip_on_staff("Right", hand_pos, blade, -right, right * 0.6 - forward * 0.3)
+		# Uma mão só: braço meio esticado à frente do quadril direito, lâmina
+		# apontando para a frente e um pouco para cima.
+		var hand_pos := torso + right * 0.22 - up * 0.30 + forward * 0.32
+		var blade := (forward * 0.9 + up * 0.25 + right * 0.1).normalized()
+		_grip_on_staff("Right", hand_pos, blade, -right, right * 0.6 - forward * 0.2 - up * 0.4)
 		_place_tool(blade, -up, hand_pos - blade * 0.08)
 		return
-	var h := (up * 0.85 - forward * 0.35 + right * 0.15).normalized()
-	var right_hand := torso + right * 0.17 - up * 0.30 + forward * 0.22
-	var left_hand := right_hand + h * 0.17
+	var h := (forward * 0.7 + up * 0.62 - right * 0.12).normalized()
+	var right_hand := torso + right * 0.13 - up * 0.30 + forward * 0.30
+	var left_hand := right_hand + h * 0.2
 	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
-		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.4 - up * 0.3
+		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.2 - up * 0.5
 		_grip_on_staff(spec[0], spec[1], h, forward, pole)
 	if _tool_node != null:
 		var y := h
