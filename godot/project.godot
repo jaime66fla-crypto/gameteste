@@ -15,7 +15,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 [application]
 
 config/name="Campo de Fogo - Prototipo Godot"
-config/version="1.24.1"
+config/version="1.25.0"
 run/main_scene="res://scenes/menu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 config/icon="res://icon.png"
@@ -25,6 +25,7 @@ config/windows_native_icon="res://icon.ico"
 
 Net="*res://scripts/net/net.gd"
 UiSfx="*res://scripts/audio/ui_sfx.gd"
+Music="*res://scripts/audio/music.gd"
 
 [display]
 
