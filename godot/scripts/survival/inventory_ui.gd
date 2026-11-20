@@ -16,6 +16,7 @@ signal use_requested(item: String)
 signal craft_requested(recipe: String)
 signal equip_requested(item: String)
 signal unequip_requested(slot: String)
+signal store_requested(container_id: String, item: String)
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CAT_ORDER := ["weapon", "ammo", "armor", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
@@ -44,6 +45,7 @@ var status: Dictionary = {"hp": 100.0, "hunger": 100.0, "thirst": 100.0}
 var container_id := ""
 var container_title := ""
 var container_items: Dictionary = {}
+var container_store := false # baú: dá para guardar itens nele
 var _tab := 0 # 0 = recipiente, 1 = fabricar
 
 var _panel: PanelContainer
@@ -289,16 +291,18 @@ func set_status(hp: float, hunger: float, thirst: float, weapon_name: String = "
 	if visible:
 		_refresh_left()
 
-func show_container(id: String, title: String, items: Dictionary) -> void:
+func show_container(id: String, title: String, items: Dictionary, store: bool = false) -> void:
 	container_id = id
 	container_title = title
 	container_items = items
+	container_store = store
 	_tab = 0
 	_refresh()
 
 func clear_container() -> void:
 	container_id = ""
 	container_items = {}
+	container_store = false
 	_refresh()
 
 # ------------------------------------------------------------- conteúdo ---
@@ -514,6 +518,8 @@ func _refresh_items() -> void:
 			buttons.append(["Equipar", func(): equip_requested.emit(id), true])
 		elif str(entry.get("slot", "")) in ["head", "chest"]:
 			buttons.append(["Vestir", func(): equip_requested.emit(id), true])
+		if container_store and not container_id.is_empty():
+			buttons.append(["Guardar", func(): store_requested.emit(container_id, id), true])
 		buttons.append(["Largar", func(): drop_requested.emit(id, false)])
 		_items.add_child(_card(id, int(inv[id]), buttons))
 

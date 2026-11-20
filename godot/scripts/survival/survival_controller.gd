@@ -13,7 +13,10 @@ const ZombieScript = preload("res://scripts/survival/zombie.gd")
 const Melee = preload("res://scripts/melee.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
+const BuildingScript = preload("res://scripts/survival/survival_building.gd")
 var driving_ctl: Node # carros (survival_driving.gd)
+var building_ctl: Node # construção (survival_building.gd)
+var bed_button: Button
 const STATE_RATE := 1.0 / 10.0
 const ZOMBIE_RATE := 1.0 / 6.0
 const REACH := 2.8 # interação (o servidor aceita um pouco mais)
@@ -114,6 +117,10 @@ func _ready() -> void:
 	driving_ctl.call("setup", self, main_node, player)
 	add_child(driving_ctl)
 	driving_ctl.call("spawn_all", info.get("vehicles", []))
+	building_ctl = BuildingScript.new()
+	building_ctl.call("setup", self, main_node, player)
+	add_child(building_ctl)
+	building_ctl.call("start", info)
 	for bag in info.get("bags", []):
 		_set_bag(bag)
 	for entry in info.get("sleepers", []):
@@ -133,7 +140,7 @@ func _ready() -> void:
 	if bool(you.get("dead", false)):
 		_on_local_death()
 	_feed("Você acordou na floresta sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
-	_feed("E coletar/beber  •  TAB inventário e fabricar  •  M mapa  •  Q golpe  •  F curativo")
+	_feed("E coletar/beber  •  TAB inventário e fabricar  •  B construir  •  M mapa  •  Q golpe  •  F curativo")
 	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato.")
 
 func _exit_tree() -> void:
@@ -176,7 +183,11 @@ func _physics_process(delta: float) -> void:
 	if local_dead:
 		_respawn_left = maxf(0.0, _respawn_left - delta)
 		respawn_button.disabled = _respawn_left > 0.0
-		respawn_button.text = "Renascer" if _respawn_left <= 0.0 else "Renascer em %d s" % ceili(_respawn_left)
+		respawn_button.text = "Renascer numa clareira" if _respawn_left <= 0.0 else "Renascer em %d s" % ceili(_respawn_left)
+		if bed_button != null and bed_button.visible:
+			var wait := maxf(_respawn_left, float(building_ctl.call("bed_wait")))
+			bed_button.disabled = wait > 0.0
+			bed_button.text = "Renascer na cama" if wait <= 0.0 else "Cama pronta em %d s" % ceili(wait)
 		return
 	_sync_ammo()
 	_swing_left = maxf(0.0, _swing_left - delta)
@@ -206,6 +217,10 @@ func _physics_process(delta: float) -> void:
 func is_driving() -> bool:
 	return driving_ctl != null and bool(driving_ctl.call("is_driving"))
 
+## Modo de construção ligado (os controles de toque mostram os botões de construir).
+func is_building() -> bool:
+	return building_ctl != null and bool(building_ctl.get("building"))
+
 ## Controles de toque: arrastar o dedo dirigindo gira a câmera do carro.
 func drive_look(relative: Vector2) -> void:
 	if is_driving():
@@ -213,6 +228,8 @@ func drive_look(relative: Vector2) -> void:
 
 func _on_message(data: Dictionary) -> void:
 	if driving_ctl != null and bool(driving_ctl.call("on_message", data)):
+		return
+	if building_ctl != null and bool(building_ctl.call("on_message", data)):
 		return
 	match str(data.get("t", "")):
 		"s":
@@ -290,8 +307,14 @@ func _on_message(data: Dictionary) -> void:
 			_open_container = str(data.get("k", ""))
 			var spot: Dictionary = world.containers.get(_open_container, {})
 			_open_container_pos = spot.get("pos", bags.get(_open_container, {}).get("pos", player.global_position))
+			var chest: Dictionary = building_ctl.get("rules").pieces.get(_open_container, {})
+			if not chest.is_empty():
+				_open_container_pos = building_ctl.get("rules").center(chest)
 			var items: Dictionary = data.get("items", {})
-			inventory.call("show_container", _open_container, str(data.get("title", "Recipiente")), items)
+			var title := str(data.get("title", "Recipiente"))
+			if bool(data.get("store", false)):
+				title += "  (%.0f / %.0f kg)" % [float(data.get("weight", 0)), float(data.get("cap", 0))]
+			inventory.call("show_container", _open_container, title, items, bool(data.get("store", false)))
 			if not inventory.visible:
 				inventory.call("open")
 			if world.containers.has(_open_container):
@@ -386,6 +409,7 @@ func _spawn_zombies(list: Array) -> void:
 		z.set("night", night)
 		z.connect("damaged", _on_target_damaged)
 		z.connect("attacked", _on_zombie_attack)
+		z.connect("attacked_build", _on_zombie_build_attack)
 		main_node.add_child(z)
 		z.call("set_controlled", is_host())
 		zombies[id] = z
@@ -393,6 +417,11 @@ func _spawn_zombies(list: Array) -> void:
 func _on_zombie_attack(zombie_id: String, target_id: String) -> void:
 	if is_host():
 		Net.send({"t": "zhit", "z": zombie_id, "target": target_id})
+
+## Zumbi batendo numa parede/porta no caminho (anfitrião): o servidor tira a vida da peça.
+func _on_zombie_build_attack(zombie_id: String, build_id: String) -> void:
+	if is_host():
+		Net.send({"t": "zbhit", "z": zombie_id, "b": build_id})
 
 ## Tiro (meu ou de outro): zumbis por perto vão atrás do barulho.
 func _noise(at: Vector3) -> void:
@@ -438,6 +467,12 @@ func _melee() -> void:
 	if hit.is_empty():
 		return
 	var body: Object = hit["collider"]
+	# Construção (parede, porta, baú...): o servidor tira a vida da peça.
+	var build_id := BuildingScript.build_id_of(body)
+	if not build_id.is_empty():
+		Net.send({"t": "bhit", "b": build_id, "item": SurvivalData.best_melee(inv)[0]})
+		player.get("sound_fx").call("melee_impact", false)
+		return
 	var target = body.get("actor") if body != null else null
 	if target == null:
 		return
@@ -492,9 +527,15 @@ func _on_local_death() -> void:
 	local_dead = true
 	_respawn_left = 8.0
 	inventory.call("close")
+	if building_ctl != null:
+		building_ctl.call("set_building", false)
+		if bool(building_ctl.call("ui_open")):
+			building_ctl.call("close_auth")
+	if bed_button != null:
+		bed_button.visible = building_ctl != null and bool(building_ctl.call("has_bed"))
 	player.set_physics_process(false)
 	player.visible = false
-	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce numa clareira, de mãos vazias.", true)
+	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce de mãos vazias, numa clareira ou na sua cama.", true)
 	PointerMode.release()
 
 func _on_respawned(data: Dictionary) -> void:
@@ -558,6 +599,8 @@ func _apply_inventory(data: Dictionary) -> void:
 	for w in player.get("owned_weapons"):
 		_ammo_known[SurvivalData.ammo_for(str(w))] = int(inv.get(SurvivalData.ammo_for(str(w)), 0))
 	_update_bars()
+	if building_ctl != null:
+		building_ctl.call("inventory_changed")
 
 ## A recarga tirou balas da reserva: avisa o servidor e iguala as armas do mesmo calibre.
 func _sync_ammo() -> void:
@@ -671,6 +714,11 @@ func _find_target() -> Dictionary:
 					tool_note = "  —  com " + SurvivalData.item_name(_tool_item(str(rule["tool"]))).to_lower() + " rende mais"
 				label = "[E] %s %s (%s)%s" % [verb, str(rule.get("name", "")), SurvivalData.item_name(str(rule.get("gives", ""))), tool_note]
 			best = {"type": "resource", "id": id, "kind": kind, "pos": pos, "tool": tool, "missing": missing, "needs": needs, "time": float(rule.get("time", 2.5)), "label": label}
+	# Porta, baú ou fogueira: valem mais que um recurso do chão.
+	if building_ctl != null and (best.is_empty() or best["type"] == "resource"):
+		var piece: Dictionary = building_ctl.call("interact_target", me)
+		if not piece.is_empty():
+			best = piece
 	# Carro que funciona: só se não houver nada mais perto.
 	if driving_ctl != null and (best.is_empty() or best["type"] == "resource"):
 		var car: Dictionary = driving_ctl.call("target_near", me)
@@ -706,7 +754,9 @@ func _interact() -> bool:
 	if _target.is_empty():
 		return false
 	var id := str(_target["id"])
-	if _target["type"] == "vehicle":
+	if _target["type"] == "build":
+		building_ctl.call("interact", id)
+	elif _target["type"] == "vehicle":
 		driving_ctl.call("request_enter", id)
 	elif _target["type"] == "repair":
 		driving_ctl.call("request_repair", id)
@@ -839,7 +889,8 @@ var _daylight_timer := 0.0
 
 ## Alguma janela da sobrevivência precisa do cursor (mochila aberta ou tela de morte).
 func ui_open() -> bool:
-	return (inventory != null and inventory.visible) or (death_panel != null and death_panel.visible)
+	return (inventory != null and inventory.visible) or (death_panel != null and death_panel.visible) \
+		or (building_ctl != null and bool(building_ctl.call("ui_open")))
 
 ## Infecção (mordida de zumbi): `left` segundos até virar zumbi; 0 = curado.
 func _set_infected(left: float) -> void:
@@ -900,7 +951,7 @@ func _process(delta: float) -> void:
 	_scan_timer = 0.1
 	if not local_dead and not is_driving():
 		var target := _find_target()
-		prompt.visible = not target.is_empty() and not inventory.visible
+		prompt.visible = not target.is_empty() and not inventory.visible and not is_building()
 		if prompt.visible:
 			prompt.text = str(target["label"])
 	else:
@@ -918,6 +969,9 @@ func _process(delta: float) -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if driving_ctl != null and bool(driving_ctl.call("handle_input", event)):
+		get_viewport().set_input_as_handled()
+		return
+	if building_ctl != null and not local_dead and not is_driving() and not inventory.visible and bool(building_ctl.call("handle_input", event)):
 		get_viewport().set_input_as_handled()
 		return
 	if _pressed(event, "refuel") and not local_dead:
@@ -1044,6 +1098,7 @@ func _build_ui() -> void:
 	inventory.connect("craft_requested", _on_craft)
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
 	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
+	inventory.connect("store_requested", func(k, item): Net.send({"t": "store", "k": k, "item": item}))
 	death_panel = PanelContainer.new()
 	death_panel.visible = false
 	death_panel.set_anchors_preset(Control.PRESET_CENTER)
@@ -1062,6 +1117,11 @@ func _build_ui() -> void:
 	respawn_button.custom_minimum_size.y = 40
 	respawn_button.pressed.connect(func(): Net.send({"t": "respawn"}))
 	column.add_child(respawn_button)
+	bed_button = Button.new()
+	bed_button.custom_minimum_size.y = 40
+	bed_button.visible = false
+	bed_button.pressed.connect(func(): Net.send({"t": "respawn", "bed": true}))
+	column.add_child(bed_button)
 	_update_bars()
 
 func _update_bars() -> void:

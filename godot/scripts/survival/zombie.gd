@@ -7,6 +7,10 @@ extends CharacterBody3D
 ## e brutamontes (lento, muita vida e dano).
 signal damaged(zombie_id: String, zone: String, point: Vector3, normal: Vector3, weapon_id: String)
 signal attacked(zombie_id: String, target_id: String)
+## Bateu numa construção (parede, porta...) que estava entre ele e o alvo.
+signal attacked_build(zombie_id: String, build_id: String)
+const BASH_RANGE := 1.5 # encostado na parede para bater nela
+const BASH_TARGET_RANGE := 22.0 # só insiste na parede com o alvo perto
 
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const GRAVITY := 22.0
@@ -69,6 +73,8 @@ var _avoid_side := 1.0
 var _avoid_timer := 0.0
 var _avoid_check := randf() * 0.1
 var _avoid_blocked := false
+var _blocking_build := "" # construção que bloqueia o caminho (raio da frente)
+var _strike_build := "" # golpe em andamento contra essa construção
 var _remote_pos := Vector3.ZERO
 var _remote_yaw := 0.0
 var _has_remote := false
@@ -326,6 +332,10 @@ func _update_strike(delta: float) -> void:
 			_swipe_audio.stream = SfxBank.zombie_swipe()
 		_swipe_audio.pitch_scale = randf_range(0.9, 1.1)
 		_swipe_audio.play()
+	if not _strike_build.is_empty() and strike_t >= STRIKE_IMPACT:
+		if controlled:
+			attacked_build.emit(zombie_id, _strike_build)
+		_strike_build = ""
 	if _strike_pending and strike_t >= STRIKE_IMPACT:
 		_strike_pending = false
 		if controlled and is_instance_valid(_target) and _target_id == _strike_target \
@@ -599,6 +609,22 @@ func _run_ai(delta: float) -> void:
 		if randf() < 0.3 and global_position.distance_to(goal) < 3.0:
 			anim = Anim.IDLE
 			speed = 0.0
+	# Parede/porta de construção entre ele e o alvo: fica batendo nela até quebrar.
+	if _target != null and speed > 0.0 and not _blocking_build.is_empty() and _flat_distance(goal) < BASH_TARGET_RANGE:
+		_avoid_check -= delta
+		if _avoid_check <= 0.0:
+			_avoid_check = 0.3
+			var to_goal := goal - global_position
+			to_goal.y = 0.0
+			_probe(to_goal.normalized())
+		if not _blocking_build.is_empty():
+			speed = 0.0
+			anim = Anim.ATTACK
+			if _attack_timer <= 0.0 and strike_t < 0.0:
+				_attack_timer = ATTACK_COOLDOWN
+				strike(false)
+				_strike_pending = false
+				_strike_build = _blocking_build
 	var dir := Vector3.ZERO
 	if goal != Vector3.INF and speed > 0.0:
 		dir = goal - global_position
@@ -635,6 +661,16 @@ func _apply_gravity(delta: float) -> void:
 	move_and_slide()
 	velocity = Vector3(wanted.x, velocity.y / factor, wanted.z)
 
+## Raio curto à frente (cintura): bloqueado? Por uma construção (guarda o id)?
+func _probe(dir: Vector3) -> void:
+	var from := global_position + Vector3(0, 0.6, 0)
+	var query := PhysicsRayQueryParameters3D.create(from, from + dir * BASH_RANGE, HitboxScript.LAYER_WORLD)
+	var hit := get_world_3d().direct_space_state.intersect_ray(query)
+	_avoid_blocked = not hit.is_empty()
+	_blocking_build = ""
+	if _avoid_blocked and hit["collider"] is Node and (hit["collider"] as Node).has_meta("build_id"):
+		_blocking_build = str((hit["collider"] as Node).get_meta("build_id"))
+
 ## Contorna paredes, carros e árvores: se a frente está bloqueada, desvia para um lado por um tempo.
 func _avoid(dir: Vector3, delta: float) -> Vector3:
 	_avoid_timer = maxf(0.0, _avoid_timer - delta)
@@ -642,9 +678,7 @@ func _avoid(dir: Vector3, delta: float) -> Vector3:
 	_avoid_check -= delta
 	if _avoid_check <= 0.0:
 		_avoid_check = 0.11 + randf() * 0.04
-		var from := global_position + Vector3(0, 0.6, 0)
-		var query := PhysicsRayQueryParameters3D.create(from, from + dir * 1.4, HitboxScript.LAYER_WORLD)
-		_avoid_blocked = not get_world_3d().direct_space_state.intersect_ray(query).is_empty()
+		_probe(dir)
 	if _avoid_blocked:
 		if _avoid_timer <= 0.0 and randf() < 0.15:
 			_avoid_side = -_avoid_side

@@ -20,6 +20,85 @@ func _frames(n: int) -> void:
 	for i in n:
 		await get_tree().physics_frame
 
+## Construção: peças do servidor aparecem com colisão, a porta abre, a prévia
+## encaixa na grade e a peça destruída some.
+func _building(controller: Node, player: CharacterBody3D) -> void:
+	var b: Node = controller.building_ctl
+	check(b != null, "construção ligada ao controlador")
+	var rules = b.get("rules")
+	var S: float = rules.S
+	# Um canto sem árvore/rocha perto do jogador (só para não atrapalhar a colisão).
+	var i := floori(player.global_position.x / S) + 2
+	var j := floori(player.global_position.z / S) + 2
+	b.set("my_tag", "me")
+	var pieces := [
+		{"id": "P1", "kind": "foundation", "i": i, "j": j, "k": 0, "hp": 800, "ow": "me"},
+		{"id": "P2", "kind": "wall", "i": i, "j": j, "k": 0, "o": "h", "hp": 500, "ow": "me"},
+		{"id": "P3", "kind": "doorway", "i": i, "j": j, "k": 0, "o": "v", "hp": 450, "ow": "me"},
+		{"id": "P4", "kind": "door", "i": i, "j": j, "k": 0, "o": "v", "hp": 300, "ow": "me", "open": false},
+		{"id": "P5", "kind": "window", "i": i + 1, "j": j, "k": 0, "o": "v", "hp": 450, "ow": "me"},
+		{"id": "P6", "kind": "floor", "i": i, "j": j, "k": 1, "hp": 400, "ow": "me"},
+		{"id": "P7", "kind": "roof", "i": i, "j": j, "k": 2, "r": 1, "hp": 400, "ow": "x"},
+		{"id": "P8", "kind": "stairs", "i": i, "j": j, "k": 0, "r": 2, "hp": 350, "ow": "me"},
+		{"id": "P9", "kind": "campfire", "p": [(i + 0.3) * S, rules.base, (j + 0.3) * S], "y": 0.0, "hp": 120, "ow": "me", "on": true},
+		{"id": "P10", "kind": "chest", "p": [(i + 0.7) * S, rules.base, (j + 0.7) * S], "y": 1.0, "hp": 200, "ow": "me"},
+		{"id": "P11", "kind": "bed", "p": [(i - 1.0) * S, 0.0, (j + 0.5) * S], "y": 0.0, "hp": 150, "ow": "me", "cd": 0},
+	]
+	for p in pieces:
+		Net.message.emit({"t": "bp", "b": p})
+	await _frames(3)
+	var nodes: Dictionary = b.get("nodes")
+	check(nodes.size() == pieces.size(), "todas as peças aparecem (%d)" % nodes.size())
+	var wall: Node3D = nodes.get("P2")
+	var bodies := wall.find_children("*", "StaticBody3D", true, false) if wall != null else []
+	check(not bodies.is_empty() and str(bodies[0].get_meta("build_id", "")) == "P2", "parede tem colisão marcada com o id")
+	# Raio de cima atinge o piso do primeiro andar.
+	var space := player.get_world_3d().direct_space_state
+	var c := Vector3((i + 0.5) * S, 10, (j + 0.25) * S)
+	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(c, c + Vector3.DOWN * 20))
+	check(not hit.is_empty() and str(b.call("build_id_of", hit["collider"])) in ["P6", "P7"], "teto/telhado bloqueia de cima")
+	check(nodes["P9"].get_node_or_null("FireLight") != null, "fogueira acesa tem luz")
+	Net.message.emit({"t": "bp", "b": {"id": "P9", "kind": "campfire", "p": pieces[8]["p"], "y": 0.0, "hp": 120, "ow": "me", "on": false}})
+	await _frames(2)
+	check(nodes["P9"].get_node_or_null("FireLight") == null or nodes["P9"].get_node("FireLight").is_queued_for_deletion(), "apagar a fogueira tira a luz")
+	# Porta: E perto dela abre (o servidor confirma com "bp").
+	var door_c: Vector3 = rules.center(pieces[3])
+	player.global_position = Vector3(door_c.x - 1.2, rules.base + 0.1, door_c.z)
+	await _frames(2)
+	var t: Dictionary = controller.call("_find_target")
+	check(str(t.get("type", "")) == "build" and str(t.get("label", "")).find("Abrir a porta") >= 0, "E perto da porta: abrir")
+	var piece4: Dictionary = pieces[3].duplicate()
+	piece4["open"] = true
+	Net.message.emit({"t": "bp", "b": piece4})
+	await _frames(30)
+	var hinge := nodes["P4"].get_node("Hinge") as Node3D
+	check(absf(hinge.rotation.y) > 1.2, "porta abre girando na dobradiça")
+	check(controller.call("is_building") == false, "modo de construção começa desligado")
+	# Modo de construção: prévia da fundação na célula vizinha, verde com material.
+	Net.message.emit({"t": "inv", "inv": {"wood": 50, "stone": 50, "fiber": 20, "rope": 5}, "weight": 9, "cap": 60})
+	var bkey := InputEventKey.new()
+	bkey.physical_keycode = KEY_B
+	bkey.pressed = true
+	controller.call("_unhandled_input", bkey)
+	check(controller.call("is_building"), "B liga o modo de construção")
+	var cand: Dictionary = b.call("_candidate_for", "foundation", {"point": Vector3((i + 0.9) * S, rules.base + 0.05, (j + 0.5) * S), "surface": Vector3.ZERO, "normal": Vector3.UP, "build": "P1", "hit": true})
+	check(int(cand.get("i", -99)) == i + 1 and int(cand.get("j", -99)) == j, "fundação mirando a beira de outra: célula vizinha")
+	check(str(rules.check(cand, b.owns)) == "", "fundação vizinha pode")
+	var bad: Dictionary = {"kind": "wall", "i": i + 5, "j": j + 5, "k": 0, "o": "h"}
+	check(str(rules.check(bad, b.owns)).find("Precisa") >= 0, "parede no nada não pode")
+	var on_roof: Dictionary = {"kind": "floor", "i": i + 1, "j": j, "k": 2}
+	check(str(rules.check({"kind": "wall", "i": i, "j": j, "k": 1, "o": "h"}, b.owns)) == "", "parede no primeiro andar em cima do piso")
+	check(str(rules.check(on_roof, b.owns)) != "", "piso sem parede embaixo não pode")
+	await _frames(6)
+	check(b.get("_bar").visible, "barra de peças aparece")
+	controller.call("_unhandled_input", bkey)
+	check(not controller.call("is_building"), "B desliga")
+	# Fundação quebrada: some ela e tudo o que ela segurava (o servidor manda a lista).
+	Net.message.emit({"t": "bgone", "l": ["P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"], "by": "z1"})
+	await _frames(2)
+	check(nodes.size() == 1 and nodes.has("P11"), "peças destruídas somem (sobra a cama no chão)")
+	check(b.call("has_bed"), "cama conta como ponto de renascer")
+
 func _run() -> void:
 	var spawn: Array = SurvivalData.world()["spawns"][0]
 	# Carro de teste no meio do maior lago: chão plano e sem árvore para a curva.
@@ -273,6 +352,7 @@ func _run() -> void:
 	check(controller.world_map.visible, "M abre o mapa")
 	controller.call("_unhandled_input", m_key)
 	check(not controller.world_map.visible, "M fecha o mapa")
+	await _building(controller, player)
 	print("FALHAS: %d" % failures)
 	Net.in_match = false
 	get_tree().quit(1 if failures else 0)

@@ -40,6 +40,21 @@
     {"id": "herbal_cure", "name": "Remédio de ervas",   "needs": {"herb": 3, "fiber": 1},              "gives": ["herbal_cure", 1]},
     {"id": "sack_bag",    "name": "Bolsa de fibra",     "needs": {"fiber": 12, "rope": 2},             "gives": ["sack_bag", 1]}
   ],
+  "_builds_comment": "Construção (B): peças numa grade de 'cell' m; cada andar tem 'story' m e o piso térreo (fundação) fica em 'base' m. slot: cell (fundação k=0, piso/telhado k>=1), edge (paredes nas bordas), door (dentro da parede com porta), stairs (em cima de fundação/piso), free (fogueira, baú, cama: em qualquer chão). 'r' = raio no chão das peças livres. Dano: golpe x melee_factor (machado x axe_factor, soco = fist), zumbi x zombie_factor. Consertar só repair_wait s depois do último dano; custa refund x o que falta. Desmontar devolve refund x material (proporcional à vida).",
+  "build_rules": {"cell": 3.0, "story": 3.0, "base": 0.4, "reach": 7.0, "per_player": 300, "per_world": 4000, "melee_factor": 0.5, "axe_factor": 1.0, "fist": 2, "zombie_factor": 3, "repair_wait": 15, "refund": 0.5, "bed_cooldown": 120, "auth_max": 12},
+  "builds": {
+    "foundation": {"name": "Fundação",          "slot": "cell",   "cost": {"wood": 3, "stone": 3}, "hp": 800},
+    "wall":       {"name": "Parede",            "slot": "edge",   "cost": {"wood": 3},             "hp": 500},
+    "doorway":    {"name": "Parede com porta",  "slot": "edge",   "cost": {"wood": 2},             "hp": 450},
+    "window":     {"name": "Parede com janela", "slot": "edge",   "cost": {"wood": 2},             "hp": 450},
+    "floor":      {"name": "Piso / teto",       "slot": "cell",   "cost": {"wood": 2},             "hp": 400},
+    "stairs":     {"name": "Escada",            "slot": "stairs", "cost": {"wood": 3},             "hp": 350},
+    "roof":       {"name": "Telhado",           "slot": "cell",   "cost": {"wood": 2, "fiber": 4}, "hp": 400},
+    "door":       {"name": "Porta",             "slot": "door",   "cost": {"wood": 2, "rope": 1},  "hp": 300},
+    "campfire":   {"name": "Fogueira",          "slot": "free",   "cost": {"wood": 2, "stone": 5}, "hp": 120, "r": 0.6},
+    "chest":      {"name": "Baú",               "slot": "free",   "cost": {"wood": 4, "rope": 1},  "hp": 200, "r": 0.6, "carry": 80},
+    "bed":        {"name": "Cama",              "slot": "free",   "cost": {"wood": 3, "fiber": 10, "rope": 1}, "hp": 150, "r": 1.0}
+  },
   "vehicles": {},
   "starter_kit": {}
 }

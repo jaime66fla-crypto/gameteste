@@ -20,6 +20,22 @@ import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
+import { BuildGrid } from './godot-building.js';
+
+const BUILD = catalog.build_rules;
+const BUILDS = catalog.builds;
+/** Folga ao redor de cada recurso com colisão: a fundação não pode cobrir árvore/rocha/arbusto. */
+const BLOCKING_RESOURCES = { tree: 0.5, rock: 1.3, bush: 0.7, car: 2.5 };
+
+/** Marca pública do dono das construções (não expõe a conta): FNV-1a em base 36. */
+export function ownerTag(account) {
+	let h = 0x811c9dc5;
+	for (const ch of String(account || '')) {
+		h ^= ch.codePointAt(0);
+		h = Math.imul(h, 0x01000193) >>> 0;
+	}
+	return h.toString(36);
+}
 
 /** Visible character id (godot/characters/*.tres): short slug or '' (others then show the default). */
 const characterId = (v) => (typeof v === 'string' && /^[a-z0-9_]{1,32}$/.test(v) ? v : '');
@@ -261,10 +277,19 @@ export class GodotSurvival {
 		this.hitCheck = new HitCheck(); // alcance, cabeça plausível e taxa de tiros na cabeça
 		this.state = this.fresh();
 		this.dirty = false;
+		// Construções: uma chave por peça ("b:<id>"), fora do estado do mundo (que tem limite de tamanho).
+		this.grid = new BuildGrid(BUILD, BUILDS);
+		this.buildDirty = new Set();
+		this.buildGone = new Set();
 		ctx.blockConcurrencyWhile(async () => {
 			const saved = await ctx.storage.get('world');
 			// Mundo de outra versão (cidade, saque, carros): recomeça como floresta.
-			if (saved && saved.version === WORLD_VERSION) this.state = saved;
+			if (saved && saved.version === WORLD_VERSION) {
+				this.state = saved;
+				if (typeof ctx.storage.list === 'function') {
+					for (const piece of (await ctx.storage.list({ prefix: 'b:' })).values()) this.grid.add(piece);
+				}
+			}
 			for (const ws of ctx.getWebSockets()) {
 				const meta = ws.deserializeAttachment();
 				if (meta?.id) this.sessions.set(meta.id, ws);
@@ -276,6 +301,7 @@ export class GodotSurvival {
 		return {
 			version: WORLD_VERSION, name: '', createdAt: Date.now(), players: {}, chars: {}, host: null,
 			zombies: {}, zSeq: 0, containers: {}, bags: {}, bagSeq: 0, depleted: {}, vehicles: {},
+			buildSeq: 0, auth: {},
 		};
 	}
 
@@ -453,6 +479,13 @@ export class GodotSurvival {
 	}
 
 	flushSave() {
+		for (const id of this.buildGone) this.ctx.waitUntil(this.ctx.storage.delete('b:' + id));
+		for (const id of this.buildDirty) {
+			const piece = this.grid.pieces.get(id);
+			if (piece) this.ctx.waitUntil(this.ctx.storage.put('b:' + id, piece));
+		}
+		this.buildGone.clear();
+		this.buildDirty.clear();
 		if (!this.dirty) return;
 		this.dirty = false;
 		this.ctx.waitUntil(this.ctx.storage.put('world', this.state));
@@ -537,7 +570,7 @@ export class GodotSurvival {
 		const totalXp = Math.max(0, Number(url.searchParams.get('xp')) || 0);
 		const saved = account ? s.chars[account] : null;
 		const player = {
-			id, account, name: url.searchParams.get('name') || 'Sobrevivente', rank: rankFor(totalXp).rank,
+			id, account, tag: ownerTag(account || id), name: url.searchParams.get('name') || 'Sobrevivente', rank: rankFor(totalXp).rank,
 			xpGain: 0, kills: 0, zkills: 0, useAt: 0, gatherAt: 0, gatherId: '', respawnAt: 0, y: 0,
 			...(saved && Date.now() - saved.savedAt < CHAR_KEEP_MS ? this.restore(saved) : this.newCharacter()),
 		};
@@ -604,6 +637,10 @@ export class GodotSurvival {
 			sleepers: this.sleepers(),
 			searched: Object.keys(s.containers).filter((k) => s.containers[k].refillAt > now && !Object.keys(s.containers[k].items).length),
 			depleted,
+			tag: me.tag,
+			builds: [...this.grid.pieces.values()].map((b) => this.buildPacket(b)),
+			auth: this.authList(me.tag),
+			allowed: this.allowedOwners(me.tag),
 		};
 	}
 
@@ -647,7 +684,7 @@ export class GodotSurvival {
 		const note = (message) => reply({ t: 'note', message });
 		// Ping: devolve na hora o relógio do jogo, que mede o tempo de ida e volta.
 		if (d.t === 'ping') return reply({ t: 'pong', c: finite(d.c, 1e15) ? d.c : 0 });
-		if (d.t === 'respawn') return this.respawn(me);
+		if (d.t === 'respawn') return this.respawn(me, d, note);
 		if (me.dead) return;
 		switch (d.t) {
 			case 's': {
@@ -710,6 +747,16 @@ export class GodotSurvival {
 				return;
 			}
 			case 'gather': return this.gather(me, d, note);
+			case 'build': return this.build(me, d, note);
+			case 'bhit': return this.buildHit(me, d);
+			case 'zbhit': return isHost && this.zombieBuildHit(d);
+			case 'bdel': return this.demolish(me, d, note);
+			case 'brep': return this.repairBuild(me, d, note);
+			case 'door': return this.toggleDoor(me, d, note);
+			case 'fire': return this.toggleFire(me, d, note);
+			case 'store': return this.store(me, d, reply, note);
+			case 'auth_add': return this.authAdd(me, d, reply, note);
+			case 'auth_del': return this.authDel(me, d, reply);
 			case 'consume': {
 				// Munição gasta na recarga (o jogo avisa quantas balas foram para o pente).
 				const item = d.ammo;
@@ -810,9 +857,21 @@ export class GodotSurvival {
 		this.sendInv(target);
 	}
 
-	respawn(me) {
+	respawn(me, d = {}, note = () => {}) {
 		if (!me.dead || Date.now() < me.respawnAt) return;
+		// Renascer na cama: a cama tem que estar inteira e descansada.
+		let bed = null;
+		if (d.bed) {
+			bed = this.bedOf(me.tag);
+			if (!bed) return note('Você não tem cama. Renasça numa clareira.');
+			const wait = Math.ceil(((bed.used || 0) + BUILD.bed_cooldown * 1000 - Date.now()) / 1000);
+			if (wait > 0) return note(`A cama ainda não está pronta (${wait} s).`);
+			bed.used = Date.now();
+			this.buildDirty.add(bed.id);
+			this.broadcast({ t: 'bp', b: this.buildPacket(bed) });
+		}
 		Object.assign(me, this.newCharacter());
+		if (bed) me.p = [bed.p[0], bed.p[1] + 0.6, bed.p[2]];
 		this.clearZombiesNear(me.p, me.id);
 		this.save();
 		this.sendTo(me.id, { t: 'respawned', p: me.p, hp: me.hp, hunger: me.hunger, thirst: me.thirst, ...this.invPacket(me) });
@@ -988,6 +1047,11 @@ export class GodotSurvival {
 	/** Revistar um recipiente do mapa ou uma mochila no chão. */
 	search(me, d, reply, note) {
 		const s = this.state;
+		const chest = this.chestAt(d.k);
+		if (chest) {
+			if (flat(me.p, chest.p) > REACH) return note('Longe demais.');
+			return reply(this.chestPacket(chest));
+		}
 		const bag = s.bags[d.k];
 		if (bag) {
 			if (flat(me.p, bag.p) > REACH) return note('Longe demais.');
@@ -1009,6 +1073,22 @@ export class GodotSurvival {
 	/** Pegar itens de um recipiente/mochila (limitado pelo peso). */
 	take(me, d, reply, note) {
 		const s = this.state;
+		const chest = this.chestAt(d.k);
+		if (chest) {
+			if (flat(me.p, chest.p) > REACH || !ITEMS[d.item]) return;
+			const have = chest.items[d.item] || 0;
+			const wanted = Number.isInteger(d.n) && d.n > 0 ? Math.min(d.n, have) : have;
+			if (!wanted) return;
+			const fits = roomFor(me, d.item, wanted);
+			if (!fits) return note('Mochila pesada demais.');
+			removeItems(chest.items, d.item, fits);
+			addItems(me.inv, d.item, fits);
+			if (fits < wanted) note('Não coube tudo: mochila pesada demais.');
+			this.buildDirty.add(chest.id);
+			this.save();
+			this.sendInv(me);
+			return reply(this.chestPacket(chest));
+		}
 		const bag = s.bags[d.k];
 		const spot = CONTAINERS[d.k];
 		const at = bag ? bag.p : spot?.p;
@@ -1179,6 +1259,348 @@ export class GodotSurvival {
 		this.save();
 		this.sendInv(me);
 		note((rule.tool && !rule.needs && !tooled ? 'Com ferramenta rende mais. ' : '') + got.join(', '));
+	}
+
+	// ------------------------------------------------------------ construção ---
+
+	buildPacket(b) {
+		const out = { id: b.id, kind: b.kind, hp: Math.round(b.hp), ow: b.ow };
+		if (b.p) {
+			out.p = b.p;
+			out.y = b.y || 0;
+		} else {
+			Object.assign(out, { i: b.i, j: b.j, k: b.k, r: b.r || 0 });
+			if (b.o) out.o = b.o;
+		}
+		if (b.kind === 'door') out.open = !!b.open;
+		if (b.kind === 'campfire') out.on = !!b.on;
+		if (b.kind === 'bed') out.cd = Math.max(0, Math.ceil(((b.used || 0) + BUILD.bed_cooldown * 1000 - Date.now()) / 1000));
+		return out;
+	}
+
+	maxHp(b) {
+		return BUILDS[b.kind]?.hp || 100;
+	}
+
+	/** `tag` pode abrir as portas e construir junto de `owner` (é o dono ou foi autorizado). */
+	allowed(owner, tag) {
+		return owner === tag || (this.state.auth?.[owner] || []).some((a) => a.tag === tag);
+	}
+
+	authList(tag) {
+		return (this.state.auth?.[tag] || []).map((a) => ({ tag: a.tag, name: a.name }));
+	}
+
+	/** Donos que liberaram a base para `tag`. */
+	allowedOwners(tag) {
+		return Object.entries(this.state.auth || {}).filter(([, list]) => list.some((a) => a.tag === tag)).map(([owner]) => owner);
+	}
+
+	chestAt(id) {
+		const b = typeof id === 'string' ? this.grid.pieces.get(id) : null;
+		return b?.kind === 'chest' ? b : null;
+	}
+
+	chestPacket(chest) {
+		if (!chest.items) chest.items = {};
+		return { t: 'container', k: chest.id, title: 'Baú', items: chest.items, store: true, cap: BUILDS.chest.carry, weight: inventoryWeight(chest.items) };
+	}
+
+	bedOf(tag) {
+		for (const b of this.grid.pieces.values()) if (b.kind === 'bed' && b.ow === tag) return b;
+		return null;
+	}
+
+	countOf(tag) {
+		let n = 0;
+		for (const b of this.grid.pieces.values()) if (b.ow === tag) n++;
+		return n;
+	}
+
+	/** Alguém (vivo, no jogo) dentro do espaço que a peça vai ocupar? */
+	blockedByPlayer(p) {
+		const def = BUILDS[p.kind];
+		const S = BUILD.cell;
+		for (const pl of this.living()) {
+			const [x, y, z] = pl.p;
+			if (def.slot === 'free') {
+				if (Math.hypot(x - p.p[0], z - p.p[2]) < def.r + 0.25 && Math.abs(y - p.p[1]) < 1.6) return true;
+				continue;
+			}
+			if (def.slot === 'edge') {
+				const d = this.grid.distance(p, pl.p);
+				if (d !== null && d < 0.45 && y > this.grid.top(p.k) - 1.6 && y < this.grid.top(p.k) + BUILD.story) return true;
+				continue;
+			}
+			if (def.slot !== 'cell') continue;
+			const inside = x > p.i * S - 0.3 && x < (p.i + 1) * S + 0.3 && z > p.j * S - 0.3 && z < (p.j + 1) * S + 0.3;
+			if (!inside) continue;
+			const top = this.grid.top(p.k);
+			if (p.kind === 'foundation' ? y < top - 0.05 : y > top - 1.9 && y < top + 0.1) return true;
+		}
+		return false;
+	}
+
+	/** Nada do mapa embaixo (árvore, rocha, arbusto, lago) e dentro do mundo. */
+	groundFree(p) {
+		const S = BUILD.cell;
+		const def = BUILDS[p.kind];
+		const half = world.half_size - 6;
+		let box;
+		if (def.slot === 'free') box = [p.p[0] - def.r, p.p[2] - def.r, p.p[0] + def.r, p.p[2] + def.r];
+		else if (p.kind === 'foundation') box = [p.i * S, p.j * S, (p.i + 1) * S, (p.j + 1) * S];
+		else return '';
+		if (box.some((n) => Math.abs(n) > half)) return 'Fora da área do mundo.';
+		for (const pond of world.ponds || []) {
+			const dx = Math.max(box[0] - pond.x, 0, pond.x - box[2]);
+			const dz = Math.max(box[1] - pond.z, 0, pond.z - box[3]);
+			if (Math.hypot(dx, dz) < pond.r + 1) return 'Não dá para construir na água.';
+		}
+		if (def.slot === 'free' && p.p[1] > 0.25) return ''; // em cima de piso: o chão embaixo não importa
+		for (const res of world.resources) {
+			const margin = BLOCKING_RESOURCES[res.kind];
+			if (margin === undefined) continue;
+			if (res.p[0] > box[0] - margin && res.p[0] < box[2] + margin && res.p[2] > box[1] - margin && res.p[2] < box[3] + margin) {
+				return `Tem ${String(catalog.resources[res.kind]?.name || 'algo').toLowerCase()} no caminho.`;
+			}
+		}
+		return '';
+	}
+
+	/** Coloca uma peça (B): confere lugar, apoio, alcance, espaço e material. */
+	build(me, d, note) {
+		const def = BUILDS[d.kind];
+		if (!def) return;
+		const s = this.state;
+		const p = { kind: d.kind };
+		if (def.slot === 'free') {
+			p.p = vec3(d.p, 600);
+			if (!p.p) return;
+			p.y = finite(d.y, 100) ? Math.round(d.y * 100) / 100 : 0;
+		} else {
+			Object.assign(p, { i: d.i, j: d.j, k: d.k, r: Number.isInteger(d.r) ? ((d.r % 4) + 4) % 4 : 0 });
+			if (def.slot === 'edge' || def.slot === 'door') p.o = d.o;
+		}
+		const fail = this.grid.check(p, (b) => this.allowed(b.ow, me.tag));
+		if (fail) return note(fail);
+		const c = this.grid.center(p);
+		if (flat(me.p, c) > BUILD.reach || Math.abs((me.p[1] || 0) - c[1]) > 6) return note('Longe demais.');
+		const ground = this.groundFree(p);
+		if (ground) return note(ground);
+		if (p.kind === 'foundation') {
+			for (let di = -1; di <= 1; di++) {
+				for (let dj = -1; dj <= 1; dj++) {
+					const other = this.grid.at(BuildGrid.cellKey(p.i + di, p.j + dj, 0));
+					if (other && !this.allowed(other.ow, me.tag)) return note('Perto demais da base de outro jogador.');
+				}
+			}
+		}
+		if (def.slot === 'free') {
+			for (const b of this.grid.pieces.values()) {
+				if (!b.p || Math.abs(b.p[1] - p.p[1]) > 1) continue;
+				if (Math.hypot(b.p[0] - p.p[0], b.p[2] - p.p[2]) < (def.r + (BUILDS[b.kind]?.r || 0.5)) * 0.8) return note('Sem espaço: tem outra coisa aí.');
+			}
+		}
+		if (this.blockedByPlayer(p)) return note('Tem alguém no caminho.');
+		if (p.kind === 'bed' && this.bedOf(me.tag)) return note('Você já tem uma cama. Desmonte a outra antes.');
+		if (this.countOf(me.tag) >= BUILD.per_player) return note(`Limite de ${BUILD.per_player} peças por jogador.`);
+		if (this.grid.pieces.size >= BUILD.per_world) return note('Este mundo já tem construções demais.');
+		for (const [item, n] of Object.entries(def.cost)) {
+			if ((me.inv[item] || 0) < n) return note(`Falta ${ITEMS[item]?.name || item} (${me.inv[item] || 0}/${n}).`);
+		}
+		for (const [item, n] of Object.entries(def.cost)) removeItems(me.inv, item, n);
+		s.buildSeq = (s.buildSeq || 0) + 1;
+		Object.assign(p, { id: 'P' + s.buildSeq, hp: def.hp, ow: me.tag, at: Date.now() });
+		if (p.kind === 'chest') p.items = {};
+		this.grid.add(p);
+		this.buildDirty.add(p.id);
+		this.save();
+		this.sendInv(me);
+		this.broadcast({ t: 'bp', b: this.buildPacket(p) });
+	}
+
+	damageBuild(b, amount, by = '') {
+		if (!(amount > 0) || !this.grid.pieces.has(b.id)) return;
+		b.hp = Math.max(0, round1(b.hp - amount));
+		b.hitAt = Date.now();
+		if (b.hp > 0) {
+			this.buildDirty.add(b.id);
+			this.broadcastNear(this.grid.center(b), { t: 'bhp', id: b.id, hp: Math.round(b.hp), by });
+			return;
+		}
+		this.destroyBuild(b, by);
+	}
+
+	/** Some a peça e o que ela segurava; o que estava nos baús cai numa mochila no chão. */
+	destroyBuild(b, by = '') {
+		const gone = this.grid.remove(b.id);
+		for (const piece of gone) {
+			this.buildGone.add(piece.id);
+			this.buildDirty.delete(piece.id);
+			if (piece.kind === 'chest' && piece.items && Object.keys(piece.items).length) this.makeBag(piece.p, piece.items, '');
+		}
+		if (gone.length) this.broadcast({ t: 'bgone', l: gone.map((p) => p.id), by });
+		this.save();
+		return gone;
+	}
+
+	/** Golpe de jogador (Q) numa peça: machado rende mais; soco quase nada. */
+	buildHit(me, d) {
+		const b = this.grid.pieces.get(d.b);
+		if (!b || !this.allowHit(me.id)) return;
+		const dist = this.grid.distance(b, me.p);
+		if (dist === null || dist > MELEE_REACH + 0.6) return;
+		const now = Date.now();
+		if (now - (me.bhitAt || 0) < 450) return; // o golpe tem recarga de 0,6 s
+		me.bhitAt = now;
+		const item = typeof d.item === 'string' && me.inv[d.item] && ITEMS[d.item]?.melee ? d.item : '';
+		const amount = item ? ITEMS[item].melee * (ITEMS[item].tool === 'wood' ? BUILD.axe_factor : BUILD.melee_factor) : BUILD.fist;
+		this.damageBuild(b, amount, me.id);
+	}
+
+	/** Zumbi batendo numa parede/porta (relatado pelo anfitrião). */
+	zombieBuildHit(d) {
+		const zombie = this.state.zombies[d.z];
+		const b = this.grid.pieces.get(d.b);
+		if (!zombie || !b) return;
+		const now = Date.now();
+		if (now - (zombie.lastBHit || 0) < ZOMBIE_ATTACK_MS) return;
+		const dist = this.grid.distance(b, zombie.p);
+		if (dist === null || dist > ZOMBIE_REACH + 0.8) return;
+		zombie.lastBHit = now;
+		this.damageBuild(b, (ZOMBIE_KINDS[zombie.kind]?.damage || 9) * BUILD.zombie_factor, zombie.id);
+	}
+
+	/** Desmontar (só o dono): devolve parte do material, proporcional à vida da peça. */
+	demolish(me, d, note) {
+		const b = this.grid.pieces.get(d.b);
+		if (!b) return;
+		if (b.ow !== me.tag) return note('Só o dono pode desmontar.');
+		if (flat(me.p, this.grid.center(b)) > BUILD.reach) return note('Longe demais.');
+		const frac = b.hp / this.maxHp(b);
+		const back = {};
+		for (const [item, n] of Object.entries(BUILDS[b.kind].cost)) {
+			const got = Math.floor(n * BUILD.refund * frac);
+			if (got > 0) back[item] = got;
+		}
+		const spill = {};
+		for (const [item, n] of Object.entries(back)) {
+			const fits = roomFor(me, item, n);
+			addItems(me.inv, item, fits);
+			if (fits < n) spill[item] = n - fits;
+		}
+		if (Object.keys(spill).length) this.makeBag(me.p, spill, me.name);
+		const gone = this.destroyBuild(b, me.id);
+		this.sendInv(me);
+		const list = Object.entries(back).map(([item, n]) => `${ITEMS[item]?.name || item} +${n}`).join(', ');
+		note('Desmontou ' + BUILDS[b.kind].name.toLowerCase() + (list ? `: ${list}` : '') + (gone.length > 1 ? ` (${gone.length - 1} peça(s) caíram junto)` : '') + '.');
+	}
+
+	/** Consertar: dono ou autorizado, fora de ataque; custa parte do material. */
+	repairBuild(me, d, note) {
+		const b = this.grid.pieces.get(d.b);
+		if (!b) return;
+		if (!this.allowed(b.ow, me.tag)) return note('Essa construção é de outro jogador.');
+		if (flat(me.p, this.grid.center(b)) > BUILD.reach) return note('Longe demais.');
+		const max = this.maxHp(b);
+		if (b.hp >= max) return note('Não precisa de conserto.');
+		const wait = Math.ceil(((b.hitAt || 0) + BUILD.repair_wait * 1000 - Date.now()) / 1000);
+		if (wait > 0) return note(`Sob ataque: espere ${wait} s para consertar.`);
+		const missing = 1 - b.hp / max;
+		const cost = {};
+		for (const [item, n] of Object.entries(BUILDS[b.kind].cost)) cost[item] = Math.max(1, Math.ceil(n * missing * BUILD.refund));
+		for (const [item, n] of Object.entries(cost)) {
+			if ((me.inv[item] || 0) < n) return note(`Para consertar falta ${ITEMS[item]?.name || item} (${me.inv[item] || 0}/${n}).`);
+		}
+		for (const [item, n] of Object.entries(cost)) removeItems(me.inv, item, n);
+		b.hp = max;
+		this.buildDirty.add(b.id);
+		this.save();
+		this.sendInv(me);
+		this.broadcastNear(this.grid.center(b), { t: 'bhp', id: b.id, hp: max, by: me.id });
+		note(`Consertou ${BUILDS[b.kind].name.toLowerCase()}.`);
+	}
+
+	toggleDoor(me, d, note) {
+		const b = this.grid.pieces.get(d.b);
+		if (b?.kind !== 'door') return;
+		const dist = this.grid.distance(b, me.p);
+		if (dist === null || dist > REACH) return note('Longe demais.');
+		if (!this.allowed(b.ow, me.tag)) return note('Porta trancada.');
+		b.open = !b.open;
+		this.buildDirty.add(b.id);
+		this.save();
+		this.broadcast({ t: 'bp', b: this.buildPacket(b) });
+	}
+
+	toggleFire(me, d, note) {
+		const b = this.grid.pieces.get(d.b);
+		if (b?.kind !== 'campfire') return;
+		if (flat(me.p, b.p) > REACH) return note('Longe demais.');
+		b.on = !b.on;
+		this.buildDirty.add(b.id);
+		this.save();
+		this.broadcast({ t: 'bp', b: this.buildPacket(b) });
+	}
+
+	/** Guardar itens no baú (até a carga do baú). */
+	store(me, d, reply, note) {
+		const chest = this.chestAt(d.k);
+		if (!chest || !ITEMS[d.item]) return;
+		if (flat(me.p, chest.p) > REACH) return note('Longe demais.');
+		if (!chest.items) chest.items = {};
+		const have = me.inv[d.item] || 0;
+		const wanted = Number.isInteger(d.n) && d.n > 0 ? Math.min(d.n, have) : have;
+		if (!wanted) return;
+		const unit = ITEMS[d.item].weight || 0;
+		const free = BUILDS.chest.carry - inventoryWeight(chest.items);
+		const fits = unit > 0 ? Math.max(0, Math.min(wanted, Math.floor((free + 1e-6) / unit))) : wanted;
+		if (!fits) return note('O baú está cheio.');
+		removeItems(me.inv, d.item, fits);
+		addItems(chest.items, d.item, fits);
+		if (fits < wanted) note('Não coube tudo: o baú está cheio.');
+		this.buildDirty.add(chest.id);
+		this.save();
+		this.sendInv(me);
+		reply(this.chestPacket(chest));
+	}
+
+	/** Libera a base (portas e construir junto) para quem está a até 6 m. */
+	authAdd(me, d, reply, note) {
+		const s = this.state;
+		if (!s.auth) s.auth = {};
+		const list = s.auth[me.tag] || (s.auth[me.tag] = []);
+		const added = [];
+		for (const pl of this.living()) {
+			if (pl.id === me.id || pl.tag === me.tag || flat(pl.p, me.p) > 6) continue;
+			if (list.some((a) => a.tag === pl.tag)) continue;
+			if (list.length >= BUILD.auth_max) {
+				note(`Limite de ${BUILD.auth_max} pessoas liberadas.`);
+				break;
+			}
+			list.push({ tag: pl.tag, name: pl.name });
+			added.push(pl);
+		}
+		if (!added.length) note('Ninguém novo por perto (chegue a até 6 m da pessoa).');
+		else note('Base liberada para: ' + added.map((pl) => pl.name).join(', ') + '.');
+		for (const pl of added) {
+			this.sendTo(pl.id, { t: 'allowed', l: this.allowedOwners(pl.tag) });
+			this.sendTo(pl.id, { t: 'note', message: `${me.name} liberou a base para você (portas e construir junto).` });
+		}
+		this.save();
+		reply({ t: 'auth', l: this.authList(me.tag) });
+	}
+
+	authDel(me, d, reply) {
+		const list = this.state.auth?.[me.tag];
+		if (!list || typeof d.tag !== 'string') return;
+		this.state.auth[me.tag] = list.filter((a) => a.tag !== d.tag);
+		if (!this.state.auth[me.tag].length) delete this.state.auth[me.tag];
+		for (const pl of Object.values(this.state.players)) {
+			if (pl.tag === d.tag) this.sendTo(pl.id, { t: 'allowed', l: this.allowedOwners(pl.tag) });
+		}
+		this.save();
+		reply({ t: 'auth', l: this.authList(me.tag) });
 	}
 
 	// ------------------------------------------------------------- relógio ---

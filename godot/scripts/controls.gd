@@ -33,9 +33,16 @@ const ACTIONS := [
 	["inventory", "Inventário", "Sobrevivência", KEY_TAB],
 	["map", "Mapa", "Sobrevivência", KEY_M],
 	["refuel", "Abastecer o carro", "Sobrevivência", KEY_T],
+	["build", "Construir (abrir/fechar)", "Construção", KEY_B],
+	["build_next", "Próxima peça", "Construção", KEY_C],
+	["build_prev", "Peça anterior", "Construção", KEY_Z],
+	["build_rotate", "Girar a peça", "Construção", KEY_R],
+	["build_remove", "Desmontar (segure)", "Construção", KEY_X],
+	["build_repair", "Consertar / liberar a base", "Construção", KEY_V],
 ]
-## Pares que podem dividir a mesma tecla (mirando, Q/E inclinam; sem mirar, socam/interagem).
-const SHARED := [["lean_left", "melee"], ["lean_right", "interact"]]
+## Pares que podem dividir a mesma tecla (mirando, Q/E inclinam; sem mirar, socam/interagem;
+## construindo, R gira a peça em vez de recarregar).
+const SHARED := [["lean_left", "melee"], ["lean_right", "interact"], ["build_rotate", "reload"]]
 ## Teclas que não podem ser usadas (abrem menus / ajuda).
 const RESERVED := [KEY_ESCAPE, KEY_F1]
 
@@ -160,7 +167,7 @@ static func key_name(code: int) -> String:
 ## Texto de ajuda (F1) com as teclas atuais.
 static func help_text() -> String:
 	var k := func(action: String) -> String: return key_name(binding(action))
-	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s atirar  %s recarregar  %s guardar arma\n%s-%s armas  %s soco  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
+	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s atirar  %s recarregar  %s guardar arma\n%s-%s armas  %s soco  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  %s construir  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
 		k.call("move_forward"), k.call("move_left"), k.call("move_back"), k.call("move_right"), k.call("walk"), k.call("sprint"), k.call("crouch"), k.call("jump"),
 		k.call("aim"), k.call("lean_left"), k.call("lean_right"), k.call("fire"), k.call("reload"), k.call("holster"),
-		k.call("weapon_1"), k.call("weapon_5"), k.call("melee"), k.call("interact"), k.call("heal"), k.call("grenade"), k.call("inventory"), k.call("map")]
+		k.call("weapon_1"), k.call("weapon_5"), k.call("melee"), k.call("interact"), k.call("heal"), k.call("grenade"), k.call("inventory"), k.call("map"), k.call("build")]
