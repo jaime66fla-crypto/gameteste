@@ -187,8 +187,27 @@ func _run() -> void:
 		_check(leave_panel.visible, "Eliminated (spectating) players can leave too")
 		_check(str(controller.get("leave_text").text).contains("XP"), "Leave panel explains XP is kept")
 		controller.call("_unhandled_input", esc)
+		# Rounds (melhor de 5): fim do round mostra o placar; o próximo traz todos de volta.
+		controller.call("_on_message", {"t": "round_end", "round": 1, "team": 1, "name": "Equipe Bravo", "reason": "eliminacao", "score": [0, 1], "total": 5, "last": false, "next": 5000})
+		_check(bool(controller.get("round_break")), "Round break starts")
+		_check((controller.get("center_panel") as Control).visible and str(controller.get("center_title").text).begins_with("ROUND 1"), "Round result banner (got %s)" % controller.get("center_title").text)
+		_check(str(controller.get("center_body").text).contains("ALFA 0  x  1 BRAVO"), "Banner shows the round score")
+		controller.call("_on_message", {"t": "round", "round": 2, "total": 5, "toWin": 3, "score": [0, 1], "host": "other", "alive": 4, "buy": 30000, "duration": 150000,
+			"roster": [{"id": "me", "sp": [-32.8, 16], "spawn": 4, "revived": true, "medkits": 0, "nades": 0},
+				{"id": "bot1", "sp": [-35.2, 16], "spawn": 4, "revived": false, "w": "pistol", "medkits": 1},
+				{"id": "bot2", "sp": [30.8, -28], "spawn": 6, "revived": true, "w": "smg", "medkits": 1},
+				{"id": "bot3", "sp": [33.2, -28], "spawn": 6, "revived": true, "w": "rifle", "medkits": 1}]})
+		_check(not bool(controller.get("local_dead")), "Local player is back for the new round")
+		_check(not bool(controller.get("round_break")) and not (controller.get("center_panel") as Control).visible, "Banner closes when the round starts")
+		var back: Vector3 = me.global_position
+		_check(Vector2(back.x, back.z).distance_to(Vector2(-32.8, 16)) < 0.5, "Back at the team base")
+		_check(not bool(actors["bot2"].get("dead")) and str(actors["bot2"].get("weapon_id")) == "smg", "Fallen enemy bot back with its new weapon")
+		controller.call("_process", 0.016)
+		var status := str((controller.get("status_label") as Label).text)
+		_check(status.contains("ROUND 2/5") and status.contains("ALFA 0  x  1 BRAVO"), "HUD shows round and score (got %s)" % status)
+		controller.call("_on_local_death", "bot2") # (o fim da partida abaixo espera você fora de combate)
 		net.set("party_code", "K7Q2M")
-		controller.call("_on_message", {"t": "end", "winner": null, "team": 0, "name": "Equipe Alfa", "reason": "eliminacao", "score": [2, 0],
+		controller.call("_on_message", {"t": "end", "winner": null, "team": 0, "name": "Equipe Alfa", "reason": "rounds", "score": [2, 0], "rounds": [3, 1], "round": 4,
 			"board": [{"id": "me", "name": "Lider", "kills": 2, "bot": false, "rank": "Recruta", "xp": 70, "team": 0},
 				{"id": "bot1", "name": "Cabo Rocha", "kills": 0, "bot": true, "rank": "", "xp": 0, "team": 0},
 				{"id": "bot2", "name": "Sgt. Lima", "kills": 0, "bot": true, "rank": "", "xp": 0, "team": 1}]})
@@ -212,6 +231,12 @@ func _run() -> void:
 		_check(results != null and results.visible, "New results panel shows")
 		_check(controller.find_child("ResultsTeam_0", true, false) != null and controller.find_child("ResultsTeam_1", true, false) != null, "Scoreboard grouped by team")
 		_check(controller.find_child("ResultsRow_me", true, false) != null and controller.find_child("ResultsRow_bot2", true, false) != null, "Every player has a row")
+		var tiles := controller.find_child("ResultsTiles", true, false)
+		var tile_text := ""
+		if tiles != null:
+			for label in tiles.find_children("*", "Label", true, false):
+				tile_text += (label as Label).text + " | "
+		_check(tile_text.contains("3  x  1"), "Final scoreboard shows the round score (got %s)" % tile_text)
 		# XP confirmado pelo servidor aparece no placar.
 		controller.call("_on_message", {"t": "profile", "gained": 70, "rankUp": true, "profile": {"name": "Lider", "xp": 370, "rank": "Soldado", "rankXp": 300, "nextRank": "Cabo", "nextRankXp": 800}})
 		var xp_label := controller.find_child("ResultsXp", true, false) as Label

@@ -15,15 +15,33 @@ func _texture_check(material: StandardMaterial3D, title: String) -> void:
     _check(image != null and image.has_mipmaps(), title + " has mipmaps to avoid distant shimmer")
     if image == null:
         return
+    # Texturas do atlas dos mapas (map_materials.gd) vêm comprimidas na GPU e
+    # emendam dando a volta (a última coluna encosta na primeira); as geradas
+    # por surface_materials.gd repetem a borda.
+    var atlas := material.resource_name.begins_with("map_")
+    if image.is_compressed():
+        image = image.duplicate()
+        image.decompress()
+    image.clear_mipmaps()
+    var w := image.get_width()
+    var h := image.get_height()
     var low := 1.0
     var high := 0.0
-    for x in range(image.get_width()):
-        for y in range(image.get_height()):
+    var seam := 0.0
+    var inner := 0.0
+    for x in range(w):
+        for y in range(h):
             var value := image.get_pixel(x,y).r
             low = minf(low,value)
             high = maxf(high,value)
-        _check(image.get_pixel(x,0).is_equal_approx(image.get_pixel(x,image.get_height()-1)), title + " seamless vertical tiling")
-        _check(image.get_pixel(0,x).is_equal_approx(image.get_pixel(image.get_width()-1,x)), title + " seamless horizontal tiling")
+        if atlas:
+            seam += absf(image.get_pixel(x,0).r - image.get_pixel(x,h-1).r) + absf(image.get_pixel(0,x).r - image.get_pixel(w-1,x).r)
+            inner += absf(image.get_pixel(x,0).r - image.get_pixel(x,1).r) + absf(image.get_pixel(0,x).r - image.get_pixel(1,x).r)
+        else:
+            _check(image.get_pixel(x,0).is_equal_approx(image.get_pixel(x,h-1)), title + " seamless vertical tiling")
+            _check(image.get_pixel(0,x).is_equal_approx(image.get_pixel(w-1,x)), title + " seamless horizontal tiling")
+    if atlas:
+        _check(seam <= inner * 2.0 + w * 0.02, title + " seamless tiling (wrap)")
     _check(high - low > 0.06, title + " texture must add visible variation")
 func _run() -> void:
     var begin := Time.get_ticks_msec()

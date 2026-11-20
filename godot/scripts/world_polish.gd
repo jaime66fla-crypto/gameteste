@@ -3,6 +3,7 @@ extends Node3D
 ## Centro da Sobrevivência (data/match_layout.json). As partidas online usam os
 ## mapas de blocos (scripts/match_map.gd); o treino offline, training_ground.gd.
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+const MapMaterials = preload("res://scripts/map_materials.gd")
 var mat_cache: Dictionary = {}
 ## Sempre no meio do mundo aberto (sem muros de borda); mantido por compatibilidade.
 var open_world := true
@@ -37,7 +38,11 @@ func _mat(hex_color: String) -> StandardMaterial3D:
         material.roughness = 0.25
         material.metallic = 0.15
     else:
-        material = SurfaceMaterials.make(kinds.get(hex_color, "plaster"), Color(hex_color))
+        # Chão, calçada, parede e telhado: atlas urbano (map_materials.gd).
+        var kind: String = kinds.get(hex_color, "plaster")
+        material = MapMaterials.surface(kind, hex_color)
+        if material == null:
+            material = SurfaceMaterials.make(kind, Color(hex_color))
     mat_cache[hex_color] = material
     return material
 

@@ -5,7 +5,7 @@ extends CharacterBody3D
 ## collision and report hits to the server, which owns every health value.
 signal damaged(actor_id: String, zone: String, point: Vector3, normal: Vector3, weapon_id: String)
 signal bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vector3)
-signal bot_hit(actor_id: String, target_id: String, damage: float)
+signal bot_hit(actor_id: String, target_id: String, zone: String)
 signal bot_loot(actor_id: String, crate_id: String)
 signal bot_heal(actor_id: String) # use a carried medkit
 
@@ -15,6 +15,7 @@ const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const BotNav = preload("res://scripts/net/bot_nav.gd")
+const WeaponData = preload("res://scripts/weapon_data.gd")
 # Bots prefer the strongest weapon they have picked up.
 const WEAPON_PREFERENCE := ["rifle", "smg", "shotgun", "sniper", "pistol"]
 # Body-part volumes: [from bone, to bone, zone, radius in metres].
@@ -37,8 +38,7 @@ const HITBOXES := [
 const GRAVITY := 22.0
 const BOT_SPEED := 4.2
 const BOT_RUN_SPEED := 6.0
-const BOT_DAMAGE := 11.0
-const BOT_FIRE_INTERVAL := 0.45
+const BOT_FIRE_INTERVAL := 0.45 # minimum gap between bot shots (fast guns are slowed to this)
 const BOT_VIEW_RANGE := 40.0
 # Main roads are always clear (tests/map_layout.gd), so bots patrol on them.
 const ROAD_LINES := [-48.0, 0.0, 48.0]
@@ -68,6 +68,10 @@ var _ai_target_id := ""
 var _ai_target: Node3D
 var _think_timer := 0.0
 var _fire_timer := 0.0
+# Bot magazine: each weapon has its own cadence, mag size and reload time.
+var _bot_mag := 0
+var _bot_mag_weapon := ""
+var _bot_reloading := false
 var _waypoint := Vector3.ZERO
 var _has_waypoint := false
 var _stuck_timer := 0.0
@@ -367,7 +371,12 @@ func revive(at: Vector3, weapon: String) -> void:
 	_goal_crate = ""
 	_approach_point = Vector3.INF
 	owned_weapons.clear()
-	give_weapon(weapon)
+	if weapon.is_empty():
+		# Novo round de equipes, jogador remoto: a arma volta com o próximo estado ("w").
+		armed = false
+		_apply_armed()
+	else:
+		give_weapon(weapon)
 
 ## Sobrevivência: jogador que saiu do jogo. Fica deitado de costas, dormindo,
 ## no lugar onde saiu — os outros veem, mas ninguém acerta nem esbarra nele.
@@ -463,7 +472,7 @@ func _animate(delta: float, move: float, running: bool, crouch: bool, aim: bool,
 ## Compact state for the server, same shape as the local player's packet.
 func bot_state() -> Dictionary:
 	var p := global_position
-	return {"id": actor_id, "p": [p.x, p.y, p.z], "y": rotation.y, "w": weapon_id, "m": _move_amount, "r": _move_amount > 0.8, "c": false, "a": _sees_target, "f": not is_on_floor(), "rl": false, "h": not armed, "v": [velocity.x, velocity.z]}
+	return {"id": actor_id, "p": [p.x, p.y, p.z], "y": rotation.y, "w": weapon_id, "m": _move_amount, "r": _move_amount > 0.8, "c": false, "a": _sees_target, "f": not is_on_floor(), "rl": _bot_reloading, "h": not armed, "v": [velocity.x, velocity.z]}
 
 # ---------------------------------------------------------------- bot AI ---
 
@@ -503,8 +512,7 @@ func _run_bot(delta: float) -> void:
 		else:
 			desired = side * 0.8
 		if _fire_timer <= 0.0:
-			_fire_timer = BOT_FIRE_INTERVAL * randf_range(0.8, 1.4)
-			_bot_shoot(distance)
+			_bot_fire_cycle(distance)
 	else:
 		var to := _waypoint - global_position
 		to.y = 0.0
@@ -685,6 +693,24 @@ func _line_of_sight(node: Node3D) -> bool:
 	var query := PhysicsRayQueryParameters3D.create(_eye(), node.global_position + Vector3(0, 1.3, 0), HitboxScript.LAYER_WORLD)
 	return get_world_3d().direct_space_state.intersect_ray(query).is_empty()
 
+## One trigger pull: respects the weapon's interval, magazine and reload.
+func _bot_fire_cycle(distance: float) -> void:
+	var stats: Dictionary = WeaponData.stats(weapon_id)
+	if _bot_mag_weapon != weapon_id:
+		_bot_mag_weapon = weapon_id
+		_bot_mag = int(stats["mag"])
+		_bot_reloading = false
+	if _bot_reloading:
+		_bot_reloading = false
+		_bot_mag = int(stats["mag"])
+	_bot_shoot(distance)
+	_bot_mag -= 1
+	if _bot_mag <= 0:
+		_bot_reloading = true
+		_fire_timer = float(stats["reload"]) * randf_range(1.0, 1.2)
+	else:
+		_fire_timer = maxf(BOT_FIRE_INTERVAL, float(stats["interval"])) * randf_range(0.8, 1.4)
+
 func _bot_shoot(distance: float) -> void:
 	if _ai_target == null:
 		return
@@ -699,8 +725,28 @@ func _bot_shoot(distance: float) -> void:
 	var from := muzzle_position()
 	sound_fx.call("shot", weapon_id)
 	bot_fired.emit(actor_id, weapon_id, from, aim_point)
-	if hit:
-		bot_hit.emit(actor_id, _ai_target_id, BOT_DAMAGE)
+	if not hit:
+		return
+	# Same damage as the player's weapons (the server applies weapon × body zone).
+	if weapon_id == "shotgun":
+		# Pellets spread out: close range lands most of the 8, far range only a few.
+		var pellets := int(WeaponData.stats("shotgun")["pellets"])
+		var landed := clampi(roundi(pellets * (1.0 - distance / 22.0)), 1, pellets)
+		for i in landed:
+			bot_hit.emit(actor_id, _ai_target_id, "chest")
+	else:
+		bot_hit.emit(actor_id, _ai_target_id, _bot_hit_zone())
+
+## Where a bot bullet lands: mostly the torso, sometimes head or limbs.
+func _bot_hit_zone() -> String:
+	var roll := randf()
+	if roll < 0.12:
+		return "head"
+	if roll < 0.67:
+		return "chest"
+	if roll < 0.80:
+		return "pelvis"
+	return "arm" if roll < 0.90 else "leg"
 
 func _nearest_road_point(point: Vector3) -> Vector3:
 	# Snap onto the closest road line, clamped to the map.

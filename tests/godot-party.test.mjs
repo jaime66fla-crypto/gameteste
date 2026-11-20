@@ -71,6 +71,18 @@ async function join(match, { create = false, code = 'ABCDE', name = 'P' } = {}) 
 	return { status: 101, ws: server, id: server.deserializeAttachment().id };
 }
 const say = (match, player, data) => match.webSocketMessage(player.ws, JSON.stringify(data));
+/** One round: `killer` takes out every living player of `team`; then the break ends (alarm). */
+async function winRound(match, killerId, team) {
+	const nextRound = async () => {
+		if (match.match.phase !== 'between') return;
+		match.match.nextRoundAt = 0;
+		await match.alarm();
+	};
+	await nextRound(); // still in the break after a round won by hand
+	const m = match.match;
+	for (const p of Object.values(m.players)) if (p.team === team && !p.dead) match.damage(m.players[killerId], p, 999, 'rifle', 'chest');
+	await nextRound();
+}
 
 test('punches deal damage up close, not from afar, not too fast and never to a teammate', async () => {
 	const match = room();
@@ -178,14 +190,92 @@ test('2x2 with bots: teams filled, no friendly fire, team wins when the other si
 	// Friendly fire is ignored.
 	say(match, a, { t: 'hit', target: b.id, zone: 'chest', w: 'rifle' });
 	assert.equal(m.players[b.id].hp, 100);
-	// Wipe out Bravo's bots.
+	// Wipe out Bravo's bots: Alfa takes round 1, the match goes on.
 	const bots = start.roster.filter((r) => r.team === 1).map((r) => r.id);
 	for (const bot of bots) for (let i = 0; i < 4; i++) say(match, a, { t: 'hit', target: bot, zone: 'chest', w: 'rifle' });
+	const roundEnd = b.ws.last('round_end');
+	assert.deepEqual([roundEnd.round, roundEnd.team, roundEnd.score, roundEnd.last], [1, 0, [1, 0], false]);
+	assert.equal(b.ws.last('end'), undefined, 'one round is not the match');
+	assert.equal(m.phase, 'between');
+	// Two more rounds for Alfa: 3 x 0 ends the best of 5.
+	await winRound(match, a.id, 1);
+	assert.deepEqual(b.ws.last('round').score, [2, 0]);
+	await winRound(match, a.id, 1);
+	await winRound(match, a.id, 1);
 	const end = b.ws.last('end');
 	assert.ok(end, 'match ended');
 	assert.equal(end.team, 0);
 	assert.equal(end.name, 'Equipe Alfa');
+	assert.deepEqual(end.rounds, [3, 0]);
+	assert.equal(end.round, 3);
 	assert.equal(m.phase, 'finished');
+});
+
+test('rounds: best of 5 with score, break, everyone back at base, survivors keep gear, shop reopens', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	say(match, b, { t: 'ready' }); // A on Alfa, B on Bravo, each with a bot
+	say(match, a, { t: 'start' });
+	const start = a.ws.last('start');
+	assert.deepEqual(start.rounds, { round: 1, total: 5, toWin: 3, score: [0, 0], length: 150000 });
+	assert.equal(start.duration, 150000, 'the timer is one round');
+	const m = match.match;
+	const me = m.players[a.id];
+	me.inv = { rifle: true };
+	const spawnBefore = me.p;
+	// Round 1: Alfa wins.
+	for (const p of Object.values(m.players)) if (p.team === 1) match.damage(me, p, 999, 'rifle', 'chest');
+	assert.equal(m.phase, 'between');
+	const credits = b.ws.last('credits');
+	assert.deepEqual([credits.amount, credits.round], [800, true], 'losers get more credits');
+	assert.equal(a.ws.last('credits').amount, 500);
+	// During the break nothing counts.
+	say(match, b, { t: 'hit', target: a.id, zone: 'head', w: 'rifle' });
+	assert.equal(me.hp, 100);
+	m.nextRoundAt = 0;
+	await match.alarm();
+	const round = b.ws.last('round');
+	assert.deepEqual([round.round, round.total, round.score], [2, 5, [1, 0]]);
+	assert.equal(round.buy, 30000);
+	assert.equal(m.phase, 'running');
+	assert.ok(Object.values(m.players).every((p) => !p.dead && p.hp === 100), 'everyone back');
+	assert.deepEqual(me.inv, { rifle: true }, 'survivor keeps the rifle');
+	assert.ok(round.roster.find((r) => r.id === b.id).revived, 'B came back');
+	assert.ok(round.roster.every((r) => Array.isArray(r.sp)));
+	assert.ok(spawnBefore, 'had a spawn');
+	assert.ok(m.players[b.id].buyUntil > Date.now(), 'shop reopens');
+	// Rounds 2-3 for Bravo, 4 for Alfa: 2 x 2, the 5th decides.
+	await winRound(match, b.id, 0);
+	await winRound(match, b.id, 0);
+	await winRound(match, a.id, 1);
+	assert.deepEqual(m.roundWins, [2, 2]);
+	assert.equal(match.match.round, 5);
+	await winRound(match, b.id, 0);
+	const end = a.ws.last('end');
+	assert.deepEqual([end.team, end.rounds, end.round, end.reason], [1, [2, 3], 5, 'rounds']);
+	// Back in the room afterwards.
+	assert.equal(match.match.phase, 'waiting');
+});
+
+test('bot hits deal the same damage as player weapons (weapon × zone), only with a weapon the bot has', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	say(match, b, { t: 'team', team: 0 });
+	say(match, b, { t: 'ready' });
+	say(match, a, { t: 'start' });
+	const m = match.match;
+	const bot = Object.values(m.players).find((p) => p.bot && p.team === 1);
+	bot.inv = { sniper: true };
+	say(match, a, { t: 'hit', bot: bot.id, target: b.id, zone: 'chest', w: 'rifle' });
+	assert.equal(m.players[b.id].hp, 100, 'weapon the bot does not have');
+	say(match, a, { t: 'hit', bot: bot.id, target: b.id, zone: 'leg', w: 'sniper' });
+	assert.equal(m.players[b.id].hp, 100 - 95 * 0.7);
+	bot.inv = { pistol: true };
+	m.players[a.id].hp = 100;
+	say(match, a, { t: 'hit', bot: bot.id, target: a.id, zone: 'head', w: 'pistol' });
+	assert.equal(m.players[a.id].hp, 100 - 22 * 2);
 });
 
 test('custom room is preserved after the match: same code, teams, leader and mode; ready again', async () => {
@@ -197,9 +287,8 @@ test('custom room is preserved after the match: same code, teams, leader and mod
 	say(match, a, { t: 'start' });
 	const m = match.match;
 	for (const id of Object.keys(m.players)) m.players[id].inv = { rifle: true };
-	// Alfa (A) wipes out Bravo (B + 3 bots).
-	const bravo = a.ws.last('start').roster.filter((r) => r.team === 1).map((r) => r.id);
-	for (const target of bravo) for (let i = 0; i < 4; i++) say(match, a, { t: 'hit', target, zone: 'chest', w: 'rifle' });
+	// Alfa (A) wipes out Bravo (B + 3 bots) three rounds in a row.
+	for (let round = 0; round < 3; round++) await winRound(match, a.id, 1);
 	assert.equal(b.ws.last('end').team, 0);
 	const lobby = b.ws.last('party');
 	assert.equal(match.match.phase, 'waiting');
@@ -348,7 +437,7 @@ test('team rooms: bots spawn armed; kills earn credits (player 400, bot 200, +10
 	assert.deepEqual([a.ws.last('credits').amount, a.ws.last('credits').head], [300, true]);
 	if (m.players[b.id].team !== me.team) {
 		match.damage(me, m.players[b.id], 999, 'pistol', 'chest');
-		assert.equal(me.credits, 1500);
+		assert.equal(me.credits, 1500 + 500, 'kill (400) + round won (500): Bravo is out');
 	}
 });
 

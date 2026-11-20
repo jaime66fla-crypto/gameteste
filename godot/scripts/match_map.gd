@@ -1,9 +1,12 @@
 extends Node3D
-## Mapa da partida online, montado com blocos coloridos e lisos (visual de
-## brinquedo, sem texturas) a partir de data/match_maps.json:
+## Mapa da partida online, montado com blocos a partir de data/match_maps.json:
 ## Praça central (Eliminatória), Cruz (Mata-mata) e Equipes (2x2 e 4x4).
+## Cada cor da paleta vira um material PBR do atlas urbano (map_materials.gd:
+## grama, asfalto, piso de pedra, concreto, tijolo, telha ondulada, caixotes e
+## reboco pintado nas casas coloridas).
 ## Uma malha por cor (poucas draw calls) e um StaticBody3D com todas as caixas.
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
+const MapMaterials = preload("res://scripts/map_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const BotNav = preload("res://scripts/net/bot_nav.gd")
 
@@ -11,7 +14,6 @@ var map_half := 40.0
 var half_x := 40.0
 var half_z := 40.0
 var map_id := ""
-var _mats: Dictionary = {}
 
 func _ready() -> void:
 	name = "MatchMap"
@@ -42,23 +44,9 @@ func _ready() -> void:
 		var mesh := MeshInstance3D.new()
 		mesh.name = "Blocks_" + str(colour)
 		mesh.mesh = (batches[colour] as SurfaceTool).commit()
-		mesh.material_override = _material(str(palette.get(colour, "#a3a2a5")))
+		mesh.material_override = MapMaterials.for_colour(str(colour), str(palette.get(colour, "#a3a2a5")))
 		add_child(mesh)
 	_edge_barriers()
-
-func _material(hex: String) -> StandardMaterial3D:
-	if _mats.has(hex):
-		return _mats[hex]
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color(hex)
-	material.roughness = 0.55
-	material.metallic = 0.0
-	material.metallic_specular = 0.35
-	# As faces das caixas são montadas à mão: sem culling, nenhuma some por
-	# causa da ordem dos vértices.
-	material.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_mats[hex] = material
-	return material
 
 func _collider(body: StaticBody3D, center: Vector3, size: Vector3) -> void:
 	var collider := CollisionShape3D.new()
@@ -92,7 +80,11 @@ func _add_box(batches: Dictionary, colour: String, center: Vector3, size: Vector
 		var du := u * h
 		var dv := v * h
 		var corners := [c - du - dv, c + du - dv, c + du + dv, c - du + dv]
+		# UV da face inteira (0..1): os caixotes mostram a imagem uma vez por face;
+		# as outras superfícies usam triplanar e ignoram isto.
+		var uvs := [Vector2(0, 1), Vector2(1, 1), Vector2(1, 0), Vector2(0, 0)]
 		for index in [0, 2, 1, 0, 3, 2]:
+			st.set_uv(uvs[index])
 			st.set_normal(n)
 			st.add_vertex(corners[index])
 

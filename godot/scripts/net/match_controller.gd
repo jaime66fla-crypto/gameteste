@@ -59,6 +59,12 @@ var shop: Control
 var my_team := -1
 var teams: Dictionary = {} # id -> 0/1
 var team_names: Array = ["Alfa", "Bravo"]
+## Rounds da sala personalizada (melhor de 5): placar de rounds por equipe.
+var round_number := 1
+var round_total := 5
+var round_to_win := 3
+var round_score: Array = [0, 0]
+var round_break := false # pausa entre rounds (o servidor ignora tiros e movimento)
 var match_xp := 0
 var killer_panel: PanelContainer
 var killer_title: Label
@@ -115,6 +121,8 @@ func _ready() -> void:
 		shop.connect("close_requested", _close_shop)
 	if info.get("teams") is Array:
 		team_names = info["teams"]
+	if info.get("rounds") is Dictionary:
+		_read_rounds(info["rounds"])
 	for entry in info.get("roster", []):
 		teams[str(entry["id"])] = int(entry.get("team", -1))
 	my_team = int(teams.get(my_id, -1))
@@ -170,6 +178,7 @@ func _ready() -> void:
 	if team_mode:
 		var team_size := int(alive_count / 2.0)
 		_feed("Partida em equipes %dx%d! Você está na equipe %s — elimine a equipe adversária." % [team_size, team_size, _team_name(my_team)])
+		_feed("Melhor de %d rounds: a primeira equipe a vencer %d leva a partida." % [round_total, round_to_win])
 		_feed("Aliados têm o nome em azul (visível através das paredes). Não há fogo amigo.")
 	elif dm_mode:
 		_feed("Mata-mata! %d combatentes — o primeiro a fazer %d abates vence." % [alive_count, kill_goal])
@@ -280,7 +289,10 @@ func _on_bought(data: Dictionary) -> void:
 
 func _on_credits(data: Dictionary) -> void:
 	credits = int(data.get("total", credits))
-	_xp_toast("+$%d  créditos%s" % [int(data.get("amount", 0)), "  (cabeça)" if bool(data.get("head", false)) else ""])
+	var tag := "  (cabeça)" if bool(data.get("head", false)) else ""
+	if bool(data.get("round", false)):
+		tag = "  (fim do round)"
+	_xp_toast("+$%d  créditos%s" % [int(data.get("amount", 0)), tag])
 	_refresh_shop()
 
 ## Aliados vivos, para o minimapa (só em equipes).
@@ -372,6 +384,10 @@ func _on_message(data: Dictionary) -> void:
 				_feed("%s saiu da partida." % names[who])
 		"end":
 			_on_end(data)
+		"round_end":
+			_on_round_end(data)
+		"round":
+			_on_round(data)
 		"looted":
 			_on_looted(data)
 		"respawn":
@@ -799,10 +815,10 @@ func _on_bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vecto
 	_tracer(from, to)
 	Net.send({"t": "shot", "bot": actor_id, "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]})
 
-func _on_bot_hit(actor_id: String, target_id: String, damage: float) -> void:
+func _on_bot_hit(actor_id: String, target_id: String, zone: String) -> void:
 	var bot = actors.get(actor_id)
 	var weapon: String = bot.weapon_id if bot != null else "rifle"
-	Net.send({"t": "hit", "bot": actor_id, "target": target_id, "dmg": damage, "w": weapon})
+	Net.send({"t": "hit", "bot": actor_id, "target": target_id, "zone": zone, "w": weapon})
 
 func _on_connection_lost(reason: String) -> void:
 	if finished:
@@ -867,7 +883,103 @@ func _on_respawn(data: Dictionary) -> void:
 		actor.set("medkits", int(data.get("medkits", 0)))
 		actor.call("set_controlled", is_host() and actor.is_bot)
 
-func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int = 0) -> void:
+# --------------------------------------------------------------- rounds ---
+
+func _read_rounds(info: Dictionary) -> void:
+	round_number = int(info.get("round", round_number))
+	round_total = int(info.get("total", round_total))
+	round_to_win = int(info.get("toWin", round_to_win))
+	var score = info.get("score")
+	if score is Array and score.size() == 2:
+		round_score = [int(score[0]), int(score[1])]
+
+## "ALFA 1 x 0 BRAVO" (sempre Alfa à esquerda, igual para as duas equipes).
+func _round_score_text() -> String:
+	return "%s %d  x  %d %s" % [_team_name(0).to_upper(), int(round_score[0]), int(round_score[1]), _team_name(1).to_upper()]
+
+func _clock_text() -> String:
+	var left := maxi(0, int(ceil((match_ends_msec - Time.get_ticks_msec()) / 1000.0))) if match_ends_msec > 0 else 0
+	return "%d:%02d" % [floori(left / 60.0), left % 60]
+
+## Fim de um round: placar na tela e uma pausa curta (todos parados).
+func _on_round_end(data: Dictionary) -> void:
+	var score = data.get("score")
+	if score is Array and score.size() == 2:
+		round_score = [int(score[0]), int(score[1])]
+	if bool(data.get("last", false)):
+		return # o "end" chega em seguida, com a cena do vencedor e o placar final
+	round_break = true
+	_close_shop()
+	killer_panel.visible = false
+	Input.action_release("fire")
+	Input.action_release("aim")
+	if not local_dead:
+		player.call("cancel_channel")
+		player.call("cancel_grenade_aim")
+		player.set("aiming", false)
+		player.velocity = Vector3.ZERO
+		player.process_mode = Node.PROCESS_MODE_DISABLED
+	var winner = data.get("team")
+	var round_done := int(data.get("round", round_number))
+	var title := "ROUND %d — EMPATE" % round_done
+	if winner != null and int(winner) == my_team:
+		title = "ROUND %d — VITÓRIA DA SUA EQUIPE" % round_done
+	elif winner != null:
+		title = "ROUND %d — VITÓRIA DA EQUIPE %s" % [round_done, _team_name(int(winner)).to_upper()]
+	var why := "Tempo esgotado." if str(data.get("reason", "")) == "tempo" else ""
+	var next_s := int(ceil(float(data.get("next", 5000)) / 1000.0))
+	_show_center(title, "%s\n%sPróximo round em %d s  ·  Melhor de %d" % [_round_score_text(), (why + "  ") if not why.is_empty() else "", next_s, round_total])
+	_feed("Round %d: %s. Placar %s." % [round_done, "empate" if winner == null else "Equipe " + _team_name(int(winner)), _round_score_text()])
+	player.get("sound_fx").call("kill_confirm" if winner != null and int(winner) == my_team else "reload")
+
+## Novo round: todos de volta à base com vida cheia; quem sobreviveu segue armado.
+func _on_round(data: Dictionary) -> void:
+	_read_rounds(data)
+	round_break = false
+	center_panel.visible = false
+	alive_count = int(data.get("alive", alive_count))
+	match_ends_msec = Time.get_ticks_msec() + int(data.get("duration", 150000))
+	_apply_host()
+	var buy_ms := int(data.get("buy", 0))
+	for entry in data.get("roster", []):
+		var id := str(entry.get("id", ""))
+		var sp = entry.get("sp")
+		if not (sp is Array and sp.size() == 2):
+			continue
+		var at := Vector3(float(sp[0]), 0, float(sp[1]))
+		if id == my_id:
+			_round_reset_local(at, buy_ms, int(entry.get("medkits", 0)), int(entry.get("nades", 0)))
+		elif actors.has(id):
+			var actor = actors[id]
+			actor.call("revive", at + Vector3(0, 0.1, 0), str(entry.get("w", "")))
+			actor.set("medkits", int(entry.get("medkits", 0)))
+			actor.rotation.y = MatchLayout.spawn_yaw(at)
+			actor.call("set_controlled", is_host() and actor.is_bot)
+	_toast("ROUND %d" % round_number)
+	_feed("Round %d de %d  ·  %s" % [round_number, round_total, _round_score_text()])
+
+func _round_reset_local(at: Vector3, buy_ms: int, medkits: int, nades: int) -> void:
+	if finished:
+		return
+	if local_dead:
+		_revive_local(at, "", 0, buy_ms, "ROUND %d" % round_number)
+	else:
+		player.process_mode = Node.PROCESS_MODE_INHERIT
+		player.global_position = at + Vector3(0, 0.1, 0)
+		player.velocity = Vector3.ZERO
+		var facing := MatchLayout.spawn_yaw(at)
+		player.set("yaw", facing)
+		player.rotation.y = facing
+		my_hp = 100.0
+		if not leave_panel.visible:
+			PointerMode.capture()
+		if shop != null and buy_ms > 0:
+			buy_until_msec = Time.get_ticks_msec() + buy_ms
+			_open_shop()
+	my_medkits = medkits
+	my_nades = nades
+
+func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int = 0, banner: String = "DE VOLTA AO COMBATE") -> void:
 	if not local_dead or finished:
 		return
 	local_dead = false
@@ -890,11 +1002,12 @@ func _revive_local(at: Vector3, weapon: String, reserve: int, data_buy_ms: int =
 	player.process_mode = Node.PROCESS_MODE_INHERIT
 	(player.get("camera") as Camera3D).current = true
 	player.call("start_unarmed")
-	player.call("give_weapon", weapon, reserve)
+	if not weapon.is_empty():
+		player.call("give_weapon", weapon, reserve)
 	killer_panel.visible = false
 	if not leave_panel.visible:
 		PointerMode.capture()
-	_toast("DE VOLTA AO COMBATE")
+	_toast(banner)
 	if shop != null and data_buy_ms > 0:
 		buy_until_msec = Time.get_ticks_msec() + data_buy_ms
 		_open_shop()
@@ -946,12 +1059,13 @@ func _process(delta: float) -> void:
 			watched = "%s (%s)" % [names.get(id, "?"), _describe(id)]
 		if team_mode:
 			var sides := _team_alive()
-			status_label.text = "ELIMINADO  |  ALIADOS: %d  x  INIMIGOS: %d  |  ASSISTINDO: %s" % [sides[0], sides[1], watched]
+			status_label.text = "ROUND %d/%d  •  %s\nELIMINADO  |  ALIADOS: %d  x  INIMIGOS: %d  |  ASSISTINDO: %s" % [round_number, round_total, _round_score_text(), sides[0], sides[1], watched]
 		else:
 			status_label.text = "ELIMINADO  |  VIVOS: %d  |  ASSISTINDO: %s" % [alive_count, watched]
 	elif team_mode:
 		var sides := _team_alive()
-		status_label.text = "%s  %d  x  %d  •  ABATES %d" % [_team_name(my_team).to_upper(), sides[0], sides[1], my_kills]
+		var clock := "PAUSA" if round_break else _clock_text()
+		status_label.text = "ROUND %d/%d  •  %s  •  %s\n%s  %d  x  %d  •  ABATES %d" % [round_number, round_total, _round_score_text(), clock, _team_name(my_team).to_upper(), sides[0], sides[1], my_kills]
 	else:
 		status_label.text = "VIVOS %d  •  ABATES %d" % [alive_count, my_kills]
 	health_bar.value = my_hp
@@ -1089,6 +1203,12 @@ func _on_team_end(data: Dictionary) -> void:
 		title = "VITÓRIA DA EQUIPE!" if int(winner) == my_team else "DERROTA — EQUIPE %s VENCEU" % _team_name(int(winner)).to_upper()
 	var outcome := "draw" if winner == null else ("win" if int(winner) == my_team else "lose")
 	var reason := "Tempo esgotado: venceu a equipe com mais abates." if str(data.get("reason", "")) == "tempo" else ("Ninguém venceu." if winner == null else "A equipe %s eliminou a outra." % _team_name(int(winner)))
+	var rounds = data.get("rounds")
+	if rounds is Array and rounds.size() == 2:
+		round_score = [int(rounds[0]), int(rounds[1])]
+		reason = "Placar de rounds: %s  ·  %d rounds jogados." % [_round_score_text(), int(data.get("round", round_number))]
+		if winner == null:
+			reason = "Empate nos rounds e nos abates: %s." % _round_score_text()
 	var show_board := func():
 		_show_results(data, title, reason, outcome)
 		if not Net.party_code.is_empty():
@@ -1628,7 +1748,8 @@ func _show_results(data: Dictionary, title: String, subtitle: String, outcome: S
 	column.add_child(tiles)
 	var place_text := "#%d de %d" % [my_place, board.size()] if my_place > 0 else "—"
 	if team_mode:
-		var score: Array = data.get("score", [0, 0])
+		# Placar de rounds (Alfa x Bravo); servidores antigos mandam só os abates.
+		var score: Array = data.get("rounds", data.get("score", [0, 0]))
 		place_text = "%d  x  %d" % [int(score[0]) if score.size() > 0 else 0, int(score[1]) if score.size() > 1 else 0]
 	for tile in [["PLACAR" if team_mode else "POSIÇÃO", place_text], ["ABATES", str(int(my_row.get("kills", my_kills)))], ["XP DA PARTIDA", "%+d" % int(my_row.get("xp", match_xp))]]:
 		tiles.add_child(_result_tile(str(tile[0]), str(tile[1]), accent if tile[0] == "XP DA PARTIDA" else RES_TEXT))

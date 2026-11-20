@@ -49,7 +49,6 @@ const PUNCH_REACH = 3.2; // metros entre os dois (folga para o atraso da rede)
 const PUNCH_COOLDOWN_MS = 550;
 // Body-part multipliers. Matches godot/scripts/net/hitbox.gd.
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
-const BOT_DAMAGE = 14;
 const MAX_HITS_PER_SECOND = 18; // shotgun fires 8 pellets per shot
 const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cabo Nunes', 'Sgt. Prado', 'Soldado Reis', 'Cabo Vidal'];
 // Custom rooms ("party:<code>"): two teams of 2 or 4, created by a leader who
@@ -57,6 +56,18 @@ const BOT_NAMES = ['Cabo Rocha', 'Sgt. Lima', 'Recruta Dias', 'Ten. Faria', 'Cab
 // team starts in one of the two mirrored bases; 2x2 uses the two middle spots.
 const TEAM_NAMES = ['Alfa', 'Bravo'];
 const TEAM_SIZES = [2, 4];
+// Custom rooms play rounds: best of ROUNDS (first to ROUNDS_TO_WIN round wins,
+// or the round score after the last one). A round ends when a side is wiped
+// out (or on ROUND_MS timeout: most kills in the round, then most alive).
+// Between rounds everyone waits ROUND_BREAK_MS, then all return to their base
+// at full health; survivors keep their gear, the fallen get it from the shop
+// (open for ROUND_BUY_MS). Kills and credits carry over.
+const ROUNDS = 5;
+const ROUNDS_TO_WIN = 3;
+const ROUND_MS = 150000; // 2.5 minutes
+const ROUND_BREAK_MS = 5000;
+const ROUND_BUY_MS = 30000;
+const ROUND_CREDITS = { win: 500, loss: 800 };
 
 /** Map of a match: Equipes for custom rooms, Cruz for mata-mata, Praça for elimination. */
 function mapFor(m) {
@@ -274,6 +285,7 @@ export class GodotMatch {
 	}
 
 	matchLength() {
+		if (this.match.party) return ROUND_MS; // one round
 		return this.isDm() ? DM_MATCH_MS : MAX_MATCH_MS;
 	}
 
@@ -458,19 +470,13 @@ export class GodotMatch {
 				}
 			}
 			m.order = Object.keys(m.players);
-			// Random base for each team, random spot inside it (2x2: the two middle spots).
-			const sides = Math.random() < 0.5 ? [0, 1] : [1, 0];
-			const slots = [0, 1].map(() => shuffle(m.size <= 2 ? [0, 1] : [0, 1, 2, 3]));
-			const seen = [0, 0];
-			for (const id of m.order) {
-				const player = m.players[id];
-				const side = sides[player.team];
-				const pool = slots[player.team];
-				const k = pool[seen[player.team]++ % pool.length];
-				player.spawn = side * 4 + k; // index into the map's spawns (blue base first)
-				player.p = teamSpawn(map, side, k);
-				player.inv = {};
-			}
+			// Random base for each team (kept for every round).
+			m.sides = Math.random() < 0.5 ? [0, 1] : [1, 0];
+			this.placeTeams(map);
+			for (const id of m.order) m.players[id].inv = {};
+			m.round = 1;
+			m.roundWins = [0, 0];
+			m.roundBase = Object.fromEntries(m.order.map((id) => [id, 0]));
 		} else {
 			for (let n = 0; humans.length + n < CAPACITY; n++) {
 				const id = 'bot' + (n + 1);
@@ -516,6 +522,7 @@ export class GodotMatch {
 			respawn: this.isDm() ? DM_RESPAWN_MS : undefined,
 			kit: this.isDm() ? { [DM_KIT]: RESERVE_AMMO[DM_KIT] } : undefined,
 			teams: m.party ? TEAM_NAMES : undefined,
+			rounds: m.party ? this.roundInfo() : undefined,
 			roster: m.order.map((id) => {
 				const p = m.players[id];
 				const entry = { id, name: p.name, bot: p.bot, spawn: p.spawn, rank: p.rank || '' };
@@ -527,6 +534,27 @@ export class GodotMatch {
 			crates: Object.values(m.crates),
 		});
 		this.schedule();
+	}
+
+	/** Each team's base (m.sides), a random spot inside it (2x2: the two middle spots). */
+	placeTeams(map) {
+		const m = this.match;
+		const slots = [0, 1].map(() => shuffle(m.size <= 2 ? [0, 1] : [0, 1, 2, 3]));
+		const seen = [0, 0];
+		for (const id of m.order) {
+			const player = m.players[id];
+			const side = m.sides[player.team];
+			const pool = slots[player.team];
+			const k = pool[seen[player.team]++ % pool.length];
+			player.spawn = side * 4 + k; // index into the map's spawns (blue base first)
+			player.p = teamSpawn(map, side, k);
+		}
+	}
+
+	/** Round score sent to clients (custom rooms). */
+	roundInfo() {
+		const m = this.match;
+		return { round: m.round || 1, total: ROUNDS, toWin: ROUNDS_TO_WIN, score: m.roundWins || [0, 0], length: ROUND_MS };
 	}
 
 	/** The shop exists only in custom team rooms (Equipes 2x2/4x4); public rooms use crates. */
@@ -788,7 +816,7 @@ export class GodotMatch {
 				if (!attacker || attacker.dead || (d.bot && (!isHost || !attacker.bot))) return;
 				// Only weapons actually picked up can deal damage.
 				const owned = attacker.inv || {};
-				if (attacker.bot ? !Object.keys(owned).length : !owned[d.w]) return;
+				if (!owned[d.w]) return;
 				const target = m.players[d.target];
 				if (!target || target.dead || target.id === attacker.id) return;
 				if (m.party && target.team === attacker.team) return; // no friendly fire
@@ -800,8 +828,8 @@ export class GodotMatch {
 					if (!verdict.ok) return;
 					zone = verdict.zone;
 				}
-				if (attacker.bot) damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), BOT_DAMAGE) : 0;
-				// Human hits: the server computes damage from weapon and body zone.
+				// Bots and humans: the server computes damage from weapon and body zone.
+				if (attacker.bot) damage = (WEAPON_DAMAGE[d.w] || 0) * ZONE_MULTIPLIER[zone || 'chest'];
 				else if (zone) damage = (WEAPON_DAMAGE[d.w] || 0) * ZONE_MULTIPLIER[zone];
 				else damage = finite(d.dmg, 1000) ? Math.min(Math.max(d.dmg, 0), WEAPON_DAMAGE[d.w] || 0) : 0;
 				if (damage <= 0 || !this.allowHit(attacker.id)) return;
@@ -993,17 +1021,62 @@ export class GodotMatch {
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
 	}
 
-	/** Team match: ends when one side is wiped out; on timeout, most kills (then most alive) wins. */
+	/**
+	 * Team round: ends when one side is wiped out; on timeout, most kills in the
+	 * round (then most alive) wins it. The match ends once a team has
+	 * ROUNDS_TO_WIN rounds or after the last round; otherwise a short break and
+	 * the next round (nextRound).
+	 */
 	checkTeamEnd(force) {
 		const m = this.match;
 		const alive = this.alive();
 		const aliveBy = [0, 1].map((team) => alive.filter((id) => m.players[id].team === team).length);
 		if (aliveBy[0] && aliveBy[1] && !force) return;
 		const killsBy = [0, 1].map((team) => m.order.reduce((sum, id) => sum + (m.players[id].team === team ? m.players[id].kills : 0), 0));
+		const base = m.roundBase || {};
+		const roundKills = [0, 1].map((team) =>
+			m.order.reduce((sum, id) => sum + (m.players[id].team === team ? m.players[id].kills - (base[id] || 0) : 0), 0),
+		);
+		let roundWinner = null;
+		if (!aliveBy[0] !== !aliveBy[1]) roundWinner = aliveBy[0] ? 0 : 1;
+		else if (roundKills[0] !== roundKills[1]) roundWinner = roundKills[0] > roundKills[1] ? 0 : 1;
+		else if (aliveBy[0] !== aliveBy[1]) roundWinner = aliveBy[0] > aliveBy[1] ? 0 : 1;
+		m.round = m.round || 1;
+		m.roundWins = m.roundWins || [0, 0];
+		if (roundWinner !== null) m.roundWins[roundWinner]++;
+		const decided = m.roundWins[0] >= ROUNDS_TO_WIN || m.roundWins[1] >= ROUNDS_TO_WIN || m.round >= ROUNDS;
+		const roundEnd = {
+			t: 'round_end',
+			round: m.round,
+			team: roundWinner,
+			name: roundWinner === null ? 'Empate' : 'Equipe ' + TEAM_NAMES[roundWinner],
+			reason: force ? 'tempo' : 'eliminacao',
+			score: m.roundWins,
+			total: ROUNDS,
+			last: decided,
+			next: decided ? 0 : ROUND_BREAK_MS,
+		};
+		if (!decided) {
+			// Round credits (losers get more, to buy back in).
+			for (const id of m.order) {
+				const p = m.players[id];
+				if (p.bot) continue;
+				const amount = roundWinner !== null && p.team === roundWinner ? ROUND_CREDITS.win : ROUND_CREDITS.loss;
+				p.credits = Math.min(MAX_CREDITS, (p.credits || 0) + amount);
+				const ws = this.sessions.get(id);
+				if (ws) this.send(ws, { t: 'credits', amount, total: p.credits, victim: '', round: true });
+			}
+			m.phase = 'between';
+			m.nextRoundAt = Date.now() + ROUND_BREAK_MS;
+			this.save();
+			this.broadcast(roundEnd);
+			this.ctx.waitUntil(this.ctx.storage.setAlarm(m.nextRoundAt));
+			return;
+		}
+		this.broadcast(roundEnd);
 		let winnerTeam = null;
-		if (!aliveBy[0] !== !aliveBy[1]) winnerTeam = aliveBy[0] ? 0 : 1;
+		if (m.roundWins[0] !== m.roundWins[1]) winnerTeam = m.roundWins[0] > m.roundWins[1] ? 0 : 1;
 		else if (killsBy[0] !== killsBy[1]) winnerTeam = killsBy[0] > killsBy[1] ? 0 : 1;
-		else if (aliveBy[0] !== aliveBy[1]) winnerTeam = aliveBy[0] > aliveBy[1] ? 0 : 1;
 		m.phase = 'finished';
 		m.winner = null;
 		m.winnerTeam = winnerTeam;
@@ -1019,8 +1092,10 @@ export class GodotMatch {
 			winner: null,
 			team: winnerTeam,
 			name: winnerTeam === null ? 'Empate' : 'Equipe ' + TEAM_NAMES[winnerTeam],
-			reason: force ? 'tempo' : 'eliminacao',
+			reason: 'rounds',
 			score: killsBy,
+			rounds: m.roundWins,
+			round: m.round,
 			board: m.order
 				.map((id) => ({ id, name: m.players[id].name, kills: m.players[id].kills, bot: m.players[id].bot, rank: m.players[id].rank || '', xp: m.players[id].xpGain || 0, team: m.players[id].team }))
 				.sort((a, b) => a.team - b.team || b.kills - a.kills),
@@ -1029,6 +1104,47 @@ export class GodotMatch {
 		// Custom rooms survive the match: everyone goes back to the same lobby.
 		if (m.party) return this.returnToRoom();
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(Date.now() + CLOSE_AFTER_END_MS));
+	}
+
+	/**
+	 * Next round: everyone still in the match back to their base at full health.
+	 * Survivors keep their gear; fallen bots get a new random weapon; the shop
+	 * reopens for ROUND_BUY_MS. Whoever left stays out.
+	 */
+	nextRound() {
+		const m = this.match;
+		if (m.phase !== 'between') return;
+		const now = Date.now();
+		const map = mapFor(m);
+		m.round = (m.round || 1) + 1;
+		this.placeTeams(map);
+		const roster = [];
+		for (const id of m.order) {
+			const p = m.players[id];
+			const present = p.bot || this.sessions.has(id);
+			if (!present) {
+				Object.assign(p, { dead: true, hp: 0 });
+				continue;
+			}
+			const wasDead = p.dead;
+			Object.assign(p, { dead: false, hp: 100, healAt: 0, safeUntil: 0, buyUntil: now + ROUND_BUY_MS });
+			p.inv = p.inv || {};
+			if (p.bot && !Object.keys(p.inv).length) this.armBot(p);
+			const entry = { id, sp: [p.p[0], p.p[2]], spawn: p.spawn, revived: wasDead, medkits: p.medkits || 0, nades: p.nades || 0 };
+			if (p.bot) entry.w = Object.keys(p.inv)[0];
+			roster.push(entry);
+		}
+		m.roundBase = Object.fromEntries(m.order.map((id) => [id, m.players[id].kills]));
+		m.grenades = {};
+		m.phase = 'running';
+		m.startedAt = now;
+		m.nextRoundAt = 0;
+		if (!m.host || !this.sessions.has(m.host)) m.host = m.order.find((id) => this.sessions.has(id)) || null;
+		this.hitCheck.reset();
+		this.save();
+		this.broadcast({ t: 'round', ...this.roundInfo(), host: m.host, alive: this.alive().length, buy: ROUND_BUY_MS, duration: ROUND_MS, roster });
+		this.schedule();
+		this.checkEnd(); // a side with nobody left (everyone quit) loses right away
 	}
 
 	/**
@@ -1067,6 +1183,9 @@ export class GodotMatch {
 			if (now >= m.startedAt + this.matchLength()) return this.checkEnd(true);
 			if (this.isDm()) this.dmTick(now);
 			this.schedule();
+		} else if (m.phase === 'between') {
+			if (now >= (m.nextRoundAt || 0)) return this.nextRound();
+			this.ctx.waitUntil(this.ctx.storage.setAlarm(m.nextRoundAt));
 		} else {
 			for (const ws of this.sessions.values()) {
 				try {
@@ -1103,7 +1222,7 @@ export class GodotMatch {
 		if (m.phase === 'running' && player && !player.dead) this.credit(player, XP_REWARDS.quit, 'quit');
 		if (!this.sessions.size) {
 			// Last one out: still save the XP this player earned, then close the room.
-			if (m.phase === 'running' && player) this.ctx.waitUntil(this.flush(player, false));
+			if ((m.phase === 'running' || m.phase === 'between') && player) this.ctx.waitUntil(this.flush(player, false));
 			return this.reset();
 		}
 		if (m.phase === 'waiting') {
@@ -1115,7 +1234,8 @@ export class GodotMatch {
 			return;
 		}
 		this.broadcast({ t: 'leave', id: meta.id });
-		if (m.phase !== 'running' || !player) return;
+		// 'between' = pause between rounds of a custom room: still in the match.
+		if ((m.phase !== 'running' && m.phase !== 'between') || !player) return;
 		// Leaving keeps the XP already earned (no match/win bonus), minus the quit penalty.
 		this.ctx.waitUntil(this.flush(player, false));
 		if (m.host === meta.id) {

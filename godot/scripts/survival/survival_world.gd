@@ -7,6 +7,7 @@ extends Node3D
 ## Recipientes (saque) e recursos (coleta) guardam o id do servidor em
 ## `containers` / `resources`, para o controlador achar o que está perto.
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+const MapMaterials = preload("res://scripts/map_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CarModel = preload("res://scripts/survival/car_model.gd")
@@ -203,7 +204,13 @@ func in_tall_grass(point: Vector3) -> bool:
 func _mat(kind: String, hex: String) -> StandardMaterial3D:
 	var key := kind + hex
 	if not _mats.has(key):
-		_mats[key] = SurfaceMaterials.make(kind, Color(hex)) if kind != "flat" else _flat(hex)
+		# Chão, estrada, parede e telhado: atlas urbano (map_materials.gd);
+		# madeira, metal e o resto continuam em SurfaceMaterials.
+		var atlas := MapMaterials.surface(kind, hex) if kind != "flat" else null
+		if atlas != null:
+			_mats[key] = atlas
+		else:
+			_mats[key] = SurfaceMaterials.make(kind, Color(hex)) if kind != "flat" else _flat(hex)
 	return _mats[key]
 
 func _flat(hex: String) -> StandardMaterial3D:
@@ -258,7 +265,7 @@ func _ground() -> void:
 	for slab in slabs:
 		_solid(self, slab[0], slab[1], grass).name = "Ground"
 	# Manchas de terra e de grama mais clara/escura, para o campo não ficar liso.
-	var tints := [_mat("concrete", "#7a6a4f"), _mat("grass", "#6f8a52"), _mat("grass", "#4e6a40"), _mat("grass", "#7c8e4a")]
+	var tints := [_mat("dirt", "#7a6a4f"), _mat("grass", "#6f8a52"), _mat("grass", "#4e6a40"), _mat("grass", "#7c8e4a")]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 77
 	var lists: Array = [[], [], [], []]
