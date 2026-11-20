@@ -6,7 +6,7 @@ extends Node3D
 ## fica guardada e o clique esquerdo (ou Q) faz o golpe lateral (dano 34,
 ## alcance 3,2 m); sem ele, Q é soco (dano 12, alcance 2,4 m). Sacar uma arma
 ## (1-5 ou H) larga o bastão, que volta para o suporte.
-## Mesmas regras da Sobrevivência: golpe pela mira (scripts/melee.gd),
+## Mesmas regras da Sobrevivência: golpe pelo alcance a partir do corpo (scripts/melee.gd),
 ## ×1,5 na cabeça, o zumbi recua ao levar golpe de perto e fica parado um
 ## instante depois de cada bote (a brecha). O zumbi só caça quem está na arena
 ## e volta 4 s depois de morrer. Mordidas não tiram vida no treino: são contadas.
@@ -232,14 +232,12 @@ func _melee() -> void:
 	var fx = player.get("sound_fx")
 	if fx != null:
 		fx.call("melee_swing")
-	var camera := get_viewport().get_camera_3d()
-	if camera == null:
-		return
-	var forward := -camera.global_basis.z
-	var hit := Melee.ray(player, camera, reach)
+	# Sem mira: o alcance da arma a partir do corpo, para a frente do personagem.
+	var hit := Melee.sweep(player, reach)
 	if hit.is_empty():
 		return
-	var from := camera.global_position
+	var from: Vector3 = hit["from"]
+	var forward: Vector3 = hit["dir"]
 	var body: Object = hit["collider"]
 	var target = body.get("actor") if body != null else null
 	if target == null:

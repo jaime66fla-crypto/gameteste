@@ -269,12 +269,15 @@ func _open_shop() -> void:
 	player.set("aiming", false)
 	shop.call("show_note", "")
 	_refresh_shop()
+	if not shop.visible:
+		UiSfx.play(&"open")
 	shop.visible = true
 	PointerMode.release()
 
 func _close_shop() -> void:
 	if shop == null or not shop.visible:
 		return
+	UiSfx.play(&"close")
 	shop.visible = false
 	if not local_dead and not finished and not leave_panel.visible:
 		PointerMode.capture()
@@ -733,11 +736,8 @@ func _punch() -> void:
 		return
 	_punch_timer = now + PUNCH_COOLDOWN
 	player.get("sound_fx").call("melee_swing")
-	var camera := get_viewport().get_camera_3d()
-	if camera == null:
-		return
-	# Pela mira (a câmera fica no ombro), valendo só no alcance a partir do jogador.
-	var hit := Melee.ray(player, camera, PUNCH_REACH)
+	# Sem mira: o alcance do soco a partir do corpo, para a frente do personagem.
+	var hit := Melee.sweep(player, PUNCH_REACH)
 	if hit.is_empty():
 		return
 	var body: Object = hit["collider"]
@@ -1959,6 +1959,7 @@ func _open_leave_panel() -> void:
 		if team_mode:
 			lines += "\nSua equipe continua sem você."
 	leave_text.text = lines
+	UiSfx.play(&"open")
 	leave_panel.visible = true
 	Input.action_release("fire")
 	Input.action_release("aim")
@@ -1966,6 +1967,8 @@ func _open_leave_panel() -> void:
 	(leave_panel.find_child("StayInMatchButton", true, false) as Button).grab_focus()
 
 func _close_leave_panel() -> void:
+	if leave_panel.visible:
+		UiSfx.play(&"close")
 	leave_panel.visible = false
 	PointerMode.capture()
 

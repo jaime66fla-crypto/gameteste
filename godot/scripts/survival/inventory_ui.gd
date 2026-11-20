@@ -357,6 +357,8 @@ func _build_right() -> Control:
 # ------------------------------------------------------------------- API ---
 
 func open() -> void:
+	if not visible:
+		UiSfx.play(&"open")
 	visible = true
 	PointerMode.release()
 	# Mochila/baú aberto: mostra o conteúdo; senão abre direto nas receitas.
@@ -365,6 +367,8 @@ func open() -> void:
 	_refresh()
 
 func close() -> void:
+	if visible:
+		UiSfx.play(&"close")
 	visible = false
 	PointerMode.capture()
 

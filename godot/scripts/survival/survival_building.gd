@@ -581,11 +581,14 @@ func _neighbor(p: Dictionary, a: Vector3) -> Dictionary:
 # ------------------------------------------------------------- liberar base ---
 
 func open_auth() -> void:
+	UiSfx.play(&"open")
 	_auth_panel.visible = true
 	_refresh_auth()
 	PointerMode.release()
 
 func close_auth() -> void:
+	if _auth_panel.visible:
+		UiSfx.play(&"close")
 	_auth_panel.visible = false
 	PointerMode.capture()
 
@@ -597,10 +600,13 @@ func ui_open() -> bool:
 ## E na bancada: escolhe uma estação/móvel e entra no modo de construção com ela.
 func open_bench() -> void:
 	_refresh_bench()
+	UiSfx.play(&"open")
 	_bench_panel.visible = true
 	PointerMode.release()
 
 func close_bench() -> void:
+	if _bench_panel.visible:
+		UiSfx.play(&"close")
 	_bench_panel.visible = false
 	PointerMode.capture()
 

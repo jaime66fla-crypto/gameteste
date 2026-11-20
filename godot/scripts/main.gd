@@ -489,7 +489,8 @@ func _process(_delta: float) -> void:
         action_clock.visible = not action_state.is_empty()
         if action_clock.visible:
             action_clock.queue_redraw()
-        crosshair.visible = not scoped
+        # Mira só com arma de fogo na mão (no modo de construção ela marca onde a peça vai).
+        crosshair.visible = not scoped and (player.has_sights() or bool(player.get("attack_blocked")))
         _update_crosshair(_delta)
         if scoped:
             scope_overlay.set_magnification(player.scope_zoom)

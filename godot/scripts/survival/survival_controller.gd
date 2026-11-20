@@ -524,13 +524,12 @@ func _melee() -> void:
 		_set_action("swing", str(best_weapon[0]))
 		_swing_left = SWING_TIME
 	player.get("sound_fx").call("melee_swing")
-	var camera := get_viewport().get_camera_3d()
-	var forward := -camera.global_basis.z
-	var from := camera.global_position
-	# Pela mira (câmera no ombro), no alcance a partir do jogador; vale colado num zumbi largo.
-	var hit := Melee.ray(player, camera, reach)
+	# Sem mira: o alcance da arma a partir do corpo, para a frente do personagem.
+	var hit := Melee.sweep(player, reach)
 	if hit.is_empty():
 		return
+	var from: Vector3 = hit["from"]
+	var forward: Vector3 = hit["dir"]
 	var body: Object = hit["collider"]
 	# Construção (parede, porta, baú...): o servidor tira a vida da peça.
 	var build_id := BuildingScript.build_id_of(body)

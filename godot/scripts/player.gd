@@ -58,6 +58,11 @@ var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
 ## Arma branca na mão (ex.: "long_bat" na arena do treino): a arma de fogo fica
 ## guardada e o clique esquerdo golpeia (melee_handler). Trocar de arma (1-5) larga.
 var melee_weapon := ""
+
+## Só arma de fogo na mão tem mira (botão direito e a mira na tela). Faca,
+## bastão e mãos vazias acertam pelo alcance a partir do corpo (scripts/melee.gd).
+func has_sights() -> bool:
+    return not weapon_holstered and melee_weapon.is_empty()
 ## Modo de construção ligado: o clique esquerdo coloca peças, não soca.
 var attack_blocked := false
 
@@ -486,7 +491,7 @@ func _update_crouch(delta: float) -> void:
     body_collision.position.y = body_capsule.height * 0.5
 
 func _physics_process(delta: float) -> void:
-    aiming = not weapon_holstered and Input.is_action_pressed("aim")
+    aiming = has_sights() and Input.is_action_pressed("aim")
     _update_crouch(delta)
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
