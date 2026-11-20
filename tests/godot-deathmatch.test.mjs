@@ -111,7 +111,7 @@ test('mata-mata starts everyone with a pistol and announces the rules', async ()
 	const start = a.ws.last('start');
 	assert.equal(start.mode, 'dm');
 	assert.equal(start.goal, 15);
-	assert.deepEqual(start.kit, { pistol: 45 });
+	assert.deepEqual(start.kit, { pistol: 90 });
 	assert.equal(start.roster.length, 8, 'bots fill the room');
 	for (const id of m.order) if (!m.players[id].bot) assert.deepEqual(m.players[id].inv, { pistol: true });
 });

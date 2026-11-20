@@ -394,7 +394,7 @@ test('shop: buy within the window, with credits, one of each weapon, carry limit
 	assert.ok(me.inv.pistol);
 	assert.equal(me.credits, 600);
 	const bought = b.ws.last('bought');
-	assert.deepEqual([bought.by, bought.item, bought.ammo], [a.id, 'pistol', 45], 'everyone hears about it');
+	assert.deepEqual([bought.by, bought.item, bought.ammo], [a.id, 'pistol', 90], 'everyone hears about it');
 	say(match, a, { t: 'buy', item: 'pistol' });
 	assert.equal(a.ws.last('buy_denied').message, 'Você já tem essa arma');
 	say(match, a, { t: 'buy', item: 'bazooka' });
@@ -418,7 +418,7 @@ test('shop: buy within the window, with credits, one of each weapon, carry limit
 	assert.equal(me.inv.smg, undefined);
 });
 
-test('team rooms: bots spawn armed; kills earn credits (player 400, bot 200, +100 head)', async () => {
+test('team rooms: bots buy with the same credits; kills earn credits (player 400, bot 200, +100 head)', async () => {
 	const match = room();
 	const a = await join(match, { create: true, name: 'A' });
 	const b = await join(match, { name: 'B' });
@@ -428,7 +428,9 @@ test('team rooms: bots spawn armed; kills earn credits (player 400, bot 200, +10
 	const start = a.ws.last('start');
 	for (const entry of start.roster.filter((r) => r.bot)) {
 		assert.ok(entry.w && m.players[entry.id].inv[entry.w], 'roster tells clients the bot weapon');
+		assert.equal(entry.w, 'pistol', '800 credits only buy a pistol');
 		assert.equal(entry.medkits, 1);
+		assert.equal(m.players[entry.id].credits, 800 - 200 - 300, 'pistol + medkit paid from the bot credits');
 	}
 	const me = m.players[a.id];
 	const enemyBot = Object.values(m.players).find((p) => p.bot && p.team !== me.team);

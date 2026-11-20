@@ -49,7 +49,7 @@ var kill_goal := 15
 var kill_counts: Dictionary = {} # id -> abates (placar ao vivo)
 var respawn_left := 0.0 # segundos até renascer (jogador local morto)
 var match_ends_msec := 0 # Time.get_ticks_msec() em que o tempo acaba
-var dm_kit: Dictionary = {"pistol": 45}
+var dm_kit: Dictionary = {"pistol": 90}
 ## Loja: créditos (servidor confirma) e a janela de compra (início / renascer).
 const ShopPanelScript = preload("res://scripts/net/shop_panel.gd")
 var credits := 0
@@ -65,6 +65,17 @@ var round_total := 5
 var round_to_win := 3
 var round_score: Array = [0, 0]
 var round_break := false # pausa entre rounds (o servidor ignora tiros e movimento)
+var round_history: Array = [] # vencedor de cada round já jogado (0/1, -1 = empate)
+var round_panel: PanelContainer
+var _round_next_msec := 0
+var _round_break_ms := 5000
+var _round_countdown: Label
+var _round_drain: ProgressBar
+## Placar ao vivo (segurar TAB): mortes e quem saiu, além de kill_counts.
+var deaths: Dictionary = {} # id -> mortes
+var left_ids: Dictionary = {} # id -> true (saiu da partida)
+var score_panel: PanelContainer
+var _score_refresh := 0.0
 var match_xp := 0
 var killer_panel: PanelContainer
 var killer_title: Label
@@ -381,6 +392,7 @@ func _on_message(data: Dictionary) -> void:
 		"leave":
 			var who := str(data.get("id", ""))
 			if names.has(who):
+				left_ids[who] = true
 				_feed("%s saiu da partida." % names[who])
 		"end":
 			_on_end(data)
@@ -627,6 +639,11 @@ func _on_health(data: Dictionary) -> void:
 	alive_count = int(data.get("alive", alive_count))
 	if killed and names.has(by) and by != id:
 		kill_counts[by] = int(data.get("kills", int(kill_counts.get(by, 0)) + 1))
+	if killed:
+		if by == "saiu":
+			left_ids[id] = true
+		else:
+			deaths[id] = int(data.get("deaths", int(deaths.get(id, 0)) + 1))
 	if id == my_id:
 		if hp < my_hp:
 			_on_local_damaged(my_hp - hp, by)
@@ -876,7 +893,7 @@ func _on_respawn(data: Dictionary) -> void:
 	var weapon := str(data.get("w", "pistol"))
 	alive_count = int(data.get("alive", alive_count))
 	if id == my_id:
-		_revive_local(at, weapon, int(data.get("ammo", 45)), int(data.get("buy", 0)))
+		_revive_local(at, weapon, int(data.get("ammo", 90)), int(data.get("buy", 0)))
 	elif actors.has(id):
 		var actor = actors[id]
 		actor.call("revive", at + Vector3(0, 0.1, 0), weapon)
@@ -921,14 +938,9 @@ func _on_round_end(data: Dictionary) -> void:
 		player.process_mode = Node.PROCESS_MODE_DISABLED
 	var winner = data.get("team")
 	var round_done := int(data.get("round", round_number))
-	var title := "ROUND %d — EMPATE" % round_done
-	if winner != null and int(winner) == my_team:
-		title = "ROUND %d — VITÓRIA DA SUA EQUIPE" % round_done
-	elif winner != null:
-		title = "ROUND %d — VITÓRIA DA EQUIPE %s" % [round_done, _team_name(int(winner)).to_upper()]
-	var why := "Tempo esgotado." if str(data.get("reason", "")) == "tempo" else ""
-	var next_s := int(ceil(float(data.get("next", 5000)) / 1000.0))
-	_show_center(title, "%s\n%sPróximo round em %d s  ·  Melhor de %d" % [_round_score_text(), (why + "  ") if not why.is_empty() else "", next_s, round_total])
+	var why := "Tempo esgotado" if str(data.get("reason", "")) == "tempo" else ""
+	round_history.append(-1 if winner == null else int(winner))
+	_show_round_panel(round_done, winner, why, int(data.get("next", 5000)))
 	_feed("Round %d: %s. Placar %s." % [round_done, "empate" if winner == null else "Equipe " + _team_name(int(winner)), _round_score_text()])
 	player.get("sound_fx").call("kill_confirm" if winner != null and int(winner) == my_team else "reload")
 
@@ -937,6 +949,7 @@ func _on_round(data: Dictionary) -> void:
 	_read_rounds(data)
 	round_break = false
 	center_panel.visible = false
+	round_panel.visible = false
 	alive_count = int(data.get("alive", alive_count))
 	match_ends_msec = Time.get_ticks_msec() + int(data.get("duration", 150000))
 	_apply_host()
@@ -1040,6 +1053,14 @@ func _process(delta: float) -> void:
 		if not _victory_finished and _victory_time >= VICTORY_SECONDS:
 			_finish_victory()
 	_update_loot_ui()
+	if round_panel.visible:
+		_tick_round_panel()
+	if score_panel.visible:
+		_score_refresh -= delta
+		if finished:
+			score_panel.visible = false
+		elif _score_refresh <= 0.0:
+			_refresh_scoreboard()
 	if shop != null and shop.visible:
 		if can_shop():
 			_refresh_shop() # relógio da loja
@@ -1117,6 +1138,15 @@ func _spectate_target() -> Node3D:
 	spectate_id = ids[0]
 	return actors[spectate_id]
 
+## TAB (segurar): placar da partida. Em _input para o foco da GUI não engolir a tecla.
+func _input(event: InputEvent) -> void:
+	if event is InputEventKey and event.physical_keycode == KEY_TAB and not event.echo:
+		var open_board: bool = event.pressed and not finished
+		if open_board:
+			_refresh_scoreboard()
+		score_panel.visible = open_board
+		get_viewport().set_input_as_handled()
+
 func _unhandled_input(event: InputEvent) -> void:
 	# Cena do vencedor: qualquer tecla/clique pula para o placar (depois de 1 s).
 	if _victory_target != null and not _victory_finished and _victory_time > 1.0 and (event is InputEventKey or event is InputEventMouseButton) and event.is_pressed():
@@ -1178,6 +1208,8 @@ func _on_profile(data: Dictionary) -> void:
 func _on_end(data: Dictionary) -> void:
 	finished = true
 	killer_panel.visible = false
+	round_panel.visible = false
+	score_panel.visible = false
 	Input.action_release("fire")
 	PointerMode.release()
 	player.process_mode = Node.PROCESS_MODE_DISABLED
@@ -1209,6 +1241,8 @@ func _on_team_end(data: Dictionary) -> void:
 		reason = "Placar de rounds: %s  ·  %d rounds jogados." % [_round_score_text(), int(data.get("round", round_number))]
 		if winner == null:
 			reason = "Empate nos rounds e nos abates: %s." % _round_score_text()
+	if str(data.get("reason", "")) == "wo" and winner != null:
+		reason = "W.O.: a equipe %s ficou sem ninguém na partida  ·  rounds %s." % [_team_name(1 - int(winner)), _round_score_text()]
 	var show_board := func():
 		_show_results(data, title, reason, outcome)
 		if not Net.party_code.is_empty():
@@ -1587,6 +1621,291 @@ func _build_ui() -> void:
 	column.add_child(room_button)
 	column.move_child(room_button, back_button.get_index())
 	_build_leave_panel()
+	_build_round_panel()
+	score_panel = PanelContainer.new()
+	score_panel.name = "ScorePanel"
+	score_panel.visible = false
+	score_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var score_box := _res_box(Color(0.035, 0.05, 0.06, 0.95), Color(1, 1, 1, 0.09), 0, 4)
+	score_box.border_width_top = 3
+	score_box.shadow_color = Color(0, 0, 0, 0.5)
+	score_box.shadow_size = 18
+	score_box.border_color = MENU_ACCENT
+	for side in ["left", "right"]:
+		score_box.set("content_margin_" + side, 22)
+	score_box.content_margin_top = 16
+	score_box.content_margin_bottom = 14
+	score_panel.add_theme_stylebox_override("panel", score_box)
+	score_panel.custom_minimum_size.x = 560
+	ui.add_child(score_panel)
+	score_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	score_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	score_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+
+# ------------------------------------------------ fim de round (tema do menu) ---
+
+const MENU_ACCENT := Color("#f0a23b")
+const MENU_HOT := Color("#e0705e")
+const TEAM_TINTS := [Color("#5ea8d0"), Color("#d07a5e")]
+
+## Painel do intervalo entre rounds: resultado grande, placar Alfa x Bravo,
+## marcadores dos 5 rounds, contagem regressiva e um botão pequeno de menu.
+func _build_round_panel() -> void:
+	round_panel = PanelContainer.new()
+	round_panel.name = "RoundPanel"
+	round_panel.visible = false
+	round_panel.custom_minimum_size.x = 440
+	ui.add_child(round_panel)
+	round_panel.set_anchors_and_offsets_preset(Control.PRESET_CENTER)
+	round_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	round_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	round_panel.offset_top = -40 # um pouco acima do centro: o aviso "ROUND N" fica livre embaixo
+	round_panel.offset_bottom = -40
+
+func _show_round_panel(round_done: int, winner, why: String, next_ms: int) -> void:
+	center_panel.visible = false
+	for child in round_panel.get_children():
+		child.queue_free()
+	var outcome := "draw" if winner == null else ("win" if int(winner) == my_team else "lose")
+	var accent: Color = MENU_ACCENT if outcome == "win" else (MENU_HOT if outcome == "lose" else RES_MUTED)
+	var box := _res_box(Color(0.035, 0.05, 0.06, 0.94), accent, 0, 4)
+	box.border_width_top = 3
+	box.shadow_color = Color(0, 0, 0, 0.5)
+	box.shadow_size = 18
+	for side in ["left", "right"]:
+		box.set("content_margin_" + side, 26)
+	box.content_margin_top = 18
+	box.content_margin_bottom = 14
+	round_panel.add_theme_stylebox_override("panel", box)
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	round_panel.add_child(column)
+	var kicker := _res_label("ROUND %d DE %d  ·  MELHOR DE %d" % [round_done, round_total, round_total], 11, accent, true)
+	kicker.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(kicker)
+	var headline := {"win": "VITÓRIA", "lose": "DERROTA", "draw": "EMPATE"}[outcome] as String
+	var title := _res_label(headline, 44, RES_TEXT, true)
+	title.name = "RoundTitle"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(title)
+	var line := "Sua equipe venceu o round" if outcome == "win" else ("Equipe %s venceu o round" % _team_name(int(winner)) if outcome == "lose" else "Ninguém levou o round")
+	if not why.is_empty():
+		line += "  ·  " + why
+	var sub := _res_label(line, 13, RES_MUTED)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(sub)
+	# Placar: ALFA  1 — 1  BRAVO (a sua equipe marcada).
+	var score_row := HBoxContainer.new()
+	score_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	score_row.add_theme_constant_override("separation", 14)
+	column.add_child(score_row)
+	for team in [0, 1]:
+		var tag := _team_name(team).to_upper() + ("  (VOCÊ)" if team == my_team else "")
+		var name_label := _res_label(tag, 13, TEAM_TINTS[team].lightened(0.25), true)
+		name_label.custom_minimum_size.x = 120
+		name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if team == 0 else HORIZONTAL_ALIGNMENT_LEFT
+		name_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var number := _res_label(str(int(round_score[team])), 38, RES_TEXT, true)
+		if team == 0:
+			score_row.add_child(name_label)
+			score_row.add_child(number)
+			score_row.add_child(_res_label("—", 24, RES_DIM, true))
+		else:
+			score_row.add_child(number)
+			score_row.add_child(name_label)
+	# Marcadores dos rounds: cor da equipe que venceu, cinza = empate, apagado = a jogar.
+	var pips := HBoxContainer.new()
+	pips.alignment = BoxContainer.ALIGNMENT_CENTER
+	pips.add_theme_constant_override("separation", 6)
+	column.add_child(pips)
+	for i in round_total:
+		var pip := Panel.new()
+		pip.custom_minimum_size = Vector2(34, 6)
+		var color := Color(1, 1, 1, 0.08)
+		if i < round_history.size():
+			var who := int(round_history[i])
+			color = TEAM_TINTS[who] if who >= 0 else RES_MUTED
+		var pip_box := _res_box(color, Color.TRANSPARENT, 0, 1)
+		pip_box.skew = Vector2(-0.3, 0)
+		pip.add_theme_stylebox_override("panel", pip_box)
+		pips.add_child(pip)
+	var gap := Control.new()
+	gap.custom_minimum_size.y = 4
+	column.add_child(gap)
+	# Rodapé: contagem regressiva + botão pequeno de menu.
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 10)
+	column.add_child(footer)
+	_round_countdown = _res_label("", 11, RES_MUTED, true)
+	_round_countdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_round_countdown.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	footer.add_child(_round_countdown)
+	var menu_button := Button.new()
+	menu_button.name = "RoundMenuButton"
+	menu_button.text = "SAIR PARA O MENU"
+	menu_button.focus_mode = Control.FOCUS_NONE
+	menu_button.custom_minimum_size = Vector2(0, 24)
+	menu_button.pressed.connect(_back_to_menu)
+	for state in ["normal", "hover", "pressed", "focus"]:
+		var b := _res_box(Color(1, 1, 1, 0.035), Color(1, 1, 1, 0.14), 0, 2)
+		b.border_width_left = 2
+		b.skew = Vector2(-0.16, 0)
+		b.content_margin_left = 12
+		b.content_margin_right = 10
+		if state == "hover" or state == "pressed":
+			b.bg_color = Color(MENU_ACCENT, 0.16)
+			b.border_color = MENU_ACCENT
+		menu_button.add_theme_stylebox_override(state, b)
+	menu_button.add_theme_font_override("font", _bold())
+	menu_button.add_theme_font_size_override("font_size", 10)
+	menu_button.add_theme_color_override("font_color", RES_MUTED)
+	menu_button.add_theme_color_override("font_hover_color", RES_TEXT)
+	footer.add_child(menu_button)
+	_round_drain = ProgressBar.new()
+	_round_drain.show_percentage = false
+	_round_drain.custom_minimum_size.y = 3
+	_round_drain.max_value = 1.0
+	_round_drain.add_theme_stylebox_override("background", _res_box(Color(1, 1, 1, 0.06), Color.TRANSPARENT, 0, 1))
+	_round_drain.add_theme_stylebox_override("fill", _res_box(accent, Color.TRANSPARENT, 0, 1))
+	column.add_child(_round_drain)
+	_round_break_ms = maxi(1, next_ms)
+	_round_next_msec = Time.get_ticks_msec() + next_ms
+	_tick_round_panel()
+	round_panel.visible = true
+	round_panel.modulate.a = 0.0
+	var t := round_panel.create_tween()
+	t.tween_property(round_panel, "modulate:a", 1.0, 0.25)
+	PointerMode.release()
+
+func _tick_round_panel() -> void:
+	if _round_countdown == null or not is_instance_valid(_round_countdown):
+		return
+	var left_ms := maxi(0, _round_next_msec - Time.get_ticks_msec())
+	_round_countdown.text = "PRÓXIMO ROUND EM %d s" % ceili(left_ms / 1000.0)
+	_round_drain.value = float(left_ms) / float(_round_break_ms)
+
+# ------------------------------------------------------ placar TAB (ao vivo) ---
+
+func _refresh_scoreboard() -> void:
+	_score_refresh = 0.5
+	for child in score_panel.get_children():
+		score_panel.remove_child(child)
+		child.queue_free()
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+	score_panel.add_child(column)
+	var mode := "EQUIPES" if team_mode else ("MATA-MATA" if dm_mode else "ELIMINATÓRIA")
+	var head := HBoxContainer.new()
+	column.add_child(head)
+	var kicker := _res_label("PLACAR DA PARTIDA  ·  " + mode, 11, MENU_ACCENT, true)
+	kicker.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(kicker)
+	var info := ""
+	if team_mode:
+		info = "ROUND %d/%d  ·  %s" % [round_number, round_total, "PAUSA" if round_break else _clock_text()]
+	elif dm_mode:
+		info = "META %d ABATES  ·  %s" % [kill_goal, _clock_text()]
+	else:
+		info = "VIVOS %d" % alive_count
+	head.add_child(_res_label(info, 11, RES_MUTED, true))
+	if team_mode:
+		var title := _res_label(_round_score_text(), 26, RES_TEXT, true)
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		column.add_child(title)
+	var ids: Array = names.keys()
+	ids.sort_custom(func(a, b):
+		var ka := int(kill_counts.get(a, 0))
+		var kb := int(kill_counts.get(b, 0))
+		if ka != kb:
+			return ka > kb
+		return int(deaths.get(a, 0)) < int(deaths.get(b, 0)))
+	if team_mode:
+		for team in [0, 1]:
+			var members := ids.filter(func(id): return int(teams.get(id, -1)) == team)
+			var alive_n := members.filter(func(id): return _is_alive(id)).size()
+			var team_head := HBoxContainer.new()
+			column.add_child(team_head)
+			var team_label := _res_label("EQUIPE %s%s" % [_team_name(team).to_upper(), "  ·  SUA" if team == my_team else ""], 12, TEAM_TINTS[team].lightened(0.3), true)
+			team_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			team_head.add_child(team_label)
+			var wins := int(round_score[team])
+			team_head.add_child(_res_label("%d ROUND%s  ·  %d VIVO%s" % [wins, "" if wins == 1 else "S", alive_n, "" if alive_n == 1 else "S"], 10, RES_MUTED, true))
+			column.add_child(_score_header())
+			for id in members:
+				column.add_child(_score_row(id, TEAM_TINTS[team]))
+	else:
+		column.add_child(_score_header())
+		for id in ids:
+			column.add_child(_score_row(id, Color.TRANSPARENT))
+	var hint := _res_label("SOLTE TAB PARA FECHAR", 9, RES_DIM, true)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	column.add_child(hint)
+
+func _is_alive(id: String) -> bool:
+	if left_ids.has(id):
+		return false
+	if id == my_id:
+		return not local_dead
+	return actors.has(id) and not actors[id].dead
+
+func _score_header() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	for spec in [["JOGADOR", 0], ["ABATES", 56], ["MORTES", 56], ["", 64]]:
+		var l := _res_label(str(spec[0]), 9, RES_DIM, true)
+		if int(spec[1]) > 0:
+			l.custom_minimum_size.x = int(spec[1])
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		else:
+			l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		row.add_child(l)
+	return row
+
+func _score_row(id: String, tint: Color) -> PanelContainer:
+	var mine := id == my_id
+	var alive := _is_alive(id)
+	var panel := PanelContainer.new()
+	var b := _res_box(Color(MENU_ACCENT, 0.12) if mine else Color(1, 1, 1, 0.03), MENU_ACCENT if mine else Color.TRANSPARENT, 1 if mine else 0, 3)
+	if tint.a > 0.0 and not mine:
+		b.border_width_left = 3
+		b.border_color = Color(tint, 0.6)
+	b.content_margin_left = 8
+	b.content_margin_right = 8
+	b.content_margin_top = 3
+	b.content_margin_bottom = 3
+	panel.add_theme_stylebox_override("panel", b)
+	if not alive:
+		panel.modulate.a = 0.55
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 10)
+	panel.add_child(line)
+	var who := HBoxContainer.new()
+	who.add_theme_constant_override("separation", 8)
+	who.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	line.add_child(who)
+	var name_label := _res_label(str(names.get(id, "?")) + ("  (você)" if mine else ""), 13, MENU_ACCENT if mine else RES_TEXT, true)
+	name_label.clip_text = true
+	name_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	name_label.custom_minimum_size.x = 100
+	who.add_child(name_label)
+	var bot := bool(bots.get(id, false))
+	var tag := _res_label("BOT" if bot else str(ranks.get(id, "")).to_upper(), 9, RES_DIM if bot else RES_MUTED, true)
+	tag.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	who.add_child(tag)
+	for value in [int(kill_counts.get(id, my_kills if mine else 0)), int(deaths.get(id, 0))]:
+		var l := _res_label(str(value), 13, RES_TEXT, true)
+		l.custom_minimum_size.x = 56
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		line.add_child(l)
+	var state := "SAIU" if left_ids.has(id) else ("VIVO" if alive else "MORTO")
+	var state_color := RES_DIM if left_ids.has(id) else (Color("#8fe08a") if alive else MENU_HOT)
+	var status := _res_label(state, 10, state_color, true)
+	status.custom_minimum_size.x = 64
+	status.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	status.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	line.add_child(status)
+	return panel
 
 ## "Sair da partida?" panel: leave now (counts as elimination, earned XP is
 ## kept) or keep playing.

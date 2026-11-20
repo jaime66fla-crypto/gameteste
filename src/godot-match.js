@@ -25,10 +25,11 @@ const START_CREDITS = 800;
 const BUY_WINDOW_MS = 120000; // 2 minutes
 const KILL_CREDITS = { player: 400, bot: 200, headshot: 100 };
 const MAX_CREDITS = 16000;
-// Bots do not shop: in team rooms they get a random weapon (and one medkit) when they spawn.
+// Bots shop too, with the same credits as players (start, kills and round
+// bonuses): botShop buys their weapon and medkits at each round start.
 const LOOT_RANGE = 3.5; // metres between the looter's last known position and the crate
 const LOOT_WEIGHTS = [['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
-const RESERVE_AMMO = { pistol: 45, smg: 90, rifle: 90, shotgun: 18, sniper: 15 };
+const RESERVE_AMMO = { pistol: 90, smg: 180, rifle: 180, shotgun: 36, sniper: 30 };
 const MEDKIT_HEAL = 50; // health restored by a medkit (max 100)
 const MAX_MEDKITS = 5; // medkits a player can carry
 const MEDKIT_USE_MS = 3000; // using a medkit takes 3 s (heal_start -> heal)
@@ -96,6 +97,13 @@ function newPartyCode() {
 function teamSpawn(map, side, k) {
 	const spot = map.team_spawns[side][k % map.team_spawns[side].length];
 	return [spot[0], 0, spot[1]];
+}
+
+/** The most expensive weapon in an inventory (what a bot holds), or undefined. */
+function bestWeapon(inv) {
+	return Object.keys(inv || {})
+		.filter((w) => RESERVE_AMMO[w] !== undefined)
+		.sort((a, b) => SHOP_PRICES[b] - SHOP_PRICES[a])[0];
 }
 
 function rollWeapon() {
@@ -501,7 +509,7 @@ export class GodotMatch {
 			if (shop) Object.assign(p, { credits: START_CREDITS, buyUntil: now + BUY_WINDOW_MS });
 			// Mata-mata: a free pistol at the start and on every respawn.
 			if (this.isDm()) p.inv = { [DM_KIT]: true };
-			if (shop && p.bot) this.armBot(p);
+			if (shop && p.bot) this.botShop(p);
 		}
 		m.grenades = {};
 		m.dropSeq = 0;
@@ -527,7 +535,7 @@ export class GodotMatch {
 				const p = m.players[id];
 				const entry = { id, name: p.name, bot: p.bot, spawn: p.spawn, rank: p.rank || '' };
 				if (m.party) Object.assign(entry, { team: p.team, sp: [p.p[0], p.p[2]] });
-				if (shop && p.bot) Object.assign(entry, { w: Object.keys(p.inv)[0], medkits: p.medkits });
+				if (shop && p.bot) Object.assign(entry, { w: bestWeapon(p.inv), medkits: p.medkits });
 				return entry;
 			}),
 			shop: shop ? { prices: SHOP_PRICES, credits: START_CREDITS, window: BUY_WINDOW_MS, ammo: RESERVE_AMMO, maxMedkits: MAX_MEDKITS, maxNades: MAX_NADES } : undefined,
@@ -576,12 +584,32 @@ export class GodotMatch {
 		return crates;
 	}
 
-	/** Bots do not shop: a random weapon (pistol most often) and one medkit. */
-	armBot(bot) {
-		const weapon = rollWeapon();
-		bot.inv = { [weapon]: true };
-		bot.medkits = 1;
-		return weapon;
+	/**
+	 * Bots spend their own credits (same economy as players): the best weapon
+	 * they can afford when unarmed or able to upgrade (a little random among the
+	 * top two), then a medkit if money is left. Always ends armed (pistol at worst).
+	 */
+	botShop(bot) {
+		bot.inv = bot.inv || {};
+		bot.credits = bot.credits || 0;
+		const owned = bestWeapon(bot.inv);
+		const ownedPrice = owned ? SHOP_PRICES[owned] : 0;
+		const affordable = Object.keys(RESERVE_AMMO)
+			.filter((w) => SHOP_PRICES[w] <= bot.credits && SHOP_PRICES[w] > ownedPrice)
+			.sort((a, b) => SHOP_PRICES[b] - SHOP_PRICES[a]);
+		if (affordable.length) {
+			const pick = affordable.length > 1 && Math.random() < 0.35 ? affordable[1] : affordable[0];
+			bot.credits -= SHOP_PRICES[pick];
+			bot.inv[pick] = true;
+		} else if (!owned) {
+			bot.inv.pistol = true; // broke and unarmed: never send a bot in with bare fists
+		}
+		bot.medkits = bot.medkits || 0;
+		if (bot.medkits < 1 && bot.credits >= SHOP_PRICES.medkit) {
+			bot.credits -= SHOP_PRICES.medkit;
+			bot.medkits++;
+		}
+		return bestWeapon(bot.inv);
 	}
 
 	/**
@@ -613,7 +641,7 @@ export class GodotMatch {
 
 	/** Credits for a kill (humans only), told to the killer right away. */
 	reward(attacker, target, zone) {
-		if (attacker.bot || !this.hasShop()) return;
+		if (!this.hasShop()) return;
 		const amount = (target.bot ? KILL_CREDITS.bot : KILL_CREDITS.player) + (zone === 'head' ? KILL_CREDITS.headshot : 0);
 		attacker.credits = Math.min(MAX_CREDITS, (attacker.credits || 0) + amount);
 		const ws = this.sessions.get(attacker.id);
@@ -674,7 +702,7 @@ export class GodotMatch {
 		});
 		const shop = this.hasShop();
 		if (shop) p.buyUntil = now + BUY_WINDOW_MS;
-		const weapon = shop && p.bot ? this.armBot(p) : DM_KIT;
+		const weapon = shop && p.bot ? this.botShop(p) : DM_KIT;
 		this.broadcast({
 			t: 'respawn', id: p.id, spawn: pick.i, p: p.p, w: weapon, ammo: RESERVE_AMMO[weapon], safe: DM_SPAWN_PROTECT_MS, alive: this.alive().length,
 			...(shop ? { buy: BUY_WINDOW_MS } : {}), medkits: p.medkits,
@@ -1044,7 +1072,11 @@ export class GodotMatch {
 		m.round = m.round || 1;
 		m.roundWins = m.roundWins || [0, 0];
 		if (roundWinner !== null) m.roundWins[roundWinner]++;
-		const decided = m.roundWins[0] >= ROUNDS_TO_WIN || m.roundWins[1] >= ROUNDS_TO_WIN || m.round >= ROUNDS;
+		// A side with nobody left in the match (no bots, every player gone) forfeits:
+		// end now instead of awarding empty rounds one after another.
+		const presentBy = [0, 1].map((team) => m.order.filter((id) => m.players[id].team === team && (m.players[id].bot || this.sessions.has(id))).length);
+		const forfeitWinner = presentBy[0] && !presentBy[1] ? 0 : presentBy[1] && !presentBy[0] ? 1 : null;
+		const decided = m.roundWins[0] >= ROUNDS_TO_WIN || m.roundWins[1] >= ROUNDS_TO_WIN || m.round >= ROUNDS || forfeitWinner !== null;
 		const roundEnd = {
 			t: 'round_end',
 			round: m.round,
@@ -1060,7 +1092,6 @@ export class GodotMatch {
 			// Round credits (losers get more, to buy back in).
 			for (const id of m.order) {
 				const p = m.players[id];
-				if (p.bot) continue;
 				const amount = roundWinner !== null && p.team === roundWinner ? ROUND_CREDITS.win : ROUND_CREDITS.loss;
 				p.credits = Math.min(MAX_CREDITS, (p.credits || 0) + amount);
 				const ws = this.sessions.get(id);
@@ -1077,6 +1108,7 @@ export class GodotMatch {
 		let winnerTeam = null;
 		if (m.roundWins[0] !== m.roundWins[1]) winnerTeam = m.roundWins[0] > m.roundWins[1] ? 0 : 1;
 		else if (killsBy[0] !== killsBy[1]) winnerTeam = killsBy[0] > killsBy[1] ? 0 : 1;
+		if (forfeitWinner !== null) winnerTeam = forfeitWinner;
 		m.phase = 'finished';
 		m.winner = null;
 		m.winnerTeam = winnerTeam;
@@ -1092,7 +1124,7 @@ export class GodotMatch {
 			winner: null,
 			team: winnerTeam,
 			name: winnerTeam === null ? 'Empate' : 'Equipe ' + TEAM_NAMES[winnerTeam],
-			reason: 'rounds',
+			reason: forfeitWinner !== null ? 'wo' : 'rounds',
 			score: killsBy,
 			rounds: m.roundWins,
 			round: m.round,
@@ -1129,9 +1161,9 @@ export class GodotMatch {
 			const wasDead = p.dead;
 			Object.assign(p, { dead: false, hp: 100, healAt: 0, safeUntil: 0, buyUntil: now + ROUND_BUY_MS });
 			p.inv = p.inv || {};
-			if (p.bot && !Object.keys(p.inv).length) this.armBot(p);
+			if (p.bot) this.botShop(p);
 			const entry = { id, sp: [p.p[0], p.p[2]], spawn: p.spawn, revived: wasDead, medkits: p.medkits || 0, nades: p.nades || 0 };
-			if (p.bot) entry.w = Object.keys(p.inv)[0];
+			if (p.bot) entry.w = bestWeapon(p.inv);
 			roster.push(entry);
 		}
 		m.roundBase = Object.fromEntries(m.order.map((id) => [id, m.players[id].kills]));
