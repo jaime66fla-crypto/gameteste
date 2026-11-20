@@ -1,0 +1,590 @@
+{
+	"bones": [
+		{
+			"name": "mixamorig9_Hips",
+			"parent": "",
+			"pos": [
+				0.0,
+				0.957,
+				0.0211
+			]
+		},
+		{
+			"name": "mixamorig9_Spine",
+			"parent": "mixamorig9_Hips",
+			"pos": [
+				0.0,
+				1.0625,
+				0.011
+			]
+		},
+		{
+			"name": "mixamorig9_Spine1",
+			"parent": "mixamorig9_Spine",
+			"pos": [
+				0.0,
+				1.1856,
+				-0.0007
+			]
+		},
+		{
+			"name": "mixamorig9_Spine2",
+			"parent": "mixamorig9_Spine1",
+			"pos": [
+				0.0,
+				1.3262,
+				-0.0141
+			]
+		},
+		{
+			"name": "mixamorig9_Neck",
+			"parent": "mixamorig9_Spine2",
+			"pos": [
+				0.0,
+				1.4844,
+				-0.0291
+			]
+		},
+		{
+			"name": "mixamorig9_Head",
+			"parent": "mixamorig9_Neck",
+			"pos": [
+				0.0,
+				1.5503,
+				-0.0093
+			]
+		},
+		{
+			"name": "mixamorig9_HeadTop_End",
+			"parent": "mixamorig9_Head",
+			"pos": [
+				0.0,
+				1.7761,
+				0.0587
+			]
+		},
+		{
+			"name": "mixamorig9_LeftShoulder",
+			"parent": "mixamorig9_Spine2",
+			"pos": [
+				0.0691,
+				1.4661,
+				-0.0292
+			]
+		},
+		{
+			"name": "mixamorig9_LeftArm",
+			"parent": "mixamorig9_LeftShoulder",
+			"pos": [
+				0.209,
+				1.4294,
+				-0.0293
+			]
+		},
+		{
+			"name": "mixamorig9_LeftForeArm",
+			"parent": "mixamorig9_LeftArm",
+			"pos": [
+				0.482,
+				1.4127,
+				-0.0443
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHand",
+			"parent": "mixamorig9_LeftForeArm",
+			"pos": [
+				0.6949,
+				1.4202,
+				-0.0311
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandThumb1",
+			"parent": "mixamorig9_LeftHand",
+			"pos": [
+				0.7234,
+				1.4008,
+				-0.0012
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandThumb2",
+			"parent": "mixamorig9_LeftHandThumb1",
+			"pos": [
+				0.7461,
+				1.3853,
+				0.0227
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandThumb3",
+			"parent": "mixamorig9_LeftHandThumb2",
+			"pos": [
+				0.769,
+				1.3689,
+				0.0389
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandThumb4",
+			"parent": "mixamorig9_LeftHandThumb3",
+			"pos": [
+				0.7911,
+				1.3584,
+				0.046
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandIndex1",
+			"parent": "mixamorig9_LeftHand",
+			"pos": [
+				0.7877,
+				1.4079,
+				0.0091
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandIndex2",
+			"parent": "mixamorig9_LeftHandIndex1",
+			"pos": [
+				0.8208,
+				1.4037,
+				0.0157
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandIndex3",
+			"parent": "mixamorig9_LeftHandIndex2",
+			"pos": [
+				0.8507,
+				1.396,
+				0.0217
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandIndex4",
+			"parent": "mixamorig9_LeftHandIndex3",
+			"pos": [
+				0.8769,
+				1.3896,
+				0.0268
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandMiddle1",
+			"parent": "mixamorig9_LeftHand",
+			"pos": [
+				0.7938,
+				1.4128,
+				-0.0142
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandMiddle2",
+			"parent": "mixamorig9_LeftHandMiddle1",
+			"pos": [
+				0.8283,
+				1.4098,
+				-0.0122
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandMiddle3",
+			"parent": "mixamorig9_LeftHandMiddle2",
+			"pos": [
+				0.8602,
+				1.4006,
+				-0.0107
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandMiddle4",
+			"parent": "mixamorig9_LeftHandMiddle3",
+			"pos": [
+				0.8887,
+				1.3942,
+				-0.0092
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandRing1",
+			"parent": "mixamorig9_LeftHand",
+			"pos": [
+				0.7972,
+				1.4154,
+				-0.0363
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandRing2",
+			"parent": "mixamorig9_LeftHandRing1",
+			"pos": [
+				0.8255,
+				1.4086,
+				-0.0362
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandRing3",
+			"parent": "mixamorig9_LeftHandRing2",
+			"pos": [
+				0.8518,
+				1.4006,
+				-0.0363
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandRing4",
+			"parent": "mixamorig9_LeftHandRing3",
+			"pos": [
+				0.8748,
+				1.3999,
+				-0.036
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandPinky1",
+			"parent": "mixamorig9_LeftHand",
+			"pos": [
+				0.7881,
+				1.4162,
+				-0.0599
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandPinky2",
+			"parent": "mixamorig9_LeftHandPinky1",
+			"pos": [
+				0.8133,
+				1.4112,
+				-0.0597
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandPinky3",
+			"parent": "mixamorig9_LeftHandPinky2",
+			"pos": [
+				0.8351,
+				1.4032,
+				-0.0598
+			]
+		},
+		{
+			"name": "mixamorig9_LeftHandPinky4",
+			"parent": "mixamorig9_LeftHandPinky3",
+			"pos": [
+				0.8532,
+				1.4021,
+				-0.0596
+			]
+		},
+		{
+			"name": "mixamorig9_RightShoulder",
+			"parent": "mixamorig9_Spine2",
+			"pos": [
+				-0.0691,
+				1.4661,
+				-0.0291
+			]
+		},
+		{
+			"name": "mixamorig9_RightArm",
+			"parent": "mixamorig9_RightShoulder",
+			"pos": [
+				-0.209,
+				1.4294,
+				-0.0289
+			]
+		},
+		{
+			"name": "mixamorig9_RightForeArm",
+			"parent": "mixamorig9_RightArm",
+			"pos": [
+				-0.482,
+				1.4127,
+				-0.0434
+			]
+		},
+		{
+			"name": "mixamorig9_RightHand",
+			"parent": "mixamorig9_RightForeArm",
+			"pos": [
+				-0.6949,
+				1.4202,
+				-0.0324
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandThumb1",
+			"parent": "mixamorig9_RightHand",
+			"pos": [
+				-0.7219,
+				1.4015,
+				-0.0021
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandThumb2",
+			"parent": "mixamorig9_RightHandThumb1",
+			"pos": [
+				-0.7435,
+				1.3865,
+				0.0222
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandThumb3",
+			"parent": "mixamorig9_RightHandThumb2",
+			"pos": [
+				-0.7677,
+				1.3695,
+				0.0383
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandThumb4",
+			"parent": "mixamorig9_RightHandThumb3",
+			"pos": [
+				-0.7899,
+				1.3561,
+				0.0495
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandIndex1",
+			"parent": "mixamorig9_RightHand",
+			"pos": [
+				-0.7898,
+				1.4074,
+				0.0108
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandIndex2",
+			"parent": "mixamorig9_RightHandIndex1",
+			"pos": [
+				-0.8221,
+				1.4035,
+				0.0153
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandIndex3",
+			"parent": "mixamorig9_RightHandIndex2",
+			"pos": [
+				-0.8517,
+				1.3959,
+				0.0193
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandIndex4",
+			"parent": "mixamorig9_RightHandIndex3",
+			"pos": [
+				-0.8767,
+				1.3892,
+				0.0227
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandMiddle1",
+			"parent": "mixamorig9_RightHand",
+			"pos": [
+				-0.7957,
+				1.4141,
+				-0.0142
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandMiddle2",
+			"parent": "mixamorig9_RightHandMiddle1",
+			"pos": [
+				-0.8306,
+				1.409,
+				-0.0119
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandMiddle3",
+			"parent": "mixamorig9_RightHandMiddle2",
+			"pos": [
+				-0.8615,
+				1.4001,
+				-0.0101
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandMiddle4",
+			"parent": "mixamorig9_RightHandMiddle3",
+			"pos": [
+				-0.8895,
+				1.3944,
+				-0.0083
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandRing1",
+			"parent": "mixamorig9_RightHand",
+			"pos": [
+				-0.7975,
+				1.4153,
+				-0.036
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandRing2",
+			"parent": "mixamorig9_RightHandRing1",
+			"pos": [
+				-0.826,
+				1.4086,
+				-0.0367
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandRing3",
+			"parent": "mixamorig9_RightHandRing2",
+			"pos": [
+				-0.8523,
+				1.4008,
+				-0.0375
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandRing4",
+			"parent": "mixamorig9_RightHandRing3",
+			"pos": [
+				-0.8756,
+				1.3988,
+				-0.0378
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandPinky1",
+			"parent": "mixamorig9_RightHand",
+			"pos": [
+				-0.7859,
+				1.4165,
+				-0.0595
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandPinky2",
+			"parent": "mixamorig9_RightHandPinky1",
+			"pos": [
+				-0.8134,
+				1.4118,
+				-0.0601
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandPinky3",
+			"parent": "mixamorig9_RightHandPinky2",
+			"pos": [
+				-0.8353,
+				1.4034,
+				-0.0608
+			]
+		},
+		{
+			"name": "mixamorig9_RightHandPinky4",
+			"parent": "mixamorig9_RightHandPinky3",
+			"pos": [
+				-0.8556,
+				1.3982,
+				-0.0614
+			]
+		},
+		{
+			"name": "mixamorig9_LeftUpLeg",
+			"parent": "mixamorig9_Hips",
+			"pos": [
+				0.0893,
+				0.8983,
+				0.0219
+			]
+		},
+		{
+			"name": "mixamorig9_LeftLeg",
+			"parent": "mixamorig9_LeftUpLeg",
+			"pos": [
+				0.1271,
+				0.4907,
+				-0.0121
+			]
+		},
+		{
+			"name": "mixamorig9_LeftFoot",
+			"parent": "mixamorig9_LeftLeg",
+			"pos": [
+				0.1483,
+				0.1154,
+				-0.0391
+			]
+		},
+		{
+			"name": "mixamorig9_LeftToeBase",
+			"parent": "mixamorig9_LeftFoot",
+			"pos": [
+				0.1862,
+				0.015,
+				0.1226
+			]
+		},
+		{
+			"name": "mixamorig9_LeftToe_End",
+			"parent": "mixamorig9_LeftToeBase",
+			"pos": [
+				0.2038,
+				0.019,
+				0.1999
+			]
+		},
+		{
+			"name": "mixamorig9_RightUpLeg",
+			"parent": "mixamorig9_Hips",
+			"pos": [
+				-0.0893,
+				0.8983,
+				0.0223
+			]
+		},
+		{
+			"name": "mixamorig9_RightLeg",
+			"parent": "mixamorig9_RightUpLeg",
+			"pos": [
+				-0.1271,
+				0.4907,
+				-0.013
+			]
+		},
+		{
+			"name": "mixamorig9_RightFoot",
+			"parent": "mixamorig9_RightLeg",
+			"pos": [
+				-0.1483,
+				0.1154,
+				-0.0438
+			]
+		},
+		{
+			"name": "mixamorig9_RightToeBase",
+			"parent": "mixamorig9_RightFoot",
+			"pos": [
+				-0.1862,
+				0.015,
+				0.1221
+			]
+		},
+		{
+			"name": "mixamorig9_RightToe_End",
+			"parent": "mixamorig9_RightToeBase",
+			"pos": [
+				-0.2038,
+				0.019,
+				0.1994
+			]
+		}
+	],
+	"source": "res://assets/personagens/downloaded/avatar.fbx"
+}

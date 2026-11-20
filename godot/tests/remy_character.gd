@@ -1,5 +1,5 @@
 extends SceneTree
-## Remy (Mixamo, prefixo "mixamorig_") no adaptador compartilhado e na rede.
+## Remy (modelado no Blender, rig Ch31 "mixamorig9_") no adaptador compartilhado e na rede.
 ## godot --headless --path godot --script res://tests/remy_character.gd
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const NetActorScript = preload("res://scripts/net/net_actor.gd")
@@ -34,10 +34,11 @@ func _run() -> void:
 	_check(bool(visual.call("is_visual_ready")), "Remy visual must be ready")
 	var skeleton := visual.get("skeleton") as Skeleton3D
 	var player := visual.get("animation_player") as AnimationPlayer
-	_check(str(visual.get("bone_prefix")) == "mixamorig_", "Bone prefix must be detected from the rig")
-	var head := skeleton.find_bone("mixamorig_HeadTop_End")
+	var prefix := str(visual.get("bone_prefix"))
+	_check(prefix == "mixamorig9_", "Remy must share the Ch31 rig (prefix %s)" % prefix)
+	var head := skeleton.find_bone(prefix + "HeadTop_End")
 	var top := (skeleton.global_transform * skeleton.get_bone_global_rest(head).origin).y
-	_check(absf(top - 1.72) < 0.1, "Head top must be near 1.72 m (got %.2f)" % top)
+	_check(absf(top - 1.78) < 0.08, "Head top must be near 1.78 m (got %.2f)" % top)
 	var expected := ["run_in_place", "idle_with_rifle", "walk_with_rifle", "run_to_stop", "punch", "elbow_punch", "idle_unarmed", "walk_unarmed", "jog_unarmed_left", "walk_unarmed_backward_right"]
 	for clip_name in expected:
 		_check(player.has_animation(clip_name), "Missing clip " + clip_name)
@@ -56,11 +57,11 @@ func _run() -> void:
 	for i in 90:
 		visual.call("animate", 1.0 / 60.0, 0.5, false, false, false, false, false, Vector2(0, -1), Vector3(0, 0, -1.4))
 		await process_frame
-	var hips := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("mixamorig_Hips")).origin
+	var hips := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone(prefix + "Hips")).origin
 	_check(Vector2(hips.x, hips.z).length() < 0.2, "Hips must stay over the origin while walking")
 	var lowest := INF
 	for side in ["Left", "Right"]:
-		var toe := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone("mixamorig_%sToeBase" % side)).origin
+		var toe := skeleton.global_transform * skeleton.get_bone_global_pose(skeleton.find_bone(prefix + "%sToeBase" % side)).origin
 		lowest = minf(lowest, toe.y)
 	_check(lowest > -0.05 and lowest < 0.12, "A foot must touch the ground while walking (lowest toe %.2f)" % lowest)
 	visual.queue_free()

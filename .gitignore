@@ -11,3 +11,6 @@ godot/assets/personagens/zumbi/zumbi.fbx
 godot/assets/personagens/zumbi/zumbi.fbx.import
 godot/assets/personagens/zumbi/zumbi_[0-9].png
 godot/assets/personagens/zumbi/zumbi_[0-9].png.import
+
+# Backups automáticos do Blender
+*.blend1

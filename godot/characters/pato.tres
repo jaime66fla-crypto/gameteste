@@ -1,0 +1,16 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "pato"
+display_name = "Pato Tático"
+description = "Operador de elite: farda camuflada, colete com bolsos, boné, headset, joelheiras e coturnos. Cara de poucos amigos."
+visual_scene = "res://scenes/characters/pato.tscn"
+required_resources = PackedStringArray("res://assets/personagens/blender/pato_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
+fp_sleeve = Color(0.231, 0.239, 0.173, 1)
+fp_sleeve_style = "short"
+fp_skin = Color(0.788, 0.478, 0.165, 1)
+fp_gloves = true
+fp_glove = Color(0.106, 0.106, 0.11, 1)
