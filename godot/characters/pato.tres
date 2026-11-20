@@ -6,11 +6,11 @@
 script = ExtResource("1")
 id = "pato"
 display_name = "Pato Tático"
-description = "Operador de elite: farda camuflada, colete com bolsos, boné, headset, joelheiras e coturnos. Cara de poucos amigos."
+description = "Operador de elite: farda camuflada, colete com bolsos, boné, headset e coturnos. Cara de poucos amigos."
 visual_scene = "res://scenes/characters/pato.tscn"
-required_resources = PackedStringArray("res://assets/personagens/blender/pato_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
-fp_sleeve = Color(0.231, 0.239, 0.173, 1)
+required_resources = PackedStringArray("res://assets/personagens/pato/pato_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
+fp_sleeve = Color(0.1, 0.1, 0.09, 1)
 fp_sleeve_style = "short"
-fp_skin = Color(0.788, 0.478, 0.165, 1)
+fp_skin = Color(0.82, 0.48, 0.16, 1)
 fp_gloves = true
-fp_glove = Color(0.106, 0.106, 0.11, 1)
+fp_glove = Color(0.1, 0.1, 0.105, 1)
