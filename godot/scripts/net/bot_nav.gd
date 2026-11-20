@@ -47,15 +47,26 @@ static func grid_for(world: World3D) -> AStarGrid2D:
 	var query := PhysicsShapeQueryParameters3D.new()
 	query.shape = box
 	query.collision_mask = HitboxScript.LAYER_WORLD
+	var solid := 0
 	for x in cells:
 		for z in cells:
 			var center := cell_center(Vector2i(x, z))
 			query.transform = Transform3D(Basis.IDENTITY, Vector3(center.x, (PROBE_LOW + PROBE_HIGH) * 0.5, center.z))
 			if not space.intersect_shape(query, 1).is_empty():
 				grid.set_point_solid(Vector2i(x, z), true)
+				solid += 1
+	# Sem nenhuma parede = a fÃ­sica ainda nÃ£o registrou o mapa (montado neste mesmo
+	# frame). NÃ£o guarda essa grade vazia: a prÃ³xima chamada monta de novo. Antes ela
+	# ficava a partida inteira e os bots traÃ§avam rotas atravessando casas e muretas.
+	if solid == 0:
+		return grid
 	_grid = grid
 	_world_id = world.get_instance_id()
 	return _grid
+
+## JÃ¡ existe uma grade vÃ¡lida (com paredes) para este mundo?
+static func ready_for(world: World3D) -> bool:
+	return _grid != null and _world_id == world.get_instance_id()
 
 static func cell_of(point: Vector3) -> Vector2i:
 	var cells := int(_half * 2 / CELL)

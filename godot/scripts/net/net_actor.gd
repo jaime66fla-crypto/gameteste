@@ -636,10 +636,16 @@ func _route_to(goal: Vector3) -> Vector3:
 	var route := BotNav.path(get_world_3d(), global_position, goal)
 	if route.is_empty():
 		return _nearest_road_point(goal)
-	for index in [16, 10, 6, 3, 1]:
+	for index in [16, 10, 6, 3, 2]:
 		if index < route.size() and _clear_path(route[index]):
 			return route[index]
-	return route[mini(1, route.size() - 1)]
+	# Nada à vista (encostado numa parede ou na quina de uma porta): segue a próxima
+	# célula do caminho que não está colada no bot. Um ponto a menos de 0,6 m contava
+	# como "chegou" e o bot ficava parado recalculando o mesmo ponto para sempre.
+	for point in route:
+		if _flat_distance(point, global_position) > 0.8:
+			return point
+	return route[route.size() - 1]
 
 func _clear_path(target: Vector3) -> bool:
 	var query := PhysicsShapeQueryParameters3D.new()

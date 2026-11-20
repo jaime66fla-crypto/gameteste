@@ -179,8 +179,9 @@ func _ready() -> void:
 		for weapon_id in dm_kit:
 			player.call("give_weapon", weapon_id, int(dm_kit[weapon_id]))
 	# Bot navigation grid (~0.2 s): build it while the match loads, not on the
-	# first bot step (any client may become the bot host later).
-	BotNav.grid_for(main_node.get_world_3d())
+	# first bot step (any client may become the bot host later). Waits two physics
+	# frames: the map's walls only reach the physics space after a step.
+	_build_bot_grid.call_deferred()
 	player.connect("shot_fired", _on_local_shot)
 	Net.message.connect(_on_message)
 	Net.connection_lost.connect(_on_connection_lost)
@@ -203,6 +204,13 @@ func _ready() -> void:
 		var window_text := ("%d min" % (secs / 60)) if secs % 60 == 0 else ("%d s" % secs)
 		_feed("Loja aberta: %s para comprar com seus $%d (B abre/fecha). Abates dão créditos." % [window_text, credits])
 		_open_shop()
+
+func _build_bot_grid() -> void:
+	var world: World3D = main_node.get_world_3d()
+	for i in 2:
+		await get_tree().physics_frame
+	if is_inside_tree() and not BotNav.ready_for(world):
+		BotNav.grid_for(world)
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
