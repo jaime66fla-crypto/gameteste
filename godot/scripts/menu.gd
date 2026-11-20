@@ -1332,7 +1332,7 @@ func _show_multiplayer() -> void:
     _mode_card("Eliminatória", "8 jogadores",
         "Entre numa sala e confirme que está pronto. O primeiro jogador da sala (líder) inicia quando todos estiverem prontos.",
         ["Vagas livres são completadas com bots", "Uma vida só: vence o último vivo",
-        "Loja nos primeiros 20 s: comece com $800 e compre armas (B)"])
+        "Comece desarmado: armas, kits e granadas nas caixas do mapa (E)"])
     var xp_head := _section_title("Recompensas de XP")
     xp_head.name = "XpTitle"
     var rewards := HFlowContainer.new()
@@ -1370,7 +1370,7 @@ func _show_deathmatch_tab() -> void:
         return
     _mode_card("Mata-mata", "8 jogadores",
         "Todos contra todos sem pausa: morreu, volta em 3 segundos com uma pistola, longe de quem está vivo. O primeiro a chegar a 15 abates vence — ou quem tiver mais abates quando os 6 minutos acabarem.",
-        ["Pistola grátis; a loja abre por 20 s no início e a cada renascimento",
+        ["Pistola grátis; mais armas nas caixas do mapa, que se reabastecem",
         "Morrer não tira XP aqui; cada abate vale o mesmo da Eliminatória",
         "Proteção de 1,5 s ao renascer (acaba se você atirar)",
         "Vagas livres são completadas com bots"], Color("#ff9a6a"))
@@ -1516,7 +1516,7 @@ func _show_teams_tab(message: String = "") -> void:
     _mode_card("Equipes", "2x2 ou 4x4",
         "Partida personalizada em equipes. Crie uma sala e mande o código para seus amigos.",
         ["Vagas livres podem ser completadas com bots", "Vence a equipe que eliminar a outra",
-        "Loja nos primeiros 20 s: comece com $800 e compre armas (B)"])
+        "Loja nos primeiros 2 minutos: comece com $800 e compre armas (B)"])
     var feedback := _label(message,14,Color("#f0a08a"))
     feedback.name = "PartyFeedback"
     feedback.visible = not message.is_empty()

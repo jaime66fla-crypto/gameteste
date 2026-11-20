@@ -126,8 +126,34 @@ func _run() -> void:
 		me.call("_unhandled_input", key)
 		_check(str(me.get("current_weapon")) == "pistol", "Empty slot 3 does nothing")
 		_check(str(me.call("status_text")).contains("[1] PISTOLA") and str(me.call("status_text")).contains("2 FUZIL"), "HUD lists pickup slots")
-		# Medkit: bought in the shop into the inventory, used with F.
+		# Shop (Arsenal): open at the start, shows credits, buys only through the server.
 		_check((controller.get("crates") as Dictionary).is_empty(), "No loot crates in team matches")
+		var shop: Control = controller.get("shop")
+		_check(shop != null and shop.visible, "Shop opens at the start")
+		controller.call("_refresh_shop") # weapons given above
+		_check(bool(controller.call("ui_open")), "Shop keeps the cursor free")
+		var credits_label := shop.find_child("ShopCredits", true, false) as Label if shop != null else null
+		_check(credits_label != null and credits_label.text == "$ 800", "Shop shows the credits")
+		var rifle_card := shop.find_child("Buy_rifle", true, false) as Button if shop != null else null
+		_check(rifle_card != null and rifle_card.disabled, "Too expensive weapon is disabled")
+		var pistol_card := shop.find_child("Buy_pistol", true, false) as Button if shop != null else null
+		_check(pistol_card != null and pistol_card.disabled and str(shop.call("card_status", "pistol")) == "COMPRADA", "Owned pistol shows as bought")
+		_check(str(controller.call("hud_extra")).contains("$800") and str(controller.call("hud_extra")).contains("[B] LOJA"), "HUD shows credits and the shop key")
+		controller.call("_on_message", {"t": "credits", "amount": 400, "total": 1200, "victim": "X", "head": false})
+		_check(int(controller.get("credits")) == 1200, "Kill credits arrive")
+		var smg_card := shop.find_child("Buy_smg", true, false) as Button if shop != null else null
+		_check(smg_card != null and not smg_card.disabled and str(shop.call("card_status", "smg")) == "$1200", "Affordable weapon is enabled")
+		controller.call("_on_message", {"t": "buy_denied", "item": "rifle", "message": "Créditos insuficientes", "credits": 1200})
+		var note := shop.find_child("ShopNote", true, false) as Label if shop != null else null
+		_check(note != null and note.text == "Créditos insuficientes", "Server refusal is shown in the shop")
+		var b_key := InputEventKey.new()
+		b_key.pressed = true
+		b_key.physical_keycode = KEY_B
+		controller.call("_unhandled_input", b_key)
+		_check(shop != null and not shop.visible, "B closes the shop")
+		controller.call("_unhandled_input", b_key)
+		_check(shop != null and shop.visible, "B opens it again inside the window")
+		# Medkit: bought in the shop into the inventory, used with F.
 		controller.call("_close_shop")
 		controller.call("_on_message", {"t": "bought", "by": "me", "item": "medkit", "ammo": 0, "credits": 500})
 		controller.call("_on_message", {"t": "medkits", "id": "me", "count": 1})

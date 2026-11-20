@@ -286,6 +286,72 @@ test('no loot crates; medkits are bought, stack, and F (heal) uses one', async (
 	assert.equal(b.ws.last('crate'), undefined, 'no drop crate');
 });
 
+test('shop: buy within the window, with credits, one of each weapon, carry limits', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	say(match, b, { t: 'ready' });
+	say(match, a, { t: 'start' });
+	const m = match.match;
+	const me = m.players[a.id];
+	const start = a.ws.last('start');
+	assert.equal(start.shop.credits, 800);
+	assert.equal(start.shop.window, 120000);
+	assert.equal(start.shop.prices.rifle, 2200);
+	assert.deepEqual(me.inv, {}, 'team rooms start unarmed');
+	say(match, a, { t: 'buy', item: 'rifle' });
+	assert.equal(a.ws.last('buy_denied').message, 'Créditos insuficientes');
+	say(match, a, { t: 'buy', item: 'pistol' });
+	assert.ok(me.inv.pistol);
+	assert.equal(me.credits, 600);
+	const bought = b.ws.last('bought');
+	assert.deepEqual([bought.by, bought.item, bought.ammo], [a.id, 'pistol', 45], 'everyone hears about it');
+	say(match, a, { t: 'buy', item: 'pistol' });
+	assert.equal(a.ws.last('buy_denied').message, 'Você já tem essa arma');
+	say(match, a, { t: 'buy', item: 'bazooka' });
+	assert.equal(a.ws.last('buy_denied').message, 'Item inválido');
+	me.credits = 5000;
+	for (let i = 0; i < 4; i++) say(match, a, { t: 'buy', item: 'grenade' });
+	assert.equal(me.nades, 3);
+	assert.equal(a.ws.last('buy_denied').message, 'Limite de granadas');
+	// Bought weapons can deal damage; a weapon you do not have cannot.
+	const bot = Object.values(m.players).find((p) => p.bot && p.team !== me.team);
+	me.p = [0, 0, 0];
+	bot.p = [5, 0, 0];
+	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'sniper', pt: [5, 1.3, 0] });
+	assert.equal(bot.hp, 100);
+	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'pistol', pt: [5, 1.3, 0] });
+	assert.ok(bot.hp < 100);
+	// After 2 minutes the shop closes.
+	me.buyUntil = Date.now() - 1;
+	say(match, a, { t: 'buy', item: 'smg' });
+	assert.equal(a.ws.last('buy_denied').message, 'Tempo de compra encerrado');
+	assert.equal(me.inv.smg, undefined);
+});
+
+test('team rooms: bots spawn armed; kills earn credits (player 400, bot 200, +100 head)', async () => {
+	const match = room();
+	const a = await join(match, { create: true, name: 'A' });
+	const b = await join(match, { name: 'B' });
+	say(match, b, { t: 'ready' });
+	say(match, a, { t: 'start' });
+	const m = match.match;
+	const start = a.ws.last('start');
+	for (const entry of start.roster.filter((r) => r.bot)) {
+		assert.ok(entry.w && m.players[entry.id].inv[entry.w], 'roster tells clients the bot weapon');
+		assert.equal(entry.medkits, 1);
+	}
+	const me = m.players[a.id];
+	const enemyBot = Object.values(m.players).find((p) => p.bot && p.team !== me.team);
+	match.damage(me, enemyBot, 999, 'pistol', 'head');
+	assert.equal(me.credits, 1100);
+	assert.deepEqual([a.ws.last('credits').amount, a.ws.last('credits').head], [300, true]);
+	if (m.players[b.id].team !== me.team) {
+		match.damage(me, m.players[b.id], 999, 'pistol', 'chest');
+		assert.equal(me.credits, 1500);
+	}
+});
+
 test('grenades: bought, thrown, server-checked blast with falloff, no team damage, self damage without kill credit', async () => {
 	const match = room();
 	const a = await join(match, { create: true, name: 'A' });

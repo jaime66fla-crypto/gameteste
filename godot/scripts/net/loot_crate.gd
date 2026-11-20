@@ -1,9 +1,10 @@
 extends StaticBody3D
-## A loot crate in an online match. Contents and ownership live on the server;
-## this node only shows the crate, its contents and the opened state.
+## A loot crate in an online match (Eliminatória and Mata-mata; team rooms use
+## the shop). Contents and ownership live on the server; this node only shows
+## the crate, its contents and the opened state. Compact: about knee height.
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
-const SIZE := Vector3(1.0, 0.62, 0.7)
+const SIZE := Vector3(0.62, 0.38, 0.44)
 
 var crate_id := ""
 var items: Dictionary = {} # weapon id -> reserve ammo
@@ -11,6 +12,7 @@ var is_drop := false # dropped by an eliminated player
 var is_med := false # medkit: restores health instead of weapons
 var heal := 0
 var medkits := 0 # carried kits left in a dropped crate
+var nades := 0
 var owner_name := ""
 var opened := false
 var label: Label3D
@@ -24,6 +26,7 @@ func setup(data: Dictionary) -> void:
 	is_med = bool(data.get("med", false))
 	heal = int(data.get("heal", 0))
 	medkits = int(data.get("medkits", 0))
+	nades = int(data.get("nades", 0))
 	name = "Crate_" + crate_id
 
 func _ready() -> void:
@@ -37,54 +40,50 @@ func _ready() -> void:
 	add_child(collision)
 	if is_med:
 		_build_medkit()
-		return
-	var body_color := Color("#3f4a33") if is_drop else Color("#8a6a42")
-	var band_color := Color("#2b2f2a") if is_drop else Color("#4a4f52")
-	_part(self, Vector3(0, SIZE.y * 0.42, 0), Vector3(SIZE.x, SIZE.y * 0.84, SIZE.z), body_color)
-	for x in [-0.36, 0.36]:
-		_part(self, Vector3(x, SIZE.y * 0.42, 0), Vector3(0.07, SIZE.y * 0.86, SIZE.z + 0.02), band_color)
-	# Lid hinged on the back edge; it swings open when looted.
-	lid = Node3D.new()
-	lid.position = Vector3(0, SIZE.y * 0.84, -SIZE.z * 0.5)
-	add_child(lid)
-	_part(lid, Vector3(0, SIZE.y * 0.08, SIZE.z * 0.5), Vector3(SIZE.x + 0.04, SIZE.y * 0.16, SIZE.z + 0.04), body_color.darkened(0.15))
-	_part(lid, Vector3(0, SIZE.y * 0.17, SIZE.z * 0.5), Vector3(0.18, 0.03, 0.18), Color("#d9b44a") if not is_drop else Color("#b03a2e"))
+	else:
+		_build_ammo_box()
 	label = Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.font_size = 40
+	label.font_size = 36
 	label.outline_size = 10
 	label.pixel_size = 0.004
-	label.position.y = SIZE.y + 0.55
-	label.modulate = Color("#ffe08a") if not is_drop else Color("#ff9a7a")
+	label.position.y = SIZE.y + 0.45
+	label.modulate = Color("#8cf0a0") if is_med else (Color("#ff9a7a") if is_drop else Color("#ffe08a"))
 	label.visible = false
 	add_child(label)
 	label.text = contents_text()
 	_settle()
 
+## Olive military case with dark straps and a brass (or red, when dropped) latch.
+func _build_ammo_box() -> void:
+	var body_color := Color("#3f4a33") if is_drop else Color("#5d6b3d")
+	var band_color := Color("#23271f")
+	_part(self, Vector3(0, SIZE.y * 0.42, 0), Vector3(SIZE.x, SIZE.y * 0.84, SIZE.z), body_color)
+	for x in [-SIZE.x * 0.34, SIZE.x * 0.34]:
+		_part(self, Vector3(x, SIZE.y * 0.42, 0), Vector3(0.05, SIZE.y * 0.86, SIZE.z + 0.015), band_color)
+	# Stencilled stripe on the front.
+	_part(self, Vector3(0, SIZE.y * 0.42, SIZE.z * 0.5 + 0.004), Vector3(SIZE.x * 0.4, 0.035, 0.006), Color("#d9b44a"))
+	# Lid hinged on the back edge; it swings open when looted.
+	lid = Node3D.new()
+	lid.position = Vector3(0, SIZE.y * 0.84, -SIZE.z * 0.5)
+	add_child(lid)
+	_part(lid, Vector3(0, SIZE.y * 0.08, SIZE.z * 0.5), Vector3(SIZE.x + 0.03, SIZE.y * 0.16, SIZE.z + 0.03), body_color.darkened(0.15))
+	_part(lid, Vector3(0, SIZE.y * 0.17, SIZE.z * 0.5), Vector3(0.11, 0.025, 0.11), Color("#b03a2e") if is_drop else Color("#d9b44a"))
+
 ## White case with red crosses on the lid and front, lid opens when used.
 func _build_medkit() -> void:
 	var white := Color("#e9ecea")
 	var red := Color("#c8261f")
+	var s := SIZE.x
 	_part(self, Vector3(0, SIZE.y * 0.42, 0), Vector3(SIZE.x, SIZE.y * 0.84, SIZE.z), white)
-	_part(self, Vector3(0, SIZE.y * 0.45, SIZE.z * 0.5 + 0.006), Vector3(0.34, 0.1, 0.01), red)
-	_part(self, Vector3(0, SIZE.y * 0.45, SIZE.z * 0.5 + 0.006), Vector3(0.1, 0.34, 0.01), red)
+	_part(self, Vector3(0, SIZE.y * 0.45, SIZE.z * 0.5 + 0.005), Vector3(s * 0.34, s * 0.1, 0.008), red)
+	_part(self, Vector3(0, SIZE.y * 0.45, SIZE.z * 0.5 + 0.005), Vector3(s * 0.1, s * 0.34, 0.008), red)
 	lid = Node3D.new()
 	lid.position = Vector3(0, SIZE.y * 0.84, -SIZE.z * 0.5)
 	add_child(lid)
-	_part(lid, Vector3(0, SIZE.y * 0.08, SIZE.z * 0.5), Vector3(SIZE.x + 0.04, SIZE.y * 0.16, SIZE.z + 0.04), white.darkened(0.08))
-	_part(lid, Vector3(0, SIZE.y * 0.165, SIZE.z * 0.5), Vector3(0.4, 0.012, 0.12), red)
-	_part(lid, Vector3(0, SIZE.y * 0.165, SIZE.z * 0.5), Vector3(0.12, 0.012, 0.4), red)
-	label = Label3D.new()
-	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.font_size = 40
-	label.outline_size = 10
-	label.pixel_size = 0.004
-	label.position.y = SIZE.y + 0.55
-	label.modulate = Color("#8cf0a0")
-	label.visible = false
-	add_child(label)
-	label.text = contents_text()
-	_settle()
+	_part(lid, Vector3(0, SIZE.y * 0.08, SIZE.z * 0.5), Vector3(SIZE.x + 0.03, SIZE.y * 0.16, SIZE.z + 0.03), white.darkened(0.08))
+	_part(lid, Vector3(0, SIZE.y * 0.165, SIZE.z * 0.5), Vector3(s * 0.4, 0.01, s * 0.12), red)
+	_part(lid, Vector3(0, SIZE.y * 0.165, SIZE.z * 0.5), Vector3(s * 0.12, 0.01, s * 0.4), red)
 
 func _settle() -> void:
 	# Rest on whatever surface is below (roads and sidewalks are a few cm high).
@@ -105,6 +104,8 @@ func contents_text() -> String:
 		names.append(str(WeaponData.stats(weapon_id)["name"]))
 	if medkits > 0:
 		names.append("Kit médico ×%d" % medkits)
+	if nades > 0:
+		names.append("Granada ×%d" % nades)
 	var title := ("Caixa de " + owner_name) if is_drop and not owner_name.is_empty() else "Suprimentos"
 	return "%s\n%s" % [title, ", ".join(names)]
 
@@ -122,6 +123,7 @@ func mark_opened() -> void:
 ## Mata-mata: the server refilled this crate (new contents, lid closes again).
 func refill(data: Dictionary) -> void:
 	items = data.get("items", {})
+	nades = int(data.get("nades", 0))
 	opened = false
 	if label != null:
 		label.text = contents_text()

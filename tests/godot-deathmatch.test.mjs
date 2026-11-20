@@ -126,8 +126,9 @@ test('dying schedules a respawn with a pistol, costs no XP, and the alarm brings
 	assert.equal(m.players[a.id].kills, 1);
 	assert.equal(b.ws.last('hp').respawn, 3000);
 	assert.equal(victim.xpGain, 0, 'no death penalty in mata-mata');
-	assert.deepEqual(victim.inv, {}, 'weapons are lost (nothing drops)');
-	assert.equal(Object.keys(m.crates).length, 0);
+	assert.deepEqual(victim.inv, {}, 'weapons leave the dead player');
+	const drop = a.ws.last('crate').crate;
+	assert.ok(drop.drop && drop.items.rifle && drop.items.pistol, 'they drop in a crate where the player fell');
 	assert.ok(match.alarms.at(-1) <= Date.now() + 3000, 'alarm set for the respawn');
 	match.dmTick(Date.now() + 1000);
 	assert.equal(victim.dead, true, 'not before the 3 s');
@@ -164,97 +165,62 @@ test('players who left do not respawn', async () => {
 	assert.equal(victim.dead, true);
 });
 
-test('respawning reopens the shop and keeps your credits', async () => {
+test('no shop in mata-mata: crates on the map, no credits, respawn opens no shop', async () => {
 	const { match, a, b, m } = await started();
-	const victim = m.players[b.id];
-	victim.credits = 1500;
-	match.damage(m.players[a.id], victim, 999, 'pistol', 'chest');
-	victim.buyUntil = Date.now() - 1; // first window long gone
-	say(match, b, { t: 'buy', item: 'smg' });
-	assert.equal(b.ws.last('buy_denied').message, 'Você está fora de combate');
+	const start = a.ws.last('start');
+	assert.equal(start.shop, undefined, 'no shop info');
+	assert.ok(start.crates.length >= 10, 'map crates are sent');
+	assert.ok(start.crates.some((c) => c.med), 'with medkit cases');
+	say(match, a, { t: 'buy', item: 'pistol' });
+	assert.equal(a.ws.last('buy_denied').message, 'Sem loja neste modo');
+	const bot = Object.values(m.players).find((p) => p.bot);
+	match.damage(m.players[a.id], bot, 999, 'pistol', 'chest');
+	assert.equal(a.ws.last('credits'), undefined, 'kills earn no credits');
+	match.damage(m.players[a.id], m.players[b.id], 999, 'pistol', 'chest');
 	match.dmTick(Date.now() + 3100);
-	assert.equal(b.ws.last('respawn').buy, 20000);
-	say(match, b, { t: 'buy', item: 'smg' });
-	assert.ok(victim.inv.smg, 'bought right after respawning');
-	assert.equal(victim.credits, 300);
+	assert.equal(b.ws.last('respawn').buy, undefined);
 });
 
-test('bots spawn armed (random weapon + a medkit) and re-arm on respawn', async () => {
+test('bots start with the pistol like everyone and loot crates; they respawn with the pistol', async () => {
 	const { match, a, m } = await started();
 	const start = a.ws.last('start');
 	for (const entry of start.roster.filter((r) => r.bot)) {
-		assert.ok(entry.w && m.players[entry.id].inv[entry.w], 'roster tells clients the bot weapon');
-		assert.equal(entry.medkits, 1);
+		assert.equal(entry.w, undefined, 'no server-picked weapon');
+		assert.deepEqual(m.players[entry.id].inv, { pistol: true });
 	}
 	const bot = m.players[start.roster.find((r) => r.bot).id];
 	match.damage(m.players[a.id], bot, 999, 'pistol', 'chest');
 	match.dmTick(Date.now() + 3100);
 	const respawn = a.ws.last('respawn');
 	assert.equal(respawn.id, bot.id);
-	assert.ok(bot.inv[respawn.w]);
-	assert.equal(respawn.medkits, 1);
+	assert.equal(respawn.w, 'pistol');
 });
 
-test('shop: buy within the window, with credits, one of each weapon, carry limits', async () => {
-	const match = room();
-	const a = await join(match, { mode: '', name: 'A' });
-	const b = await join(match, { mode: '', name: 'B' });
-	say(match, b, { t: 'ready' });
-	say(match, a, { t: 'start' });
-	const m = match.match;
-	const me = m.players[a.id];
-	const start = a.ws.last('start');
-	assert.equal(start.shop.credits, 800);
-	assert.equal(start.shop.window, 20000);
-	assert.equal(start.shop.prices.rifle, 2200);
-	assert.deepEqual(me.inv, {}, 'elimination starts unarmed');
-	say(match, a, { t: 'buy', item: 'rifle' });
-	assert.equal(a.ws.last('buy_denied').message, 'Créditos insuficientes');
-	say(match, a, { t: 'buy', item: 'pistol' });
-	assert.ok(me.inv.pistol);
-	assert.equal(me.credits, 600);
-	const bought = b.ws.last('bought');
-	assert.deepEqual([bought.by, bought.item, bought.ammo], [a.id, 'pistol', 45], 'everyone hears about it');
-	say(match, a, { t: 'buy', item: 'pistol' });
-	assert.equal(a.ws.last('buy_denied').message, 'Você já tem essa arma');
-	say(match, a, { t: 'buy', item: 'bazooka' });
-	assert.equal(a.ws.last('buy_denied').message, 'Item inválido');
-	me.credits = 5000;
-	for (let i = 0; i < 4; i++) say(match, a, { t: 'buy', item: 'grenade' });
-	assert.equal(me.nades, 3);
-	assert.equal(a.ws.last('buy_denied').message, 'Limite de granadas');
-	// Bought weapons can deal damage; a weapon you do not have cannot.
-	const bot = Object.values(m.players).find((p) => p.bot);
-	m.players[a.id].p = [0, 0, 0];
-	bot.p = [5, 0, 0];
-	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'sniper', pt: [5, 1.3, 0] });
-	assert.equal(bot.hp, 100);
-	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'pistol', pt: [5, 1.3, 0] });
-	assert.ok(bot.hp < 100);
-	// After 20 s the shop closes.
-	me.buyUntil = Date.now() - 1;
-	say(match, a, { t: 'buy', item: 'smg' });
-	assert.equal(a.ws.last('buy_denied').message, 'Tempo de compra encerrado');
-	assert.equal(me.inv.smg, undefined);
-});
-
-test('kills earn credits: player 400, bot 200, +100 headshot; bots earn nothing', async () => {
+test('looting: in range only, once, gives weapon/grenade; mata-mata crates refill', async () => {
 	const { match, a, b, m } = await started();
 	const me = m.players[a.id];
-	const [bot, bot2] = Object.values(m.players).filter((p) => p.bot);
-	match.damage(me, bot, 999, 'pistol', 'chest');
-	assert.equal(me.credits, 1000);
-	assert.deepEqual([a.ws.last('credits').amount, a.ws.last('credits').total], [200, 1000]);
-	match.damage(me, bot2, 999, 'pistol', 'head');
-	assert.equal(me.credits, 1300);
-	assert.equal(a.ws.last('credits').head, true);
-	match.damage(me, m.players[b.id], 999, 'pistol', 'chest');
-	assert.equal(me.credits, 1700);
-	const bot3 = Object.values(m.players).filter((p) => p.bot)[2];
-	const before = bot3.credits;
-	match.dmTick(Date.now() + 3100);
-	match.damage(bot3, m.players[b.id], 999, 'pistol', 'chest');
-	assert.equal(bot3.credits, before);
+	const crate = Object.values(m.crates).find((c) => !c.med);
+	const weapon = Object.keys(crate.items)[0];
+	me.p = [crate.p[0] + 10, 0, crate.p[2]];
+	say(match, a, { t: 'loot', crate: crate.id });
+	assert.equal(crate.open, false, 'too far');
+	me.p = [crate.p[0] + 1, crate.p[1], crate.p[2]];
+	say(match, a, { t: 'loot', crate: crate.id });
+	assert.equal(crate.open, true);
+	assert.ok(me.inv[weapon]);
+	assert.equal(b.ws.last('looted').crate, crate.id);
+	m.players[b.id].p = [...me.p];
+	say(match, b, { t: 'loot', crate: crate.id });
+	assert.notEqual(b.ws.last('looted').by, b.id, 'already opened');
+	assert.ok(crate.refillAt > Date.now());
+	match.dmTick(crate.refillAt + 1);
+	assert.equal(crate.open, false, 'refilled');
+	assert.equal(a.ws.last('refill').crate.id, crate.id);
+	// Medkit case: carried up to the limit.
+	const med = Object.values(m.crates).find((c) => c.med);
+	me.p = [med.p[0], 0, med.p[2]];
+	say(match, a, { t: 'loot', crate: med.id });
+	assert.equal(me.medkits, 1);
 });
 
 test('the first to 15 kills wins; the board is sorted by kills then deaths', async () => {
@@ -304,6 +270,8 @@ test('elimination rooms keep one life', async () => {
 	say(match, a, { t: 'start' });
 	const m = match.match;
 	assert.equal(a.ws.last('start').mode, 'elim');
+	assert.equal(a.ws.last('start').shop, undefined, 'no shop in public elimination');
+	assert.ok(a.ws.last('start').crates.length >= 10, 'loot crates instead');
 	assert.deepEqual(m.players[a.id].inv, {}, 'unarmed start');
 	match.damage(m.players[a.id], m.players[b.id], 999, 'rifle', 'chest');
 	assert.equal(m.players[b.id].respawnAt, 0);

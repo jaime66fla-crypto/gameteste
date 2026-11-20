@@ -53,7 +53,7 @@ var dm_kit: Dictionary = {"pistol": 45}
 ## Loja: créditos (servidor confirma) e a janela de compra (início / renascer).
 const ShopPanelScript = preload("res://scripts/net/shop_panel.gd")
 var credits := 0
-var buy_window_ms := 20000
+var buy_window_ms := 120000
 var buy_until_msec := 0
 var shop: Control
 var my_team := -1
@@ -173,11 +173,15 @@ func _ready() -> void:
 		_feed("Aliados têm o nome em azul (visível através das paredes). Não há fogo amigo.")
 	elif dm_mode:
 		_feed("Mata-mata! %d combatentes — o primeiro a fazer %d abates vence." % [alive_count, kill_goal])
-		_feed("Morreu? Você renasce em poucos segundos com uma pistola e a loja abre de novo.")
+		_feed("Morreu? Você renasce em poucos segundos com uma pistola. As caixas se reabastecem.")
 	else:
 		_feed("Partida iniciada! %d combatentes — o último vivo vence." % alive_count)
+	if shop == null and not crates.is_empty():
+		_feed("Procure caixas de suprimentos pelo mapa: [E] coleta armas, kits e granadas.")
 	if shop != null:
-		_feed("Loja aberta: %d s para comprar com seus $%d (B abre/fecha). Abates dão créditos." % [int(buy_window_ms / 1000.0), credits])
+		var secs := int(buy_window_ms / 1000.0)
+		var window_text := ("%d min" % (secs / 60)) if secs % 60 == 0 else ("%d s" % secs)
+		_feed("Loja aberta: %s para comprar com seus $%d (B abre/fecha). Abates dão créditos." % [window_text, credits])
 		_open_shop()
 
 func _exit_tree() -> void:

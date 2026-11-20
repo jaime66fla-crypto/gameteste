@@ -14,15 +14,19 @@ import { resolveSession, rankFor, XP_REWARDS } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 
 const CAPACITY = 8;
-// Shop (no loot crates in these modes): everyone gets START_CREDITS and may buy
-// only during the first BUY_WINDOW_MS of the match (and of every respawn in
-// mata-mata). Kills earn credits. A weapon comes with RESERVE_AMMO.
+// Shop: only in custom team rooms (Equipes 2x2/4x4). Everyone gets START_CREDITS
+// and may buy only during the first BUY_WINDOW_MS of the match. Kills earn
+// credits. A weapon comes with RESERVE_AMMO.
+// Loot crates: public rooms (Eliminatória and Mata-mata). Everyone starts
+// unarmed (mata-mata: with a pistol); crates hold one weapon plus reserve ammo,
+// medkit cases heal, and an eliminated player drops a crate with their gear.
 const SHOP_PRICES = { pistol: 200, smg: 1200, shotgun: 1400, rifle: 2200, sniper: 3200, medkit: 300, grenade: 300 };
 const START_CREDITS = 800;
-const BUY_WINDOW_MS = 20000;
+const BUY_WINDOW_MS = 120000; // 2 minutes
 const KILL_CREDITS = { player: 400, bot: 200, headshot: 100 };
 const MAX_CREDITS = 16000;
-// Bots do not shop: they get a random weapon (and one medkit) when they spawn.
+// Bots do not shop: in team rooms they get a random weapon (and one medkit) when they spawn.
+const LOOT_RANGE = 3.5; // metres between the looter's last known position and the crate
 const LOOT_WEIGHTS = [['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
 const RESERVE_AMMO = { pistol: 45, smg: 90, rifle: 90, shotgun: 18, sniper: 15 };
 const MEDKIT_HEAL = 50; // health restored by a medkit (max 100)
@@ -60,13 +64,14 @@ function mapFor(m) {
 	return matchMaps.maps[id];
 }
 // Mata-mata ("mode=dm"): same 8-player public rooms, but nobody stays dead.
-// You respawn after a few seconds with a free pistol in the building farthest
-// from the others, and the shop opens again; the first to DM_KILL_GOAL kills
+// You respawn after a few seconds with a free pistol at the spawn farthest
+// from the others; opened crates refill; the first to DM_KILL_GOAL kills
 // (or the most kills when time runs out) wins. Dying costs no XP here.
 const DM_KILL_GOAL = 15;
 const DM_MATCH_MS = 6 * 60 * 1000;
 const DM_RESPAWN_MS = 3000;
 const DM_SPAWN_PROTECT_MS = 1500; // invulnerable right after respawning (until you attack)
+const DM_CRATE_REFILL_MS = 25000;
 const DM_KIT = 'pistol';
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -483,15 +488,18 @@ export class GodotMatch {
 			});
 		}
 		const now = Date.now();
+		const shop = this.hasShop();
 		for (const id of m.order) {
 			const p = m.players[id];
-			Object.assign(p, { medkits: 0, nades: 0, deaths: 0, respawnAt: 0, credits: START_CREDITS, buyUntil: now + BUY_WINDOW_MS });
+			Object.assign(p, { medkits: 0, nades: 0, deaths: 0, respawnAt: 0 });
+			if (shop) Object.assign(p, { credits: START_CREDITS, buyUntil: now + BUY_WINDOW_MS });
 			// Mata-mata: a free pistol at the start and on every respawn.
 			if (this.isDm()) p.inv = { [DM_KIT]: true };
-			if (p.bot) this.armBot(p);
+			if (shop && p.bot) this.armBot(p);
 		}
 		m.grenades = {};
-		m.crates = {}; // no loot crates: weapons come from the shop
+		m.dropSeq = 0;
+		m.crates = shop ? {} : this.mapCrates(map); // team rooms: weapons come from the shop
 		m.phase = 'running';
 		m.startedAt = now;
 		m.host = m.party && m.leader && this.sessions.has(m.leader) ? m.leader : humans[0];
@@ -512,13 +520,32 @@ export class GodotMatch {
 				const p = m.players[id];
 				const entry = { id, name: p.name, bot: p.bot, spawn: p.spawn, rank: p.rank || '' };
 				if (m.party) Object.assign(entry, { team: p.team, sp: [p.p[0], p.p[2]] });
-				if (p.bot) Object.assign(entry, { w: Object.keys(p.inv)[0], medkits: p.medkits });
+				if (shop && p.bot) Object.assign(entry, { w: Object.keys(p.inv)[0], medkits: p.medkits });
 				return entry;
 			}),
-			shop: { prices: SHOP_PRICES, credits: START_CREDITS, window: BUY_WINDOW_MS, ammo: RESERVE_AMMO, maxMedkits: MAX_MEDKITS, maxNades: MAX_NADES },
-			crates: [],
+			shop: shop ? { prices: SHOP_PRICES, credits: START_CREDITS, window: BUY_WINDOW_MS, ammo: RESERVE_AMMO, maxMedkits: MAX_MEDKITS, maxNades: MAX_NADES } : undefined,
+			crates: Object.values(m.crates),
 		});
 		this.schedule();
+	}
+
+	/** The shop exists only in custom team rooms (Equipes 2x2/4x4); public rooms use crates. */
+	hasShop() {
+		return !!this.match.party;
+	}
+
+	/** Loot crates at the map's spots: one random weapon each (half also hold a grenade), plus medkit cases. */
+	mapCrates(map) {
+		const crates = {};
+		(map.loot || []).forEach((spot, i) => {
+			const weapon = rollWeapon();
+			const p = spot.length === 3 ? [...spot] : [spot[0], 0, spot[1]];
+			crates['c' + i] = { id: 'c' + i, p, items: { [weapon]: RESERVE_AMMO[weapon] }, nades: Math.random() < 0.5 ? 1 : 0, open: false, drop: false };
+		});
+		(map.medkits || []).forEach((spot, i) => {
+			crates['m' + i] = { id: 'm' + i, p: [spot[0], 0, spot[1]], items: {}, med: true, heal: MEDKIT_HEAL, open: false, drop: false };
+		});
+		return crates;
 	}
 
 	/** Bots do not shop: a random weapon (pistol most often) and one medkit. */
@@ -536,6 +563,7 @@ export class GodotMatch {
 	buy(player, item, ws) {
 		const deny = (message) => this.send(ws, { t: 'buy_denied', item, message, credits: player.credits || 0 });
 		const price = SHOP_PRICES[item];
+		if (!this.hasShop()) return deny('Sem loja neste modo');
 		if (price === undefined) return deny('Item inválido');
 		if (player.dead) return deny('Você está fora de combate');
 		if (Date.now() > (player.buyUntil || 0)) return deny('Tempo de compra encerrado');
@@ -557,35 +585,50 @@ export class GodotMatch {
 
 	/** Credits for a kill (humans only), told to the killer right away. */
 	reward(attacker, target, zone) {
-		if (attacker.bot) return;
+		if (attacker.bot || !this.hasShop()) return;
 		const amount = (target.bot ? KILL_CREDITS.bot : KILL_CREDITS.player) + (zone === 'head' ? KILL_CREDITS.headshot : 0);
 		attacker.credits = Math.min(MAX_CREDITS, (attacker.credits || 0) + amount);
 		const ws = this.sessions.get(attacker.id);
 		if (ws) this.send(ws, { t: 'credits', amount, total: attacker.credits, victim: target.name, head: zone === 'head' });
 	}
 
-	/** Next alarm: the end of the match, or (mata-mata) the next respawn. */
+	/** Next alarm: the end of the match, or (mata-mata) the next respawn or crate refill. */
 	schedule() {
 		const m = this.match;
 		if (m.phase !== 'running') return;
 		let next = m.startedAt + this.matchLength();
 		if (this.isDm()) {
 			for (const p of Object.values(m.players)) if (p.dead && p.respawnAt) next = Math.min(next, p.respawnAt);
+			for (const c of Object.values(m.crates || {})) if (c.refillAt) next = Math.min(next, c.refillAt);
 		}
 		this.ctx.waitUntil(this.ctx.storage.setAlarm(next));
 	}
 
-	/** Mata-mata: bring back whoever finished waiting. */
+	/** Mata-mata: bring back whoever finished waiting, refill opened crates. */
 	dmTick(now = Date.now()) {
 		const m = this.match;
 		for (const id of m.order) {
 			const p = m.players[id];
 			if (p?.dead && p.respawnAt && p.respawnAt <= now) this.respawn(p, now);
 		}
+		for (const crate of Object.values(m.crates || {})) if (crate.refillAt && crate.refillAt <= now) this.refillCrate(crate);
 		this.save();
 	}
 
-	/** Respawn at the spawn farthest from the living (random among the 3 best), with a pistol; the shop reopens. */
+	/** Mata-mata: an opened map crate fills up again (new random weapon). */
+	refillCrate(crate) {
+		crate.refillAt = 0;
+		crate.open = false;
+		if (crate.med) crate.items = {};
+		else {
+			const weapon = rollWeapon();
+			crate.items = { [weapon]: RESERVE_AMMO[weapon] };
+			crate.nades = Math.random() < 0.5 ? 1 : 0;
+		}
+		this.broadcast({ t: 'refill', crate });
+	}
+
+	/** Respawn at the spawn farthest from the living (random among the 3 best), with a pistol. */
 	respawn(p, now = Date.now()) {
 		const m = this.match;
 		p.respawnAt = 0;
@@ -599,12 +642,14 @@ export class GodotMatch {
 		const at = spawns[pick.i];
 		Object.assign(p, {
 			dead: false, hp: 100, spawn: pick.i, p: [at[0], 0, at[1]], inv: { [DM_KIT]: true }, medkits: 0, nades: 0, healAt: 0,
-			safeUntil: now + DM_SPAWN_PROTECT_MS, buyUntil: now + BUY_WINDOW_MS,
+			safeUntil: now + DM_SPAWN_PROTECT_MS,
 		});
-		const weapon = p.bot ? this.armBot(p) : DM_KIT;
+		const shop = this.hasShop();
+		if (shop) p.buyUntil = now + BUY_WINDOW_MS;
+		const weapon = shop && p.bot ? this.armBot(p) : DM_KIT;
 		this.broadcast({
 			t: 'respawn', id: p.id, spawn: pick.i, p: p.p, w: weapon, ammo: RESERVE_AMMO[weapon], safe: DM_SPAWN_PROTECT_MS, alive: this.alive().length,
-			buy: BUY_WINDOW_MS, medkits: p.medkits,
+			...(shop ? { buy: BUY_WINDOW_MS } : {}), medkits: p.medkits,
 		});
 	}
 
@@ -662,6 +707,31 @@ export class GodotMatch {
 			}
 			case 'buy': {
 				return this.buy(me, typeof d.item === 'string' ? d.item : '', ws);
+			}
+			case 'loot': {
+				const looter = d.bot ? m.players[d.bot] : me;
+				if (!looter || looter.dead || (d.bot && (!isHost || !looter.bot))) return;
+				const crate = m.crates?.[d.crate];
+				if (!crate || crate.open || !looter.p || flatDistance(looter.p, crate.p) > LOOT_RANGE) return;
+				if (Math.abs((looter.p[1] || 0) - (crate.p[1] || 0)) > 2.5) return; // e.g. on a roof above it
+				// Medkits are carried (up to MAX_MEDKITS) and used later with F ("heal").
+				const kits = crate.med ? 1 : crate.medkits || 0;
+				if (crate.med && (looter.medkits || 0) >= MAX_MEDKITS) return this.send(ws, { t: 'loot_denied', crate: crate.id, by: looter.id, message: 'Limite de kits' });
+				crate.open = true;
+				looter.inv = looter.inv || {};
+				for (const weapon of Object.keys(crate.items)) looter.inv[weapon] = true;
+				if (kits) looter.medkits = Math.min(MAX_MEDKITS, (looter.medkits || 0) + kits);
+				const nades = crate.nades || 0;
+				if (nades) looter.nades = Math.min(MAX_NADES, (looter.nades || 0) + nades);
+				if (this.isDm() && !crate.drop) {
+					crate.refillAt = Date.now() + DM_CRATE_REFILL_MS;
+					this.schedule();
+				}
+				this.save();
+				this.broadcast({ t: 'looted', crate: crate.id, by: looter.id, items: crate.items, med: !!crate.med, kits, nades });
+				if (kits) this.broadcast({ t: 'medkits', id: looter.id, count: looter.medkits });
+				if (nades) this.broadcast({ t: 'nades', id: looter.id, count: looter.nades });
+				return;
 			}
 			case 'throw': {
 				// Grenade thrown by a player (bots do not throw): {id, o, v}.
@@ -851,8 +921,24 @@ export class GodotMatch {
 		} catch {}
 	}
 
-	/** A dead player loses what they carried (nothing drops: weapons only come from the shop). */
+	/**
+	 * A dead player loses what they carried. In crate modes it stays where they
+	 * fell, in a crate anyone can open; in team rooms (shop) nothing drops.
+	 */
 	stripInventory(player) {
+		const m = this.match;
+		const weapons = Object.keys(player.inv || {});
+		const medkits = player.medkits || 0;
+		const nades = player.nades || 0;
+		if (!this.hasShop() && player.p && (weapons.length || medkits || nades)) {
+			const id = 'd' + (m.dropSeq = (m.dropSeq || 0) + 1);
+			const items = {};
+			for (const weapon of weapons) items[weapon] = RESERVE_AMMO[weapon] || 0;
+			const crate = { id, p: [...player.p], items, medkits, nades, open: false, drop: true, name: player.name };
+			m.crates = m.crates || {};
+			m.crates[id] = crate;
+			this.broadcast({ t: 'crate', crate });
+		}
 		player.inv = {};
 		player.medkits = 0;
 		player.nades = 0;
