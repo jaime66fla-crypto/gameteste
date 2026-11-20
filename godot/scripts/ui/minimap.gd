@@ -12,6 +12,7 @@ var allies: Callable # devolve Array[Node3D] (equipes)
 var _roads: Array = [] # [from Vector2, to Vector2, width]
 var _buildings: Array = [] # [center Vector2, size Vector2]
 var _grass: Array = [] # [center Vector2, r]
+var _ponds: Array = [] # [center Vector2, r]
 var _trees: PackedVector2Array = PackedVector2Array()
 var _half := 60.0
 var _canvas: Control
@@ -28,16 +29,19 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		for f in layout.get("footprints", []):
 			_buildings.append([Vector2(float(f[0]), float(f[1])), Vector2(float(f[2]), float(f[3]))])
 		return
-	# Sobrevivência: a cidade do meio (avenidas e prédios) e o mundo aberto.
-	for lane in [-48.0, 0.0, 48.0]:
-		_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
-		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
-	for b in MatchLayout.city_layout().get("buildings", []):
-		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+	# Sobrevivência: o mundo aberto (floresta, lagos; cidade do meio só nos mapas antigos).
 	if survival:
 		meters_per_px = 0.95
 		var data := SurvivalData.world()
 		_half = float(data.get("half_size", 240))
+		if data.has("center_town"):
+			for lane in [-48.0, 0.0, 48.0]:
+				_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
+				_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
+			for b in MatchLayout.city_layout().get("buildings", []):
+				_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+		for pond in data.get("ponds", []):
+			_ponds.append([Vector2(float(pond["x"]), float(pond["z"])), float(pond["r"])])
 		for road in data.get("roads", []):
 			_roads.append([Vector2(float(road["from"][0]), float(road["from"][1])), Vector2(float(road["to"][0]), float(road["to"][1])), float(road.get("width", 6))])
 		for b in data.get("buildings", []):
@@ -172,6 +176,9 @@ func _paint_map(ci: Control) -> void:
 		ci.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
 	for t in _trees:
 		ci.draw_circle(t, 1.6, Color(0.14, 0.28, 0.14, 1.0))
+	for p in _ponds:
+		ci.draw_circle(p[0], p[1] + 1.4, Color(0.31, 0.26, 0.2, 1.0))
+		ci.draw_circle(p[0], p[1], Color(0.18, 0.34, 0.4, 1.0))
 	for road in _roads:
 		ci.draw_line(road[0], road[1], Color(0.30, 0.31, 0.31, 1.0), road[2])
 	for b in _buildings:

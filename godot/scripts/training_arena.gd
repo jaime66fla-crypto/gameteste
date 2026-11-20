@@ -27,6 +27,8 @@ const PICK_REACH := 2.0
 const STAFF := "long_bat"
 const FIST_DAMAGE := 12.0 # src/godot-survival.js FIST_DAMAGE
 const FIST_REACH := 2.4 # survival_controller: soco sem arma branca
+const STAFF_DAMAGE := 34.0 # bastão longo do treino
+const STAFF_REACH := 3.2
 const MELEE_COOLDOWN := 0.6
 const SWING_TIME := 0.55
 const ZOMBIE_HP := 60.0
@@ -201,9 +203,10 @@ func _melee() -> void:
 		return
 	_cooldown = MELEE_COOLDOWN
 	var weapon := STAFF if holding else ""
+	# O bastão longo saiu do catálogo da Sobrevivência (mundo de floresta): sem ele, vale o do treino.
 	var entry := SurvivalData.item(weapon)
-	var reach := float(entry.get("reach", 2.4)) if holding else FIST_REACH
-	var damage := float(entry.get("melee", FIST_DAMAGE)) if holding else FIST_DAMAGE
+	var reach := float(entry.get("reach", STAFF_REACH)) if holding else FIST_REACH
+	var damage := float(entry.get("melee", STAFF_DAMAGE)) if holding else FIST_DAMAGE
 	if holding:
 		# O Q já começou o clipe de soco (player.gd); com o bastão vale o golpe lateral.
 		var avatar = player.get("humanoid_avatar")

@@ -1,4 +1,8 @@
-// Modo Sobrevivência (Godot): mundo aberto com zumbis para até 16 jogadores.
+// Modo Sobrevivência (Godot): mundo aberto de floresta para até 16 jogadores.
+// Ninguém começa com nada: tudo vem da coleta (galhos, pedras, fibra, toras,
+// frutas, ervas, água dos lagos) e da fabricação. Zumbis só aparecem à noite.
+// (O código de recipientes, carros e armas de fogo continua aqui, mas o mapa
+// de floresta não tem nenhum deles.)
 //
 // Cada mundo é um Durable Object ("world:<n>"). Não há sala de espera: quem
 // entra nasce na hora e quem sai guarda o personagem (posição, vida, fome,
@@ -52,9 +56,15 @@ export const ZOMBIE_KINDS = {
 const ZOMBIE_ATTACK_MS = 1000;
 const ZOMBIE_REACH = 1.8; // alcance do golpe (o jogo usa 1,25 m; a folga cobre o atraso da rede)
 const ZOMBIE_REACH_LAG = 1.0;
-const ZOMBIE_BASE = 14;
-const ZOMBIE_PER_PLAYER = 8;
-const ZOMBIE_MAX = 90;
+// Mundo de floresta: zumbis só à noite (20h–6h), poucos (as armas são primitivas).
+const ZOMBIE_BASE = 4;
+const ZOMBIE_PER_PLAYER = 4;
+const ZOMBIE_MAX = 50;
+const ZOMBIE_DAWN_FADE = 0.25; // de dia, chance por tick de cada zumbi perto de alguém sumir
+const NIGHT_START = 20;
+const NIGHT_END = 6;
+// Versão do mundo salvo: mundo de outra versão (a cidade antiga) recomeça do zero.
+export const WORLD_VERSION = 2;
 const ZOMBIE_SPAWN_MIN = 55; // nunca nascem na cara de ninguém
 const ZOMBIE_SAFE_START = 60; // ao entrar/renascer, some zumbi que estiver mais perto que isso
 const ZOMBIE_FIGHT_KEEP = 25; // ...a não ser que outro jogador esteja brigando com ele
@@ -253,7 +263,8 @@ export class GodotSurvival {
 		this.dirty = false;
 		ctx.blockConcurrencyWhile(async () => {
 			const saved = await ctx.storage.get('world');
-			if (saved) this.state = saved;
+			// Mundo de outra versão (cidade, saque, carros): recomeça como floresta.
+			if (saved && saved.version === WORLD_VERSION) this.state = saved;
 			for (const ws of ctx.getWebSockets()) {
 				const meta = ws.deserializeAttachment();
 				if (meta?.id) this.sessions.set(meta.id, ws);
@@ -263,7 +274,7 @@ export class GodotSurvival {
 
 	fresh() {
 		return {
-			name: '', createdAt: Date.now(), players: {}, chars: {}, host: null,
+			version: WORLD_VERSION, name: '', createdAt: Date.now(), players: {}, chars: {}, host: null,
 			zombies: {}, zSeq: 0, containers: {}, bags: {}, bagSeq: 0, depleted: {}, vehicles: {},
 		};
 	}
@@ -489,6 +500,16 @@ export class GodotSurvival {
 		return { day_ms: DAY_MS, time: (Date.now() - this.state.createdAt) % DAY_MS };
 	}
 
+	/** Hora do jogo (o dia começa às 6h, como no cliente). */
+	hour(now = Date.now()) {
+		return (6 + (((now - this.state.createdAt) % DAY_MS) / DAY_MS) * 24) % 24;
+	}
+
+	isNight(now = Date.now()) {
+		const h = this.hour(now);
+		return h >= NIGHT_START || h < NIGHT_END;
+	}
+
 	async fetch(request) {
 		const url = new URL(request.url);
 		if (url.pathname === '/has') {
@@ -683,7 +704,7 @@ export class GodotSurvival {
 			case 'unequip': return this.unequip(me, d, note);
 			case 'gather_start': {
 				const res = RESOURCES[d.r];
-				if (!res || flat(me.p, res.p) > REACH) return;
+				if (!res || flat(me.p, res.p) > REACH + (res.r || 0)) return;
 				me.gatherAt = Date.now();
 				me.gatherId = res.id;
 				return;
@@ -910,8 +931,16 @@ export class GodotSurvival {
 				gone.push(zombie.id);
 			}
 		}
+		// De dia não nasce zumbi; os que sobraram da noite somem aos poucos.
+		if (players.length && !this.isNight()) {
+			for (const zombie of Object.values(s.zombies)) {
+				if (Math.random() >= ZOMBIE_DAWN_FADE) continue;
+				delete s.zombies[zombie.id];
+				gone.push(zombie.id);
+			}
+		}
 		if (gone.length) this.broadcast({ t: 'zgone', l: gone });
-		if (!players.length) return;
+		if (!players.length || !this.isNight()) return;
 		const target = Math.min(ZOMBIE_MAX, ZOMBIE_BASE + ZOMBIE_PER_PLAYER * players.length);
 		const born = [];
 		for (let i = 0; i < ZOMBIE_SPAWN_BATCH && count - gone.length + born.length < target; i++) {
@@ -1039,9 +1068,9 @@ export class GodotSurvival {
 			if (me.useItem !== d.item || waited < item.use_time * 1000 - 300 || waited > item.use_time * 1000 + 6000) return;
 			me.useAt = 0;
 		}
-		if (item.use.hp && !item.use.hunger && !item.use.thirst && me.hp >= 100) return note('Vida cheia.');
-		removeItems(me.inv, d.item, 1);
 		if (item.use.cure && !me.infectedAt) return note('Você não está infectado.');
+		if (item.use.hp && !item.use.cure && !item.use.hunger && !item.use.thirst && me.hp >= 100) return note('Vida cheia.');
+		removeItems(me.inv, d.item, 1);
 		const u = item.use;
 		if (u.cure) {
 			me.infectedAt = 0;
@@ -1109,18 +1138,30 @@ export class GodotSurvival {
 		note(`Fabricou ${recipe.name}.`);
 	}
 
-	/** Coleta (madeira, pedra, sucata, frutas) depois de segurar E pelo tempo do recurso. */
+	/** Coleta (tora, pedra, galho, fibra, frutas, ervas, água) depois de segurar E pelo tempo do recurso. */
 	gather(me, d, note) {
 		const s = this.state;
 		const res = RESOURCES[d.r];
-		if (!res || flat(me.p, res.p) > REACH) return;
+		if (!res || flat(me.p, res.p) > REACH + (res.r || 0)) return;
 		const rule = catalog.resources[res.kind];
 		const now = Date.now();
 		if ((s.depleted[res.id] || 0) > now) return note('Já foi coletado. Volte mais tarde.');
 		const waited = now - (me.gatherAt || 0);
 		if (me.gatherId !== res.id || waited < rule.time * 1000 - 300 || waited > rule.time * 1000 + 6000) return;
 		me.gatherAt = 0;
-		const tooled = rule.tool && Object.keys(me.inv).some((item) => ITEMS[item]?.tool === rule.tool);
+		// Lago: bebe na hora, nunca acaba.
+		if (rule.drink) {
+			me.thirst = Math.min(100, me.thirst + rule.drink);
+			this.save();
+			this.sendStats(me);
+			return note(me.thirst >= 100 ? 'Bebeu água. Sede saciada.' : 'Bebeu água.');
+		}
+		const hasTool = (kind) => Object.keys(me.inv).some((item) => ITEMS[item]?.tool === kind);
+		if (rule.needs && !hasTool(rule.needs)) {
+			const tool = Object.values(ITEMS).find((item) => item.tool === rule.needs);
+			return note(`Precisa de ${tool ? tool.name.toLowerCase() : 'uma ferramenta'}.`);
+		}
+		const tooled = !rule.needs && rule.tool && hasTool(rule.tool);
 		const [min, max] = tooled ? rule.bonus : rule.base;
 		const gained = { [rule.gives]: randInt(min, max) };
 		if (rule.extra && Math.random() < rule.extra[1]) gained[rule.extra[0]] = 1;
@@ -1130,12 +1171,14 @@ export class GodotSurvival {
 			addItems(me.inv, item, fits);
 			if (fits) got.push(`${ITEMS[item].name} +${fits}`);
 		}
-		if (!got.length) return note('Mochila pesada demais.');
-		s.depleted[res.id] = now + rule.regrow * 1000;
+		if (!got.length) return note('Peso demais. Largue alguma coisa.');
+		if (rule.regrow > 0) {
+			s.depleted[res.id] = now + rule.regrow * 1000;
+			this.broadcastNear(res.p, { t: 'depleted', r: res.id, secs: rule.regrow });
+		}
 		this.save();
 		this.sendInv(me);
-		this.broadcastNear(res.p, { t: 'depleted', r: res.id, secs: rule.regrow });
-		note((tooled ? '' : 'Sem ferramenta, rende pouco. ') + got.join(', '));
+		note((rule.tool && !rule.needs && !tooled ? 'Com ferramenta rende mais. ' : '') + got.join(', '));
 	}
 
 	// ------------------------------------------------------------- relógio ---

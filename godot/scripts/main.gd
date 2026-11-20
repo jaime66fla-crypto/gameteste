@@ -4,7 +4,6 @@ const PointerMode = preload("res://scripts/pointer_mode.gd")
 const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const PlayerScript = preload("res://scripts/player.gd")
-const WorldPolishScript = preload("res://scripts/world_polish.gd")
 const MatchMapScript = preload("res://scripts/match_map.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const ScopeScript = preload("res://scripts/sniper_scope.gd")
@@ -53,14 +52,8 @@ func _ready() -> void:
     GameSettings.apply(settings,get_viewport())
     var survival := Net.in_match and bool(Net.start_info.get("survival", false))
     _build_world(survival)
-    if survival:
-        # Sobrevivência: a cidade antiga (data/match_layout.json) no meio do mundo aberto.
-        var world_polish := Node3D.new()
-        world_polish.name = "WorldPolish"
-        world_polish.set_script(WorldPolishScript)
-        world_polish.set("open_world", true)
-        add_child(world_polish)
-    elif Net.in_match:
+    # Sobrevivência: mundo só de floresta (survival_world.gd), sem a cidade antiga.
+    if Net.in_match and not survival:
         # Eliminatória, Mata-mata e Equipes: um mapa de blocos por modo
         # (data/match_maps.json, o servidor usa os mesmos nascimentos).
         MatchLayout.use_map(MatchLayout.map_for(Net.start_info))
@@ -215,7 +208,7 @@ func _spawn_training_dummies() -> void:
 func _register_inputs() -> void:
     Controls.load_and_apply()
 
-func _build_world(survival: bool = false) -> void:
+func _build_world(_survival: bool = false) -> void:
     var world_environment := WorldEnvironment.new()
     world_environment.name = "WorldEnvironment"
     var env := Environment.new()
@@ -232,10 +225,8 @@ func _build_world(survival: bool = false) -> void:
     sun.light_energy = 1.3
     sun.shadow_enabled = true
     add_child(sun)
-    # Sobrevivência: chão de grama da cidade de 120 m. Os mapas das partidas
-    # (match_map.gd) e o treino offline (training_ground.gd) têm o próprio piso.
-    if survival:
-        _block(Vector3(0,-0.5,0), Vector3(120,1,120), Color(0.28,0.39,0.26), true)
+    # O chão vem de cada mapa: survival_world.gd (floresta), match_map.gd
+    # (partidas) e training_ground.gd (treino offline).
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()

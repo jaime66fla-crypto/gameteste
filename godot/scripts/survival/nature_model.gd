@@ -1,5 +1,6 @@
 extends RefCounted
-## Árvores, toco, pedra e arbusto procedurais para a Sobrevivência.
+## Árvores, toco, pedra, arbusto e coisas do chão (galhos, pedrinhas, capim,
+## erva) procedurais para a Sobrevivência.
 ## Cada modelo é uma ArrayMesh (casca + folhas) desenhada em lote por
 ## MultiMesh: centenas de árvores custam poucas chamadas de desenho.
 ## Cores por vértice (tronco mais escuro embaixo, copa mais clara em cima,
@@ -52,6 +53,10 @@ static func _build(variant: String, far: bool) -> ArrayMesh:
 		"rock": _rock(bark, rng, far)
 		"bush_full": _bush(leaf, bark, rng, true)
 		"bush_empty": _bush(leaf, bark, rng, false)
+		"stick": _sticks(bark, rng)
+		"pebble": _pebbles(bark, rng)
+		"fiber": _tuft(leaf, rng, 14, 0.75, Color("#5c6e34"), Color("#b9b878"), Color(0, 0, 0, 0))
+		"herb": _tuft(leaf, rng, 9, 0.4, Color("#355a2c"), Color("#6d9a4a"), Color("#8a5bb0"))
 	var out := ArrayMesh.new()
 	for pair in [[bark, bark_material()], [leaf, leaf_material()]]:
 		var st: SurfaceTool = pair[0]
@@ -284,6 +289,42 @@ static func _bush(leaf: SurfaceTool, fruit: SurfaceTool, rng: RandomNumberGenera
 		_tri(fruit, p + Vector3(0, s, 0), p + Vector3(s, -s, 0), p + Vector3(-s, -s, s), red, red.darkened(0.3), red)
 		_tri(fruit, p + Vector3(0, s, 0), p + Vector3(-s, -s, s), p + Vector3(-s, -s, -s), red, red, red.darkened(0.3))
 		_tri(fruit, p + Vector3(0, s, 0), p + Vector3(-s, -s, -s), p + Vector3(s, -s, 0), red, red.darkened(0.3), red)
+
+## Galhos caídos no chão: um galho com forquilha e um menor cruzado.
+static func _sticks(bark: SurfaceTool, rng: RandomNumberGenerator) -> void:
+	var dark := Color("#3b2d20")
+	var light := Color("#6a5238")
+	_tube(bark, [Vector3(-0.5, 0.04, 0.0), Vector3(0.0, 0.05, 0.03), Vector3(0.55, 0.04, -0.02)], [0.035, 0.03, 0.02], 5, dark, light, rng)
+	_tube(bark, [Vector3(0.0, 0.05, 0.03), Vector3(0.28, 0.05, 0.22)], [0.022, 0.014], 5, dark, light, rng)
+	_tube(bark, [Vector3(-0.2, 0.03, -0.25), Vector3(0.15, 0.06, 0.2)], [0.025, 0.018], 5, light, dark, rng)
+
+## Pedrinhas soltas: três pedras pequenas facetadas.
+static func _pebbles(st: SurfaceTool, rng: RandomNumberGenerator) -> void:
+	for spot in [[Vector3(0, 0.06, 0), 0.14], [Vector3(0.2, 0.04, 0.1), 0.09], [Vector3(-0.12, 0.04, 0.16), 0.08]]:
+		var verts := _icosphere(0)
+		var g := rng.randf_range(0.4, 0.52)
+		for i in range(0, verts.size(), 3):
+			var pts: Array = []
+			var cols: Array = []
+			for k in 3:
+				var v: Vector3 = verts[i + k]
+				pts.append(spot[0] + Vector3(v.x * 1.25, v.y * 0.6, v.z) * float(spot[1]))
+				var shade := g + v.y * 0.06
+				cols.append(Color(shade, shade * 0.98, shade * 0.93))
+			_tri(st, pts[0], pts[1], pts[2], cols[0], cols[1], cols[2])
+
+## Tufo de folhas finas (capim de fibra, erva). `flower` com alfa > 0 pinta a ponta das folhas.
+static func _tuft(leaf: SurfaceTool, rng: RandomNumberGenerator, blades: int, height: float, base: Color, tip: Color, flower: Color) -> void:
+	for i in blades:
+		var a := TAU * i / blades + rng.randf_range(-0.3, 0.3)
+		var r := rng.randf_range(0.0, 0.12)
+		var center := Vector3(cos(a) * r, 0, sin(a) * r)
+		var h := height * rng.randf_range(0.65, 1.15)
+		var side := Vector3(cos(a + PI * 0.5), 0, sin(a + PI * 0.5)) * 0.035
+		var lean := Vector3(cos(a), 0, sin(a)) * h * rng.randf_range(0.15, 0.45)
+		var top := center + lean + Vector3(0, h, 0)
+		var t := flower if flower.a > 0.0 and i % 2 == 0 else tip
+		_tri(leaf, center - side, center + side, top, base, base, t) # folha sem face oculta (cull desligado)
 
 ## Tufo de folhas: esfera facetada com o contorno irregular, escura por baixo.
 static func _blob(st: SurfaceTool, center: Vector3, radius: float, rng: RandomNumberGenerator, detail: int, tone: Color, squash: float) -> void:

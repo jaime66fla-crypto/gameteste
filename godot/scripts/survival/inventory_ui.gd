@@ -233,7 +233,7 @@ func _build_right() -> Control:
 	var tabs := HBoxContainer.new()
 	tabs.add_theme_constant_override("separation", 6)
 	column.add_child(tabs)
-	_tab_box = _button("Chão / recipiente")
+	_tab_box = _button("Chão / mochila")
 	_tab_box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_tab_box.pressed.connect(func():
 		_tab = 0
@@ -262,8 +262,8 @@ func _build_right() -> Control:
 func open() -> void:
 	visible = true
 	PointerMode.release()
-	if not container_id.is_empty():
-		_tab = 0
+	# Mochila no chão aberta: mostra o conteúdo; senão abre direto nas receitas.
+	_tab = 0 if not container_id.is_empty() else 1
 	_fit()
 	_refresh()
 
@@ -402,15 +402,28 @@ func _refresh() -> void:
 	_refresh_items()
 	_refresh_side()
 
+## Algum item do catálogo tem `key` (com o valor `value`, se não for vazio)?
+static func _catalog_has(key: String, value: String) -> bool:
+	var items: Dictionary = SurvivalData.catalog().get("items", {})
+	for id in items:
+		if items[id].has(key) and (value.is_empty() or str(items[id][key]) == value):
+			return true
+	return false
+
 func _refresh_left() -> void:
 	_clear(_equip_box)
 	_clear(_status_box)
-	# Cabeça, peito e costas
-	_equip_box.add_child(_slot_card("Cabeça", "head", head, "armor", "Sem capacete"))
-	_equip_box.add_child(_slot_card("Peito", "chest", chest, "armor", "Sem colete"))
+	# Cabeça, peito e costas (cabeça/peito só se o mundo tiver capacete e colete)
+	if not head.is_empty() or _catalog_has("slot", "head"):
+		_equip_box.add_child(_slot_card("Cabeça", "head", head, "armor", "Sem capacete"))
+	if not chest.is_empty() or _catalog_has("slot", "chest"):
+		_equip_box.add_child(_slot_card("Peito", "chest", chest, "armor", "Sem colete"))
 	_equip_box.add_child(_slot_card("Costas", "back", back, "gear", "Só bolsos (%d kg)" % int(SurvivalData.catalog().get("carry_base", 10))))
-	# Arma e ferramenta
-	for spec in [["Arma na mão", weapon if not weapon.is_empty() else "Nenhuma", "weapon"], ["Melhor arma branca", _best_melee_name(), "melee"]]:
+	# Arma (só com armas de fogo no mundo) e ferramenta
+	var cards := [["Melhor arma branca / ferramenta", _best_melee_name(), "melee"]]
+	if not weapon.is_empty() or _catalog_has("weapon", ""):
+		cards.push_front(["Arma na mão", weapon if not weapon.is_empty() else "Nenhuma", "weapon"])
+	for spec in cards:
 		var card := PanelContainer.new()
 		card.add_theme_stylebox_override("panel", _style(CARD, 6, Color(0, 0, 0, 0), 8))
 		var r := HBoxContainer.new()

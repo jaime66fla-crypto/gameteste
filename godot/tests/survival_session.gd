@@ -22,17 +22,23 @@ func _frames(n: int) -> void:
 
 func _run() -> void:
 	var spawn: Array = SurvivalData.world()["spawns"][0]
+	# Carro de teste no meio do maior lago: chão plano e sem árvore para a curva.
+	var big: Dictionary = {}
+	for p in SurvivalData.world().get("ponds", []):
+		if big.is_empty() or float(p["r"]) > float(big["r"]):
+			big = p
+	var car_at := [float(big["x"]), 0, float(big["z"]) + float(big["r"]) * 0.7] if not big.is_empty() else [spawn[0] + 6, 0, spawn[1]]
 	Net.my_id = "me"
 	Net.host_id = "me"
 	Net.in_match = true
 	Net.start_info = {
 		"t": "start", "survival": true, "host": "me", "clock": {"day_ms": 1440000, "time": 0},
 		"you": {"id": "me", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 85, "thirst": 85, "dead": false,
-			"inv": {"water_bottle": 1, "bandage": 1}, "weight": 0.7, "cap": 20},
+			"inv": {"berries": 1, "bandage": 1}, "weight": 0.2, "cap": 10},
 		"roster": [{"id": "p2", "name": "Amigo", "rank": "Recruta", "p": [spawn[0] + 4, 0.2, spawn[1]], "dead": false}],
 		"zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [spawn[0] + 15, 0.2, spawn[1]]}],
 		"bags": [], "searched": [], "depleted": {},
-		"vehicles": [{"id": "v0", "kind": "sedan", "color": "#8c1d18", "p": [spawn[0] + 6, 0, spawn[1]], "yaw": 0.0, "fuel": 30, "driver": null}],
+		"vehicles": [{"id": "v0", "kind": "sedan", "color": "#8c1d18", "p": car_at, "yaw": 0.0, "fuel": 30, "driver": null}],
 	}
 	var main: Node = load("res://scenes/main.tscn").instantiate()
 	get_tree().root.add_child(main)
@@ -46,17 +52,67 @@ func _run() -> void:
 	check(controller.zombies.has("z1") and controller.actors.has("p2"), "zumbi e outro jogador aparecem")
 	check(controller.zombies["z1"].controlled, "anfitrião controla os zumbis")
 	var player: CharacterBody3D = main.get("player")
-	# Arma chega na mochila: aparece descarregada, com a munição como reserva.
-	Net.message.emit({"t": "inv", "inv": {"w_pistol": 1, "a_9mm": 24, "water_bottle": 1}, "weight": 1.84, "cap": 20})
+	check(main.get_node_or_null("WorldPolish") == null, "sem a cidade antiga no meio")
+	check(player.get("owned_weapons").is_empty(), "começa sem arma de fogo")
+	# Coleta na floresta: galho sem ferramenta; árvore pede o machado de pedra; lago dá água.
+	var world_node: Node3D = main.get_node_or_null("SurvivalWorld")
+	# Um de cada tipo sem outro recurso a menos de 4,5 m (o E pega o mais perto).
+	var first := {}
+	for kind in ["stick", "tree", "pond"]:
+		for id in world_node.resources:
+			var entry: Dictionary = world_node.resources[id]
+			if str(entry["kind"]) != kind:
+				continue
+			var alone := true
+			if kind != "pond":
+				for other in world_node.resources:
+					var o: Dictionary = world_node.resources[other]
+					if other != id and (o["pos"] as Vector3).distance_to(entry["pos"]) < 4.5 + float(o.get("r", 0.0)):
+						alone = false
+						break
+			if alone:
+				first[kind] = entry
+				break
+	player.global_position = (first["stick"]["pos"] as Vector3) + Vector3(0.8, 0.1, 0)
 	await _frames(2)
-	check(player.get("owned_weapons").has("pistol"), "pistola equipável")
-	check(int(player.get("reserve_ammo")["pistol"]) == 24 and int(player.get("ammo")) == 0, "munição da mochila vira reserva, pente vazio")
-	Net.message.emit({"t": "inv", "inv": {"water_bottle": 1}, "weight": 0.6, "cap": 20})
+	var t: Dictionary = controller.call("_find_target")
+	check(str(t.get("kind", "")) == "stick" and str(t.get("label", "")).find("Galho") >= 0 and not bool(t.get("missing", true)), "E perto do galho: pegar sem ferramenta")
+	player.global_position = (first["tree"]["pos"] as Vector3) + Vector3(1.2, 0.1, 0)
 	await _frames(2)
-	check(not player.get("owned_weapons").has("pistol"), "arma largada sai das mãos")
-	Net.message.emit({"t": "container", "k": "k0", "title": "Geladeira", "items": {"soda": 2}})
+	t = controller.call("_find_target")
+	check(str(t.get("kind", "")) == "tree" and bool(t.get("missing", false)) and str(t.get("label", "")).find("machado de pedra") >= 0, "árvore sem machado: avisa que precisa do machado de pedra")
+	Net.message.emit({"t": "inv", "inv": {"stone_axe": 1}, "weight": 1.6, "cap": 10})
 	await _frames(2)
-	check(controller.inventory.visible, "revistar abre o inventário")
+	t = controller.call("_find_target")
+	check(not bool(t.get("missing", true)) and str(t.get("tool", "")) == "stone_axe", "com o machado de pedra corta a árvore")
+	var pond: Dictionary = first["pond"]
+	# Ponto da margem sem galho/capim por perto.
+	var shore := (pond["pos"] as Vector3) + Vector3(float(pond["r"]) + 1.0, 0, 0)
+	for step in 24:
+		var a := TAU * step / 24.0
+		var spot := (pond["pos"] as Vector3) + Vector3(cos(a), 0, sin(a)) * (float(pond["r"]) + 1.0)
+		var clear := true
+		for other in world_node.resources:
+			var o: Dictionary = world_node.resources[other]
+			if str(o["kind"]) != "pond" and (o["pos"] as Vector3).distance_to(spot) < 4.0:
+				clear = false
+				break
+		if clear:
+			shore = spot
+			break
+	player.global_position = shore + Vector3(0, 0.1, 0)
+	await _frames(2)
+	t = controller.call("_find_target")
+	check(str(t.get("kind", "")) == "pond" and str(t.get("label", "")).find("Beber") >= 0, "na margem do lago: beber água")
+	check(world_node.call("in_pond", pond["pos"]), "lago reconhecido")
+	player.global_position = Vector3(float(spawn[0]), 0.3, float(spawn[1]))
+	controller.inventory.call("open")
+	await _frames(2)
+	check(int(controller.inventory.get("_tab")) == 1, "TAB abre direto nas receitas")
+	controller.inventory.call("close")
+	Net.message.emit({"t": "container", "k": "b1", "title": "Mochila de Amigo", "items": {"wood": 2}})
+	await _frames(2)
+	check(controller.inventory.visible, "abrir mochila do chão abre o inventário")
 	check(Input.mouse_mode == Input.MOUSE_MODE_VISIBLE and controller.call("ui_open"), "mochila aberta mostra o ponteiro")
 	controller.inventory.call("close")
 	# Quem sai do jogo fica deitado, dormindo, e some quando volta.
@@ -73,7 +129,7 @@ func _run() -> void:
 	await _frames(2)
 	check(controller.zombies.has("z2") and not controller.zombies.has("z1"), "zumbis nascem e morrem")
 	Net.message.emit({"t": "clock", "day_ms": 1440000, "time": 1300000, "online": 2, "zombies": 1})
-	await _frames(2)
+	await _frames(20) # a luz do dia é atualizada 4 vezes por segundo
 	check(controller.night, "relógio: 21h é noite")
 	Net.message.emit({"t": "hp", "id": "me", "hp": 0, "by": "z2", "w": "zombie", "killed": true})
 	await _frames(2)
@@ -170,19 +226,22 @@ func _run() -> void:
 	check(not bool(car.get("engine_on")) and car_audio != null and not bool(car_audio.get("running")), "ao sair, o motor desliga e não fica roncando")
 	# Golpe de machado: a ferramenta aparece na mão do personagem.
 	player.call("start_channel", "CORTANDO", 3.0, func(): pass) # o golpe dura enquanto a coleta corre
-	controller.call("_set_action", "chop", "axe")
+	controller.call("_set_action", "chop", "stone_axe")
 	await _frames(5)
 	var av = player.get("humanoid_avatar")
-	check(av != null and str(av.get("work_action")) == "chop" and av.get("_tool_node") != null, "machado na mão golpeando")
+	check(av != null and str(av.get("work_action")) == "chop" and av.get("_tool_node") != null, "machado de pedra na mão golpeando")
+	controller.call("_set_action", "pry", "stone_pick")
+	await _frames(3)
+	check(av.get("_tool_node") != null, "picareta de pedra na mão")
 	controller.call("_set_action", "", "")
 	player.set("channel_left", 0.0)
-	# Bastão longo: Q faz o golpe lateral (e some depois do golpe).
-	Net.message.emit({"t": "inv", "inv": {"long_bat": 1}, "weight": 1.7, "cap": 20})
+	# Clava: Q faz o golpe lateral (e some depois do golpe).
+	Net.message.emit({"t": "inv", "inv": {"club": 1}, "weight": 1.4, "cap": 10})
 	await _frames(2)
 	controller.set("_melee_timer", 0.0)
 	controller.call("_melee")
 	await _frames(3)
-	check(str(av.get("work_action")) == "swing" and av.get("_tool_node") != null, "bastão longo: golpe lateral com o bastão na mão")
+	check(str(av.get("work_action")) == "swing" and av.get("_tool_node") != null, "clava: golpe lateral com a clava na mão")
 	await _frames(50)
 	check(str(av.get("work_action")).is_empty(), "o golpe termina sozinho")
 	# Carro: batida forte avisa o servidor; quebrado = carcaça e E conserta (com kit).
@@ -204,7 +263,7 @@ func _run() -> void:
 	check(controller.infection_clock.visible and controller.infected_left > 110.0, "mordida mostra o relógio da infecção")
 	Net.message.emit({"t": "infected", "left": 0})
 	await _frames(2)
-	check(not controller.infection_clock.visible, "vacina tira o relógio")
+	check(not controller.infection_clock.visible, "remédio de ervas tira o relógio")
 	# Mapa (M).
 	var m_key := InputEventKey.new()
 	m_key.physical_keycode = KEY_M

@@ -12,6 +12,7 @@ var _half := 240.0
 var _roads: Array = []
 var _buildings: Array = []
 var _grass: Array = []
+var _ponds: Array = [] # [center Vector2, r]
 var _trees: PackedVector2Array = PackedVector2Array()
 var _texture: Texture2D
 
@@ -24,13 +25,16 @@ func _ready() -> void:
 	visible = false
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for lane in [-48.0, 0.0, 48.0]:
-		_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
-		_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
-	for b in MatchLayout.city_layout().get("buildings", []):
-		_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
 	var data := SurvivalData.world()
 	_half = float(data.get("half_size", 240))
+	if data.has("center_town"): # mapas antigos: a cidade do meio
+		for lane in [-48.0, 0.0, 48.0]:
+			_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
+			_roads.append([Vector2(-52, lane), Vector2(52, lane), 8.0])
+		for b in MatchLayout.city_layout().get("buildings", []):
+			_buildings.append([Vector2(float(b["center"][0]), float(b["center"][1])), Vector2(float(b["size"][0]), float(b["size"][1]))])
+	for pond in data.get("ponds", []):
+		_ponds.append([Vector2(float(pond["x"]), float(pond["z"])), float(pond["r"])])
 	for road in data.get("roads", []):
 		_roads.append([Vector2(float(road["from"][0]), float(road["from"][1])), Vector2(float(road["to"][0]), float(road["to"][1])), float(road.get("width", 6))])
 	for b in data.get("buildings", []):
@@ -62,6 +66,9 @@ func _bake() -> void:
 			painter.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
 		for t in _trees:
 			painter.draw_circle(t, 1.6, Color(0.14, 0.28, 0.14))
+		for p in _ponds:
+			painter.draw_circle(p[0], p[1] + 1.4, Color(0.31, 0.26, 0.2))
+			painter.draw_circle(p[0], p[1], Color(0.18, 0.34, 0.4))
 		for road in _roads:
 			painter.draw_line(road[0], road[1], Color(0.30, 0.31, 0.31), road[2])
 		for b in _buildings:
@@ -118,6 +125,6 @@ func _draw() -> void:
 	var title := "MAPA"
 	draw_string(font, Vector2(origin.x, origin.y - 14), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 0.88, 0.5))
 	draw_string(font, Vector2(origin.x + side * 0.5 - 5, origin.y + 22), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.85, 0.4))
-	var legend := "Você (seta amarela)   •   Carro   •   Carro quebrado (cinza)   •   M ou ESC fecha"
+	var legend := "Você (seta amarela)   •   Lagos (azul): água para beber   •   M ou ESC fecha"
 	var w := font.get_string_size(legend, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 	draw_string(font, Vector2(size.x * 0.5 - w * 0.5, origin.y + side + 26), legend, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.85))

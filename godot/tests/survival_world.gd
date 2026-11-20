@@ -21,9 +21,9 @@ func _initialize() -> void:
 
 func _run() -> void:
 	var data := SurvivalData.world()
-	check(data.get("containers", []).size() > 100, "mundo com recipientes")
-	check(SurvivalData.ammo_for("pistol") == "a_9mm", "pistola usa 9mm")
-	check(SurvivalData.best_melee({"bat": 1, "axe": 1})[0] == "axe", "machado é a melhor arma branca")
+	check(data.get("containers", []).is_empty() and data.get("buildings", []).is_empty(), "floresta: sem prédios nem recipientes")
+	check(data.get("ponds", []).size() > 5, "mundo com lagos")
+	check(SurvivalData.best_melee({"stone_knife": 1, "club": 1})[0] == "club", "clava é a melhor arma branca")
 	var root3d := Node3D.new()
 	root.add_child(root3d)
 	var world: Node3D = SurvivalWorld.new()
@@ -31,9 +31,17 @@ func _run() -> void:
 	await process_frame
 	check(world.containers.size() == data["containers"].size(), "todos os recipientes montados")
 	check(world.resources.size() == data["resources"].size(), "todos os recursos montados")
-	var rid: String = world.resources.keys()[0]
-	world.call("set_depleted", rid, true)
-	check(bool(world.resources[rid]["depleted"]), "recurso coletado")
+	for kind in ["tree", "rock", "stick", "pebble", "fiber", "herb"]:
+		var rid := ""
+		for id in world.resources:
+			if str(world.resources[id]["kind"]) == kind:
+				rid = id
+				break
+		world.call("set_depleted", rid, true)
+		check(bool(world.resources[rid]["depleted"]), "recurso coletado: " + kind)
+		world.call("set_depleted", rid, false)
+	var pond: Dictionary = data["ponds"][0]
+	check(world.call("in_pond", Vector3(float(pond["x"]), 0, float(pond["z"]))) and not world.call("in_pond", Vector3(float(pond["x"]) + float(pond["r"]) + 2.0, 0, float(pond["z"]))), "dentro e fora do lago")
 	# Cone de visão: alvo 10 m ATRÁS do zumbi (que olha para -Z) passa despercebido.
 	var spawn: Array = data["spawns"][0]
 	var target := Node3D.new()
@@ -95,8 +103,8 @@ func _run() -> void:
 	root.add_child(layer)
 	layer.add_child(ui)
 	await process_frame
-	ui.call("set_inventory", {"w_pistol": 1, "a_9mm": 20, "cloth": 4}, 1.8, 20)
-	ui.call("show_container", "k1", "Armário", {"canned_beans": 2})
+	ui.call("set_inventory", {"stone_axe": 1, "stick": 3, "fiber": 4}, 2.7, 10)
+	ui.call("show_container", "b1", "Mochila", {"berries": 2})
 	await process_frame
 	check(ui.get("inv").size() == 3, "inventário mostra a mochila")
 	print("FALHAS: %d" % failures)

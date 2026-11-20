@@ -462,6 +462,11 @@ const TOOL_LOOK := {
 	"crowbar": {"handle": 0.80, "color": Color("#2f3b52"), "head": "hook"},
 	"bat": {"handle": 0.82, "color": Color("#b08a5a"), "head": "bat"},
 	"long_bat": {"handle": 1.12, "color": Color("#7a5634"), "head": "bat"},
+	# Ferramentas primitivas da floresta (cabo de galho, cabeça de pedra amarrada com fibra).
+	"stone_axe": {"handle": 0.66, "color": Color("#6b5034"), "head": "stone"},
+	"stone_pick": {"handle": 0.72, "color": Color("#6b5034"), "head": "pick"},
+	"club": {"handle": 0.78, "color": Color("#5e4630"), "head": "bat"},
+	"stone_knife": {"handle": 0.16, "color": Color("#6b5034"), "head": "blade"},
 }
 # Golpe de arma branca (Q): "swing" arma atrás do ombro direito e varre de lado
 # na frente do corpo, uma vez só (SWING_CYCLE segundos), girando o tronco.
@@ -551,6 +556,16 @@ func _build_tool(tool: String) -> Node3D:
 		"bat":
 			handle.mesh = cyl.duplicate()
 			(handle.mesh as CylinderMesh).top_radius = 0.035
+		"pick":
+			# Pedra comprida atravessada no cabo (ponta para os dois lados), amarrada com fibra.
+			var rock := _tool_mat(Color("#6f6c64"), false)
+			_tool_box(node, Vector3(0, length - 0.05, -0.1), Vector3(0.045, 0.06, 0.16), rock, Vector3(0.25, 0, 0))
+			_tool_box(node, Vector3(0, length - 0.05, 0.08), Vector3(0.04, 0.05, 0.1), rock, Vector3(-0.25, 0, 0))
+			_tool_box(node, Vector3(0, length - 0.05, 0.0), Vector3(0.06, 0.07, 0.06), _tool_mat(Color("#c9b98a"), false))
+		"blade":
+			# Lasca de pedra afiada presa num cabo curto.
+			_tool_box(node, Vector3(0, length + 0.07, 0), Vector3(0.012, 0.15, 0.045), _tool_mat(Color("#5d5b55"), false))
+			_tool_box(node, Vector3(0, length, 0), Vector3(0.035, 0.035, 0.035), _tool_mat(Color("#c9b98a"), false))
 	return node
 
 func _ease_in_out(t: float) -> float:

@@ -132,9 +132,9 @@ func _ready() -> void:
 	_set_infected(float(you.get("infected", 0)))
 	if bool(you.get("dead", false)):
 		_on_local_death()
-	_feed("Bem-vindo ao mundo aberto. Sobreviva: ache comida, água e armas.")
-	_feed("E revistar/coletar/dirigir  •  TAB inventário  •  M mapa  •  Q golpe  •  F curativo  •  T abastecer")
-	_feed("Zumbis ouvem tiros. De noite enxergam menos — e você também.")
+	_feed("Você acordou na floresta sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
+	_feed("E coletar/beber  •  TAB inventário e fabricar  •  M mapa  •  Q golpe  •  F curativo")
+	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato.")
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
@@ -494,7 +494,7 @@ func _on_local_death() -> void:
 	inventory.call("close")
 	player.set_physics_process(false)
 	player.visible = false
-	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce num ponto aleatório com o kit inicial.", true)
+	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce numa clareira, de mãos vazias.", true)
 	PointerMode.release()
 
 func _on_respawned(data: Dictionary) -> void:
@@ -593,7 +593,7 @@ func _on_use(item: String) -> void:
 		inventory.call("close")
 		driving_ctl.call("request_repair", car)
 		return
-	if item == "vaccine" and infected_left <= 0.0:
+	if entry.get("use", {}).has("cure") and infected_left <= 0.0:
 		_toast("VOCÊ NÃO ESTÁ INFECTADO")
 		return
 	if entry.has("use_time"):
@@ -609,18 +609,18 @@ func _on_use(item: String) -> void:
 func _on_craft(recipe: String) -> void:
 	Net.send({"t": "craft", "recipe": recipe})
 
-## F: bandagem, depois analgésico, depois kit médico.
+## F: bandagem de fibra (fabrique no TAB com 3 fibras).
 func _quick_heal() -> void:
 	if local_dead:
 		return
 	if my_hp >= 100.0:
 		_toast("VIDA CHEIA")
 		return
-	for item in ["bandage", "painkillers", "medkit"]:
+	for item in ["bandage"]:
 		if inv.has(item):
 			_on_use(item)
 			return
-	_toast("SEM CURATIVO NA MOCHILA")
+	_toast("SEM BANDAGEM — FABRIQUE COM 3 FIBRAS (TAB)")
 
 # --------------------------------------------------------- interação (E) ---
 
@@ -647,15 +647,30 @@ func _find_target() -> Dictionary:
 		if entry["depleted"]:
 			continue
 		var pos: Vector3 = entry["pos"]
-		var reach := 3.2 if str(entry["kind"]) == "car" else REACH
-		var d := Vector2(pos.x - me.x, pos.z - me.z).length()
+		var kind := str(entry["kind"])
+		var reach := 3.2 if kind == "car" else REACH
+		# Lago: conta a distância até a margem.
+		var d := maxf(0.0, Vector2(pos.x - me.x, pos.z - me.z).length() - float(entry.get("r", 0.0)))
 		if d < minf(best_d + 0.6, reach):
 			best_d = d
-			var rule := SurvivalData.resource_rule(str(entry["kind"]))
-			var verb: String = str({"tree": "Cortar", "rock": "Quebrar", "car": "Desmontar", "bush": "Colher"}.get(str(entry["kind"]), "Coletar"))
-			var tool := _tool_for(str(rule.get("tool", "")))
-			var tool_note := ("  —  com " + SurvivalData.item_name(tool)) if not tool.is_empty() else ("  —  sem ferramenta rende pouco" if rule.has("tool") else "")
-			best = {"type": "resource", "id": id, "kind": str(entry["kind"]), "pos": pos, "tool": tool, "time": float(rule.get("time", 2.5)), "label": "[E] %s %s (%s)%s" % [verb, str(rule.get("name", "")), SurvivalData.item_name(str(rule.get("gives", ""))), tool_note]}
+			var rule := SurvivalData.resource_rule(kind)
+			var needs := str(rule.get("needs", ""))
+			var tool := _tool_for(needs if not needs.is_empty() else str(rule.get("tool", "")))
+			var missing := not needs.is_empty() and tool.is_empty()
+			var label := ""
+			if rule.has("drink"):
+				label = "[E] Beber água do lago"
+			else:
+				var verb: String = str({"tree": "Cortar", "rock": "Quebrar", "car": "Desmontar", "bush": "Colher", "fiber": "Arrancar", "herb": "Colher"}.get(kind, "Pegar"))
+				var tool_note := ""
+				if missing:
+					tool_note = "  —  precisa de " + SurvivalData.item_name(_tool_item(needs)).to_lower()
+				elif not tool.is_empty():
+					tool_note = "  —  com " + SurvivalData.item_name(tool)
+				elif rule.has("tool"):
+					tool_note = "  —  com " + SurvivalData.item_name(_tool_item(str(rule["tool"]))).to_lower() + " rende mais"
+				label = "[E] %s %s (%s)%s" % [verb, str(rule.get("name", "")), SurvivalData.item_name(str(rule.get("gives", ""))), tool_note]
+			best = {"type": "resource", "id": id, "kind": kind, "pos": pos, "tool": tool, "missing": missing, "needs": needs, "time": float(rule.get("time", 2.5)), "label": label}
 	# Carro que funciona: só se não houver nada mais perto.
 	if driving_ctl != null and (best.is_empty() or best["type"] == "resource"):
 		var car: Dictionary = driving_ctl.call("target_near", me)
@@ -663,7 +678,15 @@ func _find_target() -> Dictionary:
 			best = car
 	return best
 
-## Melhor ferramenta da mochila para o recurso ("wood" = machado, "scrap" = pé de cabra).
+## Item que faz esse tipo de coleta ("wood" -> machado de pedra), para os avisos.
+func _tool_item(kind: String) -> String:
+	var items: Dictionary = SurvivalData.catalog().get("items", {})
+	for id in items:
+		if str(items[id].get("tool", "")) == kind:
+			return str(id)
+	return ""
+
+## Melhor ferramenta da mochila para o recurso ("wood" = machado, "stone" = picareta, "cut" = faca).
 func _tool_for(kind: String) -> String:
 	if kind.is_empty():
 		return ""
@@ -691,9 +714,12 @@ func _interact() -> bool:
 		if player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id})):
 			_timed_action("open", SEARCH_TIME)
 	else:
+		if bool(_target.get("missing", false)):
+			_toast("PRECISA DE " + SurvivalData.item_name(_tool_item(str(_target["needs"]))).to_upper() + " (TAB › FABRICAR)")
+			return true
 		var seconds := float(_target["time"])
 		var kind := str(_target["kind"])
-		var label: String = str({"tree": "CORTANDO", "rock": "QUEBRANDO", "car": "DESMONTANDO", "bush": "COLHENDO"}.get(kind, "COLETANDO"))
+		var label: String = str({"tree": "CORTANDO", "rock": "QUEBRANDO", "car": "DESMONTANDO", "bush": "COLHENDO", "herb": "COLHENDO", "fiber": "ARRANCANDO", "pond": "BEBENDO"}.get(kind, "PEGANDO"))
 		var done := func():
 			Net.send({"t": "gather", "r": id})
 			_set_action("", "")
@@ -709,7 +735,7 @@ func _interact() -> bool:
 				var spot: Vector3 = (_target["pos"] as Vector3) - to.normalized() * wanted
 				spot.y = player.global_position.y
 				create_tween().tween_property(player, "global_position", spot, 0.25)
-			if kind != "bush":
+			if kind in ["tree", "rock", "car"]:
 				_set_action("chop" if kind == "tree" else "pry", str(_target["tool"]))
 			else:
 				_timed_action("harvest", seconds)
@@ -792,7 +818,7 @@ func _update_daylight() -> void:
 	if night != was_night:
 		for z in zombies.values():
 			z.set("night", night)
-		_feed("A noite caiu. Os zumbis estão mais perigosos no escuro." if night else "Amanheceu.")
+		_feed("A noite caiu. Os zumbis estão saindo do mato." if night else "Amanheceu. Os zumbis voltam para as sombras.")
 	# Luz do sol: sobe às 6h, a pino ao meio-dia, se põe às 20h.
 	var day_fraction := clampf((hour - 6.0) / 14.0, 0.0, 1.0)
 	var light := sin(day_fraction * PI)
@@ -823,10 +849,10 @@ func _set_infected(left: float) -> void:
 		infection_clock.visible = infected_left > 0.0
 		infection_clock.queue_redraw()
 	if infected_left > 0.0 and not was:
-		_feed("Você foi mordido e está infectado! Use uma vacina em até 2 minutos.")
-		_toast("INFECTADO — ACHE UMA VACINA")
+		_feed("Você foi mordido e está infectado! Tome um remédio de ervas em até 2 minutos (3 ervas + 1 fibra).")
+		_toast("INFECTADO — FAÇA UM REMÉDIO DE ERVAS")
 	elif infected_left <= 0.0 and was and not local_dead:
-		_feed("A vacina fez efeito: infecção curada.")
+		_feed("O remédio fez efeito: infecção curada.")
 		_toast("INFECÇÃO CURADA")
 
 ## Relógio da infecção (topo da tela): disco que esvazia em 2 minutos + tempo restante.
@@ -852,7 +878,7 @@ func _draw_infection_clock() -> void:
 	var font := ThemeDB.fallback_font
 	var secs := ceili(infected_left)
 	var title := "INFECTADO  %d:%02d" % [secs / 60, secs % 60]
-	var hint := "Use uma vacina (TAB) ou vira zumbi"
+	var hint := "Tome um remédio de ervas (TAB) ou vira zumbi"
 	for spec in [[title, 20, c.y + radius + 26.0, Color("#ff7a5c")], [hint, 14, c.y + radius + 46.0, Color(1, 1, 1, 0.9)]]:
 		var w := font.get_string_size(spec[0], HORIZONTAL_ALIGNMENT_LEFT, -1, spec[1]).x
 		var at := Vector2(c.x - w * 0.5, spec[2])

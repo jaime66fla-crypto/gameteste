@@ -1,8 +1,8 @@
 extends Node3D
-## Mundo aberto da Sobrevivência (720 x 720 m), montado a partir de
-## data/survival_world.json. A cidade original do Campo de Fogo (WorldPolish,
-## ±60 m) fica no meio; em volta: estradas, cidades, fazenda, base militar,
-## hospital, florestas, rochas e carros abandonados.
+## Mundo aberto da Sobrevivência (600 x 600 m), montado a partir de
+## data/survival_world.json: só natureza — florestas, clareiras, lagos, rochas,
+## arbustos de frutas e coisas pequenas no chão (galhos, pedrinhas, capim, ervas).
+## (Prédios, estradas e recipientes ainda são montados se o arquivo tiver.)
 ##
 ## Recipientes (saque) e recursos (coleta) guardam o id do servidor em
 ## `containers` / `resources`, para o controlador achar o que está perto.
@@ -13,11 +13,15 @@ const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CarModel = preload("res://scripts/survival/car_model.gd")
 const NatureModel = preload("res://scripts/survival/nature_model.gd")
 const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
-const CENTER_HALF := 60.0
+## Coisas pequenas do chão: um modelo só, visíveis até PICKUP_RANGE, sem colisão.
+const PICKUPS := ["stick", "pebble", "fiber", "herb"]
+const PICKUP_RANGE := 50.0
 
 var containers: Dictionary = {} # id -> {node, type, pos}
-var resources: Dictionary = {} # id -> {node, kind, pos, parts}
+var resources: Dictionary = {} # id -> {node, kind, pos, parts, r}
+var ponds: Array = [] # [{x, z, r}]
 var half_size := 240.0
+var center_half := 0.0 # cidade do meio (mapas antigos); 0 = sem cidade
 var _mats: Dictionary = {}
 var _meshes: Dictionary = {}
 
@@ -25,7 +29,11 @@ func _ready() -> void:
 	name = "SurvivalWorld"
 	var data := SurvivalData.world()
 	half_size = float(data.get("half_size", 240))
+	center_half = float(data.get("center_town", {}).get("half_size", 0.0))
+	ponds = data.get("ponds", [])
 	_ground()
+	for pond in ponds:
+		_pond(pond)
 	for road in data.get("roads", []):
 		_road(road)
 	for building in data.get("buildings", []):
@@ -163,7 +171,9 @@ func _short_grass() -> void:
 			var list: Array = []
 			for i in 520:
 				var p := Vector3(x + rng.randf() * tile, 0, z + rng.randf() * tile)
-				if absf(p.x) < CENTER_HALF + 1 and absf(p.z) < CENTER_HALF + 1:
+				if absf(p.x) < center_half + 1 and absf(p.z) < center_half + 1:
+					continue
+				if in_pond(p, 0.5):
 					continue
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4))
 				list.append(Transform3D(basis, p))
@@ -251,17 +261,20 @@ func _solid(parent: Node3D, pos: Vector3, size: Vector3, material: Material) -> 
 
 # ----------------------------------------------------------------- chão ---
 
-## Quatro placas de grama em volta da cidade do meio (ela tem o próprio chão).
+## Chão de grama do mundo inteiro (mapas antigos: quatro placas em volta da
+## cidade do meio, que tem o próprio chão).
 func _ground() -> void:
 	var grass := _mat("grass", "#5d7a4e")
 	var h := half_size
-	var c := CENTER_HALF
-	var slabs := [
-		[Vector3(0, -0.5, -(h + c) * 0.5), Vector3(h * 2, 1, h - c)],
-		[Vector3(0, -0.5, (h + c) * 0.5), Vector3(h * 2, 1, h - c)],
-		[Vector3(-(h + c) * 0.5, -0.5, 0), Vector3(h - c, 1, c * 2)],
-		[Vector3((h + c) * 0.5, -0.5, 0), Vector3(h - c, 1, c * 2)],
-	]
+	var c := center_half
+	var slabs := [[Vector3(0, -0.5, 0), Vector3(h * 2, 1, h * 2)]]
+	if c > 0.0:
+		slabs = [
+			[Vector3(0, -0.5, -(h + c) * 0.5), Vector3(h * 2, 1, h - c)],
+			[Vector3(0, -0.5, (h + c) * 0.5), Vector3(h * 2, 1, h - c)],
+			[Vector3(-(h + c) * 0.5, -0.5, 0), Vector3(h - c, 1, c * 2)],
+			[Vector3((h + c) * 0.5, -0.5, 0), Vector3(h - c, 1, c * 2)],
+		]
 	for slab in slabs:
 		_solid(self, slab[0], slab[1], grass).name = "Ground"
 	# Manchas de terra e de grama mais clara/escura, para o campo não ficar liso.
@@ -271,7 +284,7 @@ func _ground() -> void:
 	var lists: Array = [[], [], [], []]
 	for i in 220:
 		var p := Vector3(rng.randf_range(-h + 10, h - 10), 0.004 + (i % 4) * 0.003, rng.randf_range(-h + 10, h - 10))
-		if absf(p.x) < c + 10 and absf(p.z) < c + 10:
+		if c > 0.0 and absf(p.x) < c + 10 and absf(p.z) < c + 10:
 			continue
 		var size := rng.randf_range(8, 30) if i % 4 else rng.randf_range(5, 14)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(size, 1.0, size * rng.randf_range(0.5, 1.2)))
@@ -470,6 +483,9 @@ func set_container_empty(id: String, empty: bool) -> void:
 func _resource(res: Dictionary) -> void:
 	var kind := str(res["kind"])
 	var p: Array = res["p"]
+	if kind in PICKUPS or kind == "pond":
+		_light_resource(res, kind, Vector3(float(p[0]), 0, float(p[2])))
+		return
 	var body := StaticBody3D.new()
 	body.name = "Res_" + str(res["id"])
 	body.collision_layer = HitboxScript.LAYER_WORLD
@@ -514,7 +530,61 @@ func _resource(res: Dictionary) -> void:
 			slots["full"] = _slot("bush_full", xform, true)
 			slots["empty"] = _slot("bush_empty", xform, false)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.5 * s, 0), 0.6 * s, 0.0)
-	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "slots": slots, "depleted": false}
+	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "slots": slots, "depleted": false, "r": 0.0}
+
+## Coisa do chão (galho, pedrinha, capim, erva) ou lago: sem corpo nem colisão.
+## O que aparece na tela fica no lote (MultiMesh) ou na água do lago.
+func _light_resource(res: Dictionary, kind: String, pos: Vector3) -> void:
+	var slots := {}
+	if kind != "pond":
+		var seed_value := int(str(res["id"]).substr(1))
+		var s := 0.85 + float(seed_value % 5) * 0.08
+		slots["full"] = _slot(kind, Transform3D(Basis(Vector3.UP, float(res.get("yaw", 0.0))).scaled(Vector3.ONE * s), pos), true)
+	resources[str(res["id"])] = {"node": null, "kind": kind, "pos": pos, "parts": [], "slots": slots, "depleted": false, "r": float(res.get("r", 0.0))}
+
+# ------------------------------------------------------------------ lagos ---
+
+var _water_material: StandardMaterial3D
+var _shore_material: StandardMaterial3D
+
+## Lago raso: água escura e parada, com margem de lama em volta (dá para entrar).
+func _pond(data: Dictionary) -> void:
+	if _water_material == null:
+		_water_material = StandardMaterial3D.new()
+		_water_material.albedo_color = Color("#1f3236")
+		_water_material.metallic = 0.35
+		_water_material.roughness = 0.06
+		_shore_material = _mat("dirt", "#4f4334")
+	var r := float(data["r"])
+	var node := Node3D.new()
+	node.name = "Pond"
+	node.position = Vector3(float(data["x"]), 0, float(data["z"]))
+	add_child(node)
+	var shore := _cylinder(node, Vector3(0, 0.016, 0), r + 1.4, r + 1.4, 0.012, _shore_material)
+	shore.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var water := _cylinder(node, Vector3(0, 0.03, 0), r, r, 0.012, _water_material)
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	for m in [shore, water]:
+		(m.mesh as CylinderMesh).radial_segments = 28
+	# Juncos na beira da água.
+	var reeds: Array = []
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(node.position.x * 31 + node.position.z * 17)
+	for i in int(r * 5):
+		var a := rng.randf() * TAU
+		var d := r + rng.randf_range(-0.3, 0.9)
+		reeds.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, rng.randf_range(0.9, 1.6), 1)), node.position + Vector3(cos(a) * d, 0, sin(a) * d)))
+	_multimesh(_clump_mesh(6, 0.9, 0.06, Color("#3d4a26"), Color("#8b8a52")), reeds, 120.0).name = "Reeds"
+
+## Ponto dentro (ou a até `margin` m) de um lago?
+func in_pond(point: Vector3, margin: float = 0.0) -> bool:
+	for pond in ponds:
+		var r := float(pond["r"]) + margin
+		var dx := point.x - float(pond["x"])
+		var dz := point.z - float(pond["z"])
+		if dx * dx + dz * dz < r * r:
+			return true
+	return false
 
 # ---------------------------------------------------- desenho em lote ---
 # Árvores, pedras e arbustos: um MultiMesh por modelo, por nível de detalhe e
@@ -546,6 +616,8 @@ func _flush_batches() -> void:
 		# Árvores e pedras: perto / médio / longe (silhueta). Arbusto e toco são
 		# pequenos: perto (com sombra) e médio (sem sombra), e somem de longe.
 		var levels := [0, 1, 2] if variant in HAS_SILHOUETTE else [0, 1]
+		if variant in PICKUPS:
+			levels = [0] # coisas do chão: só de perto
 		for lod in levels:
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
@@ -558,7 +630,9 @@ func _flush_batches() -> void:
 			node.multimesh = mm
 			node.position = batch["center"]
 			var end := LOD_FAR if lod == 2 else (LOD_MID if variant in HAS_SILHOUETTE else LOD_SMALL_MID)
-			_lod_range(node, lod, end if lod > 0 else LOD_NEAR)
+			_lod_range(node, lod, end if lod > 0 else (PICKUP_RANGE if variant in PICKUPS else LOD_NEAR))
+			if variant in PICKUPS:
+				node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(node)
 			batch["mms"].append(mm)
 
@@ -618,7 +692,8 @@ func _collider(body: StaticBody3D, shape: Shape3D, pos: Vector3, radius: float, 
 	col.position = pos
 	body.add_child(col)
 
-## Coletado: a árvore vira toco, a pedra some, o carro fica "depenado", o arbusto sem frutas.
+## Coletado: a árvore vira toco, a pedra encolhe, o arbusto fica sem frutas,
+## galho/pedrinha/capim/erva somem (até voltar).
 func set_depleted(id: String, value: bool) -> void:
 	var entry: Dictionary = resources.get(id, {})
 	if entry.is_empty() or bool(entry["depleted"]) == value:
@@ -626,6 +701,8 @@ func set_depleted(id: String, value: bool) -> void:
 	entry["depleted"] = value
 	var slots: Dictionary = entry.get("slots", {})
 	match str(entry["kind"]):
+		"stick", "pebble", "fiber", "herb":
+			_set_slot(slots.get("full", []), not value)
 		"tree", "bush":
 			_set_slot(slots.get("full", []), not value)
 			_set_slot(slots.get("empty", []), value)

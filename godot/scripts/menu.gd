@@ -1384,14 +1384,14 @@ func _show_deathmatch_tab() -> void:
 
 # ------------------------------------------------------- sobrevivência ---
 
-## Aba "Sobrevivência": mundo aberto com zumbis, até 16 jogadores, sem sala de espera.
+## Aba "Sobrevivência": mundo de floresta, até 16 jogadores, sem sala de espera.
 func _show_survival_tab() -> void:
     if not _online_screen(3):
         return
     _mode_card("Sobrevivência", "Até 16 jogadores",
-        "Mundo aberto infestado de zumbis. Você nasce no mato com quase nada: revista casas, mercados, o hospital e a base militar atrás de comida, água, remédios e armas. Corte árvores, quebre pedras e desmonte carros para fabricar bandagens, machado, mochila e munição.",
-        ["Fome e sede caem com o tempo; tiros atraem zumbis",
-        "Mordida infecta: sem vacina em 2 minutos você vira zumbi",
+        "Uma floresta sem nada pronto. Você acorda de mãos vazias: junte galhos, pedras e fibra, fabrique faca, machado e picareta de pedra, corte árvores, colha frutas e ervas e beba nos lagos. De dia a mata é calma; à noite os zumbis saem do escuro.",
+        ["Tudo é fabricado: árvore só com machado, rocha só com picareta",
+        "Mordida infecta: sem remédio de ervas em 2 minutos você vira zumbi",
         "Ao morrer, suas coisas ficam numa mochila no chão",
         "Ao sair, seu personagem fica dormindo no mundo"], Color("#e6c98a"))
     _player_strip()
