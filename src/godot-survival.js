@@ -22,6 +22,8 @@ import { resolveSession, rankFor } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 import { BuildGrid } from './godot-building.js';
 
+const ANIMALS = catalog.animals || {};
+const ANIMAL = catalog.animal_rules || {};
 const BUILD = catalog.build_rules;
 const BUILDS = catalog.builds;
 /** Folga ao redor de cada recurso com colisão: a fundação não pode cobrir árvore/rocha/arbusto. */
@@ -301,7 +303,7 @@ export class GodotSurvival {
 		return {
 			version: WORLD_VERSION, name: '', createdAt: Date.now(), players: {}, chars: {}, host: null,
 			zombies: {}, zSeq: 0, containers: {}, bags: {}, bagSeq: 0, depleted: {}, vehicles: {},
-			buildSeq: 0, auth: {},
+			buildSeq: 0, auth: {}, animals: {}, aSeq: 0,
 		};
 	}
 
@@ -632,6 +634,7 @@ export class GodotSurvival {
 				.filter((p) => p.id !== me.id && this.sessions.has(p.id))
 				.map((p) => ({ id: p.id, name: p.name, rank: p.rank, p: p.p, dead: p.dead })),
 			zombies: Object.values(s.zombies),
+			animals: Object.values(s.animals || {}).map((a) => ({ id: a.id, kind: a.kind, hp: a.hp, p: a.p })),
 			vehicles: Object.values(this.vehicles()).map((v) => this.vehiclePacket(v)),
 			bags: Object.values(s.bags).map((b) => this.bagSummary(b)),
 			sleepers: this.sleepers(),
@@ -657,7 +660,7 @@ export class GodotSurvival {
 	}
 
 	bagSummary(bag) {
-		return { id: bag.id, p: bag.p, name: bag.name, count: Object.values(bag.items).reduce((a, b) => a + b, 0) };
+		return { id: bag.id, p: bag.p, name: bag.name, title: bag.title || '', count: Object.values(bag.items).reduce((a, b) => a + b, 0) };
 	}
 
 	async ensureAlarm() {
@@ -703,6 +706,8 @@ export class GodotSurvival {
 				return;
 			}
 			case 'z': return isHost && this.zombieStates(d.l);
+			case 'an': return isHost && this.animalStates(d.l);
+			case 'ahit': return isHost && this.animalHit(d);
 			case 'shot': {
 				const o = vec3(d.o, 600);
 				const e = vec3(d.e, 1200);
@@ -821,6 +826,11 @@ export class GodotSurvival {
 			this.broadcast({ t: 'zdead', id: zombie.id, by: attacker.id, zone, w: weapon });
 			this.save();
 			return;
+		}
+		const animal = s.animals?.[targetId];
+		if (animal) {
+			if (flat(attacker.p, animal.p) > reach + 2) return;
+			return this.hurtAnimal(animal, amount, attacker, zone);
 		}
 		const target = s.players[targetId];
 		if (!target || target.dead || target.id === attacker.id || !this.sessions.has(target.id)) return;
@@ -1042,6 +1052,113 @@ export class GodotSurvival {
 		return null;
 	}
 
+	// --------------------------------------------------------------- animais ---
+
+	/** Posições vindas do anfitrião: [[id, x, y, z, yaw, anim], ...]. */
+	animalStates(list) {
+		const s = this.state;
+		if (!Array.isArray(list) || !s.animals) return;
+		const moved = [];
+		for (const entry of list.slice(0, ANIMAL.max || 40)) {
+			if (!Array.isArray(entry) || entry.length < 6) continue;
+			const animal = s.animals[entry[0]];
+			const p = vec3([entry[1], entry[2], entry[3]], 600);
+			if (!animal || !p || flat(animal.p, p) > 14) continue; // corre no máximo ~10 m/s
+			animal.p = p;
+			moved.push([animal.id, p[0], p[1], p[2], finite(entry[4], 100) ? round1(entry[4]) : 0, Number.isInteger(entry[5]) ? entry[5] : 0]);
+		}
+		if (!moved.length) return;
+		for (const [id, ws] of this.sessions) {
+			if (id === s.host) continue;
+			const viewer = s.players[id];
+			const near = viewer?.p ? moved.filter((a) => Math.hypot(a[1] - viewer.p[0], a[3] - viewer.p[2]) < INTEREST_RANGE) : moved;
+			if (near.length) this.send(ws, { t: 'an', l: near });
+		}
+	}
+
+	/** Mordida de lobo / chifrada de javali, relatada pelo anfitrião. */
+	animalHit(d) {
+		const s = this.state;
+		const animal = s.animals?.[d.a];
+		const target = s.players[d.target];
+		const rule = animal && ANIMALS[animal.kind];
+		if (!rule?.damage || !target || target.dead || !this.sessions.has(target.id) || target.vehicle) return;
+		const now = Date.now();
+		if (now - (animal.lastHit || 0) < (ANIMAL.attack_ms || 1200)) return;
+		if (flat(animal.p, target.p) > (ANIMAL.reach || 2.2) + ZOMBIE_REACH_LAG) return;
+		animal.lastHit = now;
+		this.damagePlayer(target, rule.damage, animal.id, 'a_' + animal.kind);
+	}
+
+	/** Golpe/tiro num animal; morto, vira uma carcaça (mochila no chão) com carne e couro. */
+	hurtAnimal(animal, amount, attacker, zone = 'chest') {
+		const s = this.state;
+		animal.hp = Math.max(0, round1(animal.hp - amount));
+		if (animal.hp > 0) {
+			this.broadcastNear(animal.p, { t: 'ahp', id: animal.id, hp: animal.hp, by: attacker.id, zone });
+			return;
+		}
+		delete s.animals[animal.id];
+		const rule = ANIMALS[animal.kind] || {};
+		const loot = {};
+		for (const [item, [min, max]] of Object.entries(rule.loot || {})) {
+			const n = randInt(min, max);
+			if (n > 0 && ITEMS[item]) loot[item] = n;
+		}
+		if (Object.keys(loot).length) this.makeBag(animal.p, loot, '', `Carcaça de ${String(rule.name || 'animal').toLowerCase()}`);
+		this.credit(attacker, ANIMAL.xp || 2);
+		this.broadcast({ t: 'adead', id: animal.id, by: attacker.id, zone });
+		this.save();
+	}
+
+	/** Nascem animais em volta dos jogadores (dia e noite) e somem os que ficaram longe de todos. */
+	spawnAnimals() {
+		const s = this.state;
+		if (!s.animals) s.animals = {};
+		const players = this.living();
+		const gone = [];
+		for (const animal of Object.values(s.animals)) {
+			if (!players.some((p) => flat(p.p, animal.p) < (ANIMAL.despawn || 180))) {
+				delete s.animals[animal.id];
+				gone.push(animal.id);
+			}
+		}
+		if (gone.length) this.broadcast({ t: 'agone', l: gone });
+		if (!players.length || !Object.keys(ANIMALS).length) return;
+		const target = Math.min(ANIMAL.max || 36, (ANIMAL.base || 4) + (ANIMAL.per_player || 3) * players.length);
+		const born = [];
+		for (let i = 0; i < (ANIMAL.batch || 4) && Object.keys(s.animals).length < target; i++) {
+			const spot = this.animalSpot(players);
+			if (!spot) break;
+			const [kind, rule] = weighted(Object.entries(ANIMALS), ([, r]) => r.weight || 1);
+			const group = randInt(rule.group?.[0] || 1, rule.group?.[1] || 1);
+			for (let g = 0; g < group && Object.keys(s.animals).length < target; g++) {
+				const p = [round1(spot[0] + (Math.random() - 0.5) * 6), 0.2, round1(spot[2] + (Math.random() - 0.5) * 6)];
+				const animal = { id: 'a' + ++s.aSeq, kind, hp: rule.hp, p };
+				s.animals[animal.id] = animal;
+				born.push(animal);
+			}
+		}
+		if (born.length) this.broadcast({ t: 'aspawn', l: born.map((a) => ({ id: a.id, kind: a.kind, hp: a.hp, p: a.p })) });
+	}
+
+	/** Ponto no mato a 35–110 m de algum jogador, longe de todos os outros, fora dos lagos. */
+	animalSpot(players) {
+		const min = ANIMAL.spawn_min || 35;
+		const max = ANIMAL.spawn_max || 110;
+		for (let attempt = 0; attempt < 10; attempt++) {
+			const anchor = players[Math.floor(Math.random() * players.length)];
+			const a = Math.random() * Math.PI * 2;
+			const d = min + Math.random() * (max - min);
+			const p = [round1(anchor.p[0] + Math.cos(a) * d), 0.2, round1(anchor.p[2] + Math.sin(a) * d)];
+			if (Math.abs(p[0]) > world.half_size - 8 || Math.abs(p[2]) > world.half_size - 8) continue;
+			if ((world.ponds || []).some((pond) => Math.hypot(pond.x - p[0], pond.z - p[2]) < pond.r + 4)) continue;
+			if (players.some((pl) => flat(pl.p, p) < min)) continue;
+			return p;
+		}
+		return null;
+	}
+
 	// ---------------------------------------------------------- saque e itens ---
 
 	/** Revistar um recipiente do mapa ou uma mochila no chão. */
@@ -1055,7 +1172,7 @@ export class GodotSurvival {
 		const bag = s.bags[d.k];
 		if (bag) {
 			if (flat(me.p, bag.p) > REACH) return note('Longe demais.');
-			return reply({ t: 'container', k: bag.id, title: bag.name ? 'Mochila de ' + bag.name : 'Mochila', items: bag.items });
+			return reply({ t: 'container', k: bag.id, title: bag.title || (bag.name ? 'Mochila de ' + bag.name : 'Mochila'), items: bag.items });
 		}
 		const spot = CONTAINERS[d.k];
 		if (!spot) return;
@@ -1111,7 +1228,7 @@ export class GodotSurvival {
 		}
 		this.save();
 		this.sendInv(me);
-		reply({ t: 'container', k: d.k, title: bag ? 'Mochila' + (bag.name ? ' de ' + bag.name : '') : catalog.loot[spot.type]?.name, items });
+		reply({ t: 'container', k: d.k, title: bag ? bag.title || 'Mochila' + (bag.name ? ' de ' + bag.name : '') : catalog.loot[spot.type]?.name, items });
 	}
 
 	drop(me, d, note) {
@@ -1126,11 +1243,12 @@ export class GodotSurvival {
 	}
 
 	/** Junta na mochila do chão mais próxima (até 2 m) ou cria uma nova. */
-	makeBag(p, items, name) {
+	makeBag(p, items, name, title = '') {
 		const s = this.state;
-		let bag = Object.values(s.bags).find((b) => flat(b.p, p) < 2);
+		let bag = title ? null : Object.values(s.bags).find((b) => flat(b.p, p) < 2 && !b.title);
 		if (!bag) {
 			bag = { id: 'b' + ++s.bagSeq, p: [round1(p[0]), round1(p[1] || 0), round1(p[2])], items: {}, name, expires: 0 };
+			if (title) bag.title = title;
 			s.bags[bag.id] = bag;
 		}
 		for (const [item, n] of Object.entries(items)) addItems(bag.items, item, n);
@@ -1156,14 +1274,16 @@ export class GodotSurvival {
 			me.infectedAt = 0;
 			this.sendTo(me.id, { t: 'infected', left: 0 });
 		}
-		if (u.hp) me.hp = Math.min(100, me.hp + u.hp);
+		if (u.hp > 0) me.hp = Math.min(100, me.hp + u.hp);
 		if (u.hunger) me.hunger = Math.max(0, Math.min(100, me.hunger + u.hunger));
 		if (u.thirst) me.thirst = Math.max(0, Math.min(100, me.thirst + u.thirst));
 		this.save();
 		this.sendInv(me);
 		this.sendStats(me);
-		if (u.hp) this.broadcast({ t: 'hp', id: me.id, hp: me.hp, by: me.id, w: '', zone: null, killed: false });
-		note(`Usou ${item.name}.`);
+		if (u.hp > 0) this.broadcast({ t: 'hp', id: me.id, hp: me.hp, by: me.id, w: '', zone: null, killed: false });
+		// Carne crua faz mal: tira vida (pode matar quem já está fraco).
+		if (u.hp < 0) this.damagePlayer(me, -u.hp, me.id, 'raw');
+		note(u.hp < 0 ? `Comeu ${item.name.toLowerCase()} e passou mal. Asse na fogueira.` : `Usou ${item.name}.`);
 	}
 
 	/** Veste mochila (costas), capacete (cabeça) ou colete (peito); o que estava volta para o inventário. */
@@ -1207,6 +1327,11 @@ export class GodotSurvival {
 	craft(me, d, note) {
 		const recipe = RECIPES[d.recipe];
 		if (!recipe) return;
+		// Assar: só perto de uma fogueira acesa.
+		if (recipe.station === 'campfire') {
+			const lit = [...this.grid.pieces.values()].some((b) => b.kind === 'campfire' && b.on && flat(b.p, me.p) < REACH && Math.abs(b.p[1] - (me.p[1] || 0)) < 2);
+			if (!lit) return note('Chegue perto de uma fogueira acesa (E acende).');
+		}
 		for (const [item, n] of Object.entries(recipe.needs)) {
 			if ((me.inv[item] || 0) < n) return note(`Falta ${ITEMS[item]?.name || item}.`);
 		}
@@ -1611,6 +1736,7 @@ export class GodotSurvival {
 		if (!this.sessions.size) {
 			// Mundo vazio: os zumbis somem; personagens e recipientes ficam guardados.
 			s.zombies = {};
+			s.animals = {};
 			s.host = null;
 			this.save(true);
 			return;
@@ -1637,6 +1763,7 @@ export class GodotSurvival {
 			if (saved.sid) this.broadcast({ t: 'wake', id: saved.sid });
 		}
 		this.spawnZombies();
+		this.spawnAnimals();
 		this.broadcast({ t: 'clock', ...this.clock(), online: this.sessions.size, zombies: Object.keys(s.zombies).length });
 		this.save(true);
 		await this.ctx.storage.setAlarm(now + TICK_MS);

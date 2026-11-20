@@ -14,6 +14,8 @@ const Melee = preload("res://scripts/melee.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
 const DrivingScript = preload("res://scripts/survival/survival_driving.gd")
 const BuildingScript = preload("res://scripts/survival/survival_building.gd")
+const AnimalScript = preload("res://scripts/survival/animal.gd")
+var animals: Dictionary = {} # id -> Animal
 var driving_ctl: Node # carros (survival_driving.gd)
 var building_ctl: Node # construção (survival_building.gd)
 var bed_button: Button
@@ -113,6 +115,7 @@ func _ready() -> void:
 	for entry in info.get("roster", []):
 		_add_actor(entry)
 	_spawn_zombies(info.get("zombies", []))
+	_spawn_animals(info.get("animals", []))
 	driving_ctl = DrivingScript.new()
 	driving_ctl.call("setup", self, main_node, player)
 	add_child(driving_ctl)
@@ -155,6 +158,8 @@ func is_host() -> bool:
 func _apply_host() -> void:
 	for z in zombies.values():
 		z.call("set_controlled", is_host())
+	for a in animals.values():
+		a.call("set_controlled", is_host())
 
 ## Jogadores vivos que os zumbis podem atacar (no anfitrião).
 ## "grass": dentro de grama alta; "crouch": agachado (os dois juntos = escondido).
@@ -213,6 +218,12 @@ func _physics_process(delta: float) -> void:
 				list.append(z.call("state"))
 		if not list.is_empty():
 			Net.send({"t": "z", "l": list})
+		var herd: Array = []
+		for a in animals.values():
+			if not a.dead and a.controlled:
+				herd.append(a.call("state"))
+		if not herd.is_empty():
+			Net.send({"t": "an", "l": herd})
 
 func is_driving() -> bool:
 	return driving_ctl != null and bool(driving_ctl.call("is_driving"))
@@ -279,6 +290,35 @@ func _on_message(data: Dictionary) -> void:
 			if str(data.get("by", "")) == my_id:
 				combat_feedback.call("show_hit", str(data.get("zone", "")) == "head", true)
 				player.get("sound_fx").call("kill_confirm")
+		"an":
+			for entry in data.get("l", []):
+				var a = animals.get(str(entry[0]))
+				if a != null:
+					a.call("apply_state", entry)
+		"aspawn":
+			_spawn_animals(data.get("l", []))
+		"ahp":
+			var a = animals.get(str(data.get("id", "")))
+			if a != null:
+				var by := str(data.get("by", ""))
+				var by_node: Node3D = player if by == my_id else actors.get(by)
+				if by_node != null:
+					a.call("hurt", by, by_node)
+				a.hp = float(data.get("hp", a.hp))
+		"adead":
+			var a = animals.get(str(data.get("id", "")))
+			if a != null:
+				a.call("die")
+				animals.erase(str(data["id"]))
+			if str(data.get("by", "")) == my_id:
+				combat_feedback.call("show_hit", false, true)
+				player.get("sound_fx").call("kill_confirm")
+		"agone":
+			for id in data.get("l", []):
+				var a = animals.get(str(id))
+				if a != null:
+					a.queue_free()
+					animals.erase(str(id))
 		"zgone":
 			for id in data.get("l", []):
 				var z = zombies.get(str(id))
@@ -414,6 +454,25 @@ func _spawn_zombies(list: Array) -> void:
 		z.call("set_controlled", is_host())
 		zombies[id] = z
 
+func _spawn_animals(list: Array) -> void:
+	for entry in list:
+		var id := str(entry.get("id", ""))
+		if id.is_empty() or animals.has(id):
+			continue
+		var a: CharacterBody3D = AnimalScript.new()
+		a.call("setup", id, str(entry.get("kind", "deer")), float(entry.get("hp", 50)))
+		var p = _vec(entry.get("p"))
+		a.position = p if p != null else Vector3.ZERO
+		a.set("targets", _targets)
+		a.set("night", night)
+		a.connect("damaged", _on_target_damaged)
+		a.connect("attacked", func(aid: String, target_id: String):
+			if is_host():
+				Net.send({"t": "ahit", "a": aid, "target": target_id}))
+		main_node.add_child(a)
+		a.call("set_controlled", is_host())
+		animals[id] = a
+
 func _on_zombie_attack(zombie_id: String, target_id: String) -> void:
 	if is_host():
 		Net.send({"t": "zhit", "z": zombie_id, "target": target_id})
@@ -477,6 +536,8 @@ func _melee() -> void:
 	if target == null:
 		return
 	var target_id := str(target.get("zombie_id")) if target.get("zombie_id") != null else str(target.get("actor_id"))
+	if target.get("animal_id") != null:
+		target_id = str(target.get("animal_id"))
 	var best: Array = SurvivalData.best_melee(inv)
 	var zone := str(body.get("zone"))
 	if body.has_method("resolve_ray"):
@@ -495,6 +556,8 @@ func _on_health(data: Dictionary) -> void:
 	# Mordida: o zumbi que acertou faz o golpe (nos outros clientes, já no impacto).
 	if str(data.get("w", "")) == "zombie" and zombies.has(by):
 		zombies[by].call("strike", true)
+	if str(data.get("w", "")).begins_with("a_") and animals.has(by) and not bool(animals[by].controlled):
+		animals[by].call("strike")
 	if id == my_id:
 		if hp < my_hp:
 			damage_flash.color.a = clampf(0.2 + (my_hp - hp) / 50.0, 0.2, 0.55)
@@ -506,7 +569,8 @@ func _on_health(data: Dictionary) -> void:
 		my_hp = hp
 		_update_bars()
 		if killed:
-			var cause: String = str({"fome": "de fome", "sede": "de sede", "zombie": "para os zumbis", "infection": "— a infecção venceu e você virou zumbi", "explosion": "na explosão do carro"}.get(str(data.get("w", "")), ""))
+			var cause: String = str({"fome": "de fome", "sede": "de sede", "zombie": "para os zumbis", "infection": "— a infecção venceu e você virou zumbi", "explosion": "na explosão do carro",
+				"a_wolf": "para os lobos", "a_boar": "na chifrada do javali", "raw": "de tanto comer carne crua"}.get(str(data.get("w", "")), ""))
 			if cause.is_empty():
 				cause = "para " + str(names.get(by, "alguém"))
 			_feed("Você morreu %s." % cause)
@@ -684,7 +748,8 @@ func _find_target() -> Dictionary:
 		var d := Vector2(pos.x - me.x, pos.z - me.z).length()
 		if d < best_d:
 			best_d = d
-			best = {"type": "container", "id": id, "label": "[E] Abrir mochila" + (" de " + str(bags[id]["name"]) if str(bags[id]["name"]) != "" else "")}
+			var bag_title := str(bags[id].get("title", ""))
+			best = {"type": "container", "id": id, "label": ("[E] Abrir " + bag_title.to_lower()) if bag_title != "" else "[E] Abrir mochila" + (" de " + str(bags[id]["name"]) if str(bags[id]["name"]) != "" else "")}
 	for id in world.resources:
 		var entry: Dictionary = world.resources[id]
 		if entry["depleted"]:
@@ -835,19 +900,20 @@ func _set_bag(data: Dictionary) -> void:
 	mesh.mesh = box
 	mesh.position.y = 0.18
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("#4b5a32")
+	# Carcaça de animal: monte marrom-avermelhado no lugar da mochila verde.
+	mat.albedo_color = Color("#5a2f26") if str(data.get("title", "")).begins_with("Carca") else Color("#4b5a32")
 	mesh.material_override = mat
 	node.add_child(mesh)
 	var label := Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.text = "Mochila" + (" de " + str(data.get("name", "")) if str(data.get("name", "")) != "" else "")
+	label.text = str(data.get("title", "")) if str(data.get("title", "")) != "" else "Mochila" + (" de " + str(data.get("name", "")) if str(data.get("name", "")) != "" else "")
 	label.font_size = 32
 	label.outline_size = 8
 	label.pixel_size = 0.004
 	label.position.y = 0.8
 	label.modulate = Color("#ff9a7a")
 	node.add_child(label)
-	bags[id] = {"node": node, "pos": p, "name": str(data.get("name", "")), "count": int(data.get("count", 0))}
+	bags[id] = {"node": node, "pos": p, "name": str(data.get("name", "")), "title": str(data.get("title", "")), "count": int(data.get("count", 0))}
 
 # ------------------------------------------------------------- dia/noite ---
 
@@ -868,6 +934,8 @@ func _update_daylight() -> void:
 	if night != was_night:
 		for z in zombies.values():
 			z.set("night", night)
+		for a in animals.values():
+			a.set("night", night)
 		_feed("A noite caiu. Os zumbis estão saindo do mato." if night else "Amanheceu. Os zumbis voltam para as sombras.")
 	# Luz do sol: sobe às 6h, a pino ao meio-dia, se põe às 20h.
 	var day_fraction := clampf((hour - 6.0) / 14.0, 0.0, 1.0)
@@ -1151,9 +1219,8 @@ func _feed(text: String) -> void:
 	feed.add_child(label)
 	while feed.get_child_count() > 6:
 		feed.get_child(0).free()
-	get_tree().create_timer(9.0).timeout.connect(func():
-		if is_instance_valid(label):
-			label.queue_free())
+	# Ligado ao próprio texto: se ele já saiu (feed cheio), a ligação some junto.
+	get_tree().create_timer(9.0).timeout.connect(label.queue_free)
 
 func _toast(text: String) -> void:
 	toast_label.text = text

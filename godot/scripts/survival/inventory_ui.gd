@@ -560,7 +560,10 @@ func _refresh_side() -> void:
 		text.add_theme_constant_override("separation", 0)
 		row.add_child(text)
 		text.add_child(_label(str(recipe["name"]), 14, TEXT))
-		text.add_child(_label(", ".join(parts), 11, Color("#8fbf8a") if have_all else MUTED))
+		var needs_text := ", ".join(parts)
+		if str(recipe.get("station", "")) == "campfire":
+			needs_text += "  •  perto de uma fogueira acesa"
+		text.add_child(_label(needs_text, 11, Color("#8fbf8a") if have_all else MUTED))
 		var make := _button("Fabricar", true)
 		make.disabled = not have_all
 		make.size_flags_vertical = Control.SIZE_SHRINK_CENTER

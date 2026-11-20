@@ -1,0 +1,8 @@
+Modelos dos animais da Sobrevivência (baixados do Poly Pizza em 2026-11-20)
+
+stag.glb   - "Stag" por Quaternius - CC0 (domínio público) - https://poly.pizza/m/tQdzbZ1Cmw  (usado como Cervo)
+wolf.glb   - "Wolf" por Quaternius - CC0 (domínio público) - https://poly.pizza/m/P1gU3Qkr9r  (Lobo)
+pig.glb    - "Pig" por Quaternius - CC0 (domínio público) - https://poly.pizza/m/TNvG3QUFlp   (Javali: escurecido e com presas no jogo)
+rabbit.glb - "Rabbit" por Sherkiz - CC-BY 4.0 (dar crédito) - https://poly.pizza/m/Km89u3twcR  (Coelho)
+
+O coelho exige crédito ao autor: "Rabbit" por Sherkiz (https://poly.pizza/m/Km89u3twcR), licença Creative Commons Attribution.

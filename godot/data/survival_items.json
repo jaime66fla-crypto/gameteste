@@ -16,7 +16,11 @@
     "stone_axe":     {"name": "Machado de pedra",     "weight": 1.6,  "cat": "melee",    "melee": 24, "tool": "wood", "desc": "Corta árvores (tora de madeira)"},
     "stone_pick":    {"name": "Picareta de pedra",    "weight": 1.8,  "cat": "melee",    "melee": 22, "tool": "stone", "desc": "Quebra rochas (bastante pedra)"},
     "club":          {"name": "Clava",                "weight": 1.4,  "cat": "melee",    "melee": 28},
-    "sack_bag":      {"name": "Bolsa de fibra",       "weight": 0.5,  "cat": "gear",     "carry": 10, "slot": "back"}
+    "sack_bag":      {"name": "Bolsa de fibra",       "weight": 0.5,  "cat": "gear",     "carry": 10, "slot": "back"},
+    "raw_meat":      {"name": "Carne crua",           "weight": 0.3,  "cat": "food",     "use": {"hunger": 6, "hp": -6}, "desc": "Crua faz mal: asse na fogueira acesa"},
+    "cooked_meat":   {"name": "Carne assada",         "weight": 0.25, "cat": "food",     "use": {"hunger": 30, "hp": 4}},
+    "hide":          {"name": "Couro",                "weight": 0.4,  "cat": "material"},
+    "hide_bag":      {"name": "Mochila de couro",     "weight": 0.9,  "cat": "gear",     "carry": 22, "slot": "back"}
   },
   "loot": {},
   "_resources_comment": "Coleta segurando E. 'needs': só coleta com a ferramenta desse tipo (sem ela, nada). 'tool' sem 'needs': a ferramenta rende mais ('bonus'). 'drink': mata a sede na hora (lago, nunca acaba). 'regrow' em segundos (0 = não acaba).",
@@ -38,8 +42,18 @@
     {"id": "stone_pick",  "name": "Picareta de pedra",  "needs": {"stick": 2, "stone": 3, "rope": 1},  "gives": ["stone_pick", 1]},
     {"id": "club",        "name": "Clava",              "needs": {"wood": 2, "rope": 1},               "gives": ["club", 1]},
     {"id": "herbal_cure", "name": "Remédio de ervas",   "needs": {"herb": 3, "fiber": 1},              "gives": ["herbal_cure", 1]},
-    {"id": "sack_bag",    "name": "Bolsa de fibra",     "needs": {"fiber": 12, "rope": 2},             "gives": ["sack_bag", 1]}
+    {"id": "sack_bag",    "name": "Bolsa de fibra",     "needs": {"fiber": 12, "rope": 2},             "gives": ["sack_bag", 1]},
+    {"id": "cooked_meat", "name": "Assar carne",        "needs": {"raw_meat": 1},                      "gives": ["cooked_meat", 1], "station": "campfire"},
+    {"id": "hide_bag",    "name": "Mochila de couro",   "needs": {"hide": 5, "rope": 2},               "gives": ["hide_bag", 1]}
   ],
+  "_animals_comment": "Animais (dia e noite): 'flee' fogem de quem chega perto (notice m), 'defend' só atacam quem bateu neles, 'hunt' caçam quem chegar perto. Mortos viram uma carcaça (mochila no chão) com 'loot' [min, max]. 'group' = quantos nascem juntos. Nascem a spawn_min-spawn_max m de um jogador e somem longe de todos (despawn).",
+  "animal_rules": {"base": 4, "per_player": 3, "max": 36, "spawn_min": 35, "spawn_max": 110, "despawn": 180, "batch": 4, "attack_ms": 1200, "reach": 2.2, "xp": 2},
+  "animals": {
+    "rabbit": {"name": "Coelho", "hp": 15,  "behavior": "flee",   "notice": 9,  "weight": 40, "group": [1, 2], "loot": {"raw_meat": [1, 1], "hide": [0, 1]}},
+    "deer":   {"name": "Cervo",  "hp": 80,  "behavior": "flee",   "notice": 16, "weight": 30, "group": [1, 3], "loot": {"raw_meat": [3, 5], "hide": [2, 3]}},
+    "boar":   {"name": "Javali", "hp": 110, "behavior": "defend", "notice": 6,  "weight": 18, "group": [1, 2], "damage": 14, "loot": {"raw_meat": [3, 4], "hide": [1, 2]}},
+    "wolf":   {"name": "Lobo",   "hp": 70,  "behavior": "hunt",   "notice": 20, "weight": 12, "group": [2, 3], "damage": 11, "loot": {"raw_meat": [1, 2], "hide": [1, 2]}}
+  },
   "_builds_comment": "Construção (B): peças numa grade de 'cell' m; cada andar tem 'story' m e o piso térreo (fundação) fica em 'base' m. slot: cell (fundação k=0, piso/telhado k>=1), edge (paredes nas bordas), door (dentro da parede com porta), stairs (em cima de fundação/piso), free (fogueira, baú, cama: em qualquer chão). 'r' = raio no chão das peças livres. Dano: golpe x melee_factor (machado x axe_factor, soco = fist), zumbi x zombie_factor. Consertar só repair_wait s depois do último dano; custa refund x o que falta. Desmontar devolve refund x material (proporcional à vida).",
   "build_rules": {"cell": 3.0, "story": 3.0, "base": 0.4, "reach": 7.0, "per_player": 300, "per_world": 4000, "melee_factor": 0.5, "axe_factor": 1.0, "fist": 2, "zombie_factor": 3, "repair_wait": 15, "refund": 0.5, "bed_cooldown": 120, "auth_max": 12},
   "builds": {

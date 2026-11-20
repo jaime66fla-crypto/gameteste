@@ -99,6 +99,47 @@ func _building(controller: Node, player: CharacterBody3D) -> void:
 	check(nodes.size() == 1 and nodes.has("P11"), "peças destruídas somem (sobra a cama no chão)")
 	check(b.call("has_bed"), "cama conta como ponto de renascer")
 
+## Animais: nascem com modelo, o anfitrião manda a posição, coelho foge de
+## quem chega perto, lobo persegue e morde, morto vira carcaça.
+func _animals(controller: Node, player: CharacterBody3D) -> void:
+	var base := player.global_position + Vector3(0, 0, 0)
+	Net.message.emit({"t": "aspawn", "l": [
+		{"id": "a1", "kind": "rabbit", "hp": 15, "p": [base.x + 5, 0.2, base.z]},
+		{"id": "a2", "kind": "deer", "hp": 80, "p": [base.x + 40, 0.2, base.z]},
+		{"id": "a3", "kind": "boar", "hp": 110, "p": [base.x - 40, 0.2, base.z]},
+		{"id": "a4", "kind": "wolf", "hp": 70, "p": [base.x, 0.2, base.z + 12]},
+	]})
+	await _frames(3)
+	check(controller.animals.size() == 4, "4 animais aparecem")
+	var all_have_model := true
+	for a in controller.animals.values():
+		all_have_model = all_have_model and a.visual != null and not a.visual.find_children("*", "MeshInstance3D", true, false).is_empty()
+	check(all_have_model, "cada animal tem modelo 3D")
+	check(controller.animals["a4"].controlled, "anfitrião controla os animais")
+	var rabbit: Node3D = controller.animals["a1"]
+	var r0 := rabbit.global_position.distance_to(player.global_position)
+	var wolf: Node3D = controller.animals["a4"]
+	var w0 := wolf.global_position.distance_to(player.global_position)
+	var bites := [0]
+	controller.animals["a4"].attacked.connect(func(_a, _t): bites[0] += 1)
+	player.set_physics_process(false) # parado, para o lobo chegar
+	await _frames(150)
+	check(rabbit.global_position.distance_to(player.global_position) > r0 + 3.0, "coelho foge de quem chega perto (%.1f → %.1f m)" % [r0, rabbit.global_position.distance_to(player.global_position)])
+	check(wolf.global_position.distance_to(player.global_position) < w0 - 5.0, "lobo vem atrás (%.1f → %.1f m)" % [w0, wolf.global_position.distance_to(player.global_position)])
+	check(bites[0] > 0, "lobo morde quem alcança")
+	player.set_physics_process(true)
+	Net.message.emit({"t": "adead", "id": "a4", "by": "me", "zone": "chest"})
+	Net.message.emit({"t": "bag", "bag": {"id": "bz", "p": [wolf.global_position.x, 0, wolf.global_position.z], "name": "", "title": "Carcaça de lobo", "count": 3}})
+	await _frames(3)
+	check(not controller.animals.has("a4"), "lobo morto sai da lista")
+	player.global_position = wolf.global_position + Vector3(0.8, 0.1, 0)
+	await _frames(3)
+	var t: Dictionary = controller.call("_find_target")
+	check(str(t.get("label", "")).find("carcaça de lobo") >= 0, "E perto da carcaça: abrir (%s)" % str(t.get("label", "")))
+	Net.message.emit({"t": "agone", "l": ["a1", "a2", "a3"]})
+	await _frames(2)
+	check(controller.animals.is_empty(), "animais longe somem")
+
 func _run() -> void:
 	var spawn: Array = SurvivalData.world()["spawns"][0]
 	# Carro de teste no meio do maior lago: chão plano e sem árvore para a curva.
@@ -353,6 +394,7 @@ func _run() -> void:
 	controller.call("_unhandled_input", m_key)
 	check(not controller.world_map.visible, "M fecha o mapa")
 	await _building(controller, player)
+	await _animals(controller, player)
 	print("FALHAS: %d" % failures)
 	Net.in_match = false
 	get_tree().quit(1 if failures else 0)
