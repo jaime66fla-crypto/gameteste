@@ -13,7 +13,7 @@
   // 10800 = 1.8.0: online block maps (match_maps.json).
   // 11300 = 1.13.0: custom rooms play best of 5 rounds (round_end / round messages).
   "vars": {
-    "GODOT_MIN_BUILD": "11300",
+    "GODOT_MIN_BUILD": "11500",
     "GODOT_DOWNLOAD_URL": "https://jaimexzz.itch.io/campo-de-fogo"
   },
   "assets": {
