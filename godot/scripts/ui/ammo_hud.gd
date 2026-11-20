@@ -58,6 +58,16 @@ func _process(_delta: float) -> void:
 		visible = false
 		return
 	visible = true
+	if player.has_method("has_bow") and bool(player.call("has_bow")):
+		var bow: Node = player.get("bow_controller")
+		_weapon.text = "ARCO RECURVO"
+		_ammo.text = "%d%%" % roundi(float(bow.get("draw").charge) * 100.0)
+		_ammo.add_theme_color_override("font_color", Color("#ffe0a0"))
+		_reserve.text = "TENSÃO"
+		_slots.text = "SEGURE O ESQUERDO PARA MIRAR · SOLTE PARA ATIRAR"
+		_extra.text = ("%d flechas · H: guardar" % int(player.get("reserve_ammo").get("bow", 0))) if bool(player.get("loadout_limited")) else "Flechas ilimitadas no treino · H: guardar"
+		_extra.visible = true
+		return
 	_extra.text = str(extra.call()) if extra.is_valid() else ""
 	_extra.visible = not _extra.text.is_empty()
 	var owned: Dictionary = player.get("owned_weapons")

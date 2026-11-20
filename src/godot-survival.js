@@ -61,7 +61,7 @@ const CHAR_KEEP_MS = 3 * 24 * 3600 * 1000; // personagem guardado de quem saiu
 // útil da sniper/fuzil, senão o alvo distante fica "congelado" e o tiro erra.
 const INTEREST_RANGE = 360;
 // Armas de fogo: mesmo dano por acerto do mata-mata (scripts/weapon_data.gd).
-const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+const WEAPON_DAMAGE = { pistol: 22, bow: 55, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
 const FIST_DAMAGE = 12; // soco sem arma branca
 const MAX_HITS_PER_SECOND = 18;
@@ -706,7 +706,8 @@ export class GodotSurvival {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, dv: me.vehicle || '', ch: characterId(d.ch),
-					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
+					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
+					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
 				return;
@@ -718,7 +719,13 @@ export class GodotSurvival {
 				const o = vec3(d.o, 600);
 				const e = vec3(d.e, 1200);
 				if (!o || !e) return;
-				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e }, me.id, INTEREST_RANGE);
+				let arrow = {};
+				if (d.w === 'bow') {
+					const item = Object.keys(me.inv).find((key) => me.inv[key] > 0 && ITEMS[key]?.weapon === 'bow');
+					if (!item || !me.inv[ITEMS[item].ammo] || !this.hitCheck.recordArrow({ attacker: me, id: d.a, origin: o, velocity: d.v })) return;
+					arrow = { a: d.a, v: d.v };
+				}
+				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e, ...arrow }, me.id, INTEREST_RANGE);
 				return;
 			}
 			case 'hit': return this.gunHit(me, d);
@@ -772,7 +779,7 @@ export class GodotSurvival {
 				// Munição gasta na recarga (o jogo avisa quantas balas foram para o pente).
 				const item = d.ammo;
 				const n = Number.isInteger(d.n) ? Math.max(0, Math.min(d.n, 200)) : 0;
-				if (!item?.startsWith?.('a_') || !n) return;
+				if ((!item?.startsWith?.('a_') && item !== 'stone_arrow') || !n) return;
 				removeItems(me.inv, item, Math.min(n, me.inv[item] || 0));
 				this.save();
 				this.sendInv(me);
@@ -794,13 +801,15 @@ export class GodotSurvival {
 
 	gunHit(me, d) {
 		const weapon = WEAPON_DAMAGE[d.w] ? d.w : null;
-		if (!weapon || !me.inv['w_' + weapon] || !this.allowHit(me.id)) return;
+		if (!weapon || !Object.keys(me.inv).some((item) => me.inv[item] > 0 && ITEMS[item]?.weapon === weapon) || !this.allowHit(me.id)) return;
 		let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
 		// Alcance da arma; em jogadores, cabeça plausível e taxa de tiros na cabeça.
 		const s = this.state;
-		const target = s.zombies[d.target] || s.players[d.target];
+		const target = s.zombies[d.target] || s.players[d.target] || s.animals?.[d.target];
+		if (weapon === 'bow' && !target) return;
 		if (target) {
-			const verdict = this.hitCheck.check({ attacker: me, target, weapon, zone, point: d.pt, player: !s.zombies[d.target] });
+			const args = { attacker: me, target, weapon, zone, point: d.pt, player: !!s.players[d.target] };
+			const verdict = weapon === 'bow' ? this.hitCheck.checkArrow({ ...args, id: d.a }) : this.hitCheck.check(args);
 			if (!verdict.ok) return;
 			zone = verdict.zone;
 		}

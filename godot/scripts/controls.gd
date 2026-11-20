@@ -28,6 +28,7 @@ const ACTIONS := [
 	["weapon_3", "Arma 3", "Armas", KEY_3],
 	["weapon_4", "Arma 4", "Armas", KEY_4],
 	["weapon_5", "Arma 5", "Armas", KEY_5],
+	["weapon_6", "Arma 6", "Armas", KEY_6],
 	["interact", "Interagir / entrar e sair do carro", "Geral", KEY_E],
 	["inventory", "Inventário", "Sobrevivência", KEY_TAB],
 	["map", "Mapa", "Sobrevivência", KEY_M],
