@@ -547,7 +547,12 @@ func _refresh_left() -> void:
 	var tool_text := "Soco  ·  %d" % int(best[1]) if str(best[0]).is_empty() else "%s  ·  %d" % [SurvivalData.item_name(str(best[0])), int(best[1])]
 	_equip_box.add_child(_info_row("Melhor golpe (Q)  ·  dano",str(best[0]), tool_text))
 	if not weapon.is_empty() or _catalog_has("weapon", ""):
-		_equip_box.add_child(_info_row("Arma na mão", "", weapon if not weapon.is_empty() else "Nenhuma"))
+		var weapon_row := _info_row("Arma na mão", "", weapon if not weapon.is_empty() else "Nenhuma")
+		if not weapon.is_empty():
+			var off := _button("Tirar")
+			off.pressed.connect(func(): unequip_requested.emit("weapon"))
+			weapon_row.add_child(off)
+		_equip_box.add_child(weapon_row)
 
 ## Linha de um espaço do corpo: quadrado com o item, nome/efeito e "Tirar".
 func _slot_row(title: String, slot: String, item_id: String, empty_text: String) -> Control:

@@ -865,6 +865,16 @@ func _on_use(item: String) -> void:
 	_timed_action("consume", 1.1)
 	player.get("sound_fx").call("reload")
 
+func _on_unequip(slot: String) -> void:
+	if slot == "weapon":
+		if player.call("has_bow"):
+			player.get("bow_controller").call("unequip")
+		if not bool(player.get("weapon_holstered")):
+			player.call("_toggle_weapon_holster")
+		_update_bars()
+	else:
+		Net.send({"t": "unequip", "slot": slot})
+
 func _on_craft(recipe: String) -> void:
 	Net.send({"t": "craft", "recipe": recipe})
 
@@ -1367,7 +1377,7 @@ func _build_ui() -> void:
 	inventory.connect("use_requested", _on_use)
 	inventory.connect("craft_requested", _on_craft)
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
-	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
+	inventory.connect("unequip_requested", _on_unequip)
 	inventory.connect("store_requested", func(k, item, amount): Net.send({"t": "store", "k": k, "item": item, "n": amount, "op": inventory.call("operation_token")}))
 	inventory.connect("place_requested", _on_place)
 	manual = ManualUI.new()
@@ -1414,7 +1424,7 @@ func _update_bars() -> void:
 	bars["weight"].value = minf(carried, carry_cap)
 	if inventory != null:
 		var owned: Dictionary = player.get("owned_weapons")
-		var weapon_name := "" if owned.is_empty() else str(WeaponData.stats(str(player.get("current_weapon")))["name"]).capitalize()
+		var weapon_name := "" if owned.is_empty() or bool(player.get("weapon_holstered")) else str(WeaponData.stats(str(player.get("current_weapon")))["name"]).capitalize()
 		inventory.call("set_status", my_hp, hunger, thirst, weapon_name)
 
 func _show_death(title: String, body: String, can_respawn: bool) -> void:

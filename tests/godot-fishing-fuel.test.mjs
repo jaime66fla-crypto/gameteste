@@ -62,3 +62,5 @@ test('fishing allows bounded delivery grace while keeping advertised bite window
   assert.equal(p.fishing,undefined);
  } finally {Date.now=realNow;}
 });
+
+test("rod crafts once from exact materials and equipped armor returns without duplication",()=>{const g=make(),p={id:"p",p:[0,0,0],inv:{stick:3,fiber:4,rope:2},back:"",head:"leather_cap"};g.craft(p,{recipe:"fishing_rod"},()=>{});assert.equal(p.inv.fishing_rod,1);assert.equal(p.inv.rope,undefined);g.craft(p,{recipe:"fishing_rod"},()=>{});assert.equal(p.inv.fishing_rod,1);g.unequip(p,{slot:"head"},()=>{});g.unequip(p,{slot:"head"},()=>{});assert.equal(p.head,"");assert.equal(p.inv.leather_cap,1);});
