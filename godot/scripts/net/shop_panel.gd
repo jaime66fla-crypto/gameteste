@@ -11,10 +11,10 @@ signal close_requested
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const INTER_PATH := "res://assets/fonts/InterVariable.ttf"
-const WEAPONS := ["pistol", "smg", "shotgun", "rifle", "sniper"]
+const WEAPONS := ["pistol", "smg", "shotgun", "rifle", "sniper", "bow"]
 const GEAR := {"medkit": "Kit médico", "grenade": "Granada"}
 const GEAR_NOTE := {"medkit": "+50 de vida  ·  usar com F", "grenade": "Dano em área  ·  lançar com G"}
-const ROLE := {"pistol": "Arma curta", "smg": "Submetralhadora", "shotgun": "Curto alcance", "rifle": "Fuzil", "sniper": "Precisão"}
+const ROLE := {"pistol": "Arma curta", "smg": "Submetralhadora", "shotgun": "Curto alcance", "rifle": "Fuzil", "sniper": "Precisão", "bow": "Arco e flecha"}
 # Same palette as the main menu (scripts/menu.gd).
 const ACCENT := Color("#f0a23b")
 const ACCENT_HOT := Color("#e8622c")
@@ -85,6 +85,8 @@ func _ready() -> void:
 	weapons.add_theme_constant_override("separation", 10)
 	column.add_child(weapons)
 	for i in WEAPONS.size():
+		if WEAPONS[i] == "bow" and not prices.has("bow"):
+			continue # availability and price come from this room's server
 		weapons.add_child(_weapon_card(WEAPONS[i], i + 1))
 	column.add_child(_section("Equipamento"))
 	var gear := HBoxContainer.new()
@@ -191,7 +193,7 @@ func _footer() -> Control:
 
 ## Tall card: role and slot, the weapon's 3D model, name, stat bars, price.
 func _weapon_card(item: String, slot: int) -> Button:
-	var button := _card_button(item, Vector2(162, 272))
+	var button := _card_button(item, Vector2(140 if prices.has("bow") else 162, 272))
 	var stats: Dictionary = WeaponData.stats(item)
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 7)
@@ -218,7 +220,10 @@ func _weapon_card(item: String, slot: int) -> Button:
 	content.add_child(_stat_row("Dano", clampf(per_shot / 95.0, 0.05, 1.0)))
 	content.add_child(_stat_row("Cadência", clampf(0.085 / float(stats["interval"]), 0.05, 1.0)))
 	content.add_child(_stat_row("Alcance", clampf(sqrt(float(stats["range"]) / 700.0), 0.05, 1.0)))
-	content.add_child(_label("Pente %d  ·  +%d balas" % [int(stats["mag"]), int(ammo.get(item, 0))], 11, MUTED))
+	var ammunition := "%d flechas · segure e solte" % int(ammo.get(item, 0)) if item == "bow" else "Pente %d  ·  +%d balas" % [int(stats["mag"]), int(ammo.get(item, 0))]
+	var ammunition_label := _label(ammunition, 11, MUTED)
+	ammunition_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(ammunition_label)
 	var spacer := Control.new()
 	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	content.add_child(spacer)
@@ -512,6 +517,8 @@ class WeaponView extends SubViewportContainer:
 		_viewport.add_child(pivot)
 		var profile: Dictionary = WeaponProportions.PROFILES.get(weapon_id, {})
 		var scene := load(WeaponProportions.BASE + str(profile.get("file", ""))) as PackedScene if not profile.is_empty() else null
+		if weapon_id == "bow":
+			scene = load("res://assets/weapons/bow/recurve_bow.glb") as PackedScene
 		if scene == null:
 			return
 		var model := scene.instantiate() as Node3D

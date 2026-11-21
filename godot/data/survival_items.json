@@ -47,8 +47,8 @@
     "iron_vest":     {"name": "Colete de placas",     "weight": 4.0,  "cat": "armor",    "armor": 0.3,  "slot": "chest"},
     "torch":         {"name": "Tocha",                "weight": 0.5,  "cat": "gear",     "desc": "Acenda na mão para ver de noite, ou finque no chão / prenda na parede para iluminar a área"},
 
-    "bow":           {"name": "Arco",                 "weight": 0.8,  "cat": "weapon",   "soon": true, "desc": "Arma de longe, silenciosa"},
-    "stone_arrow":   {"name": "Flecha de pedra",      "weight": 0.05, "cat": "ammo",     "soon": true},
+    "bow":           {"name": "Arco",                 "weight": 0.8,  "cat": "weapon",   "weapon": "bow", "ammo": "stone_arrow", "desc": "Arma de longe, silenciosa"},
+    "stone_arrow":   {"name": "Flecha de pedra",      "weight": 0.05, "cat": "ammo"},
     "iron_arrow":    {"name": "Flecha de ferro",      "weight": 0.06, "cat": "ammo",     "soon": true},
     "waterskin":     {"name": "Cantil de couro",      "weight": 0.3,  "cat": "drink",    "soon": true, "desc": "Enche no lago e mata a sede longe da água"},
     "molotov":       {"name": "Coquetel molotov",     "weight": 0.6,  "cat": "weapon",   "soon": true, "desc": "Fogo em área: queima zumbis"},
@@ -122,8 +122,8 @@
     {"id": "leather_cap", "name": "Capuz de couro",     "era": 2, "needs": {"hide": 3, "rope": 1},               "gives": ["leather_cap", 1], "station": "workbench"},
     {"id": "leather_vest","name": "Colete de couro",    "era": 2, "needs": {"hide": 6, "rope": 2},               "gives": ["leather_vest", 1],"station": "workbench"},
     {"id": "torch",       "name": "Tocha",              "era": 2, "needs": {"stick": 1, "fiber": 2, "charcoal": 1}, "gives": ["torch", 1]},
-    {"id": "bow",         "name": "Arco",               "era": 2, "needs": {"wood": 1, "rope": 2},               "gives": ["bow", 1],         "station": "workbench", "soon": true},
-    {"id": "stone_arrow", "name": "Flechas de pedra",   "era": 2, "needs": {"stick": 1, "stone": 1, "fiber": 1}, "gives": ["stone_arrow", 4], "station": "workbench", "soon": true},
+    {"id": "bow",         "name": "Arco",               "era": 2, "needs": {"stick": 3, "rope": 2},              "gives": ["bow", 1],         "station": "workbench"},
+    {"id": "stone_arrow", "name": "Flechas de pedra",   "era": 2, "needs": {"stick": 1, "stone": 1, "fiber": 1}, "gives": ["stone_arrow", 4], "station": "workbench"},
     {"id": "waterskin",   "name": "Cantil de couro",    "era": 2, "needs": {"hide": 2, "rope": 1},               "gives": ["waterskin", 1],   "station": "workbench", "soon": true},
 
     {"id": "iron_bar",    "name": "Fundir ferro",       "era": 3, "needs": {"iron_ore": 2, "charcoal": 1},       "gives": ["iron_bar", 1],    "station": "forge"},

@@ -1100,9 +1100,7 @@ func _select_character(id: String) -> void:
 
 func _start_match() -> void:
     Net.leave() # offline practice match
-    var error := get_tree().change_scene_to_file("res://scenes/main.tscn")
-    if error != OK:
-        _label("Não foi possível iniciar a partida.",15)
+    load("res://scripts/ui/match_loading.gd").begin(get_tree())
 
 # ------------------------------------------------- card screen pieces ---
 
@@ -2635,7 +2633,7 @@ func _on_match_started(_info: Dictionary) -> void:
     _disconnect_net()
     if is_instance_valid(status):
         status.text = "Iniciando partida..."
-    get_tree().change_scene_to_file("res://scenes/main.tscn")
+    load("res://scripts/ui/match_loading.gd").begin(get_tree())
 
 func _on_login_required(message: String) -> void:
     _disconnect_net()

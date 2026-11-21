@@ -132,6 +132,8 @@ func _ready() -> void:
 	building_ctl.call("start", info)
 	for bag in info.get("bags", []):
 		_set_bag(bag)
+	for branch in info.get("branches", []):
+		world.call("add_branch", branch)
 	for entry in info.get("sleepers", []):
 		_add_sleeper(entry)
 	for k in info.get("searched", []):
@@ -214,7 +216,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": action, "tool": action_tool, "ch": player.get("character_id"), "tc": torch_in_hand})
+			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") else action, "tool": "bow" if player.call("has_bow") else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -335,11 +337,15 @@ func _on_message(data: Dictionary) -> void:
 			var o = _vec(data.get("o"))
 			var e = _vec(data.get("e"))
 			if o != null and e != null:
-				_tracer(o, e)
+				if str(data.get("w", "")) != "bow":
+					_tracer(o, e)
 				_noise(o)
 				var shooter = actors.get(str(data.get("id", "")))
 				if shooter != null:
-					shooter.call("play_remote_shot", str(data.get("w", "pistol")))
+					if str(data.get("w", "")) == "bow":
+						shooter.call("play_remote_arrow", o, e - o, str(data.get("a", "")))
+					else:
+						shooter.call("play_remote_shot", str(data.get("w", "pistol")))
 		"hp":
 			_on_health(data)
 		"inv":
@@ -367,6 +373,8 @@ func _on_message(data: Dictionary) -> void:
 				world.call("set_container_empty", _open_container, items.is_empty())
 		"emptied":
 			world.call("set_container_empty", str(data.get("k", "")), true)
+		"refilled":
+			world.call("set_container_empty", str(data.get("k", "")), false)
 		"bag":
 			_set_bag(data.get("bag", {}))
 		"bag_gone":
@@ -379,6 +387,10 @@ func _on_message(data: Dictionary) -> void:
 				_open_container = ""
 		"depleted":
 			_deplete(str(data.get("r", "")), float(data.get("secs", 600)))
+		"branch":
+			world.call("add_branch", data.get("r", {}), true)
+		"branch_gone":
+			world.call("remove_branch", str(data.get("id", "")))
 		"note":
 			_toast(str(data.get("message", "")))
 		"xp":
@@ -496,7 +508,12 @@ func _noise(at: Vector3) -> void:
 		z.call("hear", at)
 
 func _on_local_shot(weapon_id: String, from: Vector3, to: Vector3) -> void:
-	Net.send({"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]})
+	var packet := {"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]}
+	if weapon_id == "bow":
+		var v := to - from
+		packet["v"] = [v.x, v.y, v.z]
+		packet["a"] = player.get("bow_controller").get("last_arrow_id")
+	Net.send(packet)
 	_noise(from)
 
 ## Acerto de bala num zumbi ou jogador (hitbox): o servidor calcula o dano.
@@ -506,7 +523,10 @@ func _on_target_damaged(target_id: String, zone: String, point: Vector3, normal:
 	if weapon.is_empty():
 		weapon = str(player.get("current_weapon"))
 	# pt = onde a bala bateu (o servidor confere se a cabeça estava ali).
-	Net.send({"t": "hit", "target": target_id, "zone": zone, "w": weapon, "pt": [point.x, point.y, point.z]})
+	var packet := {"t": "hit", "target": target_id, "zone": zone, "w": weapon, "pt": [point.x, point.y, point.z]}
+	if weapon == "bow":
+		packet["a"] = player.get("bow_controller").get("last_hit_arrow_id")
+	Net.send(packet)
 	var headshot := zone == "head"
 	combat_feedback.call("show_hit", headshot)
 	player.get("sound_fx").call("hit_confirm", headshot)
@@ -663,9 +683,14 @@ func _apply_inventory(data: Dictionary) -> void:
 			mags[w] = 0
 			if player.get("current_weapon") == w:
 				player.set("ammo", 0)
-			_toast("%s na mochila — R para carregar" % SurvivalData.item_name(str(item)))
+			_toast("Arco na mochila — equipe e segure o esquerdo" if w == "bow" else "%s na mochila — R para carregar" % SurvivalData.item_name(str(item)))
 	for w in owned.keys():
-		if not inv.has("w_" + str(w)):
+		var present := false
+		for item in inv:
+			if int(inv[item]) > 0 and SurvivalData.weapon_of(str(item)) == str(w):
+				present = true
+				break
+		if not present:
 			player.call("remove_weapon", w)
 	# Reserva de cada arma = munição do tipo dela na mochila.
 	var reserve: Dictionary = player.get("reserve_ammo")
@@ -936,6 +961,7 @@ func _set_bag(data: Dictionary) -> void:
 	mat.albedo_color = Color("#5a2f26") if str(data.get("title", "")).begins_with("Carca") else Color("#4b5a32")
 	mesh.material_override = mat
 	node.add_child(mesh)
+	node.add_child(preload("res://scripts/survival/collectible_glow.gd").make_marker(Vector3(0, 0.65, 0)))
 	var label := Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.text = str(data.get("title", "")) if str(data.get("title", "")) != "" else "Mochila" + (" de " + str(data.get("name", "")) if str(data.get("name", "")) != "" else "")

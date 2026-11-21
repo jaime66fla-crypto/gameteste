@@ -58,11 +58,15 @@ var melee_handler: Callable # Q: survival melee hit (zombies / players in front)
 ## Arma branca na mão (ex.: "long_bat" na arena do treino): a arma de fogo fica
 ## guardada e o clique esquerdo golpeia (melee_handler). Trocar de arma (1-5) larga.
 var melee_weapon := ""
+var bow_controller: Node
+
+func has_bow() -> bool:
+    return is_instance_valid(bow_controller) and bool(bow_controller.get("equipped"))
 
 ## Só arma de fogo na mão tem mira (botão direito e a mira na tela). Faca,
 ## bastão e mãos vazias acertam pelo alcance a partir do corpo (scripts/melee.gd).
 func has_sights() -> bool:
-    return not weapon_holstered and melee_weapon.is_empty()
+    return has_bow() or (not weapon_holstered and melee_weapon.is_empty())
 ## Modo de construção ligado: o clique esquerdo coloca peças, não soca.
 var attack_blocked := false
 
@@ -129,8 +133,8 @@ var muzzle_flare: MeshInstance3D
 var gun_kick := 0.0
 var current_weapon := "pistol"
 var weapon_holstered := false
-var reserve_ammo := {"pistol": 90, "smg": 150, "rifle": 150, "shotgun": 36, "sniper": 25}
-var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 5}
+var reserve_ammo := {"pistol": 90, "smg": 150, "rifle": 150, "shotgun": 36, "sniper": 25, "bow": 20}
+var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 5, "bow": 0}
 var weapon_model: Node3D
 var locomotion_clock := 0.0
 var presentation_offset := Vector3.ZERO
@@ -196,6 +200,9 @@ func _ready() -> void:
     viewmodel.visible = false
     camera.add_child(viewmodel)
     _rebuild_viewmodel()
+    bow_controller = preload("res://scripts/weapons/bow_controller.gd").new()
+    add_child(bow_controller)
+    bow_controller.setup(self)
     PointerMode.capture()
 
 func _install_selected_character() -> void:
@@ -373,8 +380,13 @@ func _play_jaime_animation(clip_name: String) -> void:
         jaime_animation_name = chosen
         jaime_animation.play(chosen, 0.16)
 
+var shoulder_side := 1.0
+
+func swap_shoulder() -> void:
+    shoulder_side = -shoulder_side
+
 func is_scope_active() -> bool:
-    return current_weapon == "sniper" and aiming and not reloading
+    return not has_bow() and not weapon_holstered and current_weapon == "sniper" and aiming and not reloading
 
 func _unhandled_input(event: InputEvent) -> void:
     if event is InputEventMouseButton and event.pressed and is_scope_active():
@@ -387,11 +399,17 @@ func _unhandled_input(event: InputEvent) -> void:
     # Teclas configuráveis (Configurações › Controles): tudo passa pelas ações.
     # InputEventAction: os botões de toque apertam as mesmas ações.
     if (event is InputEventKey or event is InputEventMouseButton or event is InputEventAction) and event.is_pressed() and not event.is_echo():
+        if event.is_action("shoulder_swap"):
+            if PointerMode.is_captured() and not (ui_blocking.is_valid() and bool(ui_blocking.call())):
+                swap_shoulder()
+            return
         if climbing and (event.is_action("grenade") or event.is_action("interact") or event.is_action("heal")):
             return # mãos ocupadas na escalada
         if aiming and (event.is_action("lean_left") or event.is_action("lean_right")):
             return # while aiming, the lean keys lean (handled every physics frame)
         if event.is_action("grenade"):
+            if has_bow():
+                bow_controller.call("unequip")
             if not grenade_aiming and _can_start_grenade_aim():
                 grenade_aiming = true
             return
@@ -408,10 +426,16 @@ func _unhandled_input(event: InputEvent) -> void:
                 heal_handler.call()
             return
         if event.is_action("holster"):
+            if has_bow():
+                bow_controller.call("unequip")
+                return
+            if current_weapon == "bow" and (not loadout_limited or owned_weapons.has("bow")):
+                bow_controller.call("equip")
+                return
             if not loadout_limited or not owned_weapons.is_empty():
                 _toggle_weapon_holster()
             return
-        var slots := ["rifle", "sniper", "pistol", "shotgun", "smg"]
+        var slots := ["rifle", "sniper", "pistol", "shotgun", "smg", "bow"]
         for index in slots.size():
             if not event.is_action("weapon_%d" % (index + 1)):
                 continue
@@ -421,14 +445,18 @@ func _unhandled_input(event: InputEvent) -> void:
                     return
                 slot = slot_order[index]
             melee_weapon = "" # pegou a arma de fogo: larga a arma branca
+            if has_bow():
+                bow_controller.call("unequip")
             _equip_weapon(slot)
-            if weapon_holstered:
+            if weapon_holstered and slot != "bow":
                 _toggle_weapon_holster()
             return
     if event.is_action_released("grenade") and grenade_aiming:
         _release_grenade()
         return
     if event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+        if has_bow():
+            bow_controller.call("cancel_draw")
         cancel_grenade_aim()
         Input.action_release("aim")
         aiming = false
@@ -491,7 +519,7 @@ func _update_crouch(delta: float) -> void:
     body_collision.position.y = body_capsule.height * 0.5
 
 func _physics_process(delta: float) -> void:
-    aiming = has_sights() and Input.is_action_pressed("aim")
+    aiming = bool(bow_controller.get("draw").drawing) if has_bow() else (has_sights() and Input.is_action_pressed("aim"))
     _update_crouch(delta)
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
@@ -506,7 +534,7 @@ func _physics_process(delta: float) -> void:
             if done.is_valid():
                 done.call()
     var scoped := is_scope_active()
-    var wants_first_person := aiming and not scoped
+    var wants_first_person := aiming and not scoped and not has_bow()
     var desired_fov := first_person_fov() if wants_first_person else BASE_FOV
     if scoped:
         desired_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(BASE_FOV) * 0.5) / scope_zoom))
@@ -522,8 +550,8 @@ func _physics_process(delta: float) -> void:
     spring.spring_length = lerpf(spring.spring_length, 0.0 if wants_first_person else (2.15 if aiming else cam_distance), camera_blend)
     # O ombro fica 1 m para o lado; encostado numa parede esse ponto já estaria do
     # outro lado dela (dava para ver através). Limita pelo espaço livre, na hora.
-    var shoulder := 0.0 if wants_first_person else _shoulder_room(1.0)
-    spring.position.x = minf(lerpf(spring.position.x, shoulder, camera_blend), shoulder)
+    var shoulder := 0.0 if wants_first_person else shoulder_side
+    spring.position.x = _shoulder_room(lerpf(spring.position.x, shoulder, camera_blend))
     var eye_height := height * (0.24 if prone else (0.62 if crouching else 0.92))
     var shoulder_height := height * (0.30 if prone else (0.59 if crouching else 0.86))
     arm_pivot.position.y = lerpf(arm_pivot.position.y, eye_height if wants_first_person else shoulder_height, minf(1,delta * 12))
@@ -621,7 +649,9 @@ func _physics_process(delta: float) -> void:
             reloading = false
     if not weapon_holstered and Input.is_action_just_pressed("reload") and ammo < int(WeaponData.stats(current_weapon)["mag"]) and not reloading and int(reserve_ammo[current_weapon]) > 0:
         _reload()
-    if not melee_weapon.is_empty():
+    if has_bow():
+        pass # bow_controller fires only on release, never through the gun/melee paths
+    elif not melee_weapon.is_empty():
         # Bastão na mão: clique esquerdo golpeia (um golpe por clique).
         if not grenade_aiming and Input.is_action_just_pressed("fire") and PointerMode.is_captured() and channel_left <= 0.0 and melee_handler.is_valid():
             melee_handler.call()
@@ -776,6 +806,8 @@ func _try_climb(movement: Vector3, on_ground: bool) -> bool:
     return true
 
 func start_climb(ledge: Dictionary) -> void:
+    if has_bow():
+        bow_controller.call("unequip")
     climbing = true
     _climb_t = 0.0
     _climb_from = global_position
@@ -1107,6 +1139,8 @@ func _shot_ray(from: Vector3, to: Vector3, from_inside: bool = false) -> Diction
 ## Shot cone radius (tangent of the half-angle) right now; the HUD crosshair
 ## draws this same value, so the gap always matches where rounds can land.
 func current_spread() -> float:
+    if has_bow():
+        return lerpf(0.018, 0.002, float(bow_controller.get("draw").charge))
     # Accuracy: tighter when aiming, wider when running or airborne.
     var stats: Dictionary = WeaponData.stats(current_weapon)
     var planar_speed := Vector2(velocity.x, velocity.z).length()
@@ -1280,6 +1314,8 @@ func start_unarmed() -> void:
     loadout_limited = true
     owned_weapons.clear()
     slot_order.clear()
+    if has_bow():
+        bow_controller.call("unequip")
     for weapon_id in reserve_ammo.keys():
         reserve_ammo[weapon_id] = 0
         magazines[weapon_id] = 0
@@ -1303,13 +1339,15 @@ func give_weapon(weapon_id: String, reserve: int) -> void:
     if first:
         _equip_weapon(weapon_id)
         ammo = int(magazines[weapon_id])
-        if weapon_holstered:
+        if weapon_holstered and weapon_id != "bow":
             _toggle_weapon_holster()
     elif weapon_id == current_weapon and new_weapon:
         ammo = int(magazines[weapon_id])
 
 ## Survival: the weapon left the backpack (dropped, death). Draws another one or holsters.
 func remove_weapon(weapon_id: String) -> void:
+    if weapon_id == "bow" and has_bow():
+        bow_controller.call("unequip")
     if not owned_weapons.has(weapon_id):
         return
     owned_weapons.erase(weapon_id)
@@ -1431,6 +1469,14 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
         torso.rotation.z = lerpf(torso.rotation.z, -0.04 * stride, blend)
 
 func _equip_weapon(weapon_id: String) -> void:
+    if weapon_id == "bow":
+        magazines[current_weapon] = ammo
+        current_weapon = "bow"
+        ammo = 0
+        bow_controller.call("equip")
+        return
+    if has_bow():
+        bow_controller.call("unequip")
     if current_weapon == weapon_id:
         return
     magazines[current_weapon] = ammo
@@ -1445,6 +1491,8 @@ func _equip_weapon(weapon_id: String) -> void:
         humanoid_avatar.configure_weapon(current_weapon, weapon_model.scale.x)
 
 func _rebuild_weapon_model() -> void:
+    if current_weapon == "bow":
+        return
     _rebuild_viewmodel()
     if humanoid_avatar == null or not humanoid_avatar.has_method("bind_weapon"):
         _rebuild_legacy_weapon_model()
@@ -1568,6 +1616,8 @@ func _rebuild_legacy_weapon_model() -> void:
     muzzle_flare.position.z = gun_flash.position.z - 0.035
 
 func _reload() -> void:
+    if current_weapon == "bow":
+        return
     if reloading or channel_left > 0.0:
         return
     if int(reserve_ammo[current_weapon]) <= 0 or ammo >= int(WeaponData.stats(current_weapon)["mag"]):
@@ -1578,6 +1628,8 @@ func _reload() -> void:
 
 ## Timed action with the on-screen clock (medkit): `done` runs after `seconds`.
 func start_channel(label: String, seconds: float, done: Callable) -> bool:
+    if has_bow():
+        bow_controller.call("cancel_draw")
     if channel_left > 0.0 or reloading:
         return false
     channel_label = label
@@ -1600,6 +1652,8 @@ func action_progress() -> Dictionary:
     return {}
 
 func status_text() -> String:
+    if has_bow():
+        return "ARCO RECURVO | Segure o botão esquerdo para mirar; solte para disparar | TENSÃO: %d%%" % roundi(float(bow_controller.get("draw").charge) * 100.0)
     if loadout_limited and owned_weapons.is_empty():
         return "SEM ARMA\nAche uma caixa e aperte E"
     var state :="ARMA GUARDADA (H: SACAR)" if weapon_holstered else ("MIRANDO" if aiming else "LIVRE (H: GUARDAR)" )
