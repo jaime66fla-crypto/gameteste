@@ -10,6 +10,7 @@ const StaffModel = preload("res://scripts/weapons/staff_model.gd")
 const GLB_DIR := "res://assets/tools/%s.glb"
 
 const LOOK := {
+	"fishing_rod": {"handle": 2.1, "color": Color("#855d32"), "head": "rod"},
 	"axe": {"handle": 0.78, "color": Color("#8a6238"), "head": "axe"},
 	"improvised_axe": {"handle": 0.70, "color": Color("#6e5236"), "head": "stone"},
 	"crowbar": {"handle": 0.80, "color": Color("#2f3b52"), "head": "hook"},

@@ -489,7 +489,7 @@ static func _describe(id: String) -> String:
 	if entry.has("ammo"):
 		parts.append("Usa " + SurvivalData.item_name(str(entry["ammo"])))
 	if entry.has("fuel"):
-		parts.append("+%d%% no tanque" % int(entry["fuel"]))
+		parts.append("+%d L no tanque" % int(entry["fuel"]))
 	return "  •  ".join(parts)
 
 func _clear(box: Node) -> void:

@@ -23,6 +23,8 @@ var weather: Node3D
 var death_title: Label
 var torch_in_hand := false # tocha acesa na mão (os outros veem pelo "tc" do estado)
 var animals: Dictionary = {} # id -> Animal
+const FishingScript = preload("res://scripts/survival/survival_fishing.gd")
+var fishing_ctl: Node
 var driving_ctl: Node # carros (survival_driving.gd)
 var building_ctl: Node # construção (survival_building.gd)
 var bed_button: Button
@@ -138,6 +140,9 @@ func _ready() -> void:
 	building_ctl.call("setup", self, main_node, player)
 	add_child(building_ctl)
 	building_ctl.call("start", info)
+	fishing_ctl = FishingScript.new()
+	fishing_ctl.setup(self)
+	add_child(fishing_ctl)
 	_update_crafting_context()
 	for bag in info.get("bags", []):
 		_set_bag(bag)
@@ -251,7 +256,7 @@ func _physics_process(delta: float) -> void:
 		_update_crafting_context()
 	_swing_left = maxf(0.0, _swing_left - delta)
 	# Saiu do lugar ou cancelou: para de golpear (o golpe do bastão dura SWING_TIME).
-	if not action.is_empty() and float(player.get("channel_left")) <= 0.0 and _swing_left <= 0.0:
+	if action != "fish" and not action.is_empty() and float(player.get("channel_left")) <= 0.0 and _swing_left <= 0.0:
 		_set_action("", "")
 	_state_timer -= delta
 	if _state_timer <= 0.0:
@@ -292,6 +297,8 @@ func drive_look(relative: Vector2) -> void:
 		driving_ctl.call("orbit_camera", relative.x)
 
 func _on_message(data: Dictionary) -> void:
+	if fishing_ctl != null and fishing_ctl.on_message(data):
+		return
 	if driving_ctl != null and bool(driving_ctl.call("on_message", data)):
 		return
 	if building_ctl != null and bool(building_ctl.call("on_message", data)):
@@ -938,6 +945,10 @@ func _find_target() -> Dictionary:
 		var water: Dictionary = world.call("water_at", me)
 		if not water.is_empty() and bool(water.get("fresh", false)):
 			best = {"type": "water", "id": "fresh", "label": "[E] Beber água doce"}
+	if fishing_ctl != null and (best.is_empty() or best.get("type") == "water" or best.get("kind") == "pond"):
+		var spot: Dictionary = fishing_ctl.target()
+		if not spot.is_empty():
+			best = spot
 	return best
 
 ## Item que faz esse tipo de coleta ("wood" -> machado de pedra), para os avisos.
@@ -968,7 +979,12 @@ func _interact() -> bool:
 	if _target.is_empty():
 		return false
 	var id := str(_target["id"])
-	if _target["type"] == "water":
+	if _target["type"] == "fish":
+		if Input.is_action_pressed("sprint") and bool(world.call("water_at", player.global_position).get("fresh", false)):
+			Net.send({"t": "drink_water"})
+		else:
+			fishing_ctl.start(_target["pos"])
+	elif _target["type"] == "water":
 		Net.send({"t": "drink_water"})
 	elif _target["type"] == "build":
 		building_ctl.call("interact", id)
@@ -1185,6 +1201,9 @@ func _process(delta: float) -> void:
 			prompt.text = str(target["label"])
 	else:
 		prompt.visible = false
+	if fishing_ctl != null and fishing_ctl.active:
+		prompt.visible = true
+		prompt.text = fishing_ctl.hint()
 	# Fecha o recipiente ao se afastar.
 	if not _open_container.is_empty() and _open_container_pos != Vector3.INF and player.global_position.distance_to(_open_container_pos) > 4.5:
 		_open_container = ""

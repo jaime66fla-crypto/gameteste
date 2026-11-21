@@ -61,7 +61,12 @@ var aim_target := Vector3.ZERO
 var aim_active := false
 var aim_weight := 0.0
 
+var _gathering_audio: AudioStreamPlayer3D
+
 func _ready() -> void:
+	_gathering_audio = preload("res://scripts/audio/gathering_audio.gd").new()
+	_gathering_audio.position.y = 1.0
+	add_child(_gathering_audio)
 	var packed := load(model_path) as PackedScene
 	if packed == null:
 		return
@@ -611,6 +616,8 @@ func set_action(act: String, tool: String) -> void:
 		_overlay_act = ""
 	if act == work_action and tool == work_tool:
 		return
+	if is_instance_valid(_gathering_audio):
+		_gathering_audio.call("set_action", act)
 	work_action = act
 	work_tool = tool
 	if not act.is_empty():
@@ -642,8 +649,17 @@ func _apply_work() -> void:
 	if hips < 0 or chest < 0 or right_arm < 0:
 		return
 	_work_time += _last_delta
+	if is_instance_valid(_gathering_audio):
+		_gathering_audio.call("tick_work", _work_time, WORK_CYCLE)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
 	var family := tool_family(work_tool)
+	if work_action == "fish":
+		var hand := skeleton.get_bone_global_pose(chest).origin + Vector3(0.16, -0.18, 0.4)
+		var axis := Vector3(0, 0.65, 0.76).normalized()
+		_grip_on_staff("Right", hand, axis, Vector3.RIGHT, Vector3(0.6, -0.4, 0))
+		_grip_on_staff("Left", hand - axis * 0.13, axis, Vector3.LEFT, Vector3(-0.6, -0.4, 0))
+		_place_tool(axis, Vector3.RIGHT, hand - axis * 0.2)
+		return
 	if work_action == "hold":
 		_apply_hold(chest, right_arm)
 		return

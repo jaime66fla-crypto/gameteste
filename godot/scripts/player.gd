@@ -78,6 +78,7 @@ func _punch() -> void:
         humanoid_avatar.call("play_action", "punch")
     if melee_handler.is_valid():
         melee_handler.call()
+var fishing_active := false
 var ui_blocking: Callable # true enquanto uma janela (mochila, confirmação) precisa do cursor
 ## G: grenade. Online the match controller decides (inventory); offline it is
 ## unlimited with a short cooldown.
@@ -391,6 +392,8 @@ func is_scope_active() -> bool:
     return not has_bow() and not weapon_holstered and current_weapon == "sniper" and aiming and not reloading
 
 func _unhandled_input(event: InputEvent) -> void:
+    if fishing_active and not event is InputEventMouseMotion:
+        return
     if event is InputEventMouseButton and event.pressed and is_scope_active():
         if event.button_index == MOUSE_BUTTON_WHEEL_UP:
             scope_zoom = clampf(scope_zoom + 1.0, 4.0, 8.0)
@@ -521,7 +524,7 @@ func _update_crouch(delta: float) -> void:
     body_collision.position.y = body_capsule.height * 0.5
 
 func _physics_process(delta: float) -> void:
-    aiming = bool(bow_controller.get("draw").drawing) if has_bow() else (has_sights() and Input.is_action_pressed("aim"))
+    aiming = not fishing_active and bool(bow_controller.get("draw").drawing) if has_bow() else (not fishing_active and has_sights() and Input.is_action_pressed("aim"))
     _update_crouch(delta)
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
@@ -659,7 +662,9 @@ func _physics_process(delta: float) -> void:
             reloading = false
     if not weapon_holstered and Input.is_action_just_pressed("reload") and ammo < int(WeaponData.stats(current_weapon)["mag"]) and not reloading and int(reserve_ammo[current_weapon]) > 0:
         _reload()
-    if has_bow():
+    if fishing_active:
+        pass # fishing owns combat inputs
+    elif has_bow():
         pass # bow_controller fires only on release, never through the gun/melee paths
     elif not melee_weapon.is_empty():
         # Bastão na mão: clique esquerdo golpeia (um golpe por clique).

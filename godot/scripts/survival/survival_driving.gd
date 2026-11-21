@@ -101,8 +101,8 @@ func target_near(point: Vector3) -> Dictionary:
 				var label_broken := "[E] Consertar %s com kit de reparos" % v.call("display_name") if has_kit else "%s destruído — precisa de um kit de reparos" % v.call("display_name")
 				best = {"type": "repair", "id": id, "label": label_broken}
 				continue
-			var label := "[E] Dirigir %s  •  gasolina %d%%  •  lataria %d%%" % [v.call("display_name"), int(fuel), int(float(v.get("hp")))]
-			if (controller.get("inv") as Dictionary).has("gasoline") and fuel < 99.0:
+			var label := "[E] Dirigir %s  •  gasolina %.1f L  •  lataria %d%%" % [v.call("display_name"), fuel, int(float(v.get("hp")))]
+			if (controller.get("inv") as Dictionary).has("gasoline") and fuel < 100.0:
 				label += "   [T] Abastecer"
 			elif fuel <= 0.0:
 				label += "  (precisa de galão de gasolina)"
@@ -318,5 +318,5 @@ func _process(delta: float) -> void:
 	var fuel := float(driving.get("fuel"))
 	_hud.visible = true
 	var body := float(driving.get("hp"))
-	_hud.text = "%s\n%d km/h\nGasolina %d%%%s\nLataria %d%%%s\n[E] sair   [Espaço] freio de mão" % [driving.call("display_name"), int(kmh), int(fuel), "  — VAZIO" if fuel <= 0.0 else "", int(body), "  — VAI EXPLODIR!" if body < 25.0 else ""]
+	_hud.text = "%s\n%d km/h\nGasolina %.1f / 100 L%s\nConsumo %.2f L/km\nLataria %d%%%s\n[E] sair   [Espaço] freio de mão" % [driving.call("display_name"), int(kmh), fuel, "  — VAZIO" if fuel <= 0.0 else "", float(SurvivalData.catalog().get("vehicles", {}).get(str(driving.get("kind")), {}).get("per_km", 0.14)), int(body), "  — VAI EXPLODIR!" if body < 25.0 else ""]
 	_hud.add_theme_color_override("font_color", Color("#ff8a7a") if fuel < 10.0 or body < 25.0 else Color.WHITE)

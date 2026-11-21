@@ -56,6 +56,9 @@ const THIRST_PER_TICK = 100 / ((50 * 60 * 1000) / TICK_MS);
 const STARVE_DAMAGE = 1;
 const DAY_MS = 24 * 60 * 1000; // um dia inteiro (dia + noite) dura 24 minutos
 const RESPAWN_MS = 8000;
+// Advertise 1.8 seconds; allow bounded delivery latency on received hooks.
+const FISHING_WINDOW_MS = 1800;
+const FISHING_DELIVERY_GRACE_MS = 350;
 const REACH = 3.6; // metros entre o jogador e o recipiente/recurso
 const MELEE_REACH = 3.2;
 const GUN_REACH = 700; // alcance da sniper (scripts/weapon_data.gd)
@@ -378,7 +381,7 @@ export class GodotSurvival {
 	}
 
 	vehiclePacket(v) {
-		return { id: v.id, kind: v.kind, color: v.color, p: v.p, yaw: v.yaw, fuel: round1(v.fuel), driver: v.driver, hp: Math.round(v.hp), broken: !!v.broken };
+		return { id: v.id, kind: v.kind, color: v.color, p: v.p, yaw: v.yaw, fuel: Math.round(v.fuel * 100) / 100, driver: v.driver, hp: Math.round(v.hp), broken: !!v.broken };
 	}
 
 	/** Batida relatada pelo motorista: `i` = velocidade perdida no choque (m/s). */
@@ -496,7 +499,7 @@ export class GodotSurvival {
 		v.yaw = finite(d.y, 100) ? d.y : v.yaw;
 		v.speed = finite(d.s, 60) ? Math.abs(d.s) : 0;
 		me.p = p;
-		if (Math.floor(before) !== Math.floor(v.fuel)) this.sendTo(me.id, { t: 'fuel', v: v.id, fuel: round1(v.fuel) });
+		if (Math.round(before * 100) !== Math.round(v.fuel * 100)) this.sendTo(me.id, { t: 'fuel', v: v.id, fuel: Math.round(v.fuel * 100) / 100 });
 		if (before > 0 && v.fuel <= 0) this.sendTo(me.id, { t: 'note', message: 'Acabou a gasolina.' });
 		this.broadcastNear(p, { t: 'vs', id: v.id, p, y: v.yaw, s: round1(v.speed) }, me.id);
 	}
@@ -507,13 +510,13 @@ export class GodotSurvival {
 		if (flat(me.p, v.p) > VEHICLE_REACH) return note('Longe demais.');
 		if (v.broken) return note('Carro destruído: conserte antes de abastecer.');
 		if (!me.inv.gasoline) return note('Você precisa de um galão de gasolina.');
-		if (v.fuel >= 99) return note('Tanque cheio.');
+		if (v.fuel >= 100) return note('Tanque cheio.');
 		removeItems(me.inv, 'gasoline', 1);
 		v.fuel = Math.min(100, v.fuel + (ITEMS.gasoline.fuel || 35));
 		this.save();
 		this.sendInv(me);
 		this.broadcast({ t: 'veh', ...this.vehiclePacket(v) });
-		note(`Abasteceu: tanque em ${Math.round(v.fuel)}%.`);
+		note(`Abasteceu: tanque em ${v.fuel.toFixed(1)} L.`);
 	}
 
 	/** O motorista atropelou um zumbi: dano pela velocidade do carro. */
@@ -753,6 +756,7 @@ export class GodotSurvival {
 			case 's': {
 				const p = vec3(d.p, 6000);
 				if (!p) return;
+				if (me.fishing && (me.vehicle || !(me.inv.fishing_rod > 0) || Math.hypot(...p.map((n,i) => n - me.fishing.origin[i])) > 0.8 || Date.now() > me.fishing.biteAt + FISHING_WINDOW_MS + FISHING_DELIVERY_GRACE_MS)) this.cancelFishing(me);
 				me.p = p;
 				me.stance = stanceOf(d);
 				if (finite(d.y, 1000)) me.y = d.y;
@@ -760,7 +764,7 @@ export class GodotSurvival {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, dv: me.vehicle || '', ch: characterId(d.ch),
-					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
+					act: me.fishing ? 'fish' : ['chop', 'pry', 'swing', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: me.fishing ? 'fishing_rod' : typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
 					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
@@ -797,6 +801,9 @@ export class GodotSurvival {
 				me.lastDrink = Date.now(); me.thirst = Math.min(100, me.thirst + 20);
 				this.save(); this.sendStats(me); return;
 			}
+			case 'fish_start': return this.startFishing(me, d, note);
+			case 'fish_hook': return this.hookFishing(me, note);
+			case 'fish_cancel': return this.cancelFishing(me);
 			case 'search': return this.search(me, d, reply, note);
 			case 'take': return this.take(me, d, reply, note);
 			case 'drop': return this.drop(me, d, note);
@@ -941,6 +948,7 @@ export class GodotSurvival {
 
 	kill(target, attacker) {
 		this.leaveVehicle(target);
+		if (target.fishing) this.cancelFishing(target);
 		target.dead = true;
 		target.infectedAt = 0;
 		target.respawnAt = Date.now() + RESPAWN_MS;
@@ -1511,6 +1519,36 @@ export class GodotSurvival {
 		note(`Tirou ${ITEMS[old].name}.`);
 	}
 
+ cancelFishing(me, extra = {}) {
+  delete me.fishing;
+  this.sendTo(me.id, {t:'fishing',active:false,...extra});
+ }
+ fishingValid(me, cast) {
+  if(me.dead || me.hp <= 0 || me.vehicle || !(me.inv.fishing_rod > 0)) return false;
+  if(Math.hypot(...me.p.map((n,i)=>n-cast.origin[i])) > .8 || flat(me.p,cast.p)>6) return false;
+  const water=waterAt(cast.p[0],cast.p[2],weatherAt(Date.now()-this.state.createdAt).wet);
+  return !!water && Math.abs(cast.p[1]-water.surface)<2.5 && Math.abs(me.p[1]-water.surface)<4;
+ }
+ startFishing(me,d,note) {
+  if(me.fishing)return;
+  const p=vec3(d.p,6000);
+  if(!p || !this.fishingValid(me,{p,origin:[...me.p]}))return note('Precisa de vara e água próxima para pescar a pé.');
+  const wait=randInt(4000,10000);
+  me.fishing={p,origin:[...me.p],biteAt:Date.now()+wait};
+  this.sendTo(me.id,{t:'fishing',active:true,p,wait_ms:wait,window_ms:FISHING_WINDOW_MS});
+ }
+ hookFishing(me,note) {
+  const cast=me.fishing;if(!cast)return;
+  // Consume before validation so one cast can never grant two rewards.
+  this.cancelFishing(me);
+  const now=Date.now();
+  if(!this.fishingValid(me,cast)||now<cast.biteAt||now>cast.biteAt+FISHING_WINDOW_MS+FISHING_DELIVERY_GRACE_MS)return note('O peixe escapou. Espere a fisgada e use o botão direito.');
+  const item=weighted(catalog.loot.fishing.table,e=>e[1])[0];
+  if(carriedWeight(me)+ITEMS[item].weight>carryLimit(me.back)+1e-6)return note('Sem espaço para a captura.');
+  addItems(me.inv,item,1);this.save();this.sendInv(me);
+  this.sendTo(me.id,{t:'fishing',active:false,item,count:1});
+  note('Pescou '+ITEMS[item].name+'.');
+ }
 	craft(me, d, note) {
 		const recipe = RECIPES[d.recipe];
 		if (!recipe) return;

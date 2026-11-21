@@ -106,6 +106,9 @@ func _ready() -> void:
 	col.shape = capsule
 	col.position.y = capsule.height * 0.5
 	add_child(col)
+	var audio := preload("res://scripts/audio/animal_audio.gd").new()
+	audio.position.y = float(_spec["height"]) * 0.7
+	add_child(audio)
 	_build_model()
 	# Casca de acerto (golpe e tiro): um pouco maior que o corpo, no comprimento do bicho.
 	var hull: StaticBody3D = HullScript.new()

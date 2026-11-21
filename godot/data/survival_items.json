@@ -11,6 +11,9 @@
   ],
   "carry_base": 60,
   "items": {
+    "fishing_rod": {"name":"Vara de pesca","weight":0.8,"cat":"gear","desc":"E perto da água; botão direito na fisgada"},
+    "raw_fish": {"name":"Peixe cru","weight":0.4,"cat":"food","use":{"hunger":6,"hp":-6},"source":"Pesca com vara"},
+    "cooked_fish": {"name":"Peixe assado","weight":0.3,"cat":"food","use":{"hunger":28,"hp":4}},
     "stick":         {"name": "Galho",                "weight": 0.3,  "cat": "material"},
     "stone":         {"name": "Pedra",                "weight": 0.6,  "cat": "material"},
     "fiber":         {"name": "Fibra",                "weight": 0.05, "cat": "material"},
@@ -81,6 +84,7 @@
   },
   "_loot_comment": "Recipientes das cidades: chance 'empty' de estar vazio; se não, sorteia 'rolls' entradas [item, peso, mínimo, máximo]. Escasso de propósito; armas de verdade são raras.",
   "loot": {
+    "fishing": {"name":"Pesca","rolls":[1,1],"table":[["raw_fish",75,1,1],["scrap",8,1,1],["cloth",7,1,1],["rope",6,1,1],["glass",4,1,1]]},
     "fridge":     {"name": "Geladeira",            "empty": 0.5,  "rolls": [1, 1], "table": [["water_bottle", 30, 1, 1], ["canned_food", 20, 1, 1], ["glass", 10, 1, 1]]},
     "cabinet":    {"name": "Armário",              "empty": 0.5,  "rolls": [1, 2], "table": [["canned_food", 22, 1, 1], ["cloth", 20, 1, 2], ["copper_wire", 10, 1, 1], ["glass", 8, 1, 1], ["bandage", 8, 1, 1], ["herbal_cure", 3, 1, 1], ["manual_page", 4, 1, 1]]},
     "wardrobe":   {"name": "Guarda-roupa",         "empty": 0.45, "rolls": [1, 2], "table": [["cloth", 40, 1, 3], ["rope", 12, 1, 1], ["sack_bag", 4, 1, 1], ["w_pistol", 1.2, 1, 1], ["a_9mm", 4, 3, 8], ["manual_page", 3, 1, 1]]},
@@ -106,6 +110,8 @@
     "car":    {"name": "Carro velho",      "time": 4.0, "gives": "scrap",   "needs": "scrap", "base": [2, 3], "extras": [["mech_parts", 0.45], ["rubber", 0.4], ["glass", 0.35], ["copper_wire", 0.3], ["cloth", 0.3]], "regrow": 1800}
   },
   "recipes": [
+    {"id":"fishing_rod","name":"Vara de pesca","era":1,"needs":{"stick":3,"fiber":4,"rope":2},"gives":["fishing_rod",1]},
+    {"id":"cooked_fish","name":"Assar peixe","era":2,"needs":{"raw_fish":1},"gives":["cooked_fish",1],"station":"campfire"},
     {"id": "rope",        "name": "Corda de fibra",     "era": 1, "needs": {"fiber": 4},                       "gives": ["rope", 1]},
     {"id": "bandage",     "name": "Bandagem de fibra",  "era": 1, "needs": {"fiber": 3},                       "gives": ["bandage", 1]},
     {"id": "stone_knife", "name": "Faca de pedra",      "era": 1, "needs": {"stone": 1, "stick": 1, "fiber": 2}, "gives": ["stone_knife", 1]},
@@ -182,11 +188,11 @@
     "chem_table": {"name": "Mesa de química",   "slot": "free",   "cost": {"wood": 4, "iron_bar": 2, "glass": 2}, "hp": 250, "r": 0.8, "station": true, "desc": "Pólvora, molotov e o soro feito dos zumbis"},
     "torch":      {"name": "Tocha",             "slot": "free",   "cost": {"torch": 1},             "hp": 40,  "r": 0.15, "wall": true, "desc": "Fincada no chão ou presa na parede, ilumina a área"}
   },
-  "_vehicles_comment": "Carros que funcionam (raros: um por cidade): tanque 0-100; 'per_km' = combustível gasto por km; um galão põe 'fuel' do item. Lataria 0-100: batida forte tira; em 0 explode e fica quebrado até usar um kit de reparos.",
+  "_vehicles_comment": "Carros que funcionam (raros: um por cidade): tanque de 100 litros; 'per_km' = litros gastos por km; um galão põe 'fuel' do item. Lataria 0-100: batida forte tira; em 0 explode e fica quebrado até usar um kit de reparos.",
   "vehicles": {
-    "sedan":  {"name": "Sedã",        "max_speed": 26, "accel": 7.0, "per_km": 14, "seats": 4},
-    "pickup": {"name": "Caminhonete", "max_speed": 22, "accel": 6.0, "per_km": 18, "seats": 2},
-    "hatch":  {"name": "Hatch",       "max_speed": 24, "accel": 7.5, "per_km": 11, "seats": 4}
+    "sedan":  {"name": "Sedã",        "max_speed": 26, "accel": 7.0, "per_km": 0.14, "seats": 4},
+    "pickup": {"name": "Caminhonete", "max_speed": 22, "accel": 6.0, "per_km": 0.18, "seats": 2},
+    "hatch":  {"name": "Hatch",       "max_speed": 24, "accel": 7.5, "per_km": 0.11, "seats": 4}
   },
   "starter_kit": {}
 }
