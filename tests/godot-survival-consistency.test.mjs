@@ -131,8 +131,8 @@ test('legacy saved characters without magazines continue to load safely',async()
  const corrupt=room.restore({p:[0,0.2,0],hp:100,hunger:85,thirst:85,inv:{w_pistol:1},magazines:{pistol:999,smg:25,bow:3}});
  assert.deepEqual(corrupt.magazines,{pistol:15});
 });
-test('carrying capacity increases to 20 kg while preserving both backpack upgrades',()=>{
- assert.equal(carryLimit(''),20);assert.equal(carryLimit('sack_bag'),30);assert.equal(carryLimit('hide_bag'),42);
+test('carrying capacity increases to 60 kg while preserving both backpack upgrades',()=>{
+ assert.equal(carryLimit(''),60);assert.equal(carryLimit('sack_bag'),70);assert.equal(carryLimit('hide_bag'),82);
 });
 test('pistol and SMG share loose 9 mm but retain separate loaded magazines across reconnect',async()=>{
  const {room}=makeWorld();let p=await join(room,{account:'shared-ammo'});
@@ -148,7 +148,7 @@ test('pistol and SMG share loose 9 mm but retain separate loaded magazines acros
  assert.deepEqual(p.me().magazines,{smg:14});assert.equal(Object.values(room.state.bags).at(-1).items.a_9mm,14);
 });
 test('a pre-existing overweight save can still craft an item that reduces its weight',async()=>{
- const {room}=makeWorld();const p=await join(room);p.me().inv={stone:35,herb:3,fiber:1};
+ const {room}=makeWorld();const p=await join(room);p.me().inv={stone:Math.ceil(carryLimit('')/0.6)+5,herb:3,fiber:1};
  const before=carriedWeight(p.me());assert.ok(before>carryLimit(''));
  say(room,p,{t:'craft',recipe:'herbal_cure'});
  assert.equal(p.me().inv.herbal_cure,1);assert.ok(carriedWeight(p.me())<before);

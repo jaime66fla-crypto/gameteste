@@ -119,6 +119,7 @@ func _animals(controller: Node, player: CharacterBody3D) -> void:
 	var rabbit: Node3D = controller.animals["a1"]
 	var r0 := rabbit.global_position.distance_to(player.global_position)
 	var wolf: Node3D = controller.animals["a4"]
+	wolf.call("apply_needs", 30.0, 80.0) # hungry wolves hunt; satiated wolves rest
 	var w0 := wolf.global_position.distance_to(player.global_position)
 	var bites := [0]
 	controller.animals["a4"].attacked.connect(func(_a, _t): bites[0] += 1)
@@ -126,6 +127,9 @@ func _animals(controller: Node, player: CharacterBody3D) -> void:
 	await _frames(150)
 	check(rabbit.global_position.distance_to(player.global_position) > r0 + 3.0, "coelho foge de quem chega perto (%.1f → %.1f m)" % [r0, rabbit.global_position.distance_to(player.global_position)])
 	check(wolf.global_position.distance_to(player.global_position) < w0 - 5.0, "lobo vem atrás (%.1f → %.1f m)" % [w0, wolf.global_position.distance_to(player.global_position)])
+	wolf.global_position = player.global_position + Vector3(0, 0, 1.2)
+	wolf.call("hurt", "me", player) # isolate retaliation from hunting the nearby rabbit
+	await _frames(90)
 	check(bites[0] > 0, "lobo morde quem alcança")
 	player.set_physics_process(true)
 	Net.message.emit({"t": "adead", "id": "a4", "by": "me", "zone": "chest"})
@@ -287,6 +291,11 @@ func _run() -> void:
 	player.global_position = driving.vehicles["v0"].global_position + Vector3(2, 0.1, 0)
 	await _frames(2)
 	check(str(controller.call("_find_target").get("type", "")) == "vehicle", "E perto do carro: dirigir")
+	var side_position := player.global_position
+	var parked_car: Node3D = driving.vehicles["v0"]
+	player.global_position = parked_car.to_global(Vector3(0, 0.1, 3.0))
+	check(str(driving.call("target_near", player.global_position).get("type", "")) == "trunk", "E atrás do carro: abrir porta-malas")
+	player.global_position = side_position
 	driving.call("request_enter", "v0")
 	var vp: Vector3 = driving.vehicles["v0"].global_position
 	Net.message.emit({"t": "veh", "id": "v0", "kind": "sedan", "color": "#8c1d18", "p": [vp.x, vp.y, vp.z], "yaw": 0.0, "fuel": 30, "driver": "me"})

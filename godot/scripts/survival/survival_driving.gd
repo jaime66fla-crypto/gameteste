@@ -3,6 +3,7 @@ const PointerMode = preload("res://scripts/pointer_mode.gd")
 ## Carros da Sobrevivência no jogo: cria os carros do servidor, entra/sai
 ## (E), abastece (T, com galão), câmera de perseguição, velocímetro e
 ## gasolina na tela, e manda a posição do carro enquanto você dirige.
+const CarModel = preload("res://scripts/survival/car_model.gd")
 const VehicleScript = preload("res://scripts/survival/vehicle.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
@@ -89,6 +90,10 @@ func target_near(point: Vector3) -> Dictionary:
 		var d := Vector2(v.global_position.x - point.x, v.global_position.z - point.z).length()
 		if d < best_d:
 			best_d = d
+			var local := v.to_local(point)
+			if local.z > CarModel.size_of(str(v.get("kind"))).z * 0.18 and str(v.get("driver")).is_empty():
+				best = {"type": "trunk", "id": id, "label": "[E] Abrir porta-malas de " + str(v.call("display_name"))}
+				continue
 			var fuel := float(v.get("fuel"))
 			var has_kit := (controller.get("inv") as Dictionary).has("repair_kit")
 			if bool(v.get("broken")):

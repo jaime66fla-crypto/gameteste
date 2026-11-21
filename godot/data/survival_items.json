@@ -9,7 +9,7 @@
     {"id": 4, "name": "Sucata e pólvora", "desc": "Carros velhos das cidades abandonadas viram armas."},
     {"id": 5, "name": "Zumbi",            "desc": "O que os mortos deixam também serve."}
   ],
-  "carry_base": 20,
+  "carry_base": 60,
   "items": {
     "stick":         {"name": "Galho",                "weight": 0.3,  "cat": "material"},
     "stone":         {"name": "Pedra",                "weight": 0.6,  "cat": "material"},

@@ -355,8 +355,24 @@ export class GodotSurvival {
 		for (const v of Object.values(s.vehicles)) {
 			if (typeof v.hp !== 'number') v.hp = 100; // mundos salvos antes da lataria
 			if (typeof v.broken !== 'boolean') v.broken = false;
+			if (!v.items || typeof v.items !== 'object' || Array.isArray(v.items)) v.items = {};
 		}
 		return s.vehicles;
+	}
+
+	trunkAt(key) {
+		if (typeof key !== 'string' || !key.startsWith('trunk:')) return null;
+		return this.vehicles()[key.slice(6)] || null;
+	}
+
+	trunkPacket(v) {
+		return { t: 'container', k: 'trunk:' + v.id, title: 'Porta-malas — ' + (VEHICLES[v.kind]?.name || 'Carro'), items: v.items, store: true, cap: 180, weight: inventoryWeight(v.items) };
+	}
+
+	trunkAccessible(me, v, note) {
+		if (me.vehicle || v.driver || Math.abs(v.speed || 0) > 0.5) { note('Pare e saia do carro para abrir o porta-malas.'); return false; }
+		if (flat(me.p, v.p) > REACH) { note('Longe demais.'); return false; }
+		return true;
 	}
 
 	vehiclePacket(v) {
@@ -692,8 +708,9 @@ export class GodotSurvival {
 		return { inv: player.inv, magazines: validMagazines(player), back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back), known: player.known || [] };
 	}
 
-	sendInv(player) {
-		this.sendTo(player.id, { t: 'inv', ...this.invPacket(player) });
+	sendInv(player, request = {}) {
+		const op = typeof request.op === 'string' && request.op.length <= 32 ? request.op : '';
+		this.sendTo(player.id, { t: 'inv', ...this.invPacket(player), ...(op ? { op } : {}) });
 	}
 
 	sendStats(player) {
@@ -1292,6 +1309,8 @@ export class GodotSurvival {
 	/** Revistar um recipiente do mapa ou uma mochila no chão. */
 	search(me, d, reply, note) {
 		const s = this.state;
+		const trunk = this.trunkAt(d.k);
+		if (trunk) return this.trunkAccessible(me, trunk, note) && reply(this.trunkPacket(trunk));
 		const chest = this.chestAt(d.k);
 		if (chest) {
 			if (flat(me.p, chest.p) > REACH) return note('Longe demais.');
@@ -1319,7 +1338,20 @@ export class GodotSurvival {
 
 	/** Pegar itens de um recipiente/mochila (limitado pelo peso). */
 	take(me, d, reply, note) {
+		if (d.n !== undefined && (!Number.isSafeInteger(d.n) || d.n <= 0)) return;
 		const s = this.state;
+		const trunk = this.trunkAt(d.k);
+		if (trunk) {
+			if (!ITEMS[d.item] || !this.trunkAccessible(me, trunk, note)) return;
+			const wanted = Math.min(d.n ?? Infinity, trunk.items[d.item] || 0);
+			if (!wanted) return;
+			const fits = roomFor(me, d.item, wanted);
+			if (!fits) return note('Mochila pesada demais.');
+			removeItems(trunk.items, d.item, fits); addItems(me.inv, d.item, fits);
+			if (fits < wanted) note('Não coube tudo: mochila pesada demais.');
+			this.save(); this.sendInv(me, d);
+			return reply(this.trunkPacket(trunk));
+		}
 		const chest = this.chestAt(d.k);
 		if (chest) {
 			if (flat(me.p, chest.p) > REACH || !ITEMS[d.item]) return;
@@ -1333,7 +1365,7 @@ export class GodotSurvival {
 			if (fits < wanted) note('Não coube tudo: mochila pesada demais.');
 			this.buildDirty.add(chest.id);
 			this.save();
-			this.sendInv(me);
+			this.sendInv(me, d);
 			return reply(this.chestPacket(chest));
 		}
 		const bag = s.bags[d.k];
@@ -1357,11 +1389,12 @@ export class GodotSurvival {
 			this.broadcastNear(spot.p, { t: 'emptied', k: spot.id });
 		}
 		this.save();
-		this.sendInv(me);
+		this.sendInv(me, d);
 		reply({ t: 'container', k: d.k, title: bag ? bag.title || 'Mochila' + (bag.name ? ' de ' + bag.name : '') : catalog.loot[spot.type]?.name, items });
 	}
 
 	drop(me, d, note) {
+		if (d.n !== undefined && (!Number.isSafeInteger(d.n) || d.n <= 0)) return;
 		const have = me.inv[d.item] || 0;
 		const n = Number.isInteger(d.n) && d.n > 0 ? Math.min(d.n, have) : have;
 		if (!n) return;
@@ -1371,7 +1404,7 @@ export class GodotSurvival {
 		removeItems(me.inv, d.item, n);
 		this.makeBag(me.p, dropped, me.name);
 		this.save();
-		this.sendInv(me);
+		this.sendInv(me, d);
 		note(`Largou ${ITEMS[d.item]?.name || d.item} ×${n}.`);
 	}
 
@@ -1895,6 +1928,24 @@ export class GodotSurvival {
 
 	/** Guardar itens no baú (até a carga do baú). */
 	store(me, d, reply, note) {
+		if (d.n !== undefined && (!Number.isSafeInteger(d.n) || d.n <= 0)) return;
+		const trunk = this.trunkAt(d.k);
+		if (trunk) {
+			if (!ITEMS[d.item] || !this.trunkAccessible(me, trunk, note)) return;
+			const have = me.inv[d.item] || 0;
+			const wanted = Math.min(d.n ?? Infinity, have);
+			if (!wanted) return;
+			const unit = ITEMS[d.item].weight || 0;
+			const free = 180 - inventoryWeight(trunk.items);
+			const fits = unit > 0 ? Math.max(0, Math.min(wanted, Math.floor((free + 1e-6) / unit))) : wanted;
+			if (!fits) return note('O porta-malas está cheio.');
+			const weapon = ITEMS[d.item]?.weapon;
+			if (weapon && fits === have) unloadMagazine(me, weapon);
+			removeItems(me.inv, d.item, fits); addItems(trunk.items, d.item, fits);
+			if (fits < wanted) note('Não coube tudo: o porta-malas está cheio.');
+			this.save(); this.sendInv(me, d);
+			return reply(this.trunkPacket(trunk));
+		}
 		const chest = this.chestAt(d.k);
 		if (!chest || !ITEMS[d.item]) return;
 		if (flat(me.p, chest.p) > REACH) return note('Longe demais.');
@@ -1913,7 +1964,7 @@ export class GodotSurvival {
 		if (fits < wanted) note('Não coube tudo: o baú está cheio.');
 		this.buildDirty.add(chest.id);
 		this.save();
-		this.sendInv(me);
+		this.sendInv(me, d);
 		reply(this.chestPacket(chest));
 	}
 

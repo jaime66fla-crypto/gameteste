@@ -31,6 +31,7 @@ static func build(kind: String, color_hex: String, wreck: bool, seed_value: int 
 	root.name = "CarModel"
 	var body := MeshInstance3D.new()
 	body.name = "Body"
+	body.set_meta("preserve_authored_material", true)
 	body.mesh = _body_mesh(kind, color_hex, wreck, seed_value % 3)
 	root.add_child(body)
 	var half_wb := float(spec["wb"]) * 0.5
@@ -48,6 +49,7 @@ static func build(kind: String, color_hex: String, wreck: bool, seed_value: int 
 		root.add_child(pivot)
 		var wheel := MeshInstance3D.new()
 		wheel.name = "Tire"
+		wheel.set_meta("preserve_authored_material", true)
 		wheel.mesh = _wheel_mesh(r, wreck)
 		wheel.rotation.y = PI if key.ends_with("L") else 0.0
 		pivot.add_child(wheel)
@@ -70,6 +72,7 @@ static func apply_lod(model: Node3D, kind: String, color_hex: String, wheels_end
 	var spec: Dictionary = KINDS.get(kind, KINDS["sedan"])
 	var proxy := MeshInstance3D.new()
 	proxy.name = "FarProxy"
+	proxy.set_meta("preserve_authored_material", true)
 	var box := BoxMesh.new()
 	box.size = Vector3(float(spec["w"]), float(spec["roof"]) * 0.82, float(spec["l"]) * 0.96)
 	proxy.mesh = box
@@ -133,13 +136,13 @@ static func _paint(color_hex: String, wreck: bool, variant: int) -> Material:
 		m.uv1_triplanar = true
 		m.uv1_scale = Vector3(0.6, 0.6, 0.6)
 		m.vertex_color_use_as_albedo = true # sujeira embaixo (cor por vértice)
-		m.metallic = 0.15 if wreck else 0.55
-		m.roughness = 0.75 if wreck else 0.22
+		m.metallic = 0.05 if wreck else 0.12
+		m.roughness = 0.82 if wreck else 0.48
 		m.metallic_specular = 0.6
 		if not wreck:
 			m.clearcoat_enabled = true
-			m.clearcoat = 0.8
-			m.clearcoat_roughness = 0.08
+			m.clearcoat = 0.25
+			m.clearcoat_roughness = 0.3
 		m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 		return m)
 

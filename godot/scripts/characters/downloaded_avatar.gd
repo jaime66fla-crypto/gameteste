@@ -284,7 +284,7 @@ func _finish_pose() -> void:
 	_apply_foot_ik()
 	_apply_prone()
 	_apply_body_dynamics()
-	if bow_active:
+	if bow_active and work_action.is_empty():
 		_apply_bow_pose()
 		_update_backpack()
 		return
@@ -492,8 +492,10 @@ func set_bow_state(active: bool, charge: float, drawing: bool, target: Vector3) 
 		_bow_model = BowVisual.new()
 		skeleton.add_child(_bow_model)
 	if is_instance_valid(_bow_model):
-		_bow_model.visible = active
-	if active:
+		_bow_model.visible = active and work_action.is_empty()
+	if is_instance_valid(_tool_node):
+		_tool_node.visible = not work_action.is_empty()
+	if active and work_action.is_empty():
 		if is_instance_valid(bound_weapon):
 			bound_weapon.visible = false
 		if is_instance_valid(_tool_node):
@@ -611,6 +613,14 @@ func set_action(act: String, tool: String) -> void:
 		return
 	work_action = act
 	work_tool = tool
+	if not act.is_empty():
+		# Work owns the hands until the gathering channel ends.
+		_overlay_name = ""
+		_overlay_weight = 0.0
+		if current_clip in ["punch", "elbow_punch"]:
+			current_clip = ""
+	if is_instance_valid(_bow_model):
+		_bow_model.visible = bow_active and act.is_empty()
 	_work_time = 0.0
 	if _tool_node != null:
 		_tool_node.queue_free()

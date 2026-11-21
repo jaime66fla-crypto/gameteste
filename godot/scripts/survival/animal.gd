@@ -527,7 +527,8 @@ func _run_ai(delta: float) -> void:
 				else:
 					_target = null
 			"hunt":
-				if _target != null and (not is_instance_valid(_target) or bool(_target.get("dead")) or global_position.distance_to(_target.global_position) > GIVE_UP):
+				# Player bodies have no `dead` property; their controller filters dead targets.
+				if _target != null and (not is_instance_valid(_target) or _target.get("dead") == true or global_position.distance_to(_target.global_position) > GIVE_UP):
 					_target = null
 				if hp < max_hp * 0.25:
 					# Ferido: desiste e foge.

@@ -255,7 +255,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") else action, "tool": "bow" if player.call("has_bow") else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand})
+			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") and action.is_empty() else action, "tool": "bow" if player.call("has_bow") and action.is_empty() else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -412,6 +412,9 @@ func _on_message(data: Dictionary) -> void:
 			_open_container = str(data.get("k", ""))
 			var spot: Dictionary = world.containers.get(_open_container, {})
 			_open_container_pos = spot.get("pos", bags.get(_open_container, {}).get("pos", player.global_position))
+			if _open_container.begins_with("trunk:"):
+				var car: Node3D = driving_ctl.vehicles.get(_open_container.trim_prefix("trunk:"))
+				if car != null: _open_container_pos = car.global_position
 			var chest: Dictionary = building_ctl.get("rules").pieces.get(_open_container, {})
 			if not chest.is_empty():
 				_open_container_pos = building_ctl.get("rules").center(chest)
@@ -720,6 +723,7 @@ static func _dress(visual, back: String) -> void:
 
 ## O servidor mandou a mochila: armas aparecem/somem e a munição vira reserva.
 func _apply_inventory(data: Dictionary) -> void:
+	inventory.call("confirm_operation", str(data.get("op", "")), data.get("inv", {}))
 	var new_inv: Dictionary = data.get("inv", {})
 	var weight := float(data.get("weight", 0))
 	var cap := float(data.get("cap", SurvivalData.catalog().get("carry_base", 20)))
@@ -795,15 +799,15 @@ func _sync_ammo() -> void:
 				if SurvivalData.ammo_for(str(other)) == ammo_item:
 					reserve[other] = now
 
-func _on_take(container_id: String, item: String, _all: bool) -> void:
-	Net.send({"t": "take", "k": container_id, "item": item})
+func _on_take(container_id: String, item: String, amount: int) -> void:
+	Net.send({"t": "take", "k": container_id, "item": item, "n": amount, "op": inventory.call("operation_token")})
 
 func _on_take_all(container_id: String) -> void:
 	for item in inventory.get("container_items").keys():
 		Net.send({"t": "take", "k": container_id, "item": item})
 
-func _on_drop(item: String, _all: bool) -> void:
-	Net.send({"t": "drop", "item": item})
+func _on_drop(item: String, amount: int) -> void:
+	Net.send({"t": "drop", "item": item, "n": amount, "op": inventory.call("operation_token")})
 
 ## Acende/apaga a tocha da mão (só com uma tocha na mochila).
 func set_torch(on: bool) -> void:
@@ -955,6 +959,8 @@ func _interact() -> bool:
 	var id := str(_target["id"])
 	if _target["type"] == "build":
 		building_ctl.call("interact", id)
+	elif _target["type"] == "trunk":
+		Net.send({"t": "search", "k": "trunk:" + id})
 	elif _target["type"] == "vehicle":
 		driving_ctl.call("request_enter", id)
 	elif _target["type"] == "repair":
@@ -978,6 +984,7 @@ func _interact() -> bool:
 			var to: Vector3 = (_target["pos"] as Vector3) - player.global_position
 			to.y = 0.0
 			player.set("yaw", atan2(-to.x, -to.z))
+			player.call("face_aim", seconds)
 			# Chega perto do tronco para o golpe acertar (árvore: ~1,1 m do centro).
 			var wanted := {"tree": 1.15, "rock": 1.3, "ore": 1.3, "saltpeter": 1.3, "car": 1.9}.get(kind, 0.0) as float
 			if wanted > 0.0 and to.length() > wanted + 0.15:
@@ -1323,7 +1330,7 @@ func _build_ui() -> void:
 	inventory.connect("craft_requested", _on_craft)
 	inventory.connect("equip_requested", func(item): Net.send({"t": "equip", "item": item}))
 	inventory.connect("unequip_requested", func(slot): Net.send({"t": "unequip", "slot": slot}))
-	inventory.connect("store_requested", func(k, item): Net.send({"t": "store", "k": k, "item": item}))
+	inventory.connect("store_requested", func(k, item, amount): Net.send({"t": "store", "k": k, "item": item, "n": amount, "op": inventory.call("operation_token")}))
 	inventory.connect("place_requested", _on_place)
 	manual = ManualUI.new()
 	ui.add_child(manual)

@@ -13,14 +13,14 @@ const ItemIcons = preload("res://scripts/survival/item_icons.gd")
 ##  └───────────────┴───────────────────────────────────┴───────────────────────┘
 ## Clique escolhe o item; duplo clique usa/equipa (ou guarda, com o baú aberto).
 ## Só mostra e pede; o servidor confirma tudo (respostas "inv" e "container").
-signal take_requested(container_id: String, item: String, all: bool)
+signal take_requested(container_id: String, item: String, amount: int)
 signal take_all_requested(container_id: String)
-signal drop_requested(item: String, all: bool)
+signal drop_requested(item: String, amount: int)
 signal use_requested(item: String)
 signal craft_requested(recipe: String)
 signal equip_requested(item: String)
 signal unequip_requested(slot: String)
-signal store_requested(container_id: String, item: String)
+signal store_requested(container_id: String, item: String, amount: int)
 signal place_requested(item: String) # tocha: fincar no chão / prender na parede
 
 var torch_lit := false # tocha acesa na mão (muda o texto do botão)
@@ -64,6 +64,15 @@ var _selected := ""
 var _filter := 0
 var _only_ready := false
 
+const InventoryLayout = preload("res://scripts/survival/inventory_layout.gd")
+var _layout = InventoryLayout.new()
+var _quantity_dialog: ConfirmationDialog
+var _quantity: SpinBox
+var _quantity_done: Callable
+var _operation := ""
+var _pending_operations := {}
+var _operation_sequence := 0
+
 var _panel: PanelContainer
 var _weight_bar: ProgressBar
 var _weight_label: Label
@@ -89,13 +98,33 @@ class SlotTile extends Control:
 	var selected := false
 	var dim := false # receita: falta este ingrediente
 	var cat := ""
+	var drag_source := ""
+	var slot_index := -1
+	var inventory_ui: Control
+	var _drag_started := false
+	var _double_activated := false
 	var _hover := false
+
+	func _get_drag_data(_at: Vector2):
+		if inventory_ui == null or id.is_empty():
+			return null
+		_drag_started = true
+		var preview := Label.new()
+		preview.text = "%s ×%d" % [SurvivalData.item_name(id), count]
+		set_drag_preview(preview)
+		return {"ui": inventory_ui, "source": drag_source, "index": slot_index, "item": id, "n": count, "key": inventory_ui.container_id}
+
+	func _can_drop_data(_at: Vector2, data) -> bool:
+		return inventory_ui != null and inventory_ui.can_drop_item(data, drag_source, slot_index)
+
+	func _drop_data(_at: Vector2, data) -> void:
+		inventory_ui.drop_item(data, drag_source, slot_index)
 
 	func _init(item_id: String = "", n: int = 0, size_px: float = 64.0) -> void:
 		id = item_id
 		count = n
 		custom_minimum_size = Vector2(size_px, size_px)
-		mouse_filter = Control.MOUSE_FILTER_STOP if not id.is_empty() else Control.MOUSE_FILTER_IGNORE
+		mouse_filter = Control.MOUSE_FILTER_STOP
 		mouse_entered.connect(func():
 			_hover = true
 			queue_redraw())
@@ -104,10 +133,13 @@ class SlotTile extends Control:
 			queue_redraw())
 
 	func _gui_input(event: InputEvent) -> void:
-		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT and not id.is_empty():
-			if event.double_click:
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not id.is_empty():
+			if event.pressed:
+				_drag_started = false
+				_double_activated = event.double_click
+			if event.pressed and event.double_click:
 				double_clicked.emit(id)
-			else:
+			elif not event.pressed and not _drag_started and not _double_activated:
 				clicked.emit(id)
 			accept_event()
 
@@ -203,6 +235,23 @@ func _tile(id: String, n: int, size_px: float = SLOT) -> SlotTile:
 # -------------------------------------------------------------- montagem ---
 
 func _ready() -> void:
+	_quantity_dialog = ConfirmationDialog.new()
+	_quantity_dialog.title = "Escolher quantidade"
+	_quantity_dialog.min_size = Vector2i(360, 150)
+	_quantity = SpinBox.new()
+	_quantity.min_value = 1
+	_quantity.step = 1
+	_quantity.allow_greater = false
+	_quantity.allow_lesser = false
+	_quantity_dialog.add_child(_quantity)
+	_quantity_dialog.confirmed.connect(func():
+		var callback := _quantity_done
+		_quantity_done = Callable()
+		if callback.is_valid(): callback.call(int(_quantity.value)))
+	add_child(_quantity_dialog)
+	var saved := ConfigFile.new()
+	if saved.load("user://inventory_layout.cfg") == OK:
+		_layout.slots = saved.get_value("layout", "slots", [])
 	name = "Inventory"
 	visible = false
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -235,7 +284,7 @@ func _ready() -> void:
 	body.add_child(_build_left())
 	body.add_child(_build_middle())
 	body.add_child(_build_right())
-	var footer := _label("TAB fecha   •   clique escolhe   •   duplo clique usa / equipa   •   o servidor confirma cada ação", 11, FAINT)
+	var footer := _label("TAB fecha   •   arraste para organizar / transferir   •   escolha a quantidade ao mover ou descartar", 11, FAINT)
 	footer.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	root.add_child(footer)
 	get_viewport().size_changed.connect(_fit)
@@ -368,6 +417,8 @@ func open() -> void:
 	_refresh()
 
 func close() -> void:
+	_quantity_dialog.hide()
+	_quantity_done = Callable()
 	if visible:
 		UiSfx.play(&"close")
 	visible = false
@@ -535,30 +586,131 @@ func _info_row(title: String, item_id: String, value: String) -> Control:
 	text.add_child(_label(value, 13, TEXT))
 	return row
 
+func _save_layout() -> void:
+	var saved := ConfigFile.new()
+	saved.set_value("layout", "slots", _layout.slots)
+	saved.save("user://inventory_layout.cfg")
+
 func _refresh_grid() -> void:
 	_clear(_grid)
+	_layout.sync(inv)
 	var count := 0
 	for id in inv:
 		count += int(inv[id])
 	_bag_title.text = "MOCHILA   •   %d itens" % count
-	var ids := _sorted(inv)
-	for id in ids:
-		var tile := _tile(id, int(inv[id]))
-		tile.selected = id == _selected
+	for i in _layout.slots.size():
+		var slot: Dictionary = _layout.slots[i]
+		var id := str(slot.get("item", ""))
+		var tile := _tile(id, int(slot.get("n", 0)))
+		tile.inventory_ui = self
+		tile.drag_source = "inventory"
+		tile.slot_index = i
+		tile.selected = id == _selected and not id.is_empty()
 		tile.clicked.connect(func(item):
 			_selected = item if _selected != item else ""
-			_refresh_grid()
+			for child in _grid.get_children():
+				if child is SlotTile:
+					child.selected = child.id == _selected and not child.id.is_empty()
+					child.queue_redraw()
 			_refresh_detail())
 		tile.double_clicked.connect(_primary)
 		_grid.add_child(tile)
-	for i in maxi(0, MIN_SLOTS - ids.size()):
-		_grid.add_child(_tile("", 0))
+
+func _ask_amount(title: String, maximum: int, callback: Callable) -> void:
+	if maximum < 1:
+		return
+	_quantity_done = callback
+	_quantity_dialog.dialog_text = title + "\nQuantidade (1 a %d):" % maximum
+	_quantity.max_value = maximum
+	_quantity.value = maximum
+	_quantity_dialog.popup_centered()
+	_quantity.get_line_edit().grab_focus()
+	_quantity.get_line_edit().select_all()
+
+func _request_amount(action: String, item: String, maximum: int, source: int = -1, target: int = -1) -> void:
+	var key := container_id
+	_ask_amount({"store": "Guardar", "take": "Pegar", "drop": "Descartar no chão"}[action] + " " + SurvivalData.item_name(item), maximum, func(n: int):
+		if action != "drop" and key != container_id:
+			return
+		_operation_sequence += 1
+		_operation = str(_operation_sequence)
+		if _pending_operations.size() >= 32:
+			_pending_operations.erase(_pending_operations.keys()[0])
+		_pending_operations[_operation] = {"item": item, "source": source, "target": target, "n": n}
+		if action == "drop":
+			drop_requested.emit(item, n)
+		elif key == container_id:
+			if action == "store": store_requested.emit(key, item, n)
+			else: take_requested.emit(key, item, n))
+
+func operation_token() -> String:
+	return _operation
+
+func confirm_operation(token: String, new_inv: Dictionary) -> void:
+	if not _pending_operations.has(token):
+		return
+	var op: Dictionary = _pending_operations[token]
+	_pending_operations.erase(token)
+	var item := str(op["item"])
+	var delta := int(new_inv.get(item, 0)) - int(inv.get(item, 0))
+	var source := int(op["source"])
+	var target := int(op["target"])
+	if delta < 0 and source >= 0 and source < _layout.slots.size():
+		var slot: Dictionary = _layout.slots[source]
+		if slot.get("item") == item:
+			slot["n"] = maxi(0, int(slot["n"]) - mini(-delta, int(op["n"])))
+			if slot["n"] == 0: _layout.slots[source] = {}
+	elif delta > 0 and target >= 0 and target < _layout.slots.size():
+		var slot: Dictionary = _layout.slots[target]
+		if not slot.is_empty() and slot.get("item") != item:
+			var empty: int = _layout.slots.find({})
+			if empty < 0:
+				empty = _layout.slots.size()
+				_layout.slots.append({})
+			_layout.slots[empty] = slot
+			slot = {}
+		_layout.slots[target] = {"item": item, "n": int(slot.get("n", 0)) + mini(delta, int(op["n"]))}
+	_layout.sync(new_inv)
+	_save_layout()
+
+func can_drop_item(data, destination: String, index: int) -> bool:
+	if not data is Dictionary or data.get("ui") != self or not data.has("item"):
+		return false
+	if data.get("source") == "container":
+		return destination == "inventory" and data.get("key") == container_id
+	if data.get("source") != "inventory":
+		return false
+	return (destination == "inventory" and index != int(data.get("index", -1))) or destination == "drop" or (destination == "container" and container_store and not container_id.is_empty())
+
+func drop_item(data: Dictionary, destination: String, index: int) -> void:
+	if not can_drop_item(data, destination, index):
+		return
+	var item := str(data["item"])
+	if data["source"] == "container":
+		_request_amount("take", item, mini(int(data["n"]), int(container_items.get(item, 0))), -1, index)
+	elif destination == "inventory":
+		var source := int(data["index"])
+		if source < 0 or source >= _layout.slots.size() or _layout.slots[source].get("item") != item:
+			return
+		var maximum := int(_layout.slots[source].get("n", 0))
+		var target: Dictionary = _layout.slots[index]
+		if not target.is_empty() and target.get("item") != item:
+			_layout.move_stack(source, index, maximum)
+			_save_layout()
+			_refresh_grid()
+		else:
+			_ask_amount("Mover " + SurvivalData.item_name(item), maximum, func(n: int):
+				if _layout.slots[source].get("item") == item and _layout.move_stack(source, index, n):
+					_save_layout()
+					_refresh_grid())
+	else:
+		_request_amount("drop" if destination == "drop" else "store", item, mini(int(data["n"]), int(inv.get(item, 0))), int(data["index"]))
 
 ## Ação do duplo clique: guardar no baú aberto; senão usar, equipar ou vestir.
 func _primary(id: String) -> void:
 	var entry := SurvivalData.item(id)
 	if container_store and not container_id.is_empty():
-		store_requested.emit(container_id, id)
+		_request_amount("store", id, int(inv.get(id, 0)))
 	elif entry.has("use") or entry.has("repair") or id == "torch":
 		use_requested.emit(id)
 	elif str(entry.get("slot", "")) in ["back", "head", "chest"]:
@@ -594,8 +746,8 @@ func _refresh_detail() -> void:
 	actions.add_theme_constant_override("separation", 6)
 	text.add_child(actions)
 	if container_store and not container_id.is_empty():
-		var store := _button("Guardar no baú", true)
-		store.pressed.connect(func(): store_requested.emit(container_id, id))
+		var store := _button("Guardar…", true)
+		store.pressed.connect(func(): _request_amount("store", id, int(inv.get(id, 0))))
 		actions.add_child(store)
 	if entry.has("use") or entry.has("repair"):
 		var use := _button("Usar" if cat != "food" else "Comer", not container_store)
@@ -617,8 +769,8 @@ func _refresh_detail() -> void:
 		var wear := _button("Vestir", true)
 		wear.pressed.connect(func(): equip_requested.emit(id))
 		actions.add_child(wear)
-	var drop := _button("Largar" if n == 1 else "Largar todos")
-	drop.pressed.connect(func(): drop_requested.emit(id, true))
+	var drop := _button("Descartar…")
+	drop.pressed.connect(func(): _request_amount("drop", id, n))
 	actions.add_child(drop)
 
 # ----------------------------------------------------------- lado direito ---
@@ -630,13 +782,22 @@ func _refresh_side() -> void:
 		var on: bool = _tab == pair[1]
 		var b: Button = pair[0]
 		UiTheme.tab(b, on, 13)
-	_tab_box.text = "Baú" if container_store else ("Chão / mochila" if container_id.is_empty() else container_title.get_slice(" ", 0))
+	_tab_box.text = ("Porta-malas" if container_id.begins_with("trunk:") else "Baú") if container_store else ("Chão / mochila" if container_id.is_empty() else container_title.get_slice(" ", 0))
 	if _tab == 0:
 		_refresh_container()
 	else:
 		_refresh_recipes()
 
 func _refresh_container() -> void:
+	var destination := _tile("", 0)
+	destination.custom_minimum_size = Vector2(200, 48)
+	destination.inventory_ui = self
+	destination.drag_source = "container" if container_store else "drop"
+	var drop_hint := _label("Arraste aqui para guardar" if container_store else "Arraste aqui para descartar", 12, MUTED)
+	drop_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drop_hint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	destination.add_child(drop_hint)
+	_side.add_child(destination)
 	var head_row := HBoxContainer.new()
 	head_row.add_theme_constant_override("separation", 6)
 	_side_head.add_child(head_row)
@@ -657,11 +818,13 @@ func _refresh_container() -> void:
 	_side.add_child(grid)
 	for id in _sorted(container_items):
 		var tile := _tile(id, int(container_items[id]))
-		tile.tooltip_text += "\nClique para pegar"
-		tile.clicked.connect(func(item): take_requested.emit(container_id, item, true))
+		tile.tooltip_text += "\nClique ou arraste para pegar uma quantidade"
+		tile.inventory_ui = self
+		tile.drag_source = "container"
+		tile.clicked.connect(func(item): _request_amount("take", item, int(container_items.get(item, 0))))
 		grid.add_child(tile)
 	if container_store:
-		_side.add_child(_label("Para guardar: escolha um item da mochila e use \"Guardar no baú\" (ou duplo clique).", 11, FAINT, true))
+		_side.add_child(_label("Arraste para guardar ou escolha um item e use Guardar.", 11, FAINT, true))
 
 func set_crafting_context(stations: Dictionary, carried_weight: float, limit: float) -> void:
 	if _stations == stations and is_equal_approx(weight, carried_weight) and is_equal_approx(cap, limit):

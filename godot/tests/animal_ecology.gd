@@ -42,6 +42,13 @@ func run() -> void:
         wolf.call("feed", 30.0)
         wolf.call("_run_ai", 0.5)
         check(wolf.get("_target") == null and int(wolf.anim) == int(wolf.Anim.EAT), "fed wolf eats instead of chain killing")
+        wolf.call("feed", 0.0)
+        wolf.call("set_fauna_targets", func(): return [])
+        target.position = wolf.position + Vector3(0, 0, 1.0)
+        wolf.call("hurt", "human", target)
+        wolf.anim = wolf.Anim.IDLE
+        wolf.call("_run_ai", 0.5)
+        check(wolf.anim == wolf.Anim.ATTACK, "wolf can attack a player body without an animal-only dead property")
     scene.queue_free()
     await process_frame
     print("ANIMAL ECOLOGY: ", "PASS" if failures.is_empty() else "FAIL")
