@@ -52,6 +52,7 @@ func _run() -> void:
 	for i in specs.size():
 		for row in 2:
 			var car := CarModel.build(specs[i][0], specs[i][1], row == 1, i + 2)
+			CarModel.apply_lod(car, specs[i][0], specs[i][1], 140.0, 220.0, 0.0)
 			car.position = Vector3(-6.5 + i * 6.5, 0, -4.0 + row * 7.0)
 			car.rotation.y = angle
 			world.add_child(car)

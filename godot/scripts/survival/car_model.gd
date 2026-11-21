@@ -17,7 +17,8 @@ const KINDS := {
 	# do teto, fim do teto, base do vidro traseiro.
 	"sedan": {"l": 4.55, "w": 1.80, "wb": 2.70, "r": 0.33, "belt": 0.98, "roof": 1.44, "hood": 0.82, "deck": 0.96, "ws": -0.95, "rf": -0.25, "rb": 0.80, "rw": 1.42},
 	"hatch": {"l": 3.95, "w": 1.74, "wb": 2.50, "r": 0.31, "belt": 0.97, "roof": 1.46, "hood": 0.80, "deck": 1.00, "ws": -0.80, "rf": -0.15, "rb": 1.30, "rw": 1.72},
-	"pickup": {"l": 5.10, "w": 1.86, "wb": 3.10, "r": 0.38, "belt": 1.12, "roof": 1.78, "hood": 1.00, "deck": 0.86, "ws": -1.05, "rf": -0.55, "rb": 0.30, "rw": 0.40, "bed": true},
+	# The bed floor must clear the rear wheel arch (0.87 m), including its bevel.
+	"pickup": {"l": 5.10, "w": 1.86, "wb": 3.10, "r": 0.38, "belt": 1.22, "roof": 1.78, "hood": 1.00, "deck": 1.02, "ws": -1.05, "rf": -0.55, "rb": 0.30, "rw": 0.40, "bed": true},
 }
 
 static var _mesh_cache: Dictionary = {}

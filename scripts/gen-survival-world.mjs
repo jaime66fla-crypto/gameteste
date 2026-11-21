@@ -1,3 +1,4 @@
+import { clearOverlappingCars } from './car-layout.mjs';
 // Gera godot/data/survival_world.json: o mundo aberto do modo Sobrevivência.
 // O jogo (scripts/survival/survival_world.gd) monta o cenário a partir deste
 // arquivo e o servidor (src/godot-survival.js) usa as mesmas posições para
@@ -416,6 +417,7 @@ const world = {
 };
 const riverPoints = world.hydrology.river.points;
 world.resources = world.resources.filter(r => r.kind === 'pond' || !riverPoints.slice(1).some((b,i) => segmentDistance(r.p[0],r.p[2],riverPoints[i],b) < world.hydrology.river.width + 2));
+world.resources = clearOverlappingCars(world.resources, world.vehicles);
 writeFileSync(new URL('../godot/data/survival_world.json', import.meta.url), JSON.stringify(world, null, 1) + '\n');
 const count = (kind) => resources.filter((r) => r.kind === kind).length;
 console.log(`${count('tree')} árvores, ${count('rock')} rochas, ${count('bush')} arbustos, ${count('stick')} galhos, ${count('pebble')} pedrinhas, ${count('fiber')} capins, ${count('herb')} ervas, ${count('ore')} veios de ferro, ${count('saltpeter')} rochas de salitre, ${towns.length} cidades (${buildings.length} prédios, ${containers.length} recipientes, ${count('car')} carros velhos, ${vehicles.length} que andam; ${cleared} recursos tirados), ${ponds.length} lagos, ${grass.length} manchas de grama alta, ${spawns.length} nascimentos`);
