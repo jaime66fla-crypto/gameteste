@@ -45,6 +45,8 @@ func _ready() -> void:
 		mesh.name = "Blocks_" + str(colour)
 		mesh.mesh = (batches[colour] as SurfaceTool).commit()
 		mesh.material_override = MapMaterials.for_colour(str(colour), str(palette.get(colour, "#a3a2a5")))
+		# Keep the urban atlas and relief when the shared character style runs.
+		mesh.set_meta("preserve_authored_material", true)
 		add_child(mesh)
 	_edge_barriers()
 

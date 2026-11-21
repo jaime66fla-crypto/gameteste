@@ -89,6 +89,9 @@ func _style_batch(node: MultiMeshInstance3D) -> void:
 func _style_mesh(node: MeshInstance3D) -> void:
 	if not is_instance_valid(node) or not node.is_inside_tree():
 		return
+	# Online map batches retain their authored atlas, normals and roughness.
+	if bool(node.get_meta("preserve_authored_material", false)):
+		return
 	if not get_parent().is_ancestor_of(node) or node.mesh == null:
 		return
 	# These targets animate their privately held material on each hit.
@@ -157,6 +160,9 @@ func material_for(source: Material, outline: float = 0.0) -> Material:
 	return m
 
 func _tune_environment() -> void:
+	# MatchMap already configured its daylight; leave other modes unchanged.
+	if get_parent().get_node_or_null("MatchMap") != null:
+		return
 	var world := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if world == null or world.environment == null:
 		return
