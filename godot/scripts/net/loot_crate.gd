@@ -17,6 +17,7 @@ var owner_name := ""
 var opened := false
 var label: Label3D
 var lid: Node3D
+var collectible_glow: MeshInstance3D
 
 func setup(data: Dictionary) -> void:
 	crate_id = str(data.get("id", ""))
@@ -52,6 +53,9 @@ func _ready() -> void:
 	label.visible = false
 	add_child(label)
 	label.text = contents_text()
+	collectible_glow = preload("res://scripts/survival/collectible_glow.gd").make_marker(Vector3(0, SIZE.y + 0.35, 0))
+	collectible_glow.visible = not opened
+	add_child(collectible_glow)
 	_settle()
 
 ## Olive military case with dark straps and a brass (or red, when dropped) latch.
@@ -116,6 +120,8 @@ func mark_opened() -> void:
 	if opened:
 		return
 	opened = true
+	if collectible_glow != null:
+		collectible_glow.hide()
 	label.visible = false
 	var tween := create_tween()
 	tween.tween_property(lid, "rotation:x", -1.9, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
@@ -125,6 +131,8 @@ func refill(data: Dictionary) -> void:
 	items = data.get("items", {})
 	nades = int(data.get("nades", 0))
 	opened = false
+	if collectible_glow != null:
+		collectible_glow.show()
 	if label != null:
 		label.text = contents_text()
 	if lid != null:

@@ -27,6 +27,9 @@ const BG := Color(0.035, 0.05, 0.06, 0.97)
 
 var inv: Dictionary = {}
 var known: Array = [] # receitas de página já aprendidas (o servidor manda no "inv")
+var _stations: Dictionary = {}
+var _weight := 0.0
+var _capacity := float(SurvivalData.catalog().get("carry_base", 20.0))
 var _section := "era:1" # "era:N", "st:<estação>" ou "materials"
 var _selected := "" # "r:<receita>" ou "i:<item>"
 
@@ -324,6 +327,18 @@ func set_inventory(new_inv: Dictionary, new_known: Array = []) -> void:
 func locked(recipe: Dictionary) -> bool:
 	return bool(recipe.get("page", false)) and not known.has(str(recipe["id"]))
 
+func set_crafting_context(stations: Dictionary, weight: float, capacity: float) -> void:
+	if _stations == stations and is_equal_approx(_weight, weight) and is_equal_approx(_capacity, capacity):
+		return
+	_stations = stations.duplicate()
+	_weight = weight
+	_capacity = capacity
+	if visible:
+		_refresh()
+
+func craft_error(recipe: Dictionary) -> String:
+	return SurvivalData.craft_error(recipe, inv, known, _stations, _weight, _capacity)
+
 func has_all(recipe: Dictionary) -> bool:
 	var needs: Dictionary = recipe["needs"]
 	for item in needs:
@@ -486,7 +501,7 @@ static func needs_text(needs: Dictionary) -> String:
 func _recipe_row(recipe: Dictionary) -> Control:
 	var gives: Array = recipe["gives"]
 	var soon := recipe_soon(recipe)
-	var badge := "Em breve" if soon else ("Falta a página" if locked(recipe) else ("Dá pra fazer" if has_all(recipe) else ""))
+	var badge := "Em breve" if soon else ("Falta a página" if locked(recipe) else ("Dá pra fazer" if craft_error(recipe).is_empty() else ""))
 	var color := SOON_COLOR if soon or locked(recipe) else UiTheme.GOOD
 	return _row("r:" + str(recipe["id"]), str(gives[0]), int(gives[1]), str(recipe["name"]), needs_text(recipe["needs"]), badge, color, soon)
 
@@ -569,12 +584,14 @@ func _recipe_page(recipe: Dictionary) -> void:
 		_page.add_child(_ingredient(str(item), int(needs[item])))
 	if not soon and not locked(recipe):
 		var make := _button("Fabricar", true)
-		make.disabled = not has_all(recipe)
+		var reason := craft_error(recipe)
+		make.disabled = not reason.is_empty()
+		make.tooltip_text = reason
 		var rid := str(recipe["id"])
 		make.pressed.connect(func(): craft_requested.emit(rid))
 		_page.add_child(make)
-		if not has_all(recipe):
-			_page.add_child(_label("Falta material (veja onde achar acima).", 11, UiTheme.DANGER, true))
+		if not reason.is_empty():
+			_page.add_child(_label(reason, 11, UiTheme.DANGER, true))
 	_used_in(out_id)
 
 ## Ingrediente: ícone, quanto tem/precisa e onde achar.

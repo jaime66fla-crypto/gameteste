@@ -80,6 +80,74 @@ const say = (room, player, data) => room.webSocketMessage(player.ws, JSON.string
 const at = (player, p) => (player.me().p = [...p]);
 /** Hora do jogo: o dia começa às 6h (createdAt = 6h). */
 const setHour = (room, hour) => (room.state.createdAt = Date.now() - (((hour - 6 + 24) % 24) / 24) * DAY_MS);
+
+test('living trees drop collectible branches naturally, without tools or unlimited piles', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const tree = world.resources.find((r) => r.kind === 'tree');
+	at(p, tree.p);
+	assert.equal(typeof room.dropTreeBranches, 'function');
+	const now = Date.now();
+	room.state.branchNext = { [tree.id]: now - 1 };
+	room.dropTreeBranches(now);
+	const branch = Object.values(room.state.branches).find((r) => r.tree === tree.id);
+	assert.ok(branch, 'a branch fell beside the tree');
+	assert.equal(branch.kind, 'stick');
+	assert.ok(Math.hypot(branch.p[0] - tree.p[0], branch.p[2] - tree.p[2]) > 1);
+	const count = Object.values(room.state.branches).filter((r) => r.tree === tree.id).length;
+	room.dropTreeBranches(now + 5000);
+	assert.equal(Object.values(room.state.branches).filter((r) => r.tree === tree.id).length, count, 'one branch per tree');
+	assert.ok(room.startPacket(p.me()).branches.some((r) => r.id === branch.id), 'late join receives fallen branches');
+	at(p, branch.p);
+	gather(room, p, branch);
+	assert.ok(p.me().inv.stick > 0, 'empty hands can collect the branch');
+	assert.ok(!room.state.branches[branch.id], 'collected branch is removed');
+	assert.ok(p.ws.sent.some((m) => m.t === 'branch_gone' && m.id === branch.id));
+	room.dropTreeBranches(now + 160000);
+	assert.ok(room.state.branches[branch.id], 'another branch falls after the natural interval');
+});
+
+test('cut trees do not shed branches; natural drops expire and have a global cap', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const tree = world.resources.find((r) => r.kind === 'tree');
+	at(p, tree.p);
+	assert.equal(typeof room.dropTreeBranches, 'function');
+	const now = Date.now();
+	room.state.branchNext = { [tree.id]: now - 1 };
+	room.state.depleted[tree.id] = now + 600000;
+	room.dropTreeBranches(now);
+	assert.ok(!Object.values(room.state.branches).some((r) => r.tree === tree.id));
+	room.state.branches.expired = { id: 'expired', tree: tree.id, p: tree.p, expires: now - 1 };
+	room.dropTreeBranches(now);
+	assert.ok(!room.state.branches.expired);
+	room.state.branches = {};
+	for (let i = 0; i < 64; i++) room.state.branches['cap' + i] = { id: 'cap' + i, p: tree.p, expires: now + 999999 };
+	delete room.state.depleted[tree.id];
+	room.dropTreeBranches(now);
+	assert.equal(Object.keys(room.state.branches).length, 64);
+});
+
+test('branch placement respects foundation corners and free furniture footprints', () => {
+	const { room } = makeWorld();
+	room.grid.add({ id: 'base', kind: 'foundation', i: 0, j: 0, k: 0 });
+	assert.equal(typeof room.branchBlocked, 'function');
+	assert.equal(room.branchBlocked([2.95, 0.025, 2.95]), true);
+	assert.equal(room.branchBlocked([8, 0.025, 8]), false);
+	room.grid.add({ id: 'chest', kind: 'chest', p: [8, 0, 8] });
+	assert.equal(room.branchBlocked([8, 0.025, 8]), true);
+});
+
+test('refill notifies players that an emptied map container is available again', async () => {
+	const { room } = makeWorld();
+	const p = await join(room);
+	const spot = world.containers[0];
+	room.state.containers[spot.id] = { items: {}, refillAt: Date.now() - 1 };
+	assert.equal(typeof room.refreshContainers, 'function');
+	room.refreshContainers(Date.now());
+	assert.ok(!room.state.containers[spot.id], 'search will roll fresh loot');
+	assert.ok(p.ws.sent.some((m) => m.t === 'refilled' && m.k === spot.id));
+});
 /** Segura E no recurso pelo tempo da regra e solta. */
 function gather(room, p, res) {
 	say(room, p, { t: 'gather_start', r: res.id });
@@ -94,9 +162,9 @@ test('world data: nature plus three abandoned cities; every resource kind has a 
 	for (const c of world.containers) assert.ok(catalog.loot[c.type], `loot table ${c.type}`);
 	for (const table of Object.values(catalog.loot)) for (const [item] of table.table) assert.ok(catalog.items[item] && !catalog.items[item].soon, `loot ${item}`);
 	for (const v of world.vehicles) assert.ok(catalog.vehicles[v.kind], v.kind);
-	// Cidades nas pontas do mapa, sem nascimento dentro.
+	// Cidades nas pontas da área original; as montanhas ampliam a borda do mundo.
 	for (const t of world.towns) {
-		assert.ok(Math.hypot(...t.center) > world.half_size * 0.6, `${t.name} far from the middle`);
+		assert.ok(Math.hypot(...t.center) > (world.core_half_size ?? world.half_size) * 0.6, `${t.name} far from the middle`);
 		for (const [x, z] of world.spawns) assert.ok(Math.hypot(x - t.center[0], z - t.center[1]) > 50, `spawn away from ${t.name}`);
 	}
 	assert.ok(world.resources.filter((r) => r.kind === 'car').length > world.vehicles.length * 10, 'wrecks far outnumber working cars');
@@ -187,7 +255,8 @@ test('weight limit: pockets only, the fiber bag raises it once equipped', async 
 	assert.equal(inventoryWeight({ wood: 3, stone: 1 }), 3 + catalog.items.stone.weight);
 	const { room } = makeWorld();
 	const p = await join(room);
-	p.me().inv = { sack_bag: 1, wood: 9 };
+	const startingWood = catalog.carry_base - 1;
+	p.me().inv = { sack_bag: 1, wood: startingWood };
 	const tree = world.resources.find((r) => r.kind === 'tree');
 	at(p, tree.p);
 	p.me().inv.stone_axe = 1;
@@ -199,7 +268,7 @@ test('weight limit: pockets only, the fiber bag raises it once equipped', async 
 	const tree2 = world.resources.filter((r) => r.kind === 'tree')[1];
 	at(p, tree2.p);
 	gather(room, p, tree2);
-	assert.ok(p.me().inv.wood > 9, 'more room with the bag on');
+	assert.ok(p.me().inv.wood > startingWood, 'more room with the bag on');
 	room.damagePlayer(p.me(), 500, 'z1', 'zombie');
 	assert.equal(Object.values(room.state.bags)[0].items.sack_bag, 1, 'equipped bag drops on death');
 });

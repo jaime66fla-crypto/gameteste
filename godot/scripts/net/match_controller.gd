@@ -352,11 +352,17 @@ func _physics_process(delta: float) -> void:
 		var p := player.global_position
 		var v := player.get_real_velocity()
 		var move := clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0)
-		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
+		var state := {"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": move, "r": player.get("sprinting"),
 			"c": player.get("crouching"), "pr": player.get("prone"), "a": player.get("aiming"), "f": not player.is_on_floor(),
 			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean"),
-			"ch": player.get("character_id")})
+			"ch": player.get("character_id")}
+		if player.has_method("has_bow") and bool(player.call("has_bow")):
+			var bow: Node = player.get("bow_controller")
+			state["tool"] = "bow"
+			state["act"] = "bow_draw" if bool(bow.get("draw").drawing) else "bow_carry"
+			state["charge"] = float(bow.get("draw").charge)
+		Net.send(state)
 	_bot_timer -= delta
 	if _bot_timer <= 0.0 and is_host():
 		_bot_timer = BOT_RATE
@@ -390,10 +396,16 @@ func _on_message(data: Dictionary) -> void:
 			var origin = _vec(data.get("o"))
 			var end = _vec(data.get("e"))
 			if origin != null and end != null:
-				_tracer(origin, end)
 				var shooter = actors.get(str(data.get("id", "")))
-				if shooter != null:
-					shooter.call("play_remote_shot", str(data.get("w", "rifle")))
+				var weapon := str(data.get("w", "rifle"))
+				if weapon == "bow":
+					var speed = _vec(data.get("v"))
+					if shooter != null and speed != null:
+						shooter.call("play_remote_arrow", origin, speed, str(data.get("a", "")))
+				else:
+					_tracer(origin, end)
+					if shooter != null:
+						shooter.call("play_remote_shot", weapon)
 		"hp":
 			_on_health(data)
 		"host":
@@ -695,7 +707,15 @@ func _on_actor_damaged(actor_id: String, zone: String, point: Vector3, normal: V
 	var base := float(WeaponData.stats(weapon)["damage"])
 	var damage := base * float(HitboxScript.MULTIPLIER.get(zone, 1.0))
 	# pt = onde a bala bateu (o servidor confere se a cabeça estava ali).
-	Net.send({"t": "hit", "target": actor_id, "zone": zone, "dmg": damage, "w": weapon, "pt": [point.x, point.y, point.z]})
+	var hit := {"t": "hit", "target": actor_id, "zone": zone, "dmg": damage, "w": weapon, "pt": [point.x, point.y, point.z]}
+	if weapon == "bow":
+		var bow: Node = player.get("bow_controller")
+		if not is_instance_valid(bow):
+			return
+		hit["a"] = str(bow.get("last_hit_arrow_id"))
+		if str(hit["a"]).is_empty():
+			return
+	Net.send(hit)
 	# Immediate feedback (the server confirms health a moment later).
 	var headshot := zone == "head"
 	combat_feedback.call("show_hit", headshot)
@@ -834,7 +854,17 @@ func _toast(text: String) -> void:
 	tween.tween_callback(label.queue_free)
 
 func _on_local_shot(weapon_id: String, from: Vector3, to: Vector3) -> void:
-	Net.send({"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]})
+	var shot := {"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]}
+	if weapon_id == "bow":
+		var bow: Node = player.get("bow_controller")
+		if not is_instance_valid(bow):
+			return
+		var speed := to - from
+		shot["v"] = [speed.x, speed.y, speed.z]
+		shot["a"] = str(bow.get("last_arrow_id"))
+		if str(shot["a"]).is_empty():
+			return
+	Net.send(shot)
 
 func _on_bot_fired(actor_id: String, weapon_id: String, from: Vector3, to: Vector3) -> void:
 	_tracer(from, to)

@@ -43,6 +43,7 @@ const ToolModel = preload("res://scripts/weapons/tool_model.gd")
 ## Bones every pose layer needs; a model missing one is rejected (not ready).
 const REQUIRED_BONES := ["Hips", "Spine", "Spine1", "Spine2", "Neck", "Head", "LeftArm", "LeftForeArm", "LeftHand", "RightArm", "RightForeArm", "RightHand", "LeftUpLeg", "LeftLeg", "LeftFoot", "RightUpLeg", "RightLeg", "RightFoot", "RightHandMiddle1", "RightHandIndex1", "RightHandPinky1", "LeftHandMiddle1", "LeftHandIndex1", "LeftHandPinky1"]
 var skeleton: Skeleton3D
+var _source_model: Node3D
 var animation_player: AnimationPlayer
 var weapon_mount: Node3D
 var bound_weapon: Node3D
@@ -65,6 +66,7 @@ func _ready() -> void:
 	if packed == null:
 		return
 	var model := packed.instantiate() as Node3D
+	_source_model = model
 	model.name = "Avatar"
 	model.rotation.y = model_yaw
 	# Scale the source mesh to the 1.8 m player height (real-size weapons depend on it).
@@ -272,12 +274,20 @@ func _play_cycle(clip: String, rate: float) -> void:
 
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
+	# A right-handed archer presents the left shoulder to the target.
+	_bow_stance = move_toward(_bow_stance, 1.0 if bow_active and bow_drawing else 0.0, _last_delta * 5.0)
+	if is_instance_valid(_source_model):
+		_source_model.rotation.y = model_yaw - deg_to_rad(65.0) * _bow_stance
 	_advance_overlay()
 	_apply_crouch()
 	_apply_stand_pose()
 	_apply_foot_ik()
 	_apply_prone()
 	_apply_body_dynamics()
+	if bow_active:
+		_apply_bow_pose()
+		_update_backpack()
+		return
 	if not work_action.is_empty():
 		_apply_work()
 		_apply_overlay()
@@ -464,6 +474,125 @@ var work_tool := ""
 var _last_delta := 1.0 / 60.0
 var _work_time := 0.0
 var _tool_node: Node3D
+
+const BowVisual = preload("res://scripts/weapons/bow_visual.gd")
+var bow_active := false
+var bow_drawing := false
+var bow_charge := 0.0
+var bow_target := Vector3.ZERO
+var _bow_model: Node3D
+var _bow_stance := 0.0
+
+func set_bow_state(active: bool, charge: float, drawing: bool, target: Vector3) -> void:
+	bow_active = active
+	bow_drawing = drawing
+	bow_charge = clampf(charge, 0.0, 1.0)
+	bow_target = target
+	if active and skeleton != null and not is_instance_valid(_bow_model):
+		_bow_model = BowVisual.new()
+		skeleton.add_child(_bow_model)
+	if is_instance_valid(_bow_model):
+		_bow_model.visible = active
+	if active:
+		if is_instance_valid(bound_weapon):
+			bound_weapon.visible = false
+		if is_instance_valid(_tool_node):
+			_tool_node.visible = false
+
+func bow_arrow_origin() -> Vector3:
+	if is_instance_valid(_bow_model):
+		return _bow_model.call("arrow_origin")
+	return global_position + Vector3.UP * 1.35
+
+## Carrying reuses the unarmed gait exactly. Only fingers close on the handle.
+func _bow_carry_arms() -> void:
+	var natural := _has_natural_arms(current_clip)
+	_run_arms = move_toward(_run_arms, 1.0 if natural else 0.0, _last_delta * 5.0)
+	if prone_weight > 0.01 and unarmed_weight > 0.01:
+		_prone_arms(unarmed_weight)
+	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
+		_relax_arms(unarmed_weight * (1.0 - _run_arms))
+
+func _bow_in_animated_hand() -> Transform3D:
+	var hand := Grip._bone(skeleton, "LeftHand")
+	var middle := Grip._bone(skeleton, "LeftHandMiddle1")
+	var index := Grip._bone(skeleton, "LeftHandIndex1")
+	var pinky := Grip._bone(skeleton, "LeftHandPinky1")
+	var wrist := skeleton.get_bone_global_pose(hand)
+	var fingers := skeleton.get_bone_rest(middle).origin.normalized()
+	var across := skeleton.get_bone_rest(index).origin - skeleton.get_bone_rest(pinky).origin
+	var hinge := (across - fingers * across.dot(fingers)).normalized()
+	var y := (wrist.basis * hinge).normalized()
+	var z := (wrist.basis * fingers).normalized()
+	var x := y.cross(z).normalized()
+	var palm := (wrist.basis * hinge.cross(fingers)).normalized()
+	var contact := wrist.origin + wrist.basis * skeleton.get_bone_rest(middle).origin + palm * STAFF_GRIP_RADIUS
+	var metre_scale := 1.0 / skeleton.global_basis.get_scale().y
+	# Finger articulation never changes wrist, elbow, or shoulder animation.
+	for finger in ["Index", "Middle", "Ring", "Pinky", "Thumb"]:
+		for segment in range(1, 4):
+			var bone := Grip._bone(skeleton, "LeftHand" + finger + str(segment))
+			if bone < 0:
+				continue
+			var angle: float = [1.0, 1.15, 0.8][segment - 1]
+			var rotation := Quaternion(hinge, angle)
+			if finger == "Thumb":
+				angle = [0.35, 0.6, 0.5][segment - 1]
+				rotation = Quaternion(hinge, angle)
+				if segment == 1:
+					rotation = Quaternion(hinge.cross(fingers).normalized(), -0.75) * rotation
+			skeleton.set_bone_pose_rotation(bone, rotation)
+	return Transform3D(Basis(x, y, z).scaled(Vector3.ONE * metre_scale), contact)
+
+func _apply_bow_pose() -> void:
+	var chest := Grip._bone(skeleton, "Spine2")
+	var arm := Grip._bone(skeleton, "RightArm")
+	var left_arm := Grip._bone(skeleton, "LeftArm")
+	var head := Grip._bone(skeleton, "Head")
+	if chest < 0 or arm < 0 or head < 0 or left_arm < 0 or not is_instance_valid(_bow_model):
+		return
+	_bow_carry_arms()
+	var carry_transform := _bow_in_animated_hand()
+	_bow_model.call("set_nocked", bow_drawing or _bow_stance > 0.02)
+	if _bow_stance <= 0.001:
+		_bow_model.transform = carry_transform
+		_bow_model.call("set_draw", 0.0)
+		return
+	# Keep the approved full-draw solver, blending from the animated arms.
+	var natural_rotations := {}
+	for side in ["Left", "Right"]:
+		for part in ["Arm", "ForeArm", "Hand"]:
+			var bone := Grip._bone(skeleton, side + part)
+			natural_rotations[bone] = skeleton.get_bone_pose_rotation(bone)
+	var right := Vector3(signf(skeleton.get_bone_global_pose(arm).origin.x), 0, 0)
+	var forward := Vector3(0, 0, 1)
+	var head_pos := skeleton.get_bone_global_pose(head).origin
+	var direction := (skeleton.to_local(bow_target) - head_pos).normalized() if bow_drawing else (forward - Vector3.UP * 0.22).normalized()
+	var across := Vector3.UP.cross(direction).normalized()
+	var up := direction.cross(across).normalized()
+	var anchor := head_pos - across * 0.08 + direction * 0.06 + up * 0.035
+	var head_turn := clampf(atan2(direction.x, direction.z), -1.3, 1.3) * _bow_stance
+	Grip._set_global_rotation(skeleton, head, Basis(Vector3.UP, head_turn) * skeleton.get_bone_global_pose(head).basis)
+	var scale_m := 1.0 / skeleton.global_basis.get_scale().y
+	var shoulder := skeleton.get_bone_global_pose(left_arm).origin
+	var fore := Grip._bone(skeleton, "LeftForeArm")
+	var hand := Grip._bone(skeleton, "LeftHand")
+	var reach := (skeleton.get_bone_rest(fore).origin.length() + skeleton.get_bone_rest(hand).origin.length()) * 0.96
+	var offset := anchor - shoulder
+	var along := offset.dot(direction)
+	var full_pull := clampf(-along + sqrt(maxf(0.0, along * along - offset.length_squared() + reach * reach)), 0.50, 0.78)
+	var aimed_grip := anchor + direction * full_pull - up * 0.035
+	var aim_transform := Transform3D(Basis(across, up, direction).scaled(Vector3.ONE * scale_m), aimed_grip)
+	_bow_model.transform = carry_transform.interpolate_with(aim_transform, _bow_stance)
+	_bow_model.call("set_draw", bow_charge, full_pull / scale_m)
+	var pull := lerpf(0.12 * scale_m, full_pull, bow_charge)
+	var string_hand := aimed_grip - direction * pull + up * 0.035
+	_grip_on_staff("Left", aimed_grip, up, right, -right * 0.35 - up * 0.4)
+	_grip_on_staff("Right", string_hand, up, direction, right * 0.8 - direction * 0.5 + up * 0.2)
+	if _bow_stance < 1.0:
+		for bone in natural_rotations:
+			var original: Quaternion = natural_rotations[bone]
+			skeleton.set_bone_pose_rotation(bone, original.slerp(skeleton.get_bone_pose_rotation(bone), _bow_stance))
 
 ## Acts sent over the network that play a UAL2 clip once instead of a tool loop.
 const OVERLAY_ACTS := {"open": "open", "harvest": "harvest", "consume": "consume"}

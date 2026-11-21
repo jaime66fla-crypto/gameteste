@@ -12,7 +12,7 @@
 // pune o jogador honesto, só tira o bônus de quem trapaceia.
 
 /** Alcance de cada arma em metros (scripts/weapon_data.gd, "range"). */
-export const WEAPON_RANGE = { pistol: 250, smg: 220, rifle: 450, shotgun: 70, sniper: 700 };
+export const WEAPON_RANGE = { pistol: 250, smg: 220, rifle: 450, shotgun: 70, sniper: 700, bow: 120 };
 const RANGE_SLACK = 12; // atraso de rede: o alvo andou desde a última posição
 
 /**
@@ -38,11 +38,52 @@ export function stanceOf(state) {
 
 export class HitCheck {
 	constructor() {
+		this.arrows = new Map(); // owner + arrow id -> recorded ballistic launch
+		this.arrowLaunches = new Map();
 		this.stats = new Map(); // atacante -> { hits, heads, flagged }
 	}
 
 	reset() {
 		this.stats.clear();
+		this.arrows.clear();
+		this.arrowLaunches.clear();
+	}
+
+	/** Record releases, not button presses. Survival consumes the inventory arrow separately. */
+	recordArrow({ attacker, id, origin, velocity, now = Date.now() }) {
+		if (!attacker?.id || typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,64}$/.test(id)) return false;
+		const o = point3(origin), v = point3(velocity), p = point3(attacker.p);
+		if (!o || !v || !p || Math.hypot(...o.map((n, i) => n - p[i])) > 4) return false;
+		const speed = Math.hypot(...v);
+		if (speed < 19 || speed > 49) return false;
+		// Keep used ids until expiry so replaying a launch cannot create another impact.
+		for (const [key, arrow] of this.arrows) if (now - arrow.at > 8500) this.arrows.delete(key);
+		const key = attacker.id + ':' + id;
+		if (this.arrows.has(key) || now - (this.arrowLaunches.get(attacker.id) ?? -Infinity) < 200) return false;
+		this.arrows.set(key, { o: [...o], v: [...v], at: now, used: false });
+		this.arrowLaunches.set(attacker.id, now);
+		return true;
+	}
+
+	/** Validate gravity and flight time; the server has no collision mesh to retrace walls. */
+	checkArrow({ attacker, target, id, point, zone, player = true, now = Date.now() }) {
+		const arrow = this.arrows.get(attacker?.id + ':' + id);
+		const pt = point3(point), tp = point3(target?.p);
+		if (!arrow || arrow.used || !pt || !tp) return { ok: false, reason: 'arrow' };
+		const elapsed = (now - arrow.at) / 1000;
+		if (elapsed < 0 || elapsed > 8.5) return { ok: false, reason: 'flight' };
+		if (Math.hypot(pt[0] - tp[0], pt[2] - tp[2]) > 3 || Math.abs(pt[1] - tp[1]) > 3.5) return { ok: false, reason: 'target' };
+		// Sample the recorded curved path, including near-vertical shots.
+		let best = Infinity, flight = 0;
+		for (let t = 0; t <= Math.min(8.5, elapsed + 0.15); t += 0.01) {
+			const d = Math.hypot(pt[0] - arrow.o[0] - arrow.v[0] * t, pt[1] - arrow.o[1] - arrow.v[1] * t + 4.9 * t * t, pt[2] - arrow.o[2] - arrow.v[2] * t);
+			if (d < best) { best = d; flight = t; }
+		}
+		if (best > 1.2 || Math.abs(flight - elapsed) > 0.4) return { ok: false, reason: 'trajectory' };
+		// Range is measured from the recorded release, even if the archer moved.
+		const verdict = this.check({ attacker: { ...attacker, p: arrow.o }, target, weapon: 'bow', zone, point: pt, player });
+		if (verdict.ok) arrow.used = true;
+		return verdict;
 	}
 
 	/**

@@ -13,6 +13,7 @@ var _roads: Array = [] # [from Vector2, to Vector2, width]
 var _buildings: Array = [] # [center Vector2, size Vector2]
 var _grass: Array = [] # [center Vector2, r]
 var _ponds: Array = [] # [center Vector2, r]
+var _mountains: Array = []
 var _trees: PackedVector2Array = PackedVector2Array()
 var _half := 60.0
 var _canvas: Control
@@ -34,6 +35,8 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		meters_per_px = 0.95
 		var data := SurvivalData.world()
 		_half = float(data.get("half_size", 240))
+		for m in data.get("mountains", []):
+			_mountains.append([Vector2(float(m.x), float(m.z)), float(m.r)])
 		if data.has("center_town"):
 			for lane in [-48.0, 0.0, 48.0]:
 				_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
@@ -172,6 +175,10 @@ func _bake() -> void:
 func _paint_map(ci: Control) -> void:
 	ci.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
 	ci.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), _map_color)
+	for m in _mountains:
+		ci.draw_circle(m[0], m[1], Color("647354"))
+		ci.draw_circle(m[0], m[1] * 0.65, Color("777b68"))
+		ci.draw_circle(m[0], m[1] * 0.3, Color("969388"))
 	for g in _grass:
 		ci.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
 	for t in _trees:

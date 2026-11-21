@@ -48,7 +48,8 @@ const BAD := UiTheme.DANGER
 var inv: Dictionary = {}
 var known: Array = [] # receitas de página aprendidas
 var weight := 0.0
-var cap := 10.0
+var cap := float(SurvivalData.catalog().get("carry_base", 20.0))
+var _stations: Dictionary = {}
 var back := "" # mochila equipada nas costas
 var head := "" # capacete
 var chest := "" # colete
@@ -662,6 +663,18 @@ func _refresh_container() -> void:
 	if container_store:
 		_side.add_child(_label("Para guardar: escolha um item da mochila e use \"Guardar no baú\" (ou duplo clique).", 11, FAINT, true))
 
+func set_crafting_context(stations: Dictionary, carried_weight: float, limit: float) -> void:
+	if _stations == stations and is_equal_approx(weight, carried_weight) and is_equal_approx(cap, limit):
+		return
+	_stations = stations.duplicate()
+	weight = carried_weight
+	cap = limit
+	if visible:
+		_refresh_side()
+
+func craft_error(recipe: Dictionary) -> String:
+	return SurvivalData.craft_error(recipe, inv, known, _stations, weight, cap)
+
 func _refresh_recipes() -> void:
 	# Filtros por categoria do que se fabrica + "só o que dá para fazer".
 	# Linhas fixas (HFlow guardava a altura de quando a janela era estreita e o painel passava da tela).
@@ -701,10 +714,7 @@ func _refresh_recipes() -> void:
 		var cats: Array = FILTERS[_filter][1]
 		if not cats.is_empty() and not cats.has(cat):
 			continue
-		var needs: Dictionary = recipe["needs"]
-		var have_all := true
-		for item in needs:
-			have_all = have_all and int(inv.get(item, 0)) >= int(needs[item])
+		var have_all := craft_error(recipe).is_empty()
 		if _only_ready and not have_all:
 			continue
 		_side.add_child(_recipe_card(recipe, have_all))
@@ -754,6 +764,7 @@ func _recipe_card(recipe: Dictionary, have_all: bool) -> Control:
 		text.add_child(_label(station_note, 10, Color("#d9925a")))
 	var make := _button("Fabricar", true)
 	make.disabled = not have_all
+	make.tooltip_text = craft_error(recipe)
 	make.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var rid := str(recipe["id"])
 	make.pressed.connect(func(): craft_requested.emit(rid))

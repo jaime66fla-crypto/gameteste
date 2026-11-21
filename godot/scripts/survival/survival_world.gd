@@ -1,5 +1,5 @@
 extends Node3D
-## Mundo aberto da Sobrevivência (600 x 600 m), montado a partir de
+## Mundo aberto da Sobrevivência (840 x 840 m, núcleo antigo de 600 x 600 m), montado a partir de
 ## data/survival_world.json: só natureza — florestas, clareiras, lagos, rochas,
 ## arbustos de frutas e coisas pequenas no chão (galhos, pedrinhas, capim, ervas).
 ## (Prédios, estradas e recipientes ainda são montados se o arquivo tiver.)
@@ -13,31 +13,51 @@ const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CarModel = preload("res://scripts/survival/car_model.gd")
 const NatureModel = preload("res://scripts/survival/nature_model.gd")
 const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
+const MountainTerrain = preload("res://scripts/survival/mountain_terrain.gd")
+const CollectibleGlow = preload("res://scripts/survival/collectible_glow.gd")
+const LakeWater = preload("res://scripts/survival/lake_water.gd")
+var _resource_glow: Node3D
 ## Coisas pequenas do chão: um modelo só, visíveis até PICKUP_RANGE, sem colisão.
 const PICKUPS := ["stick", "pebble", "fiber", "herb"]
 const PICKUP_RANGE := 50.0
 
 var containers: Dictionary = {} # id -> {node, type, pos}
 var resources: Dictionary = {} # id -> {node, kind, pos, parts, r}
+var fallen_fruit: Dictionary = {} # alimento dos animais, separado da coleta do jogador
 var ponds: Array = [] # [{x, z, r}]
 var half_size := 240.0
 var center_half := 0.0 # cidade do meio (mapas antigos); 0 = sem cidade
 var _mats: Dictionary = {}
 var _meshes: Dictionary = {}
+var staged_loading := false
 
 func _ready() -> void:
 	name = "SurvivalWorld"
+	if not staged_loading:
+		build_staged()
+
+func _loading_batch(progress: Callable, message: String, fraction: float) -> void:
+	if progress.is_valid():
+		progress.call(message, fraction)
+		await get_tree().process_frame
+
+func build_staged(progress: Callable = Callable()) -> void:
 	var data := SurvivalData.world()
 	half_size = float(data.get("half_size", 240))
 	center_half = float(data.get("center_town", {}).get("half_size", 0.0))
 	ponds = data.get("ponds", [])
 	_ground()
+	MountainTerrain.build(self, data.get("mountains", []))
+	await _loading_batch(progress, "Montando lagos e estradas…", 0.08)
 	for pond in ponds:
 		_pond(pond)
 	for road in data.get("roads", []):
 		_road(road)
-	for building in data.get("buildings", []):
-		_building(building)
+	var buildings: Array = data.get("buildings", [])
+	for i in buildings.size():
+		_building(buildings[i])
+		if i % 6 == 5:
+			await _loading_batch(progress, "Montando cidades…", 0.12 + 0.18 * float(i) / maxf(1, buildings.size()))
 	# Bairros e bases de parkour do anel novo (sobrados, térreas, pistas).
 	if not data.get("parkour", []).is_empty() or not data.get("parkour_bases", []).is_empty():
 		var district := ParkourDistrictScript.new()
@@ -46,17 +66,27 @@ func _ready() -> void:
 		add_child(district)
 	for spot in data.get("containers", []):
 		_container(spot)
-	for res in data.get("resources", []):
-		_resource(res)
+	var resources_data: Array = data.get("resources", [])
+	for i in resources_data.size():
+		_resource(resources_data[i])
+		if i % 100 == 99:
+			await _loading_batch(progress, "Montando florestas e recursos…", 0.32 + 0.5 * float(i) / maxf(1, resources_data.size()))
 	_flush_batches()
+	await _loading_batch(progress, "Preparando vegetação…", 0.84)
 	for town in data.get("towns", []):
 		_town_sign(town)
 	grass_patches = data.get("grass", [])
 	_prepare_pavement(data)
 	_short_grass()
-	for patch in grass_patches:
-		_tall_grass(patch)
+	for i in grass_patches.size():
+		_tall_grass(grass_patches[i])
+		if i % 12 == 11:
+			await _loading_batch(progress, "Preparando vegetação…", 0.87 + 0.1 * float(i) / maxf(1, grass_patches.size()))
 	_fence()
+	_resource_glow = CollectibleGlow.new()
+	add_child(_resource_glow)
+	_resource_glow.call("setup", resources)
+	await _loading_batch(progress, "Finalizando o mundo…", 1.0)
 	_cull_details.call_deferred()
 
 ## Objetos pequenos (móveis, janelas, placas, detalhes da cidade do meio) somem
@@ -502,7 +532,9 @@ func _container(spot: Dictionary) -> void:
 	label.text = SurvivalData.container_name(type)
 	label.visible = false
 	body.add_child(label)
-	containers[str(spot["id"])] = {"node": body, "type": type, "pos": pos, "label": label, "empty": false}
+	var glow := CollectibleGlow.make_marker(Vector3(0, size.y + 0.35, 0))
+	body.add_child(glow)
+	containers[str(spot["id"])] = {"node": body, "type": type, "pos": pos, "label": label, "glow": glow, "empty": false}
 
 ## O servidor avisou que o recipiente foi esvaziado (até reabastecer).
 func set_container_empty(id: String, empty: bool) -> void:
@@ -510,6 +542,8 @@ func set_container_empty(id: String, empty: bool) -> void:
 	if entry.is_empty():
 		return
 	entry["empty"] = empty
+	if entry.has("glow"):
+		entry["glow"].visible = not empty
 	entry["label"].modulate = Color("#9a9a9a") if empty else Color("#ffe08a")
 
 # --------------------------------------------------------------- recursos ---
@@ -534,7 +568,7 @@ func _resource(res: Dictionary) -> void:
 	match kind:
 		"tree":
 			# Desenhada em lote (MultiMesh); o corpo só guarda a colisão do tronco.
-			var variant: String = NatureModel.TREE_VARIANTS[seed_value % NatureModel.TREE_VARIANTS.size()]
+			var variant: String = NatureModel.tree_variant(seed_value)
 			var tree_scale := s * (1.12 if variant.begins_with("pine") else 1.0)
 			xform = Transform3D(Basis(Vector3.UP, body.rotation.y).scaled(Vector3.ONE * tree_scale), body.position)
 			slots["full"] = _slot(variant, xform, true)
@@ -577,30 +611,104 @@ func _light_resource(res: Dictionary, kind: String, pos: Vector3) -> void:
 		slots["full"] = _slot(kind, Transform3D(Basis(Vector3.UP, float(res.get("yaw", 0.0))).scaled(Vector3.ONE * s), pos), true)
 	resources[str(res["id"])] = {"node": null, "kind": kind, "pos": pos, "parts": [], "slots": slots, "depleted": false, "r": float(res.get("r", 0.0))}
 
+## Galho natural do servidor: o visual cai; o ponto de coleta fica no chão.
+func add_branch(res: Dictionary, animate: bool = false) -> void:
+	var id := str(res.get("id", ""))
+	if id.is_empty() or resources.has(id):
+		return
+	var p: Array = res.get("p", [])
+	if p.size() != 3:
+		return
+	var node := Node3D.new()
+	node.name = "FallenBranch"
+	node.position = Vector3(float(p[0]), float(p[1]), float(p[2]))
+	var visual := MeshInstance3D.new()
+	visual.mesh = NatureModel.mesh("stick")
+	visual.rotation.y = float(res.get("yaw", 0.0))
+	visual.visibility_range_end = PICKUP_RANGE
+	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(visual)
+	add_child(node)
+	resources[id] = {"node": node, "kind": "stick", "pos": node.position, "parts": [visual], "slots": {}, "depleted": false, "r": 0.0, "dynamic": true}
+	if _resource_glow != null:
+		_resource_glow.call("add_resource", id, resources[id])
+	if animate:
+		visual.position.y = 2.7
+		visual.rotation.z = 0.8
+		var fall := visual.create_tween().set_parallel(true)
+		fall.tween_property(visual, "position:y", 0.0, 0.85).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		fall.tween_property(visual, "rotation:z", 0.0, 0.85)
+
+func remove_branch(id: String) -> void:
+	var entry: Dictionary = resources.get(id, {})
+	if not bool(entry.get("dynamic", false)):
+		return
+	if _resource_glow != null:
+		_resource_glow.call("remove_resource", id)
+	entry["node"].queue_free()
+	resources.erase(id)
+
+func add_fruit(res: Dictionary, animate: bool = false) -> void:
+	var id := str(res.get("id", ""))
+	var p: Array = res.get("p", [])
+	var kind := str(res.get("kind", ""))
+	if id.is_empty() or fallen_fruit.has(id) or p.size() != 3 or kind not in ["apple", "acorn"]:
+		return
+	var node := Node3D.new()
+	node.name = "FallenApple" if kind == "apple" else "FallenAcorn"
+	node.position = Vector3(float(p[0]), float(p[1]), float(p[2]))
+	var visual := MeshInstance3D.new()
+	visual.mesh = NatureModel.fruit_mesh(kind)
+	visual.set_meta("preserve_authored_material", true)
+	visual.visibility_range_end = 75.0
+	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(visual)
+	add_child(node)
+	fallen_fruit[id] = {"node": node, "kind": kind, "pos": node.position}
+	if animate:
+		visual.position.y = 2.5
+		var fall := visual.create_tween()
+		fall.tween_property(visual, "position:y", 0.0, 0.7).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+
+func remove_fruit(id: String) -> void:
+	var fruit: Dictionary = fallen_fruit.get(id, {})
+	if fruit.is_empty():
+		return
+	fruit["node"].queue_free()
+	fallen_fruit.erase(id)
+
 # ------------------------------------------------------------------ lagos ---
 
-var _water_material: StandardMaterial3D
+var _water_material: ShaderMaterial
+var _water_mesh: ArrayMesh
 var _shore_material: StandardMaterial3D
 
-## Lago raso: água escura e parada, com margem de lama em volta (dá para entrar).
+## Lago raso com ondas leves e reflexos em movimento; coleta e colisão preservadas.
 func _pond(data: Dictionary) -> void:
 	if _water_material == null:
-		_water_material = StandardMaterial3D.new()
-		_water_material.albedo_color = Color("#1f3236")
-		_water_material.metallic = 0.35
-		_water_material.roughness = 0.06
+		_water_material = LakeWater.material()
+		_water_mesh = LakeWater.mesh()
 		_shore_material = _mat("dirt", "#4f4334")
 	var r := float(data["r"])
 	var node := Node3D.new()
 	node.name = "Pond"
 	node.position = Vector3(float(data["x"]), 0, float(data["z"]))
 	add_child(node)
-	var shore := _cylinder(node, Vector3(0, 0.016, 0), r + 1.4, r + 1.4, 0.012, _shore_material)
+	var shore := MeshInstance3D.new()
+	shore.name = "Shore"
+	shore.mesh = LakeWater.shore_mesh(r - 0.15, r + 1.4)
+	shore.material_override = _shore_material
+	shore.position.y = 0.022
+	node.add_child(shore)
 	shore.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	var water := _cylinder(node, Vector3(0, 0.03, 0), r, r, 0.012, _water_material)
+	var water := MeshInstance3D.new()
+	water.name = "Water"
+	water.mesh = _water_mesh
+	water.material_override = _water_material
+	water.position.y = 0.036
+	water.scale = Vector3(r, 1.0, r)
+	node.add_child(water)
 	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	for m in [shore, water]:
-		(m.mesh as CylinderMesh).radial_segments = 28
 	# Juncos na beira da água.
 	var reeds: Array = []
 	var rng := RandomNumberGenerator.new()
@@ -734,6 +842,8 @@ func set_depleted(id: String, value: bool) -> void:
 	if entry.is_empty() or bool(entry["depleted"]) == value:
 		return
 	entry["depleted"] = value
+	if _resource_glow != null:
+		_resource_glow.call("set_active", id, not value)
 	var slots: Dictionary = entry.get("slots", {})
 	match str(entry["kind"]):
 		"stick", "pebble", "fiber", "herb":

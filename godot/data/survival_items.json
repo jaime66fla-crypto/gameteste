@@ -9,7 +9,7 @@
     {"id": 4, "name": "Sucata e pólvora", "desc": "Carros velhos das cidades abandonadas viram armas."},
     {"id": 5, "name": "Zumbi",            "desc": "O que os mortos deixam também serve."}
   ],
-  "carry_base": 10,
+  "carry_base": 20,
   "items": {
     "stick":         {"name": "Galho",                "weight": 0.3,  "cat": "material"},
     "stone":         {"name": "Pedra",                "weight": 0.6,  "cat": "material"},
@@ -47,8 +47,8 @@
     "iron_vest":     {"name": "Colete de placas",     "weight": 4.0,  "cat": "armor",    "armor": 0.3,  "slot": "chest"},
     "torch":         {"name": "Tocha",                "weight": 0.5,  "cat": "gear",     "desc": "Acenda na mão para ver de noite, ou finque no chão / prenda na parede para iluminar a área"},
 
-    "bow":           {"name": "Arco",                 "weight": 0.8,  "cat": "weapon",   "soon": true, "desc": "Arma de longe, silenciosa"},
-    "stone_arrow":   {"name": "Flecha de pedra",      "weight": 0.05, "cat": "ammo",     "soon": true},
+    "bow":           {"name": "Arco",                 "weight": 0.8,  "cat": "weapon",   "weapon": "bow", "ammo": "stone_arrow", "desc": "Arma de longe, silenciosa"},
+    "stone_arrow":   {"name": "Flecha de pedra",      "weight": 0.05, "cat": "ammo"},
     "iron_arrow":    {"name": "Flecha de ferro",      "weight": 0.06, "cat": "ammo",     "soon": true},
     "waterskin":     {"name": "Cantil de couro",      "weight": 0.3,  "cat": "drink",    "soon": true, "desc": "Enche no lago e mata a sede longe da água"},
     "molotov":       {"name": "Coquetel molotov",     "weight": 0.6,  "cat": "weapon",   "soon": true, "desc": "Fogo em área: queima zumbis"},
@@ -122,8 +122,8 @@
     {"id": "leather_cap", "name": "Capuz de couro",     "era": 2, "needs": {"hide": 3, "rope": 1},               "gives": ["leather_cap", 1], "station": "workbench"},
     {"id": "leather_vest","name": "Colete de couro",    "era": 2, "needs": {"hide": 6, "rope": 2},               "gives": ["leather_vest", 1],"station": "workbench"},
     {"id": "torch",       "name": "Tocha",              "era": 2, "needs": {"stick": 1, "fiber": 2, "charcoal": 1}, "gives": ["torch", 1]},
-    {"id": "bow",         "name": "Arco",               "era": 2, "needs": {"wood": 1, "rope": 2},               "gives": ["bow", 1],         "station": "workbench", "soon": true},
-    {"id": "stone_arrow", "name": "Flechas de pedra",   "era": 2, "needs": {"stick": 1, "stone": 1, "fiber": 1}, "gives": ["stone_arrow", 4], "station": "workbench", "soon": true},
+    {"id": "bow",         "name": "Arco",               "era": 2, "needs": {"stick": 3, "rope": 2},              "gives": ["bow", 1],         "station": "workbench"},
+    {"id": "stone_arrow", "name": "Flechas de pedra",   "era": 2, "needs": {"stick": 1, "stone": 1, "fiber": 1}, "gives": ["stone_arrow", 4], "station": "workbench"},
     {"id": "waterskin",   "name": "Cantil de couro",    "era": 2, "needs": {"hide": 2, "rope": 1},               "gives": ["waterskin", 1],   "station": "workbench", "soon": true},
 
     {"id": "iron_bar",    "name": "Fundir ferro",       "era": 3, "needs": {"iron_ore": 2, "charcoal": 1},       "gives": ["iron_bar", 1],    "station": "forge"},
@@ -153,12 +153,14 @@
     {"id": "stink_bait",  "name": "Isca fedorenta",     "era": 5, "needs": {"zombie_gland": 1, "raw_meat": 1},   "gives": ["stink_bait", 1],  "soon": true}
   ],
   "_animals_comment": "Animais (dia e noite): 'flee' fogem de quem chega perto (notice m), 'defend' só atacam quem bateu neles, 'hunt' caçam quem chegar perto. Mortos viram uma carcaça (mochila no chão) com 'loot' [min, max]. 'group' = quantos nascem juntos. Nascem a spawn_min-spawn_max m de um jogador e somem longe de todos (despawn).",
-  "animal_rules": {"base": 4, "per_player": 3, "max": 36, "spawn_min": 35, "spawn_max": 110, "despawn": 180, "batch": 4, "attack_ms": 1200, "reach": 2.2, "xp": 2},
+  "animal_rules": {"base": 4, "per_player": 3, "max": 36, "spawn_min": 35, "spawn_max": 110, "despawn": 180, "batch": 4, "attack_ms": 1200, "reach": 2.2, "xp": 2, "feed_ms": 30000, "predator_share": 0.25},
+  "animal_needs": {"initial_hunger": 70, "initial_thirst": 75, "hunger_threshold": 45, "thirst_threshold": 40, "hunger_per_second": 0.22, "thirst_per_second": 0.32, "max_tick_seconds": 6, "starve_per_second": 0.2, "food_restore": 40, "drink_restore": 60, "eat_seconds": 3, "drink_seconds": 2, "hunt_seconds": 8, "hunt_rest_seconds": 12},
+  "animal_food": {"apple_mod": 11, "apple_remainder": 7, "oak_variants": [2, 3], "limit": 96, "batch": 8, "active_range": 65, "lifetime_ms": 240000, "regrow_ms": 90000},
   "animals": {
-    "rabbit": {"name": "Coelho", "hp": 15,  "behavior": "flee",   "notice": 9,  "weight": 40, "group": [1, 2], "loot": {"raw_meat": [1, 1], "hide": [0, 1]}},
-    "deer":   {"name": "Cervo",  "hp": 80,  "behavior": "flee",   "notice": 16, "weight": 30, "group": [1, 3], "loot": {"raw_meat": [3, 5], "hide": [2, 3]}},
-    "boar":   {"name": "Javali", "hp": 110, "behavior": "defend", "notice": 6,  "weight": 18, "group": [1, 2], "damage": 14, "loot": {"raw_meat": [3, 4], "hide": [1, 2]}},
-    "wolf":   {"name": "Lobo",   "hp": 70,  "behavior": "hunt",   "notice": 20, "weight": 12, "group": [2, 3], "damage": 11, "loot": {"raw_meat": [1, 2], "hide": [1, 2]}}
+    "rabbit": {"name": "Coelho", "hp": 15,  "behavior": "flee",   "diet": "plants", "food": "apple", "notice": 9,  "weight": 40, "group": [1, 2], "loot": {"raw_meat": [1, 1], "hide": [0, 1]}},
+    "deer":   {"name": "Cervo",  "hp": 80,  "behavior": "flee",   "diet": "plants", "food": "grass", "notice": 16, "weight": 30, "group": [1, 3], "loot": {"raw_meat": [3, 5], "hide": [2, 3]}},
+    "boar":   {"name": "Javali", "hp": 110, "behavior": "defend", "diet": "plants", "food": "acorn", "notice": 6,  "weight": 18, "group": [1, 2], "damage": 14, "loot": {"raw_meat": [3, 4], "hide": [1, 2]}},
+    "wolf":   {"name": "Lobo",   "hp": 70,  "behavior": "hunt",   "diet": "meat", "food": "prey", "prey": ["rabbit", "deer", "boar"], "notice": 20, "weight": 12, "group": [2, 3], "damage": 11, "loot": {"raw_meat": [1, 2], "hide": [1, 2]}}
   },
   "_builds_comment": "Construção (B): peças numa grade de 'cell' m; cada andar tem 'story' m e o piso térreo (fundação) fica em 'base' m. slot: cell (fundação k=0, piso/telhado k>=1), edge (paredes nas bordas), door (dentro da parede com porta), stairs (em cima de fundação/piso), free (fogueira, baú, cama: em qualquer chão). 'r' = raio no chão das peças livres. Dano: golpe x melee_factor (machado x axe_factor, soco = fist), zumbi x zombie_factor. Consertar só repair_wait s depois do último dano; custa refund x o que falta. Desmontar devolve refund x material (proporcional à vida).",
   "build_rules": {"cell": 3.0, "story": 3.0, "base": 0.4, "reach": 7.0, "per_player": 300, "per_world": 4000, "melee_factor": 0.5, "axe_factor": 1.0, "fist": 2, "zombie_factor": 3, "repair_wait": 15, "refund": 0.5, "bed_cooldown": 120, "auth_max": 12},

@@ -33,6 +33,42 @@ static func item_name(id: String) -> String:
 static func recipes() -> Array:
 	return catalog().get("recipes", [])
 
+## Estações utilizáveis agora: mesmo alcance horizontal e vertical do servidor.
+static func nearby_stations(pieces: Array, position: Vector3) -> Dictionary:
+	var available := {}
+	for piece in pieces:
+		var kind := str(piece.get("kind", ""))
+		var def := build_def(kind)
+		if not bool(def.get("station", false)) or (bool(def.get("lit", false)) and not bool(piece.get("on", false))):
+			continue
+		var p: Array = piece.get("p", [])
+		if p.size() != 3:
+			continue
+		var dx := float(p[0]) - position.x
+		var dz := float(p[2]) - position.z
+		if sqrt(dx * dx + dz * dz) < 3.6 and absf(float(p[1]) - position.y) < 2.0:
+			available[kind] = true
+	return available
+
+## Uma única regra de disponibilidade para o inventário e o manual.
+static func craft_error(recipe: Dictionary, inv: Dictionary, known: Array, stations: Dictionary, weight: float = 0.0, cap: float = INF) -> String:
+	var station := str(recipe.get("station", ""))
+	if bool(recipe.get("soon", false)) or bool(build_def(station).get("soon", false)):
+		return "Essa receita ainda não existe no jogo."
+	if bool(recipe.get("page", false)) and not known.has(str(recipe.get("id", ""))):
+		return "Falta a página do manual dessa receita."
+	var needs: Dictionary = recipe.get("needs", {})
+	for id in needs:
+		if int(inv.get(id, 0)) < int(needs[id]):
+			return "Falta %s." % item_name(str(id)).to_lower()
+	if not station.is_empty() and not bool(stations.get(station, false)):
+		return station_note(station) + "."
+	var gives: Array = recipe.get("gives", ["", 0])
+	var output := float(item(str(gives[0])).get("weight", 0.0)) * int(gives[1])
+	if weight - inventory_weight(needs) + output > maxf(cap, weight) + 0.000001:
+		return "Peso demais para fabricar. Guarde ou largue alguns itens."
+	return ""
+
 ## Construção pelo id ("forge" -> {name, cost, station, lit...}).
 static func build_def(kind: String) -> Dictionary:
 	return catalog().get("builds", {}).get(kind, {})

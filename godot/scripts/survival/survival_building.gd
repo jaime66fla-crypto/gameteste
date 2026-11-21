@@ -53,6 +53,9 @@ var _status: Label
 var _auth_panel: PanelContainer
 var _auth_list: VBoxContainer
 var _timer := 0.0
+var _demolish_id := ""
+var _cancel_demolition_button: Button
+var _demolition_captured := false
 
 func setup(survival: Node, main: Node, local_player: CharacterBody3D) -> void:
 	controller = survival
@@ -238,6 +241,8 @@ func toggle() -> void:
 	set_building(not building)
 
 func set_building(on: bool) -> void:
+	if not on:
+		cancel_demolition()
 	building = on
 	if player != null:
 		player.set("attack_blocked", on) # o clique coloca a peça em vez de socar
@@ -272,6 +277,14 @@ func cycle(step: int) -> void:
 
 ## Teclas do modo (e V fora dele). Devolve true se usou o evento.
 func handle_input(event: InputEvent) -> bool:
+	if not _demolish_id.is_empty():
+		if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
+			cancel_demolition()
+			return true
+		if _pressed(event, "build"):
+			set_building(false)
+			return true
+		return false
 	if _bench_panel.visible:
 		if event is InputEventKey and event.pressed and (event.physical_keycode == KEY_ESCAPE or _pressed(event, "interact")):
 			close_bench()
@@ -378,10 +391,29 @@ func _demolish_aimed() -> void:
 		controller.call("_toast", "SÓ O DONO PODE DESMONTAR")
 		return
 	var id := _aimed_id
-	if offline:
-		player.call("start_channel", "DESMONTANDO", DEMOLISH_TIME, func(): _offline_remove(id))
+	if player.call("start_channel", "DESMONTANDO", DEMOLISH_TIME, func():
+		_finish_demolition_ui()
+		if offline:
+			_offline_remove(id)
+		else:
+			Net.send({"t": "bdel", "b": id})):
+		_demolish_id = id
+		_cancel_demolition_button.show()
+		_demolition_captured = PointerMode.is_captured()
+		PointerMode.release()
+
+func _finish_demolition_ui() -> void:
+	_demolish_id = ""
+	_cancel_demolition_button.hide()
+	if _demolition_captured and not bool(controller.get("local_dead")):
+		PointerMode.capture()
+	_demolition_captured = false
+
+func cancel_demolition() -> void:
+	if _demolish_id.is_empty():
 		return
-	player.call("start_channel", "DESMONTANDO", DEMOLISH_TIME, func(): Net.send({"t": "bdel", "b": id}))
+	player.call("cancel_channel")
+	_finish_demolition_ui()
 
 func _repair_aimed() -> void:
 	var piece: Dictionary = rules.pieces.get(_aimed_id, {})
@@ -397,6 +429,8 @@ func _repair_aimed() -> void:
 # ------------------------------------------------------------------ mira ---
 
 func _process(delta: float) -> void:
+	if not _demolish_id.is_empty() and (float(player.get("channel_left")) <= 0.0 or str(player.get("channel_label")) != "DESMONTANDO"):
+		_finish_demolition_ui()
 	if not building:
 		return
 	if bool(controller.get("local_dead")) or bool(controller.call("is_driving")):
@@ -416,9 +450,11 @@ func _process(delta: float) -> void:
 		_status.text = _aimed_text()
 		return
 	_candidate_error = rules.check(_candidate, owns)
+	if not offline and _candidate_error.is_empty():
+		_candidate_error = rules.ground_error(_candidate, SurvivalData.world())
 	if _candidate_error.is_empty():
 		var c: Vector3 = rules.center(_candidate)
-		if Vector2(c.x - player.global_position.x, c.z - player.global_position.z).length() > float(SurvivalData.catalog().get("build_rules", {}).get("reach", 7.0)):
+		if Vector2(c.x - player.global_position.x, c.z - player.global_position.z).length() > float(SurvivalData.catalog().get("build_rules", {}).get("reach", 7.0)) or absf(c.y - player.global_position.y) > 6.0:
 			_candidate_error = "Longe demais."
 	if _candidate_error.is_empty():
 		var missing := _missing(kind)
@@ -593,7 +629,7 @@ func close_auth() -> void:
 	PointerMode.capture()
 
 func ui_open() -> bool:
-	return (_auth_panel != null and _auth_panel.visible) or (_bench_panel != null and _bench_panel.visible)
+	return not _demolish_id.is_empty() or (_auth_panel != null and _auth_panel.visible) or (_bench_panel != null and _bench_panel.visible)
 
 # ---------------------------------------------------------------- bancada ---
 
@@ -759,6 +795,18 @@ func _key(action: String) -> String:
 
 func _build_ui() -> void:
 	var ui: CanvasLayer = controller.get("ui")
+	_cancel_demolition_button = Button.new()
+	_cancel_demolition_button.name = "CancelDemolition"
+	_cancel_demolition_button.text = "Cancelar demolição  [Esc]"
+	_cancel_demolition_button.set_anchors_preset(Control.PRESET_CENTER)
+	_cancel_demolition_button.offset_left = -145
+	_cancel_demolition_button.offset_right = 145
+	_cancel_demolition_button.offset_top = 90
+	_cancel_demolition_button.offset_bottom = 140
+	UiTheme.secondary(_cancel_demolition_button, 15)
+	_cancel_demolition_button.pressed.connect(cancel_demolition)
+	_cancel_demolition_button.hide()
+	ui.add_child(_cancel_demolition_button)
 	_bar = PanelContainer.new()
 	_bar.visible = false
 	_bar.anchor_left = 0.5

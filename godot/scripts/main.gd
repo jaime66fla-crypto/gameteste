@@ -3,6 +3,7 @@ const PointerMode = preload("res://scripts/pointer_mode.gd")
 
 const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
+const CelStyle = preload("res://scripts/cel_style.gd")
 const PlayerScript = preload("res://scripts/player.gd")
 const MatchMapScript = preload("res://scripts/match_map.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
@@ -46,8 +47,17 @@ const AmmoHudScript = preload("res://scripts/ui/ammo_hud.gd")
 const TouchControlsScript = preload("res://scripts/ui/touch_controls.gd")
 const Controls = preload("res://scripts/controls.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+var match_ready := false
+
+func _loading_step(message: String, fraction: float) -> void:
+    var loading := get_tree().root.get_node_or_null("MatchLoading")
+    if loading != null:
+        loading.call("set_progress", message, fraction)
+        await get_tree().process_frame
 
 func _ready() -> void:
+    set_process(false)
+    await _loading_step("Preparando o mundo…", 0.48)
     PointerMode.setup_window(get_tree())
     # Todos os menus e botões do jogo com o tema do menu principal (fonte, cores, botões).
     get_tree().root.theme = UiTheme.theme()
@@ -58,6 +68,7 @@ func _ready() -> void:
     GameSettings.apply(settings,get_viewport())
     var survival := Net.in_match and bool(Net.start_info.get("survival", false))
     _build_world(survival)
+    await _loading_step("Montando o cenário…", 0.52)
     # Sobrevivência: mundo só de floresta (survival_world.gd), sem a cidade antiga.
     if Net.in_match and not survival:
         # Eliminatória, Mata-mata e Equipes: um mapa de blocos por modo
@@ -70,7 +81,14 @@ func _ready() -> void:
     if survival:
         # Sobrevivência: mundo aberto em volta da cidade do Campo de Fogo.
         survival_world = SurvivalWorldScript.new()
+        survival_world.set("staged_loading", get_tree().root.has_node("MatchLoading"))
         add_child(survival_world)
+        if bool(survival_world.get("staged_loading")):
+            await survival_world.call("build_staged", func(message: String, fraction: float):
+                var loading := get_tree().root.get_node_or_null("MatchLoading")
+                if loading != null:
+                    loading.call("set_progress", message, 0.54 + fraction * 0.30))
+    await _loading_step("Preparando o jogador…", 0.86)
     var ambient := Node3D.new()
     ambient.name = "EnvironmentAudio"
     ambient.set_script(AmbientAudioScript)
@@ -80,6 +98,8 @@ func _ready() -> void:
     player.set_script(PlayerScript)
     player.position = TrainingGroundScript.SPAWN # praça da cidade online / nascimento do treino
     add_child(player)
+    player.set_physics_process(false)
+    player.set_process_unhandled_input(false)
     player.mouse_sensitivity *= float(settings["sensitivity"])
     if not Net.in_match:
         # Treino offline: campo de prova com as texturas Kenney (training_ground.gd).
@@ -87,6 +107,7 @@ func _ready() -> void:
         training_ground.set("sound_fx", player.get("sound_fx"))
         add_child(training_ground)
     _build_ui()
+    await _loading_step("Preparando a partida…", 0.92)
     if survival:
         match_controller = SurvivalControllerScript.new()
         match_controller.call("setup", self, player, survival_world)
@@ -100,6 +121,7 @@ func _ready() -> void:
         _spawn_training_dummies()
     _build_hud(survival)
     _build_quit_dialog(survival)
+    add_child(CelStyle.new())
     # O mouse não é recapturado enquanto a mochila ou a confirmação estão abertas.
     player.set("ui_blocking", func() -> bool:
         if quit_dialog != null and quit_dialog.visible:
@@ -109,6 +131,18 @@ func _ready() -> void:
         return match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open")))
     # Fechar a janela (X / Alt+F4) também pergunta antes de sair da partida.
     get_tree().set_auto_accept_quit(false)
+    var loading := get_tree().root.get_node_or_null("MatchLoading")
+    var loading_failed := loading != null and bool(loading.get("_failed_state"))
+    match_ready = not loading_failed
+    var dead := match_controller != null and bool(match_controller.get("local_dead"))
+    player.set_physics_process(not dead and not loading_failed)
+    player.set_process_unhandled_input(not loading_failed)
+    var busy := match_controller != null and match_controller.has_method("ui_open") and bool(match_controller.call("ui_open"))
+    if dead or busy or loading_failed:
+        PointerMode.release()
+    else:
+        PointerMode.capture()
+    set_process(not loading_failed)
 
 func _exit_tree() -> void:
     get_tree().set_auto_accept_quit(true)

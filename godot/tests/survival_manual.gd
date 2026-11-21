@@ -3,7 +3,7 @@ extends SceneTree
 ## seções, abre páginas e confere o botão Fabricar; monta bancada e forja.
 ## godot --headless --path godot --script res://tests/survival_manual.gd
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
-const ManualUI = preload("res://scripts/survival/survival_manual.gd")
+var ManualUI: GDScript
 const Model = preload("res://scripts/survival/building_model.gd")
 const Rules = preload("res://scripts/survival/building_rules.gd")
 const NatureModel = preload("res://scripts/survival/nature_model.gd")
@@ -29,10 +29,15 @@ func _texts(node: Node) -> String:
 	return out
 
 func _initialize() -> void:
+	_run.call_deferred()
+
+func _run() -> void:
+	ManualUI = load("res://scripts/survival/survival_manual.gd")
 	var manual = ManualUI.new()
 	root.add_child(manual)
 	await process_frame
 	manual.call("set_inventory", {"hide": 6, "rope": 2})
+	manual.call("set_crafting_context", {"workbench": true}, 2.8, 20.0)
 	manual.call("open", "workbench")
 	await process_frame
 	check(manual.visible, "abre na bancada")

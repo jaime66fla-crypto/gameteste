@@ -21,6 +21,9 @@ import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 import { BuildGrid } from './godot-building.js';
+import { terrainHeight, mountainIntersects } from './godot-terrain.js';
+import { BRANCH_LIMIT, BRANCH_LIFETIME_MS, BRANCH_TREES, treeSeed, branchPeriod, branchSpot } from './godot-tree-branches.js';
+import { ensureAnimalNeeds, animalSnapshot, tickAnimalNeeds, dropTreeFruit, animalForage } from './godot-animal-needs.js';
 
 const ANIMALS = catalog.animals || {};
 const ANIMAL = catalog.animal_rules || {};
@@ -61,7 +64,8 @@ const CHAR_KEEP_MS = 3 * 24 * 3600 * 1000; // personagem guardado de quem saiu
 // útil da sniper/fuzil, senão o alvo distante fica "congelado" e o tiro erra.
 const INTEREST_RANGE = 360;
 // Armas de fogo: mesmo dano por acerto do mata-mata (scripts/weapon_data.gd).
-const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+const WEAPON_DAMAGE = { pistol: 22, bow: 55, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+const MAGAZINE_SIZE = { pistol: 15, smg: 30, rifle: 30, shotgun: 6, sniper: 5 };
 const ZONE_MULTIPLIER = { head: 2.0, chest: 1.0, pelvis: 0.9, arm: 0.7, leg: 0.7 };
 const FIST_DAMAGE = 12; // soco sem arma branca
 const MAX_HITS_PER_SECOND = 18;
@@ -165,7 +169,35 @@ const ARMOR_COVERS = { head: ['head'], chest: ['chest', 'pelvis'] };
 export function carriedWeight(player) {
 	let worn = 0;
 	for (const field of Object.values(GEAR_SLOTS)) worn += ITEMS[player[field]]?.weight || 0;
-	return Math.round((inventoryWeight(player.inv) + worn) * 100) / 100;
+	let loaded = 0;
+	for (const [weapon, rounds] of Object.entries(validMagazines(player))) {
+		loaded += rounds * (ITEMS[weaponItem(weapon)?.ammo]?.weight || 0);
+	}
+	return Math.round((inventoryWeight(player.inv) + worn + loaded) * 100) / 100;
+}
+
+function weaponItem(weapon) {
+	return Object.values(ITEMS).find((item) => item.weapon === weapon);
+}
+
+function ownsWeapon(player, weapon) {
+	return Object.keys(player.inv || {}).some((id) => player.inv[id] > 0 && ITEMS[id]?.weapon === weapon);
+}
+
+function validMagazines(player) {
+	const out = {};
+	for (const [weapon, rounds] of Object.entries(player.magazines || {})) {
+		if (MAGAZINE_SIZE[weapon] && ownsWeapon(player, weapon) && Number.isInteger(rounds) && rounds > 0) {
+			out[weapon] = Math.min(rounds, MAGAZINE_SIZE[weapon]);
+		}
+	}
+	return out;
+}
+
+function unloadMagazine(player, weapon, into = player.inv) {
+	const rounds = validMagazines(player)[weapon] || 0;
+	if (rounds) addItems(into, weaponItem(weapon).ammo, rounds);
+	if (player.magazines) delete player.magazines[weapon];
 }
 
 /**
@@ -598,7 +630,7 @@ export class GodotSurvival {
 
 	newCharacter() {
 		const spawn = world.spawns[Math.floor(Math.random() * world.spawns.length)];
-		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, back: '', head: '', chest: '', dead: false, infectedAt: 0 };
+		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, magazines: {}, back: '', head: '', chest: '', dead: false, infectedAt: 0 };
 	}
 
 	restore(saved) {
@@ -609,6 +641,7 @@ export class GodotSurvival {
 		const left = Math.max(0, Math.min(INFECTION_MS, Number(saved.infectedLeft) || 0));
 		return {
 			p: saved.p, y: saved.y || 0, hp: saved.hp, hunger: saved.hunger, thirst: saved.thirst, inv: saved.inv || {}, back: saved.back || '', head: saved.head || '', chest: saved.chest || '', dead: false,
+			magazines: validMagazines(saved),
 			infectedAt: left > 0 ? Date.now() - (INFECTION_MS - left) : 0, known,
 		};
 	}
@@ -640,9 +673,11 @@ export class GodotSurvival {
 				.filter((p) => p.id !== me.id && this.sessions.has(p.id))
 				.map((p) => ({ id: p.id, name: p.name, rank: p.rank, p: p.p, dead: p.dead })),
 			zombies: Object.values(s.zombies),
-			animals: Object.values(s.animals || {}).map((a) => ({ id: a.id, kind: a.kind, hp: a.hp, p: a.p })),
+			animals: Object.values(s.animals || {}).map((a) => animalSnapshot(a, now)),
+			fruits: Object.values(s.fruits || {}).filter((f) => f.expires > now),
 			vehicles: Object.values(this.vehicles()).map((v) => this.vehiclePacket(v)),
 			bags: Object.values(s.bags).map((b) => this.bagSummary(b)),
+			branches: Object.values(s.branches || {}).filter((r) => r.expires > now),
 			sleepers: this.sleepers(),
 			searched: Object.keys(s.containers).filter((k) => s.containers[k].refillAt > now && !Object.keys(s.containers[k].items).length),
 			depleted,
@@ -654,7 +689,7 @@ export class GodotSurvival {
 	}
 
 	invPacket(player) {
-		return { inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back), known: player.known || [] };
+		return { inv: player.inv, magazines: validMagazines(player), back: player.back || '', head: player.head || '', chest: player.chest || '', weight: carriedWeight(player), cap: carryLimit(player.back), known: player.known || [] };
 	}
 
 	sendInv(player) {
@@ -706,7 +741,8 @@ export class GodotSurvival {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, dv: me.vehicle || '', ch: characterId(d.ch),
-					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && ITEMS[d.tool]?.melee ? d.tool : '',
+					act: ['chop', 'pry', 'swing', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
+					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
 				}, me.id);
 				return;
@@ -714,11 +750,23 @@ export class GodotSurvival {
 			case 'z': return isHost && this.zombieStates(d.l);
 			case 'an': return isHost && this.animalStates(d.l);
 			case 'ahit': return isHost && this.animalHit(d);
+			case 'aforage': return isHost && this.animalForage(d);
 			case 'shot': {
 				const o = vec3(d.o, 600);
 				const e = vec3(d.e, 1200);
 				if (!o || !e) return;
-				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e }, me.id, INTEREST_RANGE);
+				let arrow = {};
+				if (d.w === 'bow') {
+					const item = Object.keys(me.inv).find((key) => me.inv[key] > 0 && ITEMS[key]?.weapon === 'bow');
+					if (!item || !me.inv[ITEMS[item].ammo] || !this.hitCheck.recordArrow({ attacker: me, id: d.a, origin: o, velocity: d.v })) return;
+					arrow = { a: d.a, v: d.v };
+				}
+				this.broadcastNear(o, { t: 'shot', id: me.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', o, e, ...arrow }, me.id, INTEREST_RANGE);
+				if ((me.magazines?.[d.w] || 0) > 0) {
+					me.magazines[d.w]--;
+					this.save();
+					this.sendInv(me);
+				}
 				return;
 			}
 			case 'hit': return this.gunHit(me, d);
@@ -751,7 +799,7 @@ export class GodotSurvival {
 			case 'equip': return this.equip(me, d, note);
 			case 'unequip': return this.unequip(me, d, note);
 			case 'gather_start': {
-				const res = RESOURCES[d.r];
+				const res = this.resourceAt(d.r);
 				if (!res || flat(me.p, res.p) > REACH + (res.r || 0)) return;
 				me.gatherAt = Date.now();
 				me.gatherId = res.id;
@@ -772,8 +820,16 @@ export class GodotSurvival {
 				// Munição gasta na recarga (o jogo avisa quantas balas foram para o pente).
 				const item = d.ammo;
 				const n = Number.isInteger(d.n) ? Math.max(0, Math.min(d.n, 200)) : 0;
-				if (!item?.startsWith?.('a_') || !n) return;
-				removeItems(me.inv, item, Math.min(n, me.inv[item] || 0));
+				if ((!item?.startsWith?.('a_') && item !== 'stone_arrow') || !n) return;
+				let supplied = Math.min(n, me.inv[item] || 0);
+				if (d.w !== undefined) {
+					if (!MAGAZINE_SIZE[d.w] || !ownsWeapon(me, d.w) || weaponItem(d.w)?.ammo !== item) return;
+					me.magazines = validMagazines(me);
+					supplied = Math.min(supplied, MAGAZINE_SIZE[d.w] - (me.magazines[d.w] || 0));
+					if (supplied <= 0) return;
+					me.magazines[d.w] = (me.magazines[d.w] || 0) + supplied;
+				}
+				removeItems(me.inv, item, supplied);
 				this.save();
 				this.sendInv(me);
 				return;
@@ -794,13 +850,15 @@ export class GodotSurvival {
 
 	gunHit(me, d) {
 		const weapon = WEAPON_DAMAGE[d.w] ? d.w : null;
-		if (!weapon || !me.inv['w_' + weapon] || !this.allowHit(me.id)) return;
+		if (!weapon || !Object.keys(me.inv).some((item) => me.inv[item] > 0 && ITEMS[item]?.weapon === weapon) || !this.allowHit(me.id)) return;
 		let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
 		// Alcance da arma; em jogadores, cabeça plausível e taxa de tiros na cabeça.
 		const s = this.state;
-		const target = s.zombies[d.target] || s.players[d.target];
+		const target = s.zombies[d.target] || s.players[d.target] || s.animals?.[d.target];
+		if (weapon === 'bow' && !target) return;
 		if (target) {
-			const verdict = this.hitCheck.check({ attacker: me, target, weapon, zone, point: d.pt, player: !s.zombies[d.target] });
+			const args = { attacker: me, target, weapon, zone, point: d.pt, player: !!s.players[d.target] };
+			const verdict = weapon === 'bow' ? this.hitCheck.checkArrow({ ...args, id: d.a }) : this.hitCheck.check(args);
 			if (!verdict.ok) return;
 			zone = verdict.zone;
 		}
@@ -866,6 +924,8 @@ export class GodotSurvival {
 			this.credit(attacker, XP.player);
 		}
 		// Tudo o que carregava e vestia fica numa mochila no chão.
+		for (const weapon of Object.keys(validMagazines(target))) unloadMagazine(target, weapon);
+		target.magazines = {};
 		for (const field of Object.values(GEAR_SLOTS)) {
 			if (target[field]) addItems(target.inv, target[field], 1);
 			target[field] = '';
@@ -1061,6 +1121,7 @@ export class GodotSurvival {
 			}
 			if (Math.abs(x) > world.half_size - 4 || Math.abs(z) > world.half_size - 4) continue;
 			const p = [round1(x), 0.2, round1(z)];
+			p[1] = round1(terrainHeight(p[0], p[2]) + 0.3);
 			const nearest = Math.min(...players.map((pl) => flat(pl.p, p)));
 			if (nearest < ZOMBIE_SPAWN_MIN || nearest > ZOMBIE_SPAWN_MAX) continue;
 			return p;
@@ -1096,22 +1157,34 @@ export class GodotSurvival {
 	animalHit(d) {
 		const s = this.state;
 		const animal = s.animals?.[d.a];
-		const target = s.players[d.target];
+		const prey = s.animals?.[d.target];
+		const target = prey || s.players[d.target];
 		const rule = animal && ANIMALS[animal.kind];
-		if (!rule?.damage || !target || target.dead || !this.sessions.has(target.id) || target.vehicle) return;
+		if (!rule?.damage || !target || target === animal || target.dead || target.vehicle) return;
+		if (!prey && !this.sessions.has(target.id)) return;
 		const now = Date.now();
+		ensureAnimalNeeds(animal, now);
+		const defending = animal.aggro === target.id && (animal.aggroUntil || 0) > now;
+		if (prey && !defending && animal.hunger > catalog.animal_needs.hunger_threshold) return;
+		if (prey && !defending && (!rule.prey?.includes(prey.kind) || (animal.fedUntil || 0) > now)) return;
+		if (!prey && (animal.fedUntil || 0) > now && !defending) return;
 		if (now - (animal.lastHit || 0) < (ANIMAL.attack_ms || 1200)) return;
 		if (flat(animal.p, target.p) > (ANIMAL.reach || 2.2) + ZOMBIE_REACH_LAG) return;
+		if (Math.abs(animal.p[1] - target.p[1]) > 2.5) return;
 		animal.lastHit = now;
+		if (prey) return this.hurtAnimal(prey, rule.damage, animal);
 		this.damagePlayer(target, rule.damage, animal.id, 'a_' + animal.kind);
 	}
 
 	/** Golpe/tiro num animal; morto, vira uma carcaça (mochila no chão) com carne e couro. */
 	hurtAnimal(animal, amount, attacker, zone = 'chest') {
 		const s = this.state;
+		animal.aggro = attacker.id;
+		animal.aggroUntil = Date.now() + 25000;
 		animal.hp = Math.max(0, round1(animal.hp - amount));
 		if (animal.hp > 0) {
 			this.broadcastNear(animal.p, { t: 'ahp', id: animal.id, hp: animal.hp, by: attacker.id, zone });
+			this.save();
 			return;
 		}
 		delete s.animals[animal.id];
@@ -1121,8 +1194,15 @@ export class GodotSurvival {
 			const n = randInt(min, max);
 			if (n > 0 && ITEMS[item]) loot[item] = n;
 		}
-		if (Object.keys(loot).length) this.makeBag(animal.p, loot, '', `Carcaça de ${String(rule.name || 'animal').toLowerCase()}`);
-		this.credit(attacker, ANIMAL.xp || 2);
+		const eaten = s.animals?.[attacker.id] === attacker && ANIMALS[attacker.kind]?.diet === 'meat';
+		if (!eaten && Object.keys(loot).length) this.makeBag(animal.p, loot, '', `Carcaça de ${String(rule.name || 'animal').toLowerCase()}`);
+		if (eaten) {
+			ensureAnimalNeeds(attacker);
+			attacker.hunger = Math.min(100, attacker.hunger + catalog.animal_needs.food_restore);
+			attacker.fedUntil = Date.now() + (ANIMAL.feed_ms || 30000);
+			this.broadcast({ t: 'afed', id: attacker.id, left: (ANIMAL.feed_ms || 30000) / 1000 });
+			this.broadcast({ t: 'aneeds', l: [animalSnapshot(attacker)] });
+		} else if (this.sessions.has(attacker.id)) this.credit(attacker, ANIMAL.xp || 2);
 		this.broadcast({ t: 'adead', id: animal.id, by: attacker.id, zone });
 		this.save();
 	}
@@ -1134,7 +1214,8 @@ export class GodotSurvival {
 		const players = this.living();
 		const gone = [];
 		for (const animal of Object.values(s.animals)) {
-			if (!players.some((p) => flat(p.p, animal.p) < (ANIMAL.despawn || 180))) {
+			const underground = animal.p[1] < terrainHeight(animal.p[0], animal.p[2]) - 0.75;
+			if (underground || !players.some((p) => flat(p.p, animal.p) < (ANIMAL.despawn || 180))) {
 				delete s.animals[animal.id];
 				gone.push(animal.id);
 			}
@@ -1142,21 +1223,51 @@ export class GodotSurvival {
 		if (gone.length) this.broadcast({ t: 'agone', l: gone });
 		if (!players.length || !Object.keys(ANIMALS).length) return;
 		const target = Math.min(ANIMAL.max || 36, (ANIMAL.base || 4) + (ANIMAL.per_player || 3) * players.length);
+		const predatorCap = Math.max(1, Math.floor(target * (ANIMAL.predator_share || 0.25)));
+		const counts = {};
+		for (const a of Object.values(s.animals)) counts[a.kind] = (counts[a.kind] || 0) + 1;
+		const rebalanced = [];
+		const remove = (a) => { delete s.animals[a.id]; counts[a.kind]--; rebalanced.push(a.id); };
+		for (const a of Object.values(s.animals)) {
+			if (ANIMALS[a.kind]?.diet === 'meat' && counts[a.kind] > predatorCap) remove(a);
+		}
+		const missingKinds = Object.keys(ANIMALS).filter((kind) => !counts[kind]);
+		// Mundos antigos podem estar cheios de uma espécie. Abra vagas antes de repor.
+		const keep = Math.max(0, target - missingKinds.length);
+		while (Object.keys(s.animals).length > keep) {
+			const donors = Object.values(s.animals).filter((a) => counts[a.kind] > 1);
+			donors.sort((a, b) => counts[b.kind] - counts[a.kind] || Math.min(...players.map((p) => flat(p.p, b.p))) - Math.min(...players.map((p) => flat(p.p, a.p))));
+			if (!donors.length) break;
+			remove(donors[0]);
+		}
+		if (rebalanced.length) this.broadcast({ t: 'agone', l: rebalanced });
 		const born = [];
 		for (let i = 0; i < (ANIMAL.batch || 4) && Object.keys(s.animals).length < target; i++) {
 			const spot = this.animalSpot(players);
 			if (!spot) break;
-			const [kind, rule] = weighted(Object.entries(ANIMALS), ([, r]) => r.weight || 1);
-			const group = randInt(rule.group?.[0] || 1, rule.group?.[1] || 1);
+			const count = (kind) => Object.values(s.animals).filter((a) => a.kind === kind).length;
+			const available = Object.entries(ANIMALS).filter(([kind, r]) => r.diet !== 'meat' || count(kind) < predatorCap);
+			const missing = available.filter(([kind]) => count(kind) === 0);
+			const [kind, rule] = missing[0] || weighted(available, ([, r]) => r.weight || 1);
+			const reserved = missing.filter(([other]) => other !== kind).length;
+			const slots = target - Object.keys(s.animals).length - reserved;
+			const group = Math.min(randInt(rule.group?.[0] || 1, rule.group?.[1] || 1), slots, rule.diet === 'meat' ? predatorCap - count(kind) : target);
 			for (let g = 0; g < group && Object.keys(s.animals).length < target; g++) {
 				const p = [round1(spot[0] + (Math.random() - 0.5) * 6), 0.2, round1(spot[2] + (Math.random() - 0.5) * 6)];
+				// Cada membro fica sobre o terreno da sua posição, inclusive em encostas.
+				p[1] = round1(terrainHeight(p[0], p[2]) + 0.3);
 				const animal = { id: 'a' + ++s.aSeq, kind, hp: rule.hp, p };
+				ensureAnimalNeeds(animal);
 				s.animals[animal.id] = animal;
 				born.push(animal);
 			}
 		}
-		if (born.length) this.broadcast({ t: 'aspawn', l: born.map((a) => ({ id: a.id, kind: a.kind, hp: a.hp, p: a.p })) });
+		if (born.length) this.broadcast({ t: 'aspawn', l: born.map((a) => animalSnapshot(a)) });
 	}
+
+	tickAnimalNeeds(now = Date.now()) { tickAnimalNeeds(this, now); }
+	dropTreeFruit(now = Date.now()) { dropTreeFruit(this, now); }
+	animalForage(d) { animalForage(this, d); }
 
 	/** Ponto no mato a 35–110 m de algum jogador, longe de todos os outros, fora dos lagos. */
 	animalSpot(players) {
@@ -1167,6 +1278,7 @@ export class GodotSurvival {
 			const a = Math.random() * Math.PI * 2;
 			const d = min + Math.random() * (max - min);
 			const p = [round1(anchor.p[0] + Math.cos(a) * d), 0.2, round1(anchor.p[2] + Math.sin(a) * d)];
+			p[1] = round1(terrainHeight(p[0], p[2]) + 0.3);
 			if (Math.abs(p[0]) > world.half_size - 8 || Math.abs(p[2]) > world.half_size - 8) continue;
 			if ((world.ponds || []).some((pond) => Math.hypot(pond.x - p[0], pond.z - p[2]) < pond.r + 4)) continue;
 			if (players.some((pl) => flat(pl.p, p) < min)) continue;
@@ -1196,8 +1308,10 @@ export class GodotSurvival {
 		const now = Date.now();
 		let box = s.containers[spot.id];
 		if (!box || (box.refillAt <= now && !Object.keys(box.items).length)) {
+			const refilled = !!box;
 			box = { items: rollLoot(spot.type), refillAt: now + CONTAINER_REFILL_MS };
 			s.containers[spot.id] = box;
+			if (refilled) this.broadcast({ t: Object.keys(box.items).length ? 'refilled' : 'emptied', k: spot.id });
 			this.save();
 		}
 		reply({ t: 'container', k: spot.id, title: catalog.loot[spot.type]?.name || 'Recipiente', items: box.items });
@@ -1251,8 +1365,11 @@ export class GodotSurvival {
 		const have = me.inv[d.item] || 0;
 		const n = Number.isInteger(d.n) && d.n > 0 ? Math.min(d.n, have) : have;
 		if (!n) return;
+		const dropped = { [d.item]: n };
+		const weapon = ITEMS[d.item]?.weapon;
+		if (weapon && n === have) unloadMagazine(me, weapon, dropped);
 		removeItems(me.inv, d.item, n);
-		this.makeBag(me.p, { [d.item]: n }, me.name);
+		this.makeBag(me.p, dropped, me.name);
 		this.save();
 		this.sendInv(me);
 		note(`Largou ${ITEMS[d.item]?.name || d.item} ×${n}.`);
@@ -1369,6 +1486,12 @@ export class GodotSurvival {
 		for (const [item, n] of Object.entries(recipe.needs)) {
 			if ((me.inv[item] || 0) < n) return note(`Falta ${ITEMS[item]?.name || item}.`);
 		}
+		const before = carriedWeight(me);
+		const spentWeight = inventoryWeight(recipe.needs);
+		const outputWeight = (ITEMS[recipe.gives[0]]?.weight || 0) * recipe.gives[1];
+		if (before - spentWeight + outputWeight > Math.max(carryLimit(me.back), before) + 1e-6) {
+			return note('Peso demais para fabricar. Guarde ou largue alguns itens.');
+		}
 		for (const [item, n] of Object.entries(recipe.needs)) removeItems(me.inv, item, n);
 		const [item, n] = recipe.gives;
 		addItems(me.inv, item, n);
@@ -1377,10 +1500,66 @@ export class GodotSurvival {
 		note(`Fabricou ${recipe.name}.`);
 	}
 
+	resourceAt(id) {
+		const branch = this.state.branches?.[id];
+		return RESOURCES[id] || (branch?.expires > Date.now() ? branch : null);
+	}
+
+	refreshContainers(now = Date.now()) {
+		for (const [id, box] of Object.entries(this.state.containers)) {
+			if (CONTAINERS[id] && box.refillAt <= now && !Object.keys(box.items).length) {
+				delete this.state.containers[id];
+				this.broadcast({ t: 'refilled', k: id });
+			}
+		}
+	}
+
+	branchBlocked(pos) {
+		return [...this.grid.pieces.values()].some((piece) => {
+			const distance = this.grid.distance(piece, pos);
+			const def = BUILDS[piece.kind] || {};
+			return distance !== null && distance < (def.slot === 'free' ? (def.r || 0.7) + 0.35 : 0.5);
+		});
+	}
+
+	/** Quedas naturais: uma por árvore viva próxima, sem acumular pilhas ilimitadas. */
+	dropTreeBranches(now = Date.now()) {
+		const s = this.state;
+		s.branches ||= {};
+		s.branchNext ||= {};
+		for (const branch of Object.values(s.branches)) {
+			if (branch.expires <= now) {
+				delete s.branches[branch.id];
+				this.broadcast({ t: 'branch_gone', id: branch.id });
+			}
+		}
+		const players = this.living();
+		let available = BRANCH_LIMIT - Object.keys(s.branches).length;
+		let spawned = 0;
+		for (const tree of BRANCH_TREES) {
+			if (available <= 0 || spawned >= 8) break;
+			if ((s.depleted[tree.id] || 0) > now || !players.some((p) => flat(p.p, tree.p) < 35)) continue;
+			const id = 'tb_' + tree.id;
+			if (s.branches[id]) continue;
+			s.branchNext[tree.id] ??= now + (treeSeed(tree) % 11) * 3000;
+			if (s.branchNext[tree.id] > now) continue;
+			const pos = branchSpot(tree, now);
+			s.branchNext[tree.id] = now + (pos ? branchPeriod(tree) : 30000);
+			if (!pos) continue;
+			// A base construída pelo jogador também não pode esconder o galho.
+			if (this.branchBlocked(pos)) continue;
+			const branch = { id, kind: 'stick', tree: tree.id, p: pos, yaw: (treeSeed(tree) % 63) / 10, expires: now + BRANCH_LIFETIME_MS };
+			s.branches[id] = branch;
+			available--;
+			spawned++;
+			this.broadcast({ t: 'branch', r: branch });
+		}
+	}
+
 	/** Coleta (tora, pedra, galho, fibra, frutas, ervas, água) depois de segurar E pelo tempo do recurso. */
 	gather(me, d, note) {
 		const s = this.state;
-		const res = RESOURCES[d.r];
+		const res = this.resourceAt(d.r);
 		if (!res || flat(me.p, res.p) > REACH + (res.r || 0)) return;
 		const rule = catalog.resources[res.kind];
 		const now = Date.now();
@@ -1415,7 +1594,10 @@ export class GodotSurvival {
 			if (fits) got.push(`${ITEMS[item].name} +${fits}`);
 		}
 		if (!got.length) return note('Peso demais. Largue alguma coisa.');
-		if (rule.regrow > 0) {
+		if (res.tree) {
+			delete s.branches[res.id];
+			this.broadcast({ t: 'branch_gone', id: res.id });
+		} else if (rule.regrow > 0) {
 			s.depleted[res.id] = now + rule.regrow * 1000;
 			this.broadcastNear(res.p, { t: 'depleted', r: res.id, secs: rule.regrow });
 		}
@@ -1516,6 +1698,7 @@ export class GodotSurvival {
 		else if (p.kind === 'foundation') box = [p.i * S, p.j * S, (p.i + 1) * S, (p.j + 1) * S];
 		else return '';
 		if (box.some((n) => Math.abs(n) > half)) return 'Fora da área do mundo.';
+		if (mountainIntersects(box)) return 'Escolha terreno plano para construir.';
 		for (const pond of world.ponds || []) {
 			const dx = Math.max(box[0] - pond.x, 0, pond.x - box[2]);
 			const dz = Math.max(box[1] - pond.z, 0, pond.z - box[3]);
@@ -1723,6 +1906,8 @@ export class GodotSurvival {
 		const free = BUILDS.chest.carry - inventoryWeight(chest.items);
 		const fits = unit > 0 ? Math.max(0, Math.min(wanted, Math.floor((free + 1e-6) / unit))) : wanted;
 		if (!fits) return note('O baú está cheio.');
+		const weapon = ITEMS[d.item]?.weapon;
+		if (weapon && fits === have) unloadMagazine(me, weapon);
 		removeItems(me.inv, d.item, fits);
 		addItems(chest.items, d.item, fits);
 		if (fits < wanted) note('Não coube tudo: o baú está cheio.');
@@ -1805,7 +1990,11 @@ export class GodotSurvival {
 			if (saved.sid) this.broadcast({ t: 'wake', id: saved.sid });
 		}
 		this.spawnZombies();
+		this.tickAnimalNeeds(now);
 		this.spawnAnimals();
+		this.dropTreeFruit(now);
+		this.dropTreeBranches(now);
+		this.refreshContainers(now);
 		this.broadcast({ t: 'clock', ...this.clock(), online: this.sessions.size, zombies: Object.keys(s.zombies).length });
 		this.save(true);
 		await this.ctx.storage.setAlarm(now + TICK_MS);
@@ -1835,6 +2024,7 @@ export class GodotSurvival {
 					sid: 'sl' + crypto.randomUUID().slice(0, 8), name: player.name, rank: player.rank,
 					p: player.p, y: player.y || 0, hp: player.hp, hunger: player.hunger, thirst: player.thirst,
 					inv: player.inv, back: player.back || '', head: player.head || '', chest: player.chest || '', dead: player.dead, savedAt: Date.now(),
+					magazines: validMagazines(player),
 					infectedLeft: this.infectionLeft(player), known: player.known || [],
 				};
 				s.chars[player.account] = sleeper;

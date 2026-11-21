@@ -17,6 +17,8 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const BotNav = preload("res://scripts/net/bot_nav.gd")
 const WeaponData = preload("res://scripts/weapon_data.gd")
+const BowArrow = preload("res://scripts/weapons/bow_arrow.gd")
+const BowAudio = preload("res://scripts/audio/bow_audio.gd")
 # Bots prefer the strongest weapon they have picked up.
 const WEAPON_PREFERENCE := ["rifle", "smg", "shotgun", "sniper", "pistol"]
 # Body-part volumes: [from bone, to bone, zone, radius in metres].
@@ -62,6 +64,11 @@ var name_tag: Label3D
 var target_position := Vector3.ZERO
 var target_yaw := 0.0
 var remote_state: Dictionary = {}
+var _bow_active := false
+var _bow_drawing := false
+var _bow_charge := 0.0
+var _bow_target := Vector3.ZERO
+var _bow_audio: Node
 var _has_state := false
 # Bot AI state, read by the match controller to pick targets.
 var combatants: Callable # returns Array of {id, node} still alive
@@ -199,6 +206,11 @@ func _set_weapon(id: String) -> void:
 		return
 	if weapon_model != null:
 		weapon_model.get_parent().queue_free()
+		weapon_model = null
+	if id == "bow":
+		if visual.has_method("bind_weapon"):
+			visual.call("bind_weapon", null)
+		return
 	var gun := Node3D.new()
 	gun.name = "Gun"
 	mount.add_child(gun)
@@ -215,10 +227,11 @@ func _set_weapon(id: String) -> void:
 
 ## Weapon in hand only when this combatant has one.
 func _apply_armed() -> void:
+	var firearm := armed and not _bow_active and weapon_id != "bow"
 	if weapon_model != null:
-		weapon_model.visible = armed
+		weapon_model.visible = firearm
 	if visual != null and visual.has_method("set_armed"):
-		visual.call("set_armed", armed)
+		visual.call("set_armed", firearm)
 
 ## Server confirmed a loot pickup for this combatant.
 func give_weapon(id: String) -> void:
@@ -320,6 +333,8 @@ func apply_state(state: Dictionary) -> void:
 	if now_armed != armed:
 		armed = now_armed
 		_apply_armed()
+	var bow_active := str(state.get("tool", "")) == "bow" and str(state.get("act", "")) in ["bow_draw", "bow_carry"]
+	set_bow_state(bow_active, float(state.get("charge", 0.0)), str(state.get("act", "")) == "bow_draw")
 	# Sobrevivência: tocha acesa na mão.
 	var torch_on := bool(state.get("tc", false))
 	if torch_on != HandTorch.is_on(self):
@@ -327,6 +342,8 @@ func apply_state(state: Dictionary) -> void:
 
 ## Sobrevivência: golpe de trabalho (machado/pé de cabra) visto pelos outros.
 func set_action(act: String, tool: String) -> void:
+	if tool == "bow" and act in ["bow_draw", "bow_carry"]:
+		return # apply_state already updates bow pose; these are not work clips
 	if visual != null and visual.has_method("set_action"):
 		visual.call("set_action", act, tool)
 
@@ -341,6 +358,7 @@ func set_hp(value: float, killed: bool) -> void:
 		die()
 
 func die() -> void:
+	set_bow_state(false, 0.0, false)
 	dead = true
 	controlled = false
 	collision_layer = 0
@@ -353,6 +371,7 @@ func die() -> void:
 
 ## Mata-mata: volta à partida noutro lugar, com vida cheia e só a pistola.
 func revive(at: Vector3, weapon: String) -> void:
+	set_bow_state(false, 0.0, false)
 	dead = false
 	hp = 100.0
 	visible = true
@@ -388,6 +407,7 @@ func revive(at: Vector3, weapon: String) -> void:
 ## no lugar onde saiu — os outros veem, mas ninguém acerta nem esbarra nele.
 var sleeping := false
 func sleep(yaw: float) -> void:
+	set_bow_state(false, 0.0, false)
 	sleeping = true
 	controlled = false
 	armed = false
@@ -409,7 +429,52 @@ func sleep(yaw: float) -> void:
 		name_tag.position.y = 0.9
 
 func play_remote_shot(weapon: String) -> void:
+	if weapon == "bow":
+		return # bow releases use their own finite foley and ballistic visual
 	sound_fx.call("shot", weapon)
+
+## Shared with survival replication. Bow actions never enter the tool animation layer.
+func set_bow_state(active: bool, charge: float, drawing: bool, target: Vector3 = Vector3.ZERO) -> void:
+	var was_drawing := _bow_drawing
+	_bow_active = active and not dead and not sleeping
+	_bow_drawing = _bow_active and drawing
+	_bow_charge = clampf(charge, 0.0, 1.0)
+	_bow_target = target
+	if _bow_drawing and not is_instance_valid(_bow_audio):
+		_bow_audio = BowAudio.new()
+		add_child(_bow_audio)
+	if is_instance_valid(_bow_audio):
+		if _bow_drawing and not was_drawing:
+			_bow_audio.call("begin_draw")
+		elif not _bow_drawing and was_drawing:
+			_bow_audio.call("cancel_draw")
+		_bow_audio.call("update_tension", _bow_charge)
+	_apply_armed()
+	_sync_bow_visual()
+
+func _sync_bow_visual() -> void:
+	if visual == null or not visual.has_method("set_bow_state"):
+		return
+	var target := _bow_target
+	if target == Vector3.ZERO:
+		var pitch := float(remote_state.get("pi", 0.0))
+		target = global_position + Vector3.UP * 1.45 + Vector3(-sin(rotation.y) * cos(pitch), sin(pitch), -cos(rotation.y) * cos(pitch)) * 100.0
+	visual.call("set_bow_state", _bow_active, _bow_charge, _bow_drawing, target)
+
+## Cosmetic arrows are scene-owned and never call damage handlers.
+func play_remote_arrow(origin: Vector3, speed: Vector3, arrow_id: String = "") -> void:
+	if not origin.is_finite() or not speed.is_finite() or speed.length_squared() < 0.01:
+		return
+	var arrow := BowArrow.new()
+	arrow.set("visual_only", true)
+	arrow.set("arrow_id", arrow_id)
+	var scene := get_tree().current_scene
+	(scene if scene != null else get_tree().root).add_child(arrow)
+	arrow.call("launch", self, origin, speed, 0.0)
+	if not is_instance_valid(_bow_audio):
+		_bow_audio = BowAudio.new()
+		add_child(_bow_audio)
+	_bow_audio.call("release_arrow", clampf((speed.length() - 20.0) / 28.0, 0.0, 1.0))
 
 func _physics_process(delta: float) -> void:
 	if sleeping:
@@ -470,6 +535,7 @@ func _follow_remote(delta: float) -> void:
 func _animate(delta: float, move: float, running: bool, crouch: bool, aim: bool, air: bool, reload: bool, planar_world: Vector3) -> void:
 	if visual == null or not visual.has_method("animate"):
 		return
+	_sync_bow_visual()
 	var local_velocity := visual.global_basis.inverse() * planar_world
 	if visual.has_method("set_prone"):
 		visual.call("set_prone", bool(remote_state.get("pr", false)))

@@ -11,6 +11,9 @@ const NatureModel = preload("res://scripts/survival/nature_model.gd")
 const ToolModel = preload("res://scripts/weapons/tool_model.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const TrainingGround = preload("res://scripts/training_ground.gd")
+const BowController = preload("res://scripts/weapons/bow_controller.gd")
+const BowVisual = preload("res://scripts/weapons/bow_visual.gd")
+const BOW_RACK := Vector3(44.4, 0, 29.4)
 # Ao leste da arena do zumbi (training_arena.CENTER = (30, 0, 32)).
 const CENTER := Vector3(41, 0, 32)
 const RACK := CENTER + Vector3(0, 0, -2.6)
@@ -25,6 +28,9 @@ var _previous_interact: Callable
 var _rack_models: Dictionary = {} # ferramenta -> modelo no suporte
 var _rack_label: Label3D
 var _working := false
+var _bow_controller: Node
+var _bow_rack_model: Node3D
+var _bow_label: Label3D
 
 func setup(p: CharacterBody3D) -> void:
 	player = p
@@ -34,12 +40,31 @@ func _ready() -> void:
 	_build_rack()
 	_build_tree()
 	_build_rock()
+	_build_bow_station()
 	_label("ÁRVORE\n[E] cortar", TREE + Vector3(0, 2.4, 0))
 	_label("PEDRA\n[E] quebrar", ROCK + Vector3(0, 1.6, 0))
 	_label("FERRAMENTAS — teste das animações\nclique esquerdo: golpe de ataque", CENTER + Vector3(0, 3.0, -3.4), 34)
 	if player != null:
 		_previous_interact = player.get("interact_handler")
 		player.set("interact_handler", _interact)
+		_bow_controller = player.get("bow_controller")
+		if _bow_controller == null:
+			_bow_controller = BowController.new()
+			player.add_child(_bow_controller)
+			_bow_controller.call("setup", player)
+
+func _build_bow_station() -> void:
+	var stand := MeshInstance3D.new()
+	var box := BoxMesh.new()
+	box.size = Vector3(0.7, 0.9, 0.55)
+	stand.mesh = box
+	stand.material_override = TrainingGround.material("orange_grid")
+	stand.position = BOW_RACK + Vector3(0, 0.45, 0)
+	add_child(stand)
+	_bow_rack_model = BowVisual.new()
+	_bow_rack_model.position = BOW_RACK + Vector3(0, 1.35, 0)
+	add_child(_bow_rack_model)
+	_bow_label = _label("ARCO E FLECHA\n[E] pegar\nSegure o esquerdo: mirar\nSolte: disparar", BOW_RACK + Vector3(0, 2.5, 0), 27)
 
 func _label(text: String, pos: Vector3, size: int = 28) -> Label3D:
 	var tag := Label3D.new()
@@ -132,6 +157,10 @@ func _flat(a: Vector3, b: Vector3) -> float:
 func _process(_delta: float) -> void:
 	if player == null:
 		return
+	if _bow_controller != null:
+		var holding_bow := bool(_bow_controller.get("equipped"))
+		_bow_rack_model.visible = not holding_bow
+		_bow_label.text = "ARCO E FLECHA\n[E] devolver" if holding_bow else "ARCO E FLECHA\n[E] pegar\nSegure o esquerdo: mirar\nSolte: disparar"
 	if _working and float(player.get("channel_left")) <= 0.0:
 		_stop_work()
 	if _rack_label != null and Engine.get_process_frames() % 10 == 0:
@@ -143,6 +172,12 @@ func _interact() -> bool:
 	if player == null:
 		return false
 	var pos := player.global_position
+	if _flat(pos, BOW_RACK) < REACH:
+		if bool(_bow_controller.get("equipped")):
+			_bow_controller.call("unequip")
+		else:
+			_bow_controller.call("equip")
+		return true
 	if _flat(pos, RACK) < REACH:
 		_next_tool()
 		return true
@@ -155,6 +190,8 @@ func _interact() -> bool:
 	return bool(_previous_interact.call()) if _previous_interact.is_valid() else false
 
 func _next_tool() -> void:
+	if _bow_controller != null and bool(_bow_controller.get("equipped")):
+		_bow_controller.call("unequip")
 	var held := _in_hand()
 	var idx := TOOLS.find(held)
 	var next: String = TOOLS[idx + 1] if idx < TOOLS.size() - 1 else ""

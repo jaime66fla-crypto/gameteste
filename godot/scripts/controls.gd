@@ -21,13 +21,15 @@ const ACTIONS := [
 	["grenade", "Granada (segure e solte)", "Combate", KEY_G],
 	["heal", "Curar", "Combate", KEY_F],
 	["holster", "Guardar a arma", "Combate", KEY_H],
-	["lean_left", "Inclinar à esquerda (mirando)", "Combate", KEY_Q],
+	["shoulder_swap", "Alternar lado da mira", "Combate", KEY_Q],
+	["lean_left", "Inclinar à esquerda (mirando)", "Combate", KEY_J],
 	["lean_right", "Inclinar à direita (mirando)", "Combate", KEY_E],
 	["weapon_1", "Arma 1", "Armas", KEY_1],
 	["weapon_2", "Arma 2", "Armas", KEY_2],
 	["weapon_3", "Arma 3", "Armas", KEY_3],
 	["weapon_4", "Arma 4", "Armas", KEY_4],
 	["weapon_5", "Arma 5", "Armas", KEY_5],
+	["weapon_6", "Arma 6", "Armas", KEY_6],
 	["interact", "Interagir / entrar e sair do carro", "Geral", KEY_E],
 	["inventory", "Inventário", "Sobrevivência", KEY_TAB],
 	["map", "Mapa", "Sobrevivência", KEY_M],
@@ -70,7 +72,25 @@ static func load_and_apply(path: String = PATH) -> void:
 			var code := int(file.get_value("controls", action, _bindings[action]))
 			if code != 0 and not RESERVED.has(code):
 				_bindings[action] = code
+		# Configurações antigas usavam Q para inclinar: migra só o padrão antigo.
+		if not file.has_section_key("controls", "shoulder_swap"):
+			if int(_bindings["lean_left"]) == KEY_Q:
+				_bindings["lean_left"] = _unused_key(KEY_J, "lean_left")
+			for action in _bindings:
+				if action != "shoulder_swap" and int(_bindings[action]) == KEY_Q:
+					_bindings["shoulder_swap"] = _unused_key(KEY_BRACKETLEFT, "shoulder_swap")
+					break
 	apply()
+
+static func _unused_key(preferred: int, except_action: String) -> int:
+	for candidate in [preferred, KEY_BRACKETLEFT, KEY_BRACKETRIGHT, KEY_BACKSLASH, KEY_SEMICOLON, KEY_APOSTROPHE]:
+		var used := false
+		for action in _bindings:
+			if action != except_action and int(_bindings[action]) == int(candidate):
+				used = true
+		if not used:
+			return int(candidate)
+	return KEY_F8
 
 static func save(path: String = PATH) -> Error:
 	var file := ConfigFile.new()
@@ -168,7 +188,7 @@ static func key_name(code: int) -> String:
 ## Texto de ajuda (F1) com as teclas atuais.
 static func help_text() -> String:
 	var k := func(action: String) -> String: return key_name(binding(action))
-	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s atirar (sem arma: soco)  %s recarregar  %s guardar arma\n%s-%s armas  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  %s construir  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
+	return "%s%s%s%s mover  %s andar devagar  %s correr  %s agachar  %s pular  |  %s mirar (+%s/%s inclinar)  %s alternar lado da mira  %s atirar (sem arma: soco)  %s recarregar  %s guardar arma\n%s-%s armas  %s interagir  %s curar  %s granada (segure)  |  Sobrevivência: %s inventário  %s mapa  %s construir  |  ESC liberar o mouse  ·  Teclas em Configurações › Controles" % [
 		k.call("move_forward"), k.call("move_left"), k.call("move_back"), k.call("move_right"), k.call("walk"), k.call("sprint"), k.call("crouch"), k.call("jump"),
-		k.call("aim"), k.call("lean_left"), k.call("lean_right"), k.call("fire"), k.call("reload"), k.call("holster"),
+		k.call("aim"), k.call("lean_left"), k.call("lean_right"), k.call("shoulder_swap"), k.call("fire"), k.call("reload"), k.call("holster"),
 		k.call("weapon_1"), k.call("weapon_5"), k.call("interact"), k.call("heal"), k.call("grenade"), k.call("inventory"), k.call("map"), k.call("build")]

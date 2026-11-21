@@ -9,6 +9,35 @@ extends RefCounted
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 
 const TREE_VARIANTS := ["pine_a", "pine_b", "oak_a", "oak_b", "birch"]
+
+static func tree_variant(seed_value: int) -> String:
+	var rules: Dictionary = load("res://scripts/survival/survival_data.gd").catalog().get("animal_food", {})
+	if seed_value % int(rules.get("apple_mod", 11)) == int(rules.get("apple_remainder", 7)):
+		return "apple"
+	return TREE_VARIANTS[posmod(seed_value, TREE_VARIANTS.size())]
+
+static func fruit_mesh(kind: String) -> ArrayMesh:
+	var key := "fruit_" + kind
+	if _cache.has(key):
+		return _cache[key]
+	var surface := SurfaceTool.new()
+	surface.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = kind.hash()
+	if kind == "apple":
+		_blob(surface, Vector3(0, 0.12, 0), 0.12, rng, 1, Color("#c53623"), 0.9)
+		_tube(surface, [Vector3(0, 0.20, 0), Vector3(0.015, 0.29, 0)], [0.014, 0.008], 4, Color("#54402b"), Color("#54402b"), rng)
+	else:
+		_blob(surface, Vector3(0, 0.08, 0), 0.07, rng, 0, Color("#a77538"), 1.2)
+		_blob(surface, Vector3(0, 0.13, 0), 0.075, rng, 0, Color("#53402b"), 0.45)
+	surface.generate_normals()
+	var result := surface.commit()
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.roughness = 0.7
+	result.surface_set_material(0, mat)
+	_cache[key] = result
+	return result
 const ORE_VEIN := Color("#7a4a2c") # veio de ferro: ferrugem escura
 const SALT_VEIN := Color("#c9c3b0") # salitre: crosta esbranquiçada
 
@@ -50,6 +79,12 @@ static func _build(variant: String, far: bool) -> ArrayMesh:
 		"pine_b": _pine(bark, leaf, rng, 8.0, 2.0, 6, far)
 		"oak_a": _oak(bark, leaf, rng, 3.4, 4, far, Color("#3f6a2e"))
 		"oak_b": _oak(bark, leaf, rng, 2.8, 3, far, Color("#56772f"))
+		"apple":
+			_oak(bark, leaf, rng, 2.2, 3, far, Color("#4b7732"))
+			for i in (8 if far else 22):
+				var a := TAU * float(i) / 22.0
+				var p := Vector3(cos(a) * rng.randf_range(1.6, 2.8), rng.randf_range(3.0, 4.8), sin(a) * rng.randf_range(1.6, 2.8))
+				_blob(leaf, p, 0.14, rng, 0, Color("#c72e22"), 1.0)
 		"birch": _birch(bark, leaf, rng, far)
 		"stump": _stump(bark, rng)
 		"rock": _rock(bark, rng, far)

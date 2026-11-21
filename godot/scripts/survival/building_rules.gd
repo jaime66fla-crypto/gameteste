@@ -8,6 +8,45 @@ extends RefCounted
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const EDGE_KINDS := ["wall", "doorway", "window"]
 const MAX_LEVEL := 6
+const MAP_BLOCKERS := {"tree": 0.5, "rock": 1.3, "ore": 1.3, "saltpeter": 1.3, "bush": 0.7, "car": 2.5}
+
+## Mesmo retângulo e mesmas margens de groundFree no servidor.
+func ground_error(p: Dictionary, map: Dictionary) -> String:
+	var kind := str(p.get("kind", ""))
+	var def: Dictionary = defs.get(kind, {})
+	var box: Rect2
+	if str(def.get("slot", "")) == "free":
+		var v: Array = p.get("p", [0, 0, 0])
+		var r := float(def.get("r", 0.0))
+		box = Rect2(Vector2(float(v[0]) - r, float(v[2]) - r), Vector2.ONE * r * 2.0)
+	elif kind == "foundation":
+		box = Rect2(Vector2(int(p["i"]) * S, int(p["j"]) * S), Vector2.ONE * S)
+	else:
+		return ""
+	var half := float(map.get("half_size", 240)) - 6.0
+	for n in [box.position.x, box.position.y, box.end.x, box.end.y]:
+		if absf(n) > half:
+			return "Fora da área do mundo."
+	for mountain in map.get("mountains", []):
+		if _box_distance(box, Vector2(float(mountain.x), float(mountain.z))) < float(mountain.r):
+			return "Escolha terreno plano para construir."
+	for pond in map.get("ponds", []):
+		if _box_distance(box, Vector2(float(pond.x), float(pond.z))) < float(pond.r) + 1.0:
+			return "Não dá para construir na água."
+	if str(def.get("slot", "")) == "free" and float(p["p"][1]) > 0.25:
+		return ""
+	for resource in map.get("resources", []):
+		var res_kind := str(resource.get("kind", ""))
+		if not MAP_BLOCKERS.has(res_kind):
+			continue
+		var margin := float(MAP_BLOCKERS[res_kind])
+		var v: Array = resource["p"]
+		if float(v[0]) > box.position.x - margin and float(v[0]) < box.end.x + margin and float(v[2]) > box.position.y - margin and float(v[2]) < box.end.y + margin:
+			return "Tem %s no caminho." % str(SurvivalData.resource_rule(res_kind).get("name", "algo")).to_lower()
+	return ""
+
+static func _box_distance(box: Rect2, p: Vector2) -> float:
+	return Vector2(maxf(maxf(box.position.x - p.x, 0.0), p.x - box.end.x), maxf(maxf(box.position.y - p.y, 0.0), p.y - box.end.y)).length()
 
 var S := 3.0
 var H := 3.0

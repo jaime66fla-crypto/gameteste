@@ -9,6 +9,7 @@ extends CharacterBody3D
 ## pernas animadas por código; coelho (Sherkiz) só tem parado/andar.
 signal damaged(animal_id: String, zone: String, point: Vector3, normal: Vector3, weapon_id: String)
 signal attacked(animal_id: String, target_id: String)
+signal forage_requested(animal_id: String, source_id: String, phase: String)
 
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const HullScript = preload("res://scripts/survival/zombie_hull.gd")
@@ -40,6 +41,19 @@ var max_hp := 80.0
 var dead := false
 var controlled := false
 var targets: Callable
+var _fauna_targets: Callable
+var _fed_left := 0.0
+var hunger := 70.0
+var thirst := 75.0
+var _need_rules: Dictionary = {}
+var _food_sources: Callable
+var _need_goal: Dictionary = {}
+var _need_elapsed := 0.0
+var _need_started := false
+var _forage_wait := 0.0
+var _chase_left := 0.0
+var _hunt_rest := 0.0
+var _meal_pose := 0.0
 var night := false
 var anim := Anim.IDLE
 var visual: Node3D
@@ -81,6 +95,7 @@ func setup(id: String, animal_kind: String, start_hp: float) -> void:
 func _ready() -> void:
 	_spec = KINDS[kind]
 	_rule = load("res://scripts/survival/survival_data.gd").catalog().get(RULES_PATH, {}).get(kind, {})
+	_need_rules = load("res://scripts/survival/survival_data.gd").catalog().get("animal_needs", {})
 	max_hp = float(_rule.get("hp", hp))
 	collision_layer = HitboxScript.LAYER_CHARACTERS
 	collision_mask = HitboxScript.LAYER_WORLD
@@ -138,6 +153,37 @@ func _build_model() -> void:
 			_tint(mi, _spec["tint"])
 	if bool(_spec.get("procedural", false)):
 		_setup_boar(model)
+	if kind == "rabbit" and DisplayServer.get_name() != "headless":
+		_fit_rabbit_pose.call_deferred(model)
+
+## O GLB do coelho tem uma escala adicional no skin. Meça a pose real,
+## depois que o esqueleto estiver registrado, em vez da caixa da malha em repouso.
+func _fit_rabbit_pose(model: Node3D) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	if not is_instance_valid(model) or not model.is_inside_tree():
+		return
+	var bounds := AABB()
+	var first := true
+	for node in model.find_children("*", "MeshInstance3D", true, false):
+		var mi := node as MeshInstance3D
+		var posed: Mesh = mi.bake_mesh_from_current_skeleton_pose() if mi.skin != null else mi.mesh
+		if posed == null:
+			continue
+		var transform := Transform3D.IDENTITY
+		var parent: Node = mi
+		while parent != null and parent != model:
+			if parent is Node3D:
+				transform = (parent as Node3D).transform * transform
+			parent = parent.get_parent()
+		var box := transform * posed.get_aabb()
+		bounds = box if first else bounds.merge(box)
+		first = false
+	if first:
+		return
+	var scale_value := float(_spec["length"]) / maxf(maxf(bounds.size.x, bounds.size.z), 0.001)
+	model.scale = Vector3.ONE * scale_value
+	model.position = -Vector3(bounds.position.x + bounds.size.x * 0.5, bounds.position.y, bounds.position.z + bounds.size.z * 0.5) * scale_value
 
 static func _bounds(root: Node3D) -> AABB:
 	var box := AABB()
@@ -229,6 +275,69 @@ func apply_state(entry: Array) -> void:
 func set_controlled(value: bool) -> void:
 	controlled = value and not dead
 	velocity = Vector3.ZERO
+	_cancel_need()
+
+func set_fauna_targets(value: Callable) -> void:
+	_fauna_targets = value
+
+func set_food_sources(value: Callable) -> void:
+	_food_sources = value
+
+func apply_needs(food: float, water: float) -> void:
+	hunger = clampf(food, 0.0, 100.0)
+	thirst = clampf(water, 0.0, 100.0)
+	if not _need_goal.is_empty():
+		var satisfied := not _wants_water() if bool(_need_goal.get("water", false)) else not _wants_food()
+		if satisfied:
+			_cancel_need()
+	_think = 0.0
+
+func _wants_water() -> bool:
+	return thirst <= float(_need_rules.get("thirst_threshold", 40))
+
+func _wants_food() -> bool:
+	return hunger <= float(_need_rules.get("hunger_threshold", 45))
+
+func _cancel_need() -> void:
+	_need_goal = {}
+	_need_elapsed = 0.0
+	_need_started = false
+	_forage_wait = 0.0
+
+func _choose_need_goal() -> void:
+	var water := _wants_water()
+	if not _food_sources.is_valid() or (not water and (not _wants_food() or str(_rule.get("food", "")) == "prey")):
+		_cancel_need()
+		return
+	var sources: Array = _food_sources.call(kind, global_position, water)
+	if not _need_goal.is_empty() and bool(_need_goal.get("water", false)) == water:
+		for source in sources:
+			if str(source["id"]) == str(_need_goal.get("id", "")):
+				return
+	_cancel_need()
+	var best := INF
+	for source in sources:
+		var p: Vector3 = source["pos"]
+		var radius := float(source.get("radius", 0.0))
+		if radius > 0.0:
+			var away := global_position - p
+			away.y = 0.0
+			away = away.normalized() if away.length_squared() > 0.01 else Vector3.RIGHT
+			p += away * (radius + 0.6 if water else maxf(0.0, radius - 1.0))
+		var distance := global_position.distance_squared_to(p)
+		if distance < best:
+			best = distance
+			_need_goal = {"id": str(source["id"]), "point": p, "water": water}
+
+## O servidor confirma a refeição; só então o predador interrompe a caça.
+func feed(seconds: float) -> void:
+	_fed_left = maxf(0.0, seconds)
+	_meal_pose = minf(3.0, _fed_left)
+	_cancel_need()
+	_target = null
+	_target_id = ""
+	_angry = 0.0
+	_think = 0.0
 
 ## Hitbox chama isto; o servidor decide o dano.
 func receive_hit(zone: String, _amount: float, point: Vector3, normal: Vector3, weapon: String) -> void:
@@ -276,6 +385,7 @@ func die() -> void:
 # ---------------------------------------------------------------- quadro ---
 
 func _physics_process(delta: float) -> void:
+	_fed_left = maxf(0.0, _fed_left - delta)
 	if dead:
 		_death_t += delta
 		if str(_spec["anims"].get("death", "")).is_empty():
@@ -292,6 +402,9 @@ func _physics_process(delta: float) -> void:
 	_animate(delta)
 
 func _animate(delta: float) -> void:
+	if str(_spec.get("anims", {}).get("eat", "")).is_empty():
+		var nod := -0.10 + sin(Time.get_ticks_msec() * 0.006) * 0.035 if anim == Anim.EAT else 0.0
+		visual.rotation.x = lerpf(visual.rotation.x, nod, minf(1.0, delta * 5.0))
 	if _strike >= 0.0:
 		_strike += delta
 		if _strike > 0.8:
@@ -333,14 +446,46 @@ func _closest() -> Dictionary:
 	return best
 
 func _node_of(id: String) -> Node3D:
-	if not targets.is_valid():
-		return null
-	for entry in targets.call():
+	var list: Array = targets.call() if targets.is_valid() else []
+	if _fauna_targets.is_valid():
+		list.append_array(_fauna_targets.call())
+	for entry in list:
 		if str(entry["id"]) == id:
 			return entry["node"]
 	return null
 
+## Vizinho que posso caçar, ou predador que me caça. Ignora mortos e a si próprio.
+func _closest_fauna(prey: bool) -> Dictionary:
+	var best := {}
+	var best_d := INF
+	if not _fauna_targets.is_valid():
+		return best
+	var defs: Dictionary = load("res://scripts/survival/survival_data.gd").catalog().get("animals", {})
+	for entry in _fauna_targets.call():
+		var node: Node3D = entry["node"]
+		if node == self or not is_instance_valid(node) or bool(node.get("dead")):
+			continue
+		var other := str(entry.get("kind", ""))
+		var relevant: bool = (_rule.get("prey", []) as Array).has(other) if prey else (defs.get(other, {}).get("prey", []) as Array).has(kind)
+		if not relevant:
+			continue
+		var d := global_position.distance_to(node.global_position)
+		if d < best_d:
+			best_d = d
+			best = {"id": str(entry["id"]), "node": node, "dist": d}
+	return best
+
 func _run_ai(delta: float) -> void:
+	_hunt_rest = maxf(0.0, _hunt_rest - delta)
+	_meal_pose = maxf(0.0, _meal_pose - delta)
+	_forage_wait = maxf(0.0, _forage_wait - delta)
+	if _target != null and _angry <= 0.0 and str(_rule.get("behavior", "")) == "hunt":
+		_chase_left -= delta
+		if _chase_left <= 0.0:
+			_target = null
+			_target_id = ""
+			_hunt_rest = float(_need_rules.get("hunt_rest_seconds", 12))
+			_think = 0.0
 	_attack_timer = maxf(0.0, _attack_timer - delta)
 	_scared = maxf(0.0, _scared - delta)
 	_angry = maxf(0.0, _angry - delta)
@@ -369,6 +514,10 @@ func _run_ai(delta: float) -> void:
 				if float(near["dist"]) < notice:
 					_threat = near["node"]
 					_scared = maxf(_scared, 4.0)
+				var predator := _closest_fauna(false)
+				if not predator.is_empty() and float(predator["dist"]) < maxf(notice, 16.0):
+					_threat = predator["node"]
+					_scared = maxf(_scared, 4.0)
 			"defend":
 				if _angry > 0.0:
 					var node := _node_of(_angry_id)
@@ -378,16 +527,33 @@ func _run_ai(delta: float) -> void:
 				else:
 					_target = null
 			"hunt":
+				if _target != null and (not is_instance_valid(_target) or bool(_target.get("dead")) or global_position.distance_to(_target.global_position) > GIVE_UP):
+					_target = null
 				if hp < max_hp * 0.25:
 					# Ferido: desiste e foge.
 					_target = null
 					_threat = near["node"]
 					_scared = 6.0
-				elif _target == null and float(near["dist"]) < notice * (1.25 if night else 1.0):
-					_target = near["node"]
-					_target_id = str(near["id"])
-				elif _target != null and (not is_instance_valid(_target) or global_position.distance_to(_target.global_position) > GIVE_UP):
+				elif _angry > 0.0:
+					_target = _node_of(_angry_id)
+					_target_id = _angry_id
+				elif _fed_left > 0.0 or not _wants_food() or _wants_water() or _hunt_rest > 0.0:
 					_target = null
+				elif _target == null:
+					var prey := _closest_fauna(true)
+					var range_value := notice * (1.25 if night else 1.0)
+					if not prey.is_empty() and float(prey["dist"]) < range_value:
+						_target = prey["node"]
+						_target_id = str(prey["id"])
+						_chase_left = float(_need_rules.get("hunt_seconds", 8))
+					elif float(near["dist"]) < range_value:
+						_target = near["node"]
+						_target_id = str(near["id"])
+						_chase_left = float(_need_rules.get("hunt_seconds", 8))
+		if (_scared > 0.0 and is_instance_valid(_threat)) or is_instance_valid(_target):
+			_cancel_need()
+		else:
+			_choose_need_goal()
 	var speed := 0.0
 	var dir := Vector3.ZERO
 	anim = Anim.IDLE
@@ -411,6 +577,30 @@ func _run_ai(delta: float) -> void:
 			dir = to.normalized()
 			speed = float(_spec["run"])
 			anim = Anim.RUN
+	elif not _need_goal.is_empty():
+		var to: Vector3 = _need_goal["point"] - global_position
+		to.y = 0.0
+		if to.length() > 0.6:
+			dir = to.normalized()
+			speed = float(_spec["walk"]) * 1.3
+			anim = Anim.WALK
+			_need_elapsed = 0.0
+			_need_started = false
+		else:
+			anim = Anim.EAT
+			if _forage_wait <= 0.0:
+				if not _need_started:
+					_need_started = true
+					forage_requested.emit(animal_id, str(_need_goal["id"]), "start")
+				_need_elapsed += delta
+				var seconds := float(_need_rules.get("drink_seconds", 2)) if bool(_need_goal["water"]) else float(_need_rules.get("eat_seconds", 3))
+				if _need_elapsed >= seconds:
+					forage_requested.emit(animal_id, str(_need_goal["id"]), "finish")
+					_need_started = false
+					_need_elapsed = 0.0
+					_forage_wait = 2.0
+	elif _meal_pose > 0.0 and behavior == "hunt" and _angry <= 0.0:
+		anim = Anim.EAT
 	else:
 		# Passeia e come de vez em quando.
 		if _goal == Vector3.INF or global_position.distance_to(_goal) < 1.2 or randf() < delta * 0.04:
@@ -418,7 +608,7 @@ func _run_ai(delta: float) -> void:
 			if randf() < 0.45:
 				_rest = randf_range(3.0, 8.0)
 		if _rest > 0.0:
-			anim = Anim.EAT if _rest > 2.0 else Anim.IDLE
+			anim = Anim.IDLE
 		else:
 			dir = _goal - global_position
 			dir.y = 0.0

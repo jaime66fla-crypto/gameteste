@@ -13,6 +13,7 @@ var _roads: Array = []
 var _buildings: Array = []
 var _grass: Array = []
 var _ponds: Array = [] # [center Vector2, r]
+var _mountains: Array = []
 var _trees: PackedVector2Array = PackedVector2Array()
 var _texture: Texture2D
 
@@ -27,6 +28,8 @@ func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var data := SurvivalData.world()
 	_half = float(data.get("half_size", 240))
+	for m in data.get("mountains", []):
+		_mountains.append([Vector2(float(m.x), float(m.z)), float(m.r)])
 	if data.has("center_town"): # mapas antigos: a cidade do meio
 		for lane in [-48.0, 0.0, 48.0]:
 			_roads.append([Vector2(lane, -52), Vector2(lane, 52), 8.0])
@@ -62,6 +65,10 @@ func _bake() -> void:
 	painter.draw.connect(func():
 		painter.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
 		painter.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), Color(0.33, 0.45, 0.27))
+		for m in _mountains:
+			painter.draw_circle(m[0], m[1], Color("647354"))
+			painter.draw_circle(m[0], m[1] * 0.65, Color("777b68"))
+			painter.draw_circle(m[0], m[1] * 0.3, Color("969388"))
 		for g in _grass:
 			painter.draw_circle(g[0], g[1], Color(0.56, 0.58, 0.30, 0.9))
 		for t in _trees:

@@ -24,7 +24,7 @@ func _run() -> void:
 	var path := "user://controls_test_%d.cfg" % OS.get_process_id()
 	Controls.load_and_apply(path)
 	_check(_key(KEY_E).is_action("interact"), "Default: E interacts")
-	_check(not InputMap.has_action("melee") and _key(KEY_Q).is_action("lean_left"), "Default: Q only leans (punch is the left click)")
+	_check(not InputMap.has_action("melee") and _key(KEY_Q).is_action("shoulder_swap") and _key(KEY_J).is_action("lean_left"), "Default: Q swaps shoulder and J leans (punch is the left click)")
 	var click := InputEventMouseButton.new()
 	click.button_index = MOUSE_BUTTON_LEFT
 	click.pressed = true

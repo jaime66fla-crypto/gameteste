@@ -390,7 +390,15 @@ const zombie_zones = towns.map(({ center: [x, z] }) => ({ x, z, r: 50, weight: 4
 const world = {
 	_comment: 'Gerado por scripts/gen-survival-world.mjs (não edite à mão). Coordenadas em metros, [x, z] no chão; p = [x, y, z]. Natureza no mapa todo e três cidades abandonadas nas pontas (carros velhos = sucata). Portas dos prédios na parede +Z.',
 	seed: SEED,
-	half_size: HALF,
+	// Mantém todos os sorteios e coordenadas antigos; só amplia a faixa externa.
+	half_size: 420,
+	core_half_size: HALF,
+	mountains: [
+		{ x: 360, z: 0, r: 56, h: 28 },
+		{ x: -360, z: 0, r: 56, h: 28 },
+		{ x: 0, z: 360, r: 56, h: 28 },
+		{ x: 0, z: -360, r: 56, h: 28 },
+	],
 	ponds,
 	resources,
 	spawns,

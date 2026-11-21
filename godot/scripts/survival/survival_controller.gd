@@ -48,7 +48,8 @@ var bags: Dictionary = {} # id -> {node, pos, name, count}
 var sleepers: Dictionary = {} # id -> NetActor deitado (jogador que saiu do jogo)
 var inv: Dictionary = {}
 var carried := 0.0 # kg (servidor)
-var carry_cap := 10.0
+var carry_cap := float(SurvivalData.catalog().get("carry_base", 20.0))
+var _crafting_timer := 0.0
 var my_hp := 100.0
 var hunger := 100.0
 var thirst := 100.0
@@ -130,8 +131,13 @@ func _ready() -> void:
 	building_ctl.call("setup", self, main_node, player)
 	add_child(building_ctl)
 	building_ctl.call("start", info)
+	_update_crafting_context()
 	for bag in info.get("bags", []):
 		_set_bag(bag)
+	for branch in info.get("branches", []):
+		world.call("add_branch", branch)
+	for fruit in info.get("fruits", []):
+		world.call("add_fruit", fruit)
 	for entry in info.get("sleepers", []):
 		_add_sleeper(entry)
 	for k in info.get("searched", []):
@@ -182,6 +188,37 @@ func _targets() -> Array:
 
 # ------------------------------------------------------------------- rede ---
 
+func _fauna_targets() -> Array:
+	var list: Array = []
+	for id in animals:
+		var a = animals[id]
+		if is_instance_valid(a) and not bool(a.get("dead")):
+			list.append({"id": str(id), "node": a, "kind": str(a.get("kind"))})
+	return list
+
+func _fauna_food_sources(animal_kind: String, position: Vector3, water: bool) -> Array:
+	var list: Array = []
+	var data := SurvivalData.world()
+	if water:
+		var ponds: Array = data.get("ponds", [])
+		for i in ponds.size():
+			var pond: Dictionary = ponds[i]
+			list.append({"id": "water:%d" % i, "pos": Vector3(float(pond.x), 0, float(pond.z)), "radius": float(pond.r)})
+		return list
+	var food := str(SurvivalData.catalog().get("animals", {}).get(animal_kind, {}).get("food", ""))
+	if food == "grass":
+		var patches: Array = data.get("grass", [])
+		for i in patches.size():
+			var patch: Dictionary = patches[i]
+			list.append({"id": "grass:%d" % i, "pos": Vector3(float(patch.x), 0, float(patch.z)), "radius": float(patch.r)})
+	else:
+		var fruits: Dictionary = world.get("fallen_fruit")
+		for id in fruits:
+			var fruit: Dictionary = fruits[id]
+			if str(fruit["kind"]) == food:
+				list.append({"id": str(id), "pos": fruit["pos"], "radius": 0.0})
+	return list
+
 func _physics_process(delta: float) -> void:
 	_melee_timer = maxf(0.0, _melee_timer - delta)
 	_clock_ms += delta * 1000.0
@@ -201,6 +238,10 @@ func _physics_process(delta: float) -> void:
 			bed_button.text = "Renascer na cama" if wait <= 0.0 else "Cama pronta em %d s" % ceili(wait)
 		return
 	_sync_ammo()
+	_crafting_timer -= delta
+	if _crafting_timer <= 0.0:
+		_crafting_timer = 0.2
+		_update_crafting_context()
 	_swing_left = maxf(0.0, _swing_left - delta)
 	# Saiu do lugar ou cancelou: para de golpear (o golpe do bastão dura SWING_TIME).
 	if not action.is_empty() and float(player.get("channel_left")) <= 0.0 and _swing_left <= 0.0:
@@ -214,7 +255,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": action, "tool": action_tool, "ch": player.get("character_id"), "tc": torch_in_hand})
+			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") else action, "tool": "bow" if player.call("has_bow") else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -303,11 +344,25 @@ func _on_message(data: Dictionary) -> void:
 					a.call("apply_state", entry)
 		"aspawn":
 			_spawn_animals(data.get("l", []))
+		"afed":
+			var a = animals.get(str(data.get("id", "")))
+			if a != null:
+				a.call("feed", float(data.get("left", 0.0)))
+		"aneeds":
+			for entry in data.get("l", []):
+				var a = animals.get(str(entry.get("id", "")))
+				if a != null:
+					a.call("apply_needs", float(entry.get("hunger", 70)), float(entry.get("thirst", 75)))
+					a.hp = float(entry.get("hp", a.hp))
+		"fruit":
+			world.call("add_fruit", data.get("r", {}), true)
+		"fruit_gone":
+			world.call("remove_fruit", str(data.get("id", "")))
 		"ahp":
 			var a = animals.get(str(data.get("id", "")))
 			if a != null:
 				var by := str(data.get("by", ""))
-				var by_node: Node3D = player if by == my_id else actors.get(by)
+				var by_node: Node3D = player if by == my_id else actors.get(by, animals.get(by))
 				if by_node != null:
 					a.call("hurt", by, by_node)
 				a.hp = float(data.get("hp", a.hp))
@@ -335,11 +390,15 @@ func _on_message(data: Dictionary) -> void:
 			var o = _vec(data.get("o"))
 			var e = _vec(data.get("e"))
 			if o != null and e != null:
-				_tracer(o, e)
+				if str(data.get("w", "")) != "bow":
+					_tracer(o, e)
 				_noise(o)
 				var shooter = actors.get(str(data.get("id", "")))
 				if shooter != null:
-					shooter.call("play_remote_shot", str(data.get("w", "pistol")))
+					if str(data.get("w", "")) == "bow":
+						shooter.call("play_remote_arrow", o, e - o, str(data.get("a", "")))
+					else:
+						shooter.call("play_remote_shot", str(data.get("w", "pistol")))
 		"hp":
 			_on_health(data)
 		"inv":
@@ -367,6 +426,8 @@ func _on_message(data: Dictionary) -> void:
 				world.call("set_container_empty", _open_container, items.is_empty())
 		"emptied":
 			world.call("set_container_empty", str(data.get("k", "")), true)
+		"refilled":
+			world.call("set_container_empty", str(data.get("k", "")), false)
 		"bag":
 			_set_bag(data.get("bag", {}))
 		"bag_gone":
@@ -379,6 +440,10 @@ func _on_message(data: Dictionary) -> void:
 				_open_container = ""
 		"depleted":
 			_deplete(str(data.get("r", "")), float(data.get("secs", 600)))
+		"branch":
+			world.call("add_branch", data.get("r", {}), true)
+		"branch_gone":
+			world.call("remove_branch", str(data.get("id", "")))
 		"note":
 			_toast(str(data.get("message", "")))
 		"xp":
@@ -470,13 +535,20 @@ func _spawn_animals(list: Array) -> void:
 		var p = _vec(entry.get("p"))
 		a.position = p if p != null else Vector3.ZERO
 		a.set("targets", _targets)
+		a.call("set_fauna_targets", _fauna_targets)
+		a.call("set_food_sources", _fauna_food_sources)
 		a.set("night", night)
 		a.connect("damaged", _on_target_damaged)
 		a.connect("attacked", func(aid: String, target_id: String):
 			if is_host():
 				Net.send({"t": "ahit", "a": aid, "target": target_id}))
+		a.connect("forage_requested", func(aid: String, source_id: String, phase: String):
+			if is_host():
+				Net.send({"t": "aforage", "a": aid, "source": source_id, "phase": phase}))
 		main_node.add_child(a)
 		a.call("set_controlled", is_host())
+		a.call("feed", float(entry.get("fed", 0.0)))
+		a.call("apply_needs", float(entry.get("hunger", 70)), float(entry.get("thirst", 75)))
 		animals[id] = a
 
 func _on_zombie_attack(zombie_id: String, target_id: String) -> void:
@@ -496,7 +568,15 @@ func _noise(at: Vector3) -> void:
 		z.call("hear", at)
 
 func _on_local_shot(weapon_id: String, from: Vector3, to: Vector3) -> void:
-	Net.send({"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]})
+	# A recarga pode terminar no mesmo quadro do tiro: registre o carregador antes.
+	if weapon_id != "bow":
+		_sync_ammo()
+	var packet := {"t": "shot", "w": weapon_id, "o": [from.x, from.y, from.z], "e": [to.x, to.y, to.z]}
+	if weapon_id == "bow":
+		var v := to - from
+		packet["v"] = [v.x, v.y, v.z]
+		packet["a"] = player.get("bow_controller").get("last_arrow_id")
+	Net.send(packet)
 	_noise(from)
 
 ## Acerto de bala num zumbi ou jogador (hitbox): o servidor calcula o dano.
@@ -506,7 +586,10 @@ func _on_target_damaged(target_id: String, zone: String, point: Vector3, normal:
 	if weapon.is_empty():
 		weapon = str(player.get("current_weapon"))
 	# pt = onde a bala bateu (o servidor confere se a cabeça estava ali).
-	Net.send({"t": "hit", "target": target_id, "zone": zone, "w": weapon, "pt": [point.x, point.y, point.z]})
+	var packet := {"t": "hit", "target": target_id, "zone": zone, "w": weapon, "pt": [point.x, point.y, point.z]}
+	if weapon == "bow":
+		packet["a"] = player.get("bow_controller").get("last_hit_arrow_id")
+	Net.send(packet)
 	var headshot := zone == "head"
 	combat_feedback.call("show_hit", headshot)
 	player.get("sound_fx").call("hit_confirm", headshot)
@@ -639,7 +722,7 @@ static func _dress(visual, back: String) -> void:
 func _apply_inventory(data: Dictionary) -> void:
 	var new_inv: Dictionary = data.get("inv", {})
 	var weight := float(data.get("weight", 0))
-	var cap := float(data.get("cap", 10))
+	var cap := float(data.get("cap", SurvivalData.catalog().get("carry_base", 20)))
 	var back := str(data.get("back", ""))
 	var head := str(data.get("head", ""))
 	var chest := str(data.get("chest", ""))
@@ -658,14 +741,20 @@ func _apply_inventory(data: Dictionary) -> void:
 		var w := SurvivalData.weapon_of(str(item))
 		if not w.is_empty() and not owned.has(w):
 			player.call("give_weapon", w, 0)
-			# Arma nova vem descarregada: precisa de munição da mochila (R).
+			# Ao reconectar, restaura o carregador salvo; saque novo continua vazio.
 			var mags: Dictionary = player.get("magazines")
-			mags[w] = 0
+			var saved_mags: Dictionary = data.get("magazines", {})
+			mags[w] = 0 if w == "bow" else clampi(int(saved_mags.get(w, 0)), 0, int(WeaponData.stats(w)["mag"]))
 			if player.get("current_weapon") == w:
-				player.set("ammo", 0)
-			_toast("%s na mochila — R para carregar" % SurvivalData.item_name(str(item)))
+				player.set("ammo", mags[w])
+			_toast("Arco na mochila — equipe e segure o esquerdo" if w == "bow" else "%s na mochila — R para carregar" % SurvivalData.item_name(str(item)))
 	for w in owned.keys():
-		if not inv.has("w_" + str(w)):
+		var present := false
+		for item in inv:
+			if int(inv[item]) > 0 and SurvivalData.weapon_of(str(item)) == str(w):
+				present = true
+				break
+		if not present:
 			player.call("remove_weapon", w)
 	# Reserva de cada arma = munição do tipo dela na mochila.
 	var reserve: Dictionary = player.get("reserve_ammo")
@@ -678,6 +767,16 @@ func _apply_inventory(data: Dictionary) -> void:
 	_update_bars()
 	if building_ctl != null:
 		building_ctl.call("inventory_changed")
+	_update_crafting_context()
+
+func _update_crafting_context() -> void:
+	if building_ctl == null or player == null:
+		return
+	var rules = building_ctl.get("rules")
+	var stations := SurvivalData.nearby_stations(rules.pieces.values(), player.global_position)
+	inventory.call("set_crafting_context", stations, carried, carry_cap)
+	if manual != null:
+		manual.call("set_crafting_context", stations, carried, carry_cap)
 
 ## A recarga tirou balas da reserva: avisa o servidor e iguala as armas do mesmo calibre.
 func _sync_ammo() -> void:
@@ -687,7 +786,10 @@ func _sync_ammo() -> void:
 		var known := int(_ammo_known.get(ammo_item, 0))
 		var now := int(reserve.get(w, 0))
 		if now < known:
-			Net.send({"t": "consume", "ammo": ammo_item, "n": known - now})
+			var packet := {"t": "consume", "ammo": ammo_item, "n": known - now}
+			if w != "bow":
+				packet["w"] = w
+			Net.send(packet)
 			_ammo_known[ammo_item] = now
 			for other in player.get("owned_weapons"):
 				if SurvivalData.ammo_for(str(other)) == ammo_item:
@@ -936,6 +1038,7 @@ func _set_bag(data: Dictionary) -> void:
 	mat.albedo_color = Color("#5a2f26") if str(data.get("title", "")).begins_with("Carca") else Color("#4b5a32")
 	mesh.material_override = mat
 	node.add_child(mesh)
+	node.add_child(preload("res://scripts/survival/collectible_glow.gd").make_marker(Vector3(0, 0.65, 0)))
 	var label := Label3D.new()
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	label.text = str(data.get("title", "")) if str(data.get("title", "")) != "" else "Mochila" + (" de " + str(data.get("name", "")) if str(data.get("name", "")) != "" else "")

@@ -20,7 +20,7 @@ const CAPACITY = 8;
 // Loot crates: public rooms (Eliminatória and Mata-mata). Everyone starts
 // unarmed (mata-mata: with a pistol); crates hold one weapon plus reserve ammo,
 // medkit cases heal, and an eliminated player drops a crate with their gear.
-const SHOP_PRICES = { pistol: 200, smg: 1200, shotgun: 1400, rifle: 2200, sniper: 3200, medkit: 300, grenade: 300 };
+const SHOP_PRICES = { pistol: 200, bow: 600, smg: 1200, shotgun: 1400, rifle: 2200, sniper: 3200, medkit: 300, grenade: 300 };
 const START_CREDITS = 800;
 const BUY_WINDOW_MS = 120000; // 2 minutes
 const KILL_CREDITS = { player: 400, bot: 200, headshot: 100 };
@@ -28,8 +28,8 @@ const MAX_CREDITS = 16000;
 // Bots shop too, with the same credits as players (start, kills and round
 // bonuses): botShop buys their weapon and medkits at each round start.
 const LOOT_RANGE = 3.5; // metres between the looter's last known position and the crate
-const LOOT_WEIGHTS = [['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
-const RESERVE_AMMO = { pistol: 90, smg: 180, rifle: 180, shotgun: 36, sniper: 30 };
+const LOOT_WEIGHTS = [['bow', 18], ['pistol', 30], ['smg', 24], ['rifle', 20], ['shotgun', 16], ['sniper', 10]];
+const RESERVE_AMMO = { pistol: 90, bow: 20, smg: 180, rifle: 180, shotgun: 36, sniper: 30 };
 const MEDKIT_HEAL = 50; // health restored by a medkit (max 100)
 const MAX_MEDKITS = 5; // medkits a player can carry
 const MEDKIT_USE_MS = 3000; // using a medkit takes 3 s (heal_start -> heal)
@@ -44,7 +44,7 @@ const GRENADE_FUSE_MS = [1200, 8000]; // accepted time between throw and blast
 const MAX_MATCH_MS = 8 * 60 * 1000;
 const CLOSE_AFTER_END_MS = 15000;
 // Per-hit damage caps (one pellet). Matches godot/scripts/weapon_data.gd.
-const WEAPON_DAMAGE = { pistol: 22, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
+const WEAPON_DAMAGE = { pistol: 22, bow: 55, smg: 12, rifle: 27, shotgun: 11, sniper: 95 };
 const FIST_DAMAGE = 15; // soco (×1,5 na cabeça)
 const PUNCH_REACH = 3.2; // metros entre os dois (folga para o atraso da rede)
 const PUNCH_COOLDOWN_MS = 550;
@@ -160,6 +160,9 @@ function cleanState(d) {
 		h: !!d.h, // holstered / no weapon yet
 		l: finite(d.l, 1) ? Math.round(d.l * 100) / 100 : 0, // lean (Q/E while aiming): -1 left .. 1 right
 		ch: characterId(d.ch),
+		act: ['bow_draw', 'bow_carry'].includes(d.act) ? d.act : '',
+		tool: d.tool === 'bow' ? 'bow' : '',
+		charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 		v,
 	};
 }
@@ -595,7 +598,7 @@ export class GodotMatch {
 		const owned = bestWeapon(bot.inv);
 		const ownedPrice = owned ? SHOP_PRICES[owned] : 0;
 		const affordable = Object.keys(RESERVE_AMMO)
-			.filter((w) => SHOP_PRICES[w] <= bot.credits && SHOP_PRICES[w] > ownedPrice)
+			.filter((w) => w !== 'bow' && SHOP_PRICES[w] <= bot.credits && SHOP_PRICES[w] > ownedPrice)
 			.sort((a, b) => SHOP_PRICES[b] - SHOP_PRICES[a]);
 		if (affordable.length) {
 			const pick = affordable.length > 1 && Math.random() < 0.35 ? affordable[1] : affordable[0];
@@ -758,7 +761,12 @@ export class GodotMatch {
 				const o = vec3(d.o, 500);
 				const e = vec3(d.e, 1000);
 				if (!o || !e) return;
-				this.broadcast({ t: 'shot', id: shooter.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'rifle', o, e }, meta.id);
+				let arrow = {};
+				if (d.w === 'bow') {
+					if (!shooter.inv?.bow || !this.hitCheck.recordArrow({ attacker: shooter, id: d.a, origin: o, velocity: d.v })) return;
+					arrow = { a: d.a, v: d.v };
+				}
+				this.broadcast({ t: 'shot', id: shooter.id, w: WEAPON_DAMAGE[d.w] ? d.w : 'rifle', o, e, ...arrow }, meta.id);
 				return;
 			}
 			case 'buy': {
@@ -850,7 +858,11 @@ export class GodotMatch {
 				if (m.party && target.team === attacker.team) return; // no friendly fire
 				let damage = 0;
 				let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
-				if (!attacker.bot) {
+				if (d.w === 'bow') {
+					const verdict = this.hitCheck.checkArrow({ attacker, target, id: d.a, zone: zone || 'chest', point: d.pt });
+					if (!verdict.ok) return;
+					zone = verdict.zone;
+				} else if (!attacker.bot) {
 					// Alcance da arma e cabeça plausível (cabeça duvidosa vale como peito).
 					const verdict = this.hitCheck.check({ attacker, target, weapon: d.w, zone, point: d.pt });
 					if (!verdict.ok) return;
