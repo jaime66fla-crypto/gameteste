@@ -4,6 +4,7 @@ extends Control
 ## Não pausa o jogo nem prende o mouse — é só olhar e fechar (M ou ESC).
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const Hydro = preload("res://scripts/survival/hydrology.gd")
 const BAKE_PX_PER_M := 2.0
 
 var player: Node3D
@@ -27,7 +28,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var data := SurvivalData.world()
-	_half = float(data.get("half_size", 240))
+	_half = float(data.get("half_size", 240)) + 90.0
 	for m in data.get("mountains", []):
 		_mountains.append([Vector2(float(m.x), float(m.z)), float(m.r)])
 	if data.has("center_town"): # mapas antigos: a cidade do meio
@@ -65,6 +66,19 @@ func _bake() -> void:
 	painter.draw.connect(func():
 		painter.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
 		painter.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), Color(0.33, 0.45, 0.27))
+		if true:
+			painter.draw_rect(Rect2(Vector2(-_half,-_half),Vector2.ONE*_half*2),Color("#275c72"))
+			var coast := PackedVector2Array()
+			var land := PackedVector2Array()
+			var h := float(SurvivalData.world().get("half_size",420))
+			for i in 128:
+				var a := TAU * float(i) / 128.0
+				var d := Vector2(cos(a),sin(a))
+				var r := h+20.0+sin(a*3)*7+sin(a*7)*4
+				coast.append(d*r)
+				land.append(d*(r-15.0))
+			painter.draw_colored_polygon(coast,Color("#b3a177"))
+			painter.draw_colored_polygon(land,Color("#547342"))
 		for m in _mountains:
 			painter.draw_circle(m[0], m[1], Color("647354"))
 			painter.draw_circle(m[0], m[1] * 0.65, Color("777b68"))
@@ -76,6 +90,11 @@ func _bake() -> void:
 		for p in _ponds:
 			painter.draw_circle(p[0], p[1] + 1.4, Color(0.31, 0.26, 0.2))
 			painter.draw_circle(p[0], p[1], Color(0.18, 0.34, 0.4))
+		if true:
+			var points := PackedVector2Array()
+			for point in SurvivalData.world().hydrology.river.points:
+				points.append(Vector2(float(point[0]),float(point[1])))
+			painter.draw_polyline(points,Color("#38778b"),18.0,true)
 		for road in _roads:
 			painter.draw_line(road[0], road[1], Color(0.30, 0.31, 0.31), road[2])
 		for b in _buildings:
@@ -105,6 +124,11 @@ func _draw() -> void:
 	var scale_px := side / (_half * 2.0)
 	var origin := (size - Vector2(side, side)) * 0.5 + Vector2(0, 14)
 	draw_texture_rect(_texture, Rect2(origin, Vector2(side, side)), false)
+	var wet := float(controller.world.wetness) if controller != null else 0.0
+	for basin in Hydro.basins():
+		var state := Hydro.basin_state(basin,wet)
+		if float(state.radius) > 0:
+			draw_circle(_to_screen(Vector2(float(basin.x),float(basin.z)),origin,scale_px),float(state.radius)*scale_px,Color("#397a91"))
 	draw_rect(Rect2(origin, Vector2(side, side)), Color(1, 1, 1, 0.35), false, 2.0)
 	var font := ThemeDB.fallback_font
 	# Carros: brancos funcionando, cinza escuro quebrados.
@@ -132,6 +156,6 @@ func _draw() -> void:
 	var title := "MAPA"
 	draw_string(font, Vector2(origin.x, origin.y - 14), title, HORIZONTAL_ALIGNMENT_LEFT, -1, 22, Color(1, 0.88, 0.5))
 	draw_string(font, Vector2(origin.x + side * 0.5 - 5, origin.y + 22), "N", HORIZONTAL_ALIGNMENT_LEFT, -1, 18, Color(1, 0.85, 0.4))
-	var legend := "Você (seta amarela)   •   Lagos (azul): água para beber   •   M ou ESC fecha"
+	var legend := "Você (seta amarela)   •   Rio e lagos: água doce   •   Mar: água salgada   •   M ou ESC fecha"
 	var w := font.get_string_size(legend, HORIZONTAL_ALIGNMENT_LEFT, -1, 14).x
 	draw_string(font, Vector2(size.x * 0.5 - w * 0.5, origin.y + side + 26), legend, HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(1, 1, 1, 0.85))

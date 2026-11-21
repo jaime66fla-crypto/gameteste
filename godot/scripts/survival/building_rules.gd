@@ -6,6 +6,8 @@ extends RefCounted
 ## A célula (i, j) cobre x ∈ [i·S, (i+1)·S] e z ∈ [j·S, (j+1)·S]. Andar k: chão
 ## em base + story·k. Bordas: "h" (i, j) = lado z = j·S; "v" (i, j) = lado x = i·S.
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const Hydro = preload("res://scripts/survival/hydrology.gd")
+var wetness := 0.0
 const EDGE_KINDS := ["wall", "doorway", "window"]
 const MAX_LEVEL := 6
 const MAP_BLOCKERS := {"tree": 0.5, "rock": 1.3, "ore": 1.3, "saltpeter": 1.3, "bush": 0.7, "car": 2.5}
@@ -30,6 +32,9 @@ func ground_error(p: Dictionary, map: Dictionary) -> String:
 	for mountain in map.get("mountains", []):
 		if _box_distance(box, Vector2(float(mountain.x), float(mountain.z))) < float(mountain.r):
 			return "Escolha terreno plano para construir."
+	for x in [box.position.x, box.get_center().x, box.end.x]:
+		for z in [box.position.y, box.get_center().y, box.end.y]:
+			if not Hydro.water_at(x, z, wetness).is_empty(): return "Não dá para construir na água."
 	for pond in map.get("ponds", []):
 		if _box_distance(box, Vector2(float(pond.x), float(pond.z))) < float(pond.r) + 1.0:
 			return "Não dá para construir na água."

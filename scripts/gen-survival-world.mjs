@@ -399,6 +399,7 @@ const world = {
 		{ x: 0, z: 360, r: 56, h: 28 },
 		{ x: 0, z: -360, r: 56, h: 28 },
 	],
+	hydrology: {"sea_level":-1.1,"river":{"name":"Rio das Pedras","width":9,"points":[[5,-305],[55,-260],[70,-210],[55,-120],[85,-40],[140,35],[230,85],[310,155],[380,245],[490,310]]},"floodplains":[{"x":105,"z":-12,"r":30,"temporary":true},{"x":263,"z":-83,"r":25,"temporary":true},{"x":-66,"z":186,"r":24,"temporary":true},{"x":285,"z":135,"r":32,"temporary":true}]},
 	ponds,
 	resources,
 	spawns,
@@ -413,6 +414,8 @@ const world = {
 	parkour: [],
 	parkour_bases: [],
 };
+const riverPoints = world.hydrology.river.points;
+world.resources = world.resources.filter(r => r.kind === 'pond' || !riverPoints.slice(1).some((b,i) => segmentDistance(r.p[0],r.p[2],riverPoints[i],b) < world.hydrology.river.width + 2));
 writeFileSync(new URL('../godot/data/survival_world.json', import.meta.url), JSON.stringify(world, null, 1) + '\n');
 const count = (kind) => resources.filter((r) => r.kind === kind).length;
 console.log(`${count('tree')} árvores, ${count('rock')} rochas, ${count('bush')} arbustos, ${count('stick')} galhos, ${count('pebble')} pedrinhas, ${count('fiber')} capins, ${count('herb')} ervas, ${count('ore')} veios de ferro, ${count('saltpeter')} rochas de salitre, ${towns.length} cidades (${buildings.length} prédios, ${containers.length} recipientes, ${count('car')} carros velhos, ${vehicles.length} que andam; ${cleared} recursos tirados), ${ponds.length} lagos, ${grass.length} manchas de grama alta, ${spawns.length} nascimentos`);

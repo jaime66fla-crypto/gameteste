@@ -25,6 +25,8 @@ import { terrainHeight, mountainIntersects } from './godot-terrain.js';
 import { BRANCH_LIMIT, BRANCH_LIFETIME_MS, BRANCH_TREES, treeSeed, branchPeriod, branchSpot } from './godot-tree-branches.js';
 import { ensureAnimalNeeds, animalSnapshot, tickAnimalNeeds, dropTreeFruit, animalForage } from './godot-animal-needs.js';
 
+import { weatherAt, waterAt, riverSample } from './godot-hydrology.js';
+
 const ANIMALS = catalog.animals || {};
 const ANIMAL = catalog.animal_rules || {};
 const BUILD = catalog.build_rules;
@@ -482,7 +484,7 @@ export class GodotSurvival {
 	driveVehicle(me, d) {
 		const v = this.vehicles()[d.v];
 		if (!v || v.driver !== me.id || me.vehicle !== v.id) return;
-		const p = vec3(d.p, 600);
+		const p = vec3(d.p, 6000);
 		if (!p) return;
 		const step = flat(v.p, p);
 		if (step > VEHICLE_MAX_STEP) return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
@@ -584,7 +586,7 @@ export class GodotSurvival {
 	}
 
 	clock() {
-		return { day_ms: DAY_MS, time: (Date.now() - this.state.createdAt) % DAY_MS };
+		return { day_ms: DAY_MS, time: (Date.now() - this.state.createdAt) % DAY_MS, weather: weatherAt(Date.now() - this.state.createdAt) };
 	}
 
 	/** Hora do jogo (o dia começa às 6h, como no cliente). */
@@ -749,7 +751,7 @@ export class GodotSurvival {
 		if (me.dead) return;
 		switch (d.t) {
 			case 's': {
-				const p = vec3(d.p, 600);
+				const p = vec3(d.p, 6000);
 				if (!p) return;
 				me.p = p;
 				me.stance = stanceOf(d);
@@ -769,8 +771,8 @@ export class GodotSurvival {
 			case 'ahit': return isHost && this.animalHit(d);
 			case 'aforage': return isHost && this.animalForage(d);
 			case 'shot': {
-				const o = vec3(d.o, 600);
-				const e = vec3(d.e, 1200);
+				const o = vec3(d.o, 6000);
+				const e = vec3(d.e, 8000);
 				if (!o || !e) return;
 				let arrow = {};
 				if (d.w === 'bow') {
@@ -789,6 +791,12 @@ export class GodotSurvival {
 			case 'hit': return this.gunHit(me, d);
 			case 'melee': return this.meleeHit(me, d);
 			case 'zhit': return isHost && this.zombieHit(d);
+			case 'drink_water': {
+				const water = waterAt(me.p[0], me.p[2], weatherAt(Date.now()-s.createdAt).wet);
+				if (!water?.fresh || (me.lastDrink || 0) + 1000 > Date.now()) return;
+				me.lastDrink = Date.now(); me.thirst = Math.min(100, me.thirst + 20);
+				this.save(); this.sendStats(me); return;
+			}
 			case 'search': return this.search(me, d, reply, note);
 			case 'take': return this.take(me, d, reply, note);
 			case 'drop': return this.drop(me, d, note);
@@ -1139,6 +1147,7 @@ export class GodotSurvival {
 			if (Math.abs(x) > world.half_size - 4 || Math.abs(z) > world.half_size - 4) continue;
 			const p = [round1(x), 0.2, round1(z)];
 			p[1] = round1(terrainHeight(p[0], p[2]) + 0.3);
+			if (waterAt(p[0],p[2],weatherAt(Date.now()-this.state.createdAt).wet)) continue;
 			const nearest = Math.min(...players.map((pl) => flat(pl.p, p)));
 			if (nearest < ZOMBIE_SPAWN_MIN || nearest > ZOMBIE_SPAWN_MAX) continue;
 			return p;
@@ -1297,7 +1306,7 @@ export class GodotSurvival {
 			const p = [round1(anchor.p[0] + Math.cos(a) * d), 0.2, round1(anchor.p[2] + Math.sin(a) * d)];
 			p[1] = round1(terrainHeight(p[0], p[2]) + 0.3);
 			if (Math.abs(p[0]) > world.half_size - 8 || Math.abs(p[2]) > world.half_size - 8) continue;
-			if ((world.ponds || []).some((pond) => Math.hypot(pond.x - p[0], pond.z - p[2]) < pond.r + 4)) continue;
+			if (waterAt(p[0], p[2], weatherAt(Date.now()-this.state.createdAt).wet)) continue;
 			if (players.some((pl) => flat(pl.p, p) < min)) continue;
 			return p;
 		}
@@ -1548,6 +1557,7 @@ export class GodotSurvival {
 	}
 
 	branchBlocked(pos) {
+		if (waterAt(pos[0],pos[2],weatherAt(Date.now()-this.state.createdAt).wet)) return true;
 		return [...this.grid.pieces.values()].some((piece) => {
 			const distance = this.grid.distance(piece, pos);
 			const def = BUILDS[piece.kind] || {};
@@ -1732,6 +1742,10 @@ export class GodotSurvival {
 		else return '';
 		if (box.some((n) => Math.abs(n) > half)) return 'Fora da área do mundo.';
 		if (mountainIntersects(box)) return 'Escolha terreno plano para construir.';
+		const wet = weatherAt(Date.now()-this.state.createdAt).wet;
+		for (const x of [box[0],(box[0]+box[2])/2,box[2]]) for (const z of [box[1],(box[1]+box[3])/2,box[3]]) {
+			if (waterAt(x,z,wet)) return 'Não dá para construir na água.';
+		}
 		for (const pond of world.ponds || []) {
 			const dx = Math.max(box[0] - pond.x, 0, pond.x - box[2]);
 			const dz = Math.max(box[1] - pond.z, 0, pond.z - box[3]);
@@ -1756,7 +1770,7 @@ export class GodotSurvival {
 		const s = this.state;
 		const p = { kind: d.kind };
 		if (def.slot === 'free') {
-			p.p = vec3(d.p, 600);
+			p.p = vec3(d.p, 6000);
 			if (!p.p) return;
 			p.y = finite(d.y, 100) ? Math.round(d.y * 100) / 100 : 0;
 			if (def.wall && d.wall === true) p.wall = true; // tocha presa na parede

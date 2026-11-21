@@ -18,6 +18,8 @@ const BuildingScript = preload("res://scripts/survival/survival_building.gd")
 const AnimalScript = preload("res://scripts/survival/animal.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const HandTorch = preload("res://scripts/survival/hand_torch.gd")
+const RainWeather = preload("res://scripts/survival/rain_weather.gd")
+var weather: Node3D
 var death_title: Label
 var torch_in_hand := false # tocha acesa na mão (os outros veem pelo "tc" do estado)
 var animals: Dictionary = {} # id -> Animal
@@ -103,6 +105,11 @@ func _ready() -> void:
 	var we := main_node.get_node_or_null("WorldEnvironment") as WorldEnvironment
 	env = we.environment if we else null
 	_build_ui()
+	weather = RainWeather.new()
+	weather.player = player
+	weather.world = world
+	main_node.add_child(weather)
+	player.set("water_query", world.water_at)
 	var info: Dictionary = Net.start_info
 	player.call("start_unarmed")
 	player.set("interact_handler", _interact)
@@ -927,6 +934,10 @@ func _find_target() -> Dictionary:
 		var car: Dictionary = driving_ctl.call("target_near", me)
 		if not car.is_empty():
 			best = car
+	if best.is_empty() or (best.get("type") == "resource" and best.get("kind") == "pond"):
+		var water: Dictionary = world.call("water_at", me)
+		if not water.is_empty() and bool(water.get("fresh", false)):
+			best = {"type": "water", "id": "fresh", "label": "[E] Beber água doce"}
 	return best
 
 ## Item que faz esse tipo de coleta ("wood" -> machado de pedra), para os avisos.
@@ -957,7 +968,9 @@ func _interact() -> bool:
 	if _target.is_empty():
 		return false
 	var id := str(_target["id"])
-	if _target["type"] == "build":
+	if _target["type"] == "water":
+		Net.send({"t": "drink_water"})
+	elif _target["type"] == "build":
 		building_ctl.call("interact", id)
 	elif _target["type"] == "trunk":
 		Net.send({"t": "search", "k": "trunk:" + id})
@@ -1062,6 +1075,7 @@ func _set_bag(data: Dictionary) -> void:
 func _apply_clock(data: Dictionary) -> void:
 	if data.is_empty():
 		return
+	if weather != null: weather.call("sync_weather", data.get("weather", {}))
 	_day_ms = float(data.get("day_ms", _day_ms))
 	_clock_ms = float(data.get("time", _clock_ms))
 
@@ -1084,13 +1098,18 @@ func _update_daylight() -> void:
 	var light := sin(day_fraction * PI)
 	if sun:
 		sun.rotation_degrees.x = -lerpf(8.0, 172.0, day_fraction)
-		sun.light_energy = 0.08 if night else 0.25 + light * 0.75
+		sun.light_energy = (0.08 if night else 0.25 + light * 0.75) * (1.0 - float(weather.rain) * 0.65 if weather != null else 1.0)
 		sun.light_color = Color("#ffd2a0").lerp(Color("#fff1dc"), light)
 	if env:
 		env.ambient_light_energy = 0.07 if night else 0.12 + light * 0.2
-		env.fog_density = 0.012 if night else 0.004
+		env.fog_density = (0.012 if night else 0.004) + (float(weather.rain) * 0.006 if weather != null else 0.0)
 		env.fog_light_color = Color("#141b22") if night else Color("#879d9e")
 		env.background_energy_multiplier = 0.15 if night else 0.4 + light * 0.6
+		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
+			var storm := float(weather.rain) if weather != null else 0.0
+			var sky := env.sky.sky_material as ProceduralSkyMaterial
+			sky.sky_top_color = Color("#2785d6").lerp(Color("#424e5c"), storm * 0.9)
+			sky.sky_horizon_color = Color("#a9d9f1").lerp(Color("#77838d"), storm * 0.9)
 
 # --------------------------------------------------------------------- HUD ---
 

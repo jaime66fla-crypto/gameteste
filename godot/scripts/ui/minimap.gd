@@ -15,6 +15,7 @@ var _grass: Array = [] # [center Vector2, r]
 var _ponds: Array = [] # [center Vector2, r]
 var _mountains: Array = []
 var _trees: PackedVector2Array = PackedVector2Array()
+var _is_island := false
 var _half := 60.0
 var _canvas: Control
 var _last_view := Vector3.INF
@@ -32,9 +33,10 @@ func setup(local_player: Node3D, survival: bool) -> void:
 		return
 	# Sobrevivência: o mundo aberto (floresta, lagos; cidade do meio só nos mapas antigos).
 	if survival:
+		_is_island = true
 		meters_per_px = 0.95
 		var data := SurvivalData.world()
-		_half = float(data.get("half_size", 240))
+		_half = float(data.get("half_size", 240)) + 90.0
 		for m in data.get("mountains", []):
 			_mountains.append([Vector2(float(m.x), float(m.z)), float(m.r)])
 		if data.has("center_town"):
@@ -133,7 +135,8 @@ func _build_coords() -> void:
 
 ## Texto das coordenadas para uma posição do mundo (também usado nos testes).
 func coords_of(world: Vector3) -> Vector2i:
-	return Vector2i(int(round(world.x + _half)), int(round(world.z + _half)))
+	var origin := float(SurvivalData.world().get("half_size", 420)) if _is_island else _half
+	return Vector2i(int(round(world.x + origin)), int(round(world.z + origin)))
 
 ## Direção em graus (0 = norte, 90 = leste) e o nome curto.
 static func heading_of(yaw: float) -> Array:
@@ -155,6 +158,7 @@ func _update_coords() -> void:
 
 # O mapa (grama, árvores, ruas, prédios) não muda: é desenhado uma vez numa
 # textura e, a cada quadro, só essa textura é girada em volta do jogador.
+const Hydro = preload("res://scripts/survival/hydrology.gd")
 const BAKE_PX_PER_M := 2.0
 var _map_texture: Texture2D
 
@@ -175,6 +179,19 @@ func _bake() -> void:
 func _paint_map(ci: Control) -> void:
 	ci.draw_set_transform(Vector2(_half, _half) * BAKE_PX_PER_M, 0.0, Vector2.ONE * BAKE_PX_PER_M)
 	ci.draw_rect(Rect2(Vector2(-_half, -_half), Vector2(_half, _half) * 2.0), _map_color)
+	if _is_island:
+		ci.draw_rect(Rect2(Vector2(-_half,-_half),Vector2.ONE*_half*2),Color("#275c72"))
+		var coast := PackedVector2Array()
+		var land := PackedVector2Array()
+		var h := float(SurvivalData.world().get("half_size",420))
+		for i in 128:
+			var a := TAU * float(i) / 128.0
+			var d := Vector2(cos(a),sin(a))
+			var r := h+20.0+sin(a*3)*7+sin(a*7)*4
+			coast.append(d*r)
+			land.append(d*(r-15.0))
+		ci.draw_colored_polygon(coast,Color("#b3a177"))
+		ci.draw_colored_polygon(land,Color("#547342"))
 	for m in _mountains:
 		ci.draw_circle(m[0], m[1], Color("647354"))
 		ci.draw_circle(m[0], m[1] * 0.65, Color("777b68"))
@@ -186,6 +203,11 @@ func _paint_map(ci: Control) -> void:
 	for p in _ponds:
 		ci.draw_circle(p[0], p[1] + 1.4, Color(0.31, 0.26, 0.2, 1.0))
 		ci.draw_circle(p[0], p[1], Color(0.18, 0.34, 0.4, 1.0))
+	if _is_island:
+		var points := PackedVector2Array()
+		for point in SurvivalData.world().hydrology.river.points:
+			points.append(Vector2(float(point[0]),float(point[1])))
+		ci.draw_polyline(points,Color("#38778b"),18.0,true)
 	for road in _roads:
 		ci.draw_line(road[0], road[1], Color(0.30, 0.31, 0.31, 1.0), road[2])
 	for b in _buildings:

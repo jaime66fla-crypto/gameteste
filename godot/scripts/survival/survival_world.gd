@@ -15,6 +15,11 @@ const NatureModel = preload("res://scripts/survival/nature_model.gd")
 const ParkourDistrictScript = preload("res://scripts/parkour_district.gd")
 const MountainTerrain = preload("res://scripts/survival/mountain_terrain.gd")
 const CollectibleGlow = preload("res://scripts/survival/collectible_glow.gd")
+const Hydrology = preload("res://scripts/survival/hydrology.gd")
+const IslandTerrain = preload("res://scripts/survival/island_terrain.gd")
+const IslandWater = preload("res://scripts/survival/island_water.gd")
+var water_system: Node3D
+var wetness := 0.0
 const LakeWater = preload("res://scripts/survival/lake_water.gd")
 var _resource_glow: Node3D
 ## Coisas pequenas do chão: um modelo só, visíveis até PICKUP_RANGE, sem colisão.
@@ -46,11 +51,11 @@ func build_staged(progress: Callable = Callable()) -> void:
 	half_size = float(data.get("half_size", 240))
 	center_half = float(data.get("center_town", {}).get("half_size", 0.0))
 	ponds = data.get("ponds", [])
-	_ground()
-	MountainTerrain.build(self, data.get("mountains", []))
+	IslandTerrain.build(self, half_size)
+	water_system = IslandWater.new()
+	add_child(water_system)
 	await _loading_batch(progress, "Montando lagos e estradas…", 0.08)
-	for pond in ponds:
-		_pond(pond)
+
 	for road in data.get("roads", []):
 		_road(road)
 	var buildings: Array = data.get("buildings", [])
@@ -82,7 +87,7 @@ func build_staged(progress: Callable = Callable()) -> void:
 		_tall_grass(grass_patches[i])
 		if i % 12 == 11:
 			await _loading_batch(progress, "Preparando vegetação…", 0.87 + 0.1 * float(i) / maxf(1, grass_patches.size()))
-	_fence()
+
 	_resource_glow = CollectibleGlow.new()
 	add_child(_resource_glow)
 	_resource_glow.call("setup", resources)
@@ -207,6 +212,7 @@ func _short_grass() -> void:
 					continue
 				if in_pond(p, 0.5) or _on_pavement(p):
 					continue
+				p.y = Hydrology.ground_height(p.x,p.z)
 				var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4))
 				list.append(Transform3D(basis, p))
 			if not list.is_empty():
@@ -258,7 +264,10 @@ func _tall_grass(patch: Dictionary) -> void:
 		var a := rng.randf() * TAU
 		var d := sqrt(rng.randf()) * r
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(1, rng.randf_range(0.85, 1.2), 1))
-		list.append(Transform3D(basis, c + Vector3(cos(a) * d, 0, sin(a) * d)))
+		var p := c + Vector3(cos(a) * d, 0, sin(a) * d)
+		if in_pond(p, 0.2): continue
+		p.y = Hydrology.ground_height(p.x,p.z)
+		list.append(Transform3D(basis, p))
 	var node := _multimesh(mesh, list, 170.0)
 	node.name = "TallGrass"
 
@@ -551,13 +560,14 @@ func set_container_empty(id: String, empty: bool) -> void:
 func _resource(res: Dictionary) -> void:
 	var kind := str(res["kind"])
 	var p: Array = res["p"]
+	if kind != "pond" and not Hydrology.water_at(float(p[0]), float(p[2]), 0.0).is_empty(): return
 	if kind in PICKUPS or kind == "pond":
-		_light_resource(res, kind, Vector3(float(p[0]), 0, float(p[2])))
+		_light_resource(res, kind, Vector3(float(p[0]), Hydrology.ground_height(float(p[0]),float(p[2])), float(p[2])))
 		return
 	var body := StaticBody3D.new()
 	body.name = "Res_" + str(res["id"])
 	body.collision_layer = HitboxScript.LAYER_WORLD
-	body.position = Vector3(float(p[0]), 0, float(p[2]))
+	body.position = Vector3(float(p[0]), Hydrology.ground_height(float(p[0]),float(p[2])), float(p[2]))
 	body.rotation.y = float(res.get("yaw", 0.0))
 	add_child(body)
 	var parts: Array = []
@@ -721,6 +731,7 @@ func _pond(data: Dictionary) -> void:
 
 ## Ponto dentro (ou a até `margin` m) de um lago?
 func in_pond(point: Vector3, margin: float = 0.0) -> bool:
+	if not Hydrology.water_at(point.x, point.z, 0.0).is_empty(): return true
 	for pond in ponds:
 		var r := float(pond["r"]) + margin
 		var dx := point.x - float(pond["x"])
@@ -859,20 +870,10 @@ func set_depleted(id: String, value: bool) -> void:
 
 # ----------------------------------------------------------------- borda ---
 
-## Cerca na borda do mundo, mais uma barreira alta invisível.
-func _fence() -> void:
-	var h := half_size - 0.5
-	var wood := _mat("wood", "#6e5a42")
-	for side in [-1.0, 1.0]:
-		for along_x in [true, false]:
-			var pos := Vector3(0, 1.0, side * h) if along_x else Vector3(side * h, 1.0, 0)
-			var size := Vector3(h * 2, 2.0, 0.3) if along_x else Vector3(0.3, 2.0, h * 2)
-			_solid(self, pos, size, wood).name = "EdgeFence"
-			var barrier := StaticBody3D.new()
-			barrier.position = pos + Vector3(0, 14, 0)
-			add_child(barrier)
-			var shape := BoxShape3D.new()
-			shape.size = size + Vector3(0, 26, 0)
-			var col := CollisionShape3D.new()
-			col.shape = shape
-			barrier.add_child(col)
+## Open coastline: there are no fence or invisible wall bodies.
+func set_wetness(value: float) -> void:
+	wetness = clampf(value, 0, 1)
+	if water_system != null: water_system.call("apply_wetness", wetness)
+
+func water_at(point: Vector3) -> Dictionary:
+	return Hydrology.water_at(point.x, point.z, wetness)

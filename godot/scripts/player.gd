@@ -99,6 +99,8 @@ const LEAN_ROLL := 0.2
 var lean := 0.0 # -1 left .. 1 right
 ## Reload and medkit both take 3 s, shown as a clock under the crosshair.
 const ACTION_TIME := 3.0
+var water_query: Callable
+var swimming := false
 var channel_label := ""
 var channel_total := 0.0
 var channel_left := 0.0
@@ -567,7 +569,10 @@ func _physics_process(delta: float) -> void:
     var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
     var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
+    var water: Dictionary = water_query.call(global_position) if water_query.is_valid() else {}
+    swimming = not water.is_empty() and float(water.get("surface", -100)) - global_position.y > 0.75
     var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
+    if swimming: current_speed = minf(current_speed, 2.6)
     current_speed *= 1.0 - LAND_SLOWDOWN * clampf(_land_recovery / LAND_RECOVERY_TIME, 0.0, 1.0)
     _land_recovery = maxf(0.0, _land_recovery - delta)
     var grounded_before := is_on_floor()
@@ -606,7 +611,12 @@ func _physics_process(delta: float) -> void:
         velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
     else:
         velocity.y = -0.1
-    var fall_speed := -velocity.y
+    if swimming:
+        var target_y := float(water.surface) - height * 0.58
+        velocity.y = clampf((target_y - global_position.y) * 4.0, -3.0, 3.0)
+        _jump_buffer_left = 0.0
+        if channel_left > 0.0: cancel_channel()
+    var fall_speed := 0.0 if swimming else -velocity.y
     move_and_slide()
     if is_on_floor() and not grounded_before:
         _on_landed(fall_speed)

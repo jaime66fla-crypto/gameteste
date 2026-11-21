@@ -451,6 +451,7 @@ func _process(delta: float) -> void:
 		return
 	_candidate_error = rules.check(_candidate, owns)
 	if not offline and _candidate_error.is_empty():
+		rules.wetness = float(controller.world.wetness)
 		_candidate_error = rules.ground_error(_candidate, SurvivalData.world())
 	if _candidate_error.is_empty():
 		var c: Vector3 = rules.center(_candidate)
