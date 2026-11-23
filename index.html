@@ -1,0 +1,376 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Campo de Fogo: build de teste para Windows. Baixe, jogue e deixe seu feedback.">
+<title>Campo de Fogo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: uma coluna de leitura larga; faixa de brasa no topo, blocos separados por fios finos, painel de feedback ao vivo no fim. Visual único escuro (fogo/alerta). */
+:root {
+  color-scheme: dark;
+  --bg: #121011;
+  --panel: #1b1718;
+  --panel-2: #241e1d;
+  --line: #3a302c;
+  --fg: #ece4dc;
+  --muted: #a3958a;
+  --ember: #ff7a1a;
+  --flame: #e5392b;
+  --ash: #6f625a;
+  --ok: #7fbf6a;
+  --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body); }
+a { color: var(--ember); }
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+.wrap { max-width: 1040px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+
+/* Hero */
+.hero {
+  margin-top: calc(-1 * env(safe-area-inset-top, 0px));
+  padding-top: calc(env(safe-area-inset-top, 0px) + 3.5rem);
+  padding-bottom: 3rem;
+  background:
+    radial-gradient(120% 90% at 85% 120%, rgba(229,57,43,.38), transparent 60%),
+    radial-gradient(80% 70% at 10% 130%, rgba(255,122,26,.22), transparent 65%),
+    var(--bg);
+  border-bottom: 1px solid var(--line);
+  position: relative; overflow: hidden;
+}
+#embers { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.hero .wrap { position: relative; }
+.tag { font: 500 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ember); display: inline-flex; gap: .6em; align-items: center; }
+.tag .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--flame); box-shadow: 0 0 10px var(--flame); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+h1 { font: 900 clamp(3.4rem, 12vw, 7.5rem)/.86 var(--display); text-transform: uppercase; letter-spacing: .01em; margin: .9rem 0 1rem; text-wrap: balance; }
+h1 span { color: var(--ember); text-shadow: 0 0 40px rgba(255,122,26,.35); }
+.lede { max-width: 58ch; color: var(--muted); font-size: 1.1rem; margin: 0 0 1.8rem; }
+.cta { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; }
+.btn { display: inline-flex; align-items: center; gap: .5em; font: 700 1.05rem/1 var(--display); letter-spacing: .08em; text-transform: uppercase; padding: .95em 1.4em; border-radius: 3px; border: 1px solid var(--ember); text-decoration: none; cursor: pointer; }
+.btn.primary { background: var(--ember); color: #1a0d05; }
+.btn.primary:hover { background: #ff8f3f; }
+.btn.ghost { background: transparent; color: var(--fg); border-color: var(--line); }
+.btn.ghost:hover { border-color: var(--ember); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.build { font: 13px var(--mono); color: var(--muted); }
+.build b { color: var(--fg); font-weight: 500; }
+
+/* Sections */
+section { padding-block: 3.2rem; border-bottom: 1px solid var(--line); }
+h2 { font: 800 clamp(1.9rem, 5vw, 2.6rem)/1 var(--display); text-transform: uppercase; letter-spacing: .02em; margin: 0 0 .4rem; text-wrap: balance; }
+.sub { color: var(--muted); margin: 0 0 1.8rem; max-width: 62ch; }
+
+.features { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.feat { background: var(--panel); padding: 1.3rem 1.2rem 1.4rem; min-width: 0; }
+.feat .k { font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ember); }
+.feat h3 { font: 700 1.35rem/1.1 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: .45rem 0 .4rem; }
+.feat p { margin: 0; color: var(--muted); font-size: .95rem; }
+
+.log { display: grid; gap: 0; }
+.rel { display: grid; grid-template-columns: 7.5rem 1fr; gap: 1.2rem; padding: 1rem 0; border-top: 1px dashed var(--line); }
+.rel:first-child { border-top: 0; }
+.rel .v { font: 500 1rem var(--mono); color: var(--fg); font-variant-numeric: tabular-nums; }
+.rel .v small { display: block; color: var(--ash); font-size: .75rem; }
+.rel.now .v { color: var(--ember); }
+.rel h4 { margin: 0 0 .2rem; font-size: 1rem; font-weight: 600; }
+.rel p { margin: 0; color: var(--muted); font-size: .95rem; min-width: 0; }
+
+.keys { display: flex; flex-wrap: wrap; gap: .5rem .9rem; margin-top: 1.4rem; color: var(--muted); font-size: .92rem; }
+kbd { font: 500 .8rem var(--mono); background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: .15em .5em; color: var(--fg); }
+
+.tests { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: .8rem; }
+.tests li { background: var(--panel); border-left: 3px solid var(--flame); padding: .9rem 1rem; min-width: 0; }
+.tests b { display: block; font-weight: 600; }
+.tests span { color: var(--muted); font-size: .92rem; }
+
+/* Feedback */
+.fb { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 2rem; align-items: start; }
+@media (max-width: 820px) { .fb { grid-template-columns: 1fr; } .rel { grid-template-columns: 1fr; gap: .2rem; } }
+form { background: var(--panel); border: 1px solid var(--line); padding: 1.4rem; display: grid; gap: 1.1rem; }
+label, legend { font: 500 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+fieldset { border: 0; padding: 0; margin: 0; }
+.stars { display: flex; gap: .3rem; margin-top: .4rem; }
+.stars button { font-size: 1.9rem; line-height: 1; background: none; border: 0; color: var(--ash); cursor: pointer; padding: 0 .1rem; }
+.stars button.on { color: var(--ember); text-shadow: 0 0 14px rgba(255,122,26,.5); }
+input, select, textarea { width: 100%; margin-top: .4rem; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .65rem .75rem; font: 15px/1.5 var(--body); }
+textarea { min-height: 84px; resize: vertical; }
+.status { font: 13px var(--mono); color: var(--muted); min-height: 1.2em; margin: 0; }
+.status.err { color: var(--flame); }
+.status.ok { color: var(--ok); }
+
+.summary { display: flex; flex-wrap: wrap; gap: 1.6rem; padding-bottom: 1.1rem; margin-bottom: 1rem; border-bottom: 1px solid var(--line); }
+.stat .n { font: 800 2.4rem/1 var(--display); color: var(--fg); font-variant-numeric: tabular-nums; }
+.stat .l { font: 500 11px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.votes { display: grid; gap: .45rem; margin-bottom: 1.4rem; }
+.vote { display: grid; grid-template-columns: 9.5rem 1fr 2rem; gap: .6rem; align-items: center; font-size: .9rem; }
+.vote .bar { height: 8px; background: var(--panel-2); border-radius: 2px; overflow: hidden; }
+.vote .bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--flame), var(--ember)); }
+.vote .c { font: 13px var(--mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.entries { display: grid; gap: .8rem; }
+.entry { background: var(--panel); border: 1px solid var(--line); padding: .9rem 1rem; min-width: 0; }
+.entry header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: .4rem; margin-bottom: .35rem; }
+.entry .who { font-weight: 600; }
+.entry .meta { font: 12px var(--mono); color: var(--muted); }
+.entry .st { color: var(--ember); letter-spacing: .1em; }
+.entry p { margin: .25rem 0 0; font-size: .94rem; overflow-wrap: anywhere; }
+.entry p em { font-style: normal; font: 500 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ash); margin-right: .4em; }
+.empty { color: var(--muted); border: 1px dashed var(--line); padding: 1.2rem; }
+footer { padding-block: 2rem 3rem; color: var(--ash); font: 13px var(--mono); }
+@media (prefers-reduced-motion: reduce) { .tag .dot { animation: none; } #embers { display: none; } }
+</style>
+<style>body{margin:0}img{max-width:100%}[hidden]{display:none!important}input{width:100%}</style>
+</head>
+<body>
+
+
+<header class="hero">
+  <canvas id="embers" aria-hidden="true"></canvas>
+  <div class="wrap">
+    <div class="tag"><span class="dot"></span>Build de teste · Windows</div>
+    <h1>Campo de <span>Fogo</span></h1>
+    <p class="lede">Tiro em terceira pessoa e sobrevivência em cidades abandonadas. Você começa sem nada, coleta, fabrica, constrói, pesca e tenta não virar comida de zumbi. Esta página é para quem está testando: baixe, jogue e conte o que achou lá embaixo.</p>
+    <div class="cta">
+      <a class="btn primary" href="https://jaimexzz.itch.io/campo-de-fogo" target="_blank" rel="noopener">Baixar no itch.io</a>
+      <a class="btn ghost" href="#feedback">Deixar feedback</a>
+      <span class="build">versão no ar <b>1.31.0</b></span>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="wrap">
+      <h2>O que tem no jogo</h2>
+      <p class="sub">Partidas rápidas de tiro online e um modo Sobrevivência onde tudo é coletado e fabricado.</p>
+      <div class="features">
+        <div class="feat"><div class="k">Partida</div><h3>Tiro online</h3><p>Salas por modo, bots, sniper com luneta de 4× a 8×, arco e flecha em todos os modos.</p></div>
+        <div class="feat"><div class="k">Sobrevivência</div><h3>Começa do zero</h3><p>Floresta, três cidades abandonadas, sucata de carros, fome, sede e animais que são comida ou perigo.</p></div>
+        <div class="feat"><div class="k">Craft</div><h3>Livro de receitas</h3><p>Manual de sobrevivência na tecla <kbd>L</kbd>, bancada, estações e ferramentas modeladas no Blender.</p></div>
+        <div class="feat"><div class="k">Construção</div><h3>Casas na grade</h3><p>Paredes, portas, rampas e baú em módulos de 3 m. Tochas na mão, no chão e na parede.</p></div>
+        <div class="feat"><div class="k">Mundo</div><h3>Ilha, rio e chuva</h3><p>Pontes, cheias sincronizadas entre jogadores, veículos com porta-malas e combustível em litros.</p></div>
+        <div class="feat"><div class="k">Novo</div><h3>Pesca</h3><p>Fabrique a vara, espere a fisgada e puxe na hora certa. Com sons da natureza em volta.</p></div>
+      </div>
+      <div class="keys">
+        <span><kbd>WASD</kbd> andar</span><span><kbd>Shift</kbd> correr</span><span><kbd>Espaço</kbd> pular</span><span><kbd>Ctrl</kbd> agachar</span><span><kbd>Botão dir.</kbd> mirar</span><span><kbd>R</kbd> recarregar</span><span><kbd>L</kbd> manual</span><span><kbd>Esc</kbd> soltar cursor</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>O que mudou</h2>
+      <p class="sub">As últimas versões publicadas, da mais nova para a mais antiga.</p>
+      <div class="log">
+        <div class="rel now"><div class="v">1.31.0<small>atual</small></div><div><h4>Pesca, combustível em litros e sons</h4><p>Pesca com fisgada, consumo de combustível medido em litros, sons da natureza. Agora dá para guardar a arma equipada pelo inventário.</p></div></div>
+        <div class="rel"><div class="v">1.30.1</div><div><h4>Correção de veículos</h4><p>Laterais da caminhonete voltaram e carros não nascem mais sobrepostos.</p></div></div>
+        <div class="rel"><div class="v">1.30.0</div><div><h4>Ilha, rio e chuva</h4><p>Mapa ganhou ilha, rio, pontes, chuva e cheias iguais para todos os jogadores.</p></div></div>
+        <div class="rel"><div class="v">1.29.0</div><div><h4>Porta-malas e inventário</h4><p>Porta-malas nos carros, inventário com quantidades, correções de veículos e fauna.</p></div></div>
+        <div class="rel"><div class="v">1.28.0</div><div><h4>Ecossistema</h4><p>Sobrevivência e ecossistema revistos, várias correções de consistência.</p></div></div>
+        <div class="rel"><div class="v">1.25.1</div><div><h4>Arco e flecha</h4><p>Arco em todos os modos, ajustes de postura e novos sons.</p></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <h2>O que testar agora</h2>
+      <p class="sub">Se tiver só 15 minutos, foque nisto. É o que mais mudou na 1.31.0.</p>
+      <ul class="tests">
+        <li><b>Fabricar a vara e pescar</b><span>A fisgada é clara? Dá para perceber a hora de puxar?</span></li>
+        <li><b>Dirigir até acabar o combustível</b><span>O consumo em litros faz sentido? O aviso aparece a tempo?</span></li>
+        <li><b>Guardar a arma pelo inventário</b><span>Equipar, guardar e trocar sem a arma sumir ou duplicar.</span></li>
+        <li><b>Andar perto do rio na chuva</b><span>Os sons da natureza e a cheia funcionam juntos sem travar?</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="feedback">
+    <div class="wrap">
+      <h2>Seu feedback</h2>
+      <p class="sub">Não precisa de conta: escreva seu apelido, dê a nota e conte o que achou. Todo mundo que abre esta página vê as respostas.</p>
+      <div class="fb">
+        <form id="fbForm" novalidate>
+          <div>
+            <label for="name">Seu nome ou apelido</label>
+            <input id="name" maxlength="40" autocomplete="nickname" placeholder="Ex.: Zé da Sniper">
+          </div>
+          <fieldset>
+            <legend>Nota para a 1.31.0</legend>
+            <div class="stars" id="stars" role="radiogroup" aria-label="Nota de 1 a 5"></div>
+          </fieldset>
+          <div>
+            <label for="next">Qual recurso você quer no próximo update?</label>
+            <select id="next">
+              <option value="">Escolha um</option>
+              <option value="zumbis">Mais zumbis e hordas</option>
+              <option value="armas">Novas armas</option>
+              <option value="veiculos">Mais veículos</option>
+              <option value="mapa">Mapa maior</option>
+              <option value="coop">Missões em grupo</option>
+              <option value="craft">Mais receitas de craft</option>
+            </select>
+          </div>
+          <div>
+            <label for="liked">O que você curtiu</label>
+            <textarea id="liked" maxlength="800" placeholder="Ex.: a pesca ficou viciante"></textarea>
+          </div>
+          <div>
+            <label for="bugs">Bugs ou coisas estranhas</label>
+            <textarea id="bugs" maxlength="800" placeholder="O que aconteceu e onde. Ex.: carro atravessou a ponte na cheia"></textarea>
+          </div>
+          <div class="cta">
+            <button class="btn primary" type="submit" id="send">Enviar feedback</button>
+          </div>
+          <p class="status" id="status" role="status"></p>
+        </form>
+
+        <div>
+          <div class="summary">
+            <div class="stat"><div class="n" id="avg">–</div><div class="l">nota média</div></div>
+            <div class="stat"><div class="n" id="count">0</div><div class="l">testadores</div></div>
+          </div>
+          <div class="votes" id="votes"></div>
+          <div class="entries" id="entries"><div class="empty" id="loading">Carregando respostas…</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap">Campo de Fogo · build 1.31.0 para Windows · feito em Godot</div></footer>
+
+<script>
+(() => {
+  // ---------- brasas no hero ----------
+  const cv = document.getElementById("embers");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (cv && !reduce) {
+    const ctx = cv.getContext("2d");
+    let W, H, parts = [];
+    const size = () => { const r = cv.getBoundingClientRect(); W = cv.width = r.width * devicePixelRatio; H = cv.height = r.height * devicePixelRatio; };
+    size(); addEventListener("resize", size);
+    const spawn = () => ({ x: Math.random() * W, y: H + 10, vy: (0.4 + Math.random() * 1.1) * devicePixelRatio, vx: (Math.random() - .5) * .5, r: (0.6 + Math.random() * 1.8) * devicePixelRatio, life: 1 });
+    for (let i = 0; i < 50; i++) { const p = spawn(); p.y = Math.random() * H; parts.push(p); }
+    const tick = () => {
+      ctx.clearRect(0, 0, W, H);
+      for (const p of parts) {
+        p.y -= p.vy; p.x += p.vx + Math.sin(p.y / 40) * .3; p.life -= .0025;
+        if (p.y < -10 || p.life <= 0) Object.assign(p, spawn());
+        ctx.fillStyle = `rgba(255,${100 + Math.floor(p.life * 60)},30,${Math.max(0, p.life) * .8})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      requestAnimationFrame(tick);
+    };
+    tick();
+  }
+
+  // ---------- feedback (Supabase) ----------
+  const API = "https://exwyvnmsmvjzfgvinlha.supabase.co/rest/v1/feedback";
+  const KEY = "sb_publishable_LMoQWdws7ETo7FaMaX3r_w_9ioLUln-";
+  const HEAD = { apikey: KEY, "Content-Type": "application/json" };
+  const VERSION = "1.31.0";
+  const NEXT = { zumbis: "Zumbis e hordas", armas: "Novas armas", veiculos: "Mais veículos", mapa: "Mapa maior", coop: "Missões em grupo", craft: "Receitas de craft" };
+  const $ = (id) => document.getElementById(id);
+  const form = $("fbForm"), statusEl = $("status"), sendBtn = $("send");
+  let rating = 0, rows = [];
+
+  try { const n = localStorage.getItem("cdf_name"); if (n) $("name").value = n; } catch (_) {}
+
+  const starsEl = $("stars");
+  for (let i = 1; i <= 5; i++) {
+    const b = document.createElement("button");
+    b.type = "button"; b.textContent = "★"; b.setAttribute("role", "radio"); b.setAttribute("aria-label", i + " de 5");
+    b.addEventListener("click", () => { rating = i; paintStars(); });
+    starsEl.appendChild(b);
+  }
+  function paintStars() {
+    [...starsEl.children].forEach((b, idx) => { b.classList.toggle("on", idx < rating); b.setAttribute("aria-checked", String(idx + 1 === rating)); });
+  }
+  paintStars();
+
+  function setStatus(msg, kind) { statusEl.textContent = msg; statusEl.className = "status" + (kind ? " " + kind : ""); }
+
+  function render() {
+    $("count").textContent = rows.length;
+    $("avg").textContent = rows.length ? (rows.reduce((s, d) => s + d.rating, 0) / rows.length).toFixed(1).replace(".", ",") : "–";
+
+    const counts = {}; rows.forEach(d => { if (NEXT[d.next]) counts[d.next] = (counts[d.next] || 0) + 1; });
+    const max = Math.max(1, ...Object.values(counts));
+    const votes = $("votes"); votes.replaceChildren();
+    Object.keys(NEXT).sort((a, b) => (counts[b] || 0) - (counts[a] || 0)).forEach(k => {
+      const row = document.createElement("div"); row.className = "vote";
+      const n = document.createElement("span"); n.textContent = NEXT[k];
+      const bar = document.createElement("div"); bar.className = "bar";
+      const fill = document.createElement("i"); fill.style.width = ((counts[k] || 0) / max * 100) + "%"; bar.appendChild(fill);
+      const c = document.createElement("span"); c.className = "c"; c.textContent = counts[k] || 0;
+      row.append(n, bar, c); votes.appendChild(row);
+    });
+
+    const box = $("entries"); box.replaceChildren();
+    if (!rows.length) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = "Ninguém respondeu ainda. Jogue a 1.31.0 e seja o primeiro a deixar nota e comentário.";
+      box.appendChild(e); return;
+    }
+    rows.slice(0, 40).forEach(d => {
+      const card = document.createElement("article"); card.className = "entry";
+      const h = document.createElement("header");
+      const who = document.createElement("span"); who.className = "who"; who.textContent = d.name || "Testador";
+      const meta = document.createElement("span"); meta.className = "meta";
+      const st = document.createElement("span"); st.className = "st"; st.textContent = "★".repeat(Math.max(0, Math.min(5, d.rating)));
+      const when = d.created_at ? new Date(d.created_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }) : "";
+      meta.append(st, document.createTextNode(" · v" + String(d.version || "?") + (when ? " · " + when : "")));
+      h.append(who, meta); card.appendChild(h);
+      const addP = (lab, txt) => { if (!txt) return; const p = document.createElement("p"); const em = document.createElement("em"); em.textContent = lab; p.append(em, document.createTextNode(String(txt))); card.appendChild(p); };
+      if (NEXT[d.next]) addP("quer", NEXT[d.next]);
+      addP("curtiu", d.liked);
+      addP("bug", d.bugs);
+      box.appendChild(card);
+    });
+  }
+
+  async function load() {
+    try {
+      const r = await fetch(API + "?select=name,rating,next,liked,bugs,version,created_at&order=created_at.desc&limit=500", { headers: { apikey: KEY } });
+      if (!r.ok) throw new Error(r.status);
+      rows = await r.json(); render();
+    } catch (_) {
+      const l = $("loading"); if (l) l.textContent = "Não foi possível carregar as respostas. Recarregue a página.";
+    }
+  }
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const name = $("name").value.trim();
+    if (!name) { setStatus("Escreva seu nome ou apelido.", "err"); $("name").focus(); return; }
+    if (!rating) { setStatus("Escolha uma nota de 1 a 5 estrelas.", "err"); return; }
+    sendBtn.disabled = true; setStatus("Enviando…");
+    const body = {
+      name: name.slice(0, 40), rating, next: $("next").value || null,
+      liked: $("liked").value.trim().slice(0, 800) || null,
+      bugs: $("bugs").value.trim().slice(0, 800) || null, version: VERSION
+    };
+    try {
+      const r = await fetch(API, { method: "POST", headers: { ...HEAD, Prefer: "return=minimal" }, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error(r.status);
+      try { localStorage.setItem("cdf_name", body.name); } catch (_) {}
+      setStatus("Feedback enviado. Valeu!", "ok");
+      $("liked").value = ""; $("bugs").value = ""; rating = 0; paintStars();
+      load();
+    } catch (_) {
+      setStatus("Não deu para enviar agora. Confira a conexão e tente de novo.", "err");
+    } finally { sendBtn.disabled = false; }
+  });
+
+  load();
+  setInterval(() => { if (!document.hidden) load(); }, 60000);
+})();
+</script>
+</body>
+</html>
