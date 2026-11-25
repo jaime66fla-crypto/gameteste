@@ -92,7 +92,7 @@ const NIGHT_START = 20;
 const NIGHT_END = 6;
 // Versão do mundo salvo: mundo de outra versão recomeça do zero (personagens,
 // mochilas, bases, carros). 3 = reset geral de 2026-11-25.
-export const WORLD_VERSION = 3;
+export const WORLD_VERSION = 4;
 /** Chance de um zumbi morto deixar a glândula podre. */
 export const ZOMBIE_GLAND_CHANCE = 0.3;
 /** De dia, zumbis só nas áreas 'day' (cidades), no máximo esta fração da noite. */
