@@ -822,12 +822,14 @@ func _bot_shoot(distance: float) -> void:
 		for i in landed:
 			bot_hit.emit(actor_id, _ai_target_id, "chest")
 	else:
-		bot_hit.emit(actor_id, _ai_target_id, _bot_hit_zone())
+		bot_hit.emit(actor_id, _ai_target_id, _bot_hit_zone(distance))
 
-## Where a bot bullet lands: mostly the torso, sometimes head or limbs.
-func _bot_hit_zone() -> String:
+## Where a bot bullet lands: mostly the torso, rarely the head (≈5% up close,
+## ≈2% far away — players complained bots headshot too often), sometimes limbs.
+func _bot_hit_zone(distance: float = 0.0) -> String:
+	var head_chance := clampf(0.05 - distance * 0.001, 0.02, 0.05)
 	var roll := randf()
-	if roll < 0.12:
+	if roll < head_chance:
 		return "head"
 	if roll < 0.67:
 		return "chest"
