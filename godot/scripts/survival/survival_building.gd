@@ -12,6 +12,7 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const Rules = preload("res://scripts/survival/building_rules.gd")
 const Model = preload("res://scripts/survival/building_model.gd")
+const Hydro = preload("res://scripts/survival/hydrology.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 ## Barra do B: só estrutura (e a bancada, que é por onde se fazem as outras).
 const ORDER := ["foundation", "wall", "doorway", "window", "door", "floor", "stairs", "roof", "workbench"]
@@ -69,6 +70,9 @@ func _ready() -> void:
 # ------------------------------------------------------------------- rede ---
 
 func start(info: Dictionary) -> void:
+	# Mapa da Sobrevivência: o chão tem relevo (no treino ele é plano).
+	if not offline:
+		rules.ground = func(x: float, z: float) -> float: return Hydro.ground_height(x, z)
 	my_tag = str(info.get("tag", ""))
 	auth = info.get("auth", [])
 	allowed = info.get("allowed", [])
@@ -525,8 +529,44 @@ func _auto_rotation() -> int:
 	var yaw := atan2(-f.x, -f.z)
 	return posmod(roundi(yaw / (PI * 0.5)) + rotation_step, 4)
 
-## Lugar da peça na grade para onde se está mirando ({} = nenhum).
+## Lugar da peça para onde se está mirando ({} = nenhum), com o degrau "b" do
+## relevo nas peças da grade.
 func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
+	var p := _candidate_raw(kind, aim)
+	if p.has("i"):
+		p["b"] = _foundation_lift(int(p["i"]), int(p["j"])) if kind == "foundation" else rules.guess_lift(p)
+	return p
+
+## Fundação: logo acima do chão mais alto da célula; encostada numa fundação
+## vizinha, usa o mesmo degrau dela quando o pilar alcança o chão (a casa fica
+## num nível só e as paredes se emendam).
+func _foundation_lift(i: int, j: int) -> int:
+	var lowest: int = rules.foundation_lift(i, j)
+	var span: Vector2 = rules.cell_ground(i, j)
+	var best := lowest
+	var best_gap := 1 << 30
+	for d in [[1, 0], [-1, 0], [0, 1], [0, -1]]:
+		var n: Dictionary = rules.floor_at(i + d[0], j + d[1], 0)
+		if n.is_empty():
+			continue
+		var b := Rules.lift_of(n)
+		if b >= lowest and rules.top(0, b) - span.x <= Rules.MAX_PILLAR and b - lowest < best_gap:
+			best = b
+			best_gap = b - lowest
+	return best
+
+## Degrau para achar o andar pela altura da mira: o da peça mirada, senão o da
+## fundação na coluna (ou vizinha), senão o chão plano.
+func _lift_hint(aimed: Dictionary, i: int, j: int) -> int:
+	if not aimed.is_empty():
+		return Rules.lift_of(aimed)
+	for d in [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]]:
+		var n: Dictionary = rules.floor_at(i + d[0], j + d[1], 0)
+		if not n.is_empty():
+			return Rules.lift_of(n)
+	return 0
+
+func _candidate_raw(kind: String, aim: Dictionary) -> Dictionary:
 	if aim.is_empty():
 		return {}
 	var S: float = rules.S
@@ -537,6 +577,7 @@ func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
 	var aimed_slot: String = rules.slot_type(str(aimed.get("kind", ""))) if not aimed.is_empty() else ""
 	var i := floori(a.x / S)
 	var j := floori(a.z / S)
+	var lifted: float = rules.base + _lift_hint(aimed, i, j) * Rules.LIFT # altura do térreo aqui
 	match slot:
 		"cell":
 			if kind == "foundation":
@@ -546,7 +587,7 @@ func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
 				if rules.slots.has(rules.slot_of(p)):
 					p = _neighbor(p, a)
 				return p
-			var k := clampi(roundi((a.y - rules.base) / H), 1, Rules.MAX_LEVEL)
+			var k := clampi(roundi((a.y - lifted) / H), 1, Rules.MAX_LEVEL)
 			var p := {"kind": kind, "i": i, "j": j, "k": k, "r": _auto_rotation()}
 			if aimed_slot == "edge":
 				# Mirando uma parede: o teto vai em cima dela, do lado de quem constrói.
@@ -569,12 +610,12 @@ func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
 		"stairs":
 			if not aimed.is_empty() and aimed_slot == "cell" and str(aimed["kind"]) in ["foundation", "floor"]:
 				return {"kind": kind, "i": int(aimed["i"]), "j": int(aimed["j"]), "k": int(aimed["k"]), "r": _auto_rotation()}
-			var k := clampi(floori((a.y - rules.base + 0.5) / H), 0, Rules.MAX_LEVEL)
+			var k := clampi(floori((a.y - lifted + 0.5) / H), 0, Rules.MAX_LEVEL)
 			return {"kind": kind, "i": i, "j": j, "k": k, "r": _auto_rotation()}
 		"edge", "door":
 			if kind == "door" and str(aimed.get("kind", "")) == "doorway":
 				return {"kind": kind, "i": int(aimed["i"]), "j": int(aimed["j"]), "k": int(aimed["k"]), "o": str(aimed["o"]), "r": rotation_step % 2}
-			var k := clampi(floori((a.y - rules.base) / H), 0, Rules.MAX_LEVEL)
+			var k := clampi(floori((a.y - lifted) / H), 0, Rules.MAX_LEVEL)
 			var u := a.x / S - i
 			var v := a.z / S - j
 			var options := [[v, "h", i, j], [1.0 - v, "h", i, j + 1], [u, "v", i, j], [1.0 - u, "v", i + 1, j]]
@@ -593,15 +634,19 @@ func _candidate_for(kind: String, aim: Dictionary) -> Dictionary:
 		var n: Vector3 = aim["normal"]
 		var spot: Vector3 = aim["surface"] + n * 0.01
 		return {"kind": kind, "wall": true, "p": [snappedf(spot.x, 0.01), snappedf(spot.y, 0.01), snappedf(spot.z, 0.01)], "y": snappedf(atan2(n.x, n.z), 0.01)}
-	# Peça livre: no chão ou em cima de piso, virada para quem constrói.
-	if not bool(aim.get("hit", false)) or (aim["normal"] as Vector3).y < 0.7:
+	# Peça livre: no chão (até em encosta, apoiada no ponto mais alto embaixo
+	# dela) ou em cima de piso, virada para quem constrói.
+	var on_build := aimed_slot == "cell"
+	if not bool(aim.get("hit", false)) or (aim["normal"] as Vector3).y < (0.7 if on_build else 0.45):
 		return {}
 	var s: Vector3 = aim["surface"]
-	var y := 0.0 if s.y < 0.15 else s.y
 	var cam := get_viewport().get_camera_3d()
 	var f := -cam.global_basis.z
 	var yaw := atan2(f.x, f.z) + PI + rotation_step * PI * 0.5
-	return {"kind": kind, "p": [snappedf(s.x, 0.01), snappedf(y, 0.01), snappedf(s.z, 0.01)], "y": snappedf(wrapf(yaw, -PI, PI), 0.01)}
+	var free := {"kind": kind, "p": [snappedf(s.x, 0.01), snappedf(s.y, 0.01), snappedf(s.z, 0.01)], "y": snappedf(wrapf(yaw, -PI, PI), 0.01)}
+	if not on_build:
+		free["p"][1] = snappedf(maxf(rules.free_ground(free).y, s.y), 0.01)
+	return free
 
 ## Célula vizinha na direção em que se mira (para emendar fundação/piso).
 func _neighbor(p: Dictionary, a: Vector3) -> Dictionary:

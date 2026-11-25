@@ -33,11 +33,38 @@ export function basinHeight(b,x,z) {
  return d<1.4?(b.temporary?-.65:-1.4)+1.55*d*d:Infinity;
 }
 export function groundHeight(x,z,mountainHeight=0) {
- let h=mountainHeight+coastHeight(x,z);
+ let h=mountainHeight+coastHeight(x,z)+relief(x,z);
  const river=riverSample(x,z),width=world.hydrology?.river.width||9;
  if(river.distance<width+13)h=Math.min(h,river.level-2.0+2*Math.pow(river.distance/width,2));
  for(const b of [...world.ponds,...(world.hydrology?.floodplains||[])])h=Math.min(h,basinHeight(b,x,z));
  return h;
+}
+/** Ondulações do terreno: mesma conta de relief() em hydrology.gd. */
+export function reliefNoise(x,z) {
+ return .45*Math.sin(.021*x+.7)*Math.cos(.017*z-1.3)
+  +.4*Math.sin(.043*(.8*x+.6*z)+2.1)
+  +.3*Math.cos(.061*(.8*z-.6*x)-.4)
+  +.15*Math.sin(.11*x+.3)*Math.sin(.097*z+1.7);
+}
+const segDist=(x,z,a,b)=>{const dx=b[0]-a[0],dz=b[1]-a[1],l=dx*dx+dz*dz;const t=l?Math.max(0,Math.min(1,((x-a[0])*dx+(z-a[1])*dz)/l)):0;return Math.hypot(x-a[0]-dx*t,z-a[1]-dz*t);};
+export function reliefMask(x,z) {
+ const h=world.half_size,a=Math.atan2(z,x),shift=Math.sin(a*3)*7+Math.sin(a*7)*4;
+ let m=1-smooth(h-40+shift,h-8+shift,Math.hypot(x,z));
+ if(m<=0)return 0;
+ for(const t of world.towns||[])m=Math.min(m,smooth(57,82,Math.hypot(x-t.center[0],z-t.center[1])));
+ if(m<=0)return 0;
+ for(const r of world.roads||[]){const half=(r.width??6)/2;m=Math.min(m,smooth(half+1.5,half+11,segDist(x,z,r.from,r.to)));}
+ if(m<=0)return 0;
+ const width=world.hydrology?.river.width||9;
+ m=Math.min(m,smooth(width+8,width+24,riverSample(x,z).distance));
+ for(const b of [...world.ponds,...(world.hydrology?.floodplains||[])]){const r=b.r*1.3;m=Math.min(m,smooth(r,r+12,Math.hypot(x-b.x,z-b.z)));}
+ return m;
+}
+export function relief(x,z) {
+ const m=reliefMask(x,z);
+ if(m<=0)return 0;
+ const n=reliefNoise(x,z)+.6;
+ return m*(.7*n+(n>0?1.8*n*n:0));
 }
 export function waterAt(x,z,wet=0) {
  let result=null;

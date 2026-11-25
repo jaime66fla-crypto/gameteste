@@ -46,8 +46,8 @@ static func ground_height(x: float, z: float) -> float:
 	for m in Data.world().get("mountains", []):
 		var distance := Vector2(x - float(m.x), z - float(m.z)).length()
 		if distance < float(m.r): height = maxf(height, float(m.h) * 0.5 * (1.0 + cos(PI * distance / float(m.r))))
-	height += coast_height(x, z)
 	var river := river_sample(x, z)
+	height += coast_height(x, z) + relief(x, z, float(river.distance))
 	var width := float(Data.world().get("hydrology", {}).get("river", {}).get("width", 9))
 	if float(river.distance) < width + 13.0:
 		height = minf(height, float(river.level) - 2.0 + 2.0 * pow(float(river.distance) / width, 2))
@@ -56,6 +56,68 @@ static func ground_height(x: float, z: float) -> float:
 		if d < 1.4:
 			height = minf(height, (-0.65 if bool(b.get("temporary", false)) else -1.4) + 1.55 * d * d)
 	return height
+
+## Ondulações suaves do terreno (colinas e baixadas). Planas nas cidades, nas
+## estradas, perto dos lagos, do rio e da costa. Mesma conta de relief() em
+## src/godot-hydrology.js: o servidor também precisa da altura do chão.
+static var _relief: Dictionary = {} # estradas, cidades e lagos já prontos para relief_mask
+
+static func relief_noise(x: float, z: float) -> float:
+	return (0.45 * sin(0.021 * x + 0.7) * cos(0.017 * z - 1.3)
+		+ 0.4 * sin(0.043 * (0.8 * x + 0.6 * z) + 2.1)
+		+ 0.3 * cos(0.061 * (0.8 * z - 0.6 * x) - 0.4)
+		+ 0.15 * sin(0.11 * x + 0.3) * sin(0.097 * z + 1.7))
+
+static func _relief_data() -> Dictionary:
+	if _relief.is_empty():
+		var w := Data.world()
+		var roads: Array = []
+		for road in w.get("roads", []):
+			var a := Vector2(float(road["from"][0]), float(road["from"][1]))
+			var b := Vector2(float(road["to"][0]), float(road["to"][1]))
+			var half := float(road.get("width", 6)) * 0.5
+			roads.append([a, b, half, Rect2(a, Vector2.ZERO).expand(b).grow(half + 11.0)])
+		var towns: Array[Vector2] = []
+		for town in w.get("towns", []):
+			towns.append(Vector2(float(town["center"][0]), float(town["center"][1])))
+		var lakes: Array = []
+		for b in basins():
+			lakes.append([Vector2(float(b.x), float(b.z)), float(b.r) * 1.3])
+		_relief = {"roads": roads, "towns": towns, "lakes": lakes, "half": float(w.get("half_size", 420)),
+			"width": float(w.get("hydrology", {}).get("river", {}).get("width", 9))}
+	return _relief
+
+static func relief_mask(x: float, z: float, river_distance: float = -1.0) -> float:
+	var d := _relief_data()
+	var p := Vector2(x, z)
+	var h: float = d.half
+	var a := atan2(z, x)
+	var shift := sin(a * 3.0) * 7.0 + sin(a * 7.0) * 4.0
+	var mask := 1.0 - smoothstep(h - 40.0 + shift, h - 8.0 + shift, p.length())
+	if mask <= 0.0: return 0.0
+	for town: Vector2 in d.towns:
+		mask = minf(mask, smoothstep(57.0, 82.0, p.distance_to(town)))
+	if mask <= 0.0: return 0.0
+	for road in d.roads:
+		if not (road[3] as Rect2).has_point(p): continue # longe da estrada: não muda nada
+		var half: float = road[2]
+		mask = minf(mask, smoothstep(half + 1.5, half + 11.0, p.distance_to(Geometry2D.get_closest_point_to_segment(p, road[0], road[1]))))
+	if mask <= 0.0: return 0.0
+	var width: float = d.width
+	if river_distance < 0.0: river_distance = float(river_sample(x, z).distance)
+	mask = minf(mask, smoothstep(width + 8.0, width + 24.0, river_distance))
+	for lake in d.lakes:
+		var r: float = lake[1]
+		var gap := p.distance_squared_to(lake[0])
+		if gap < (r + 12.0) * (r + 12.0): mask = minf(mask, smoothstep(r, r + 12.0, sqrt(gap)))
+	return mask
+
+static func relief(x: float, z: float, river_distance: float = -1.0) -> float:
+	var mask := relief_mask(x, z, river_distance)
+	if mask <= 0.0: return 0.0
+	var n := relief_noise(x, z) + 0.6
+	# Baixadas rasas (o mar fica a -1,1 m embaixo de tudo) e colinas mais altas.
+	return mask * (0.7 * n + (1.8 * n * n if n > 0.0 else 0.0))
 
 static func water_at(x: float, z: float, wet: float) -> Dictionary:
 	var result := {}

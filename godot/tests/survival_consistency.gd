@@ -37,8 +37,26 @@ func run() -> void:
         map.ponds = [{"x": 1.5, "z": 1.5, "r": 2}]
         check(not str(rules.call("ground_error", p, map)).is_empty(), "pond blocks foundation")
         map.ponds = [];map.mountains = [{"x": 3.1, "z": 3.1, "r": 1}]
-        check(not str(rules.call("ground_error", p, map)).is_empty(), "mountain touching corner blocks footprint")
+        check(str(rules.call("ground_error", p, map)).is_empty(), "slopes and mountains no longer block the footprint")
         map.mountains = []
+        # Encosta: a fundação sobe acima do ponto mais alto (com pilar), nunca enterrada.
+        rules.ground = func(x: float, z: float) -> float: return 0.5 * x
+        var owns := func(_piece): return true
+        check(str(rules.check({"kind": "foundation", "i": 0, "j": 0, "k": 0, "b": 0}, owns)).contains("enterrada"), "buried foundation refused on a slope")
+        var lift: int = rules.foundation_lift(0, 0)
+        check(lift == 6 and str(rules.check({"kind": "foundation", "i": 0, "j": 0, "k": 0, "b": lift}, owns)).is_empty(), "foundation sits on the highest ground (%d)" % lift)
+        check(str(rules.check({"kind": "foundation", "i": 0, "j": 0, "k": 0, "b": 60}, owns)).contains("pilar"), "pillar has a limit")
+        rules.add({"id": "F", "kind": "foundation", "i": 0, "j": 0, "k": 0, "b": lift})
+        check(rules.guess_lift({"kind": "wall", "i": 0, "j": 0, "k": 0, "o": "h"}) == lift, "a wall takes the foundation step")
+        check(str(rules.check({"kind": "wall", "i": 0, "j": 0, "k": 0, "o": "h", "b": lift}, owns)).is_empty(), "wall on the lifted foundation")
+        check(not str(rules.check({"kind": "wall", "i": 0, "j": 0, "k": 0, "o": "h", "b": 0}, owns)).is_empty(), "wall on another step has no support")
+        var fire := {"kind": "campfire", "p": [7.0, 0.0, 1.0]}
+        fire.p[1] = rules.free_ground(fire).y
+        check(rules.supporters(fire) == ["ground"], "campfire on the slope stands on its highest ground")
+        fire.p[1] = 2.0
+        check(rules.supporters(fire).is_empty(), "buried campfire refused")
+        rules.erase("F")
+        rules.ground = func(_x: float, _z: float) -> float: return 0.0
         check(not str(rules.call("ground_error", {"kind": "foundation", "i": 32, "j": 0, "k": 0}, map)).is_empty(), "world boundary is checked")
     for path in ["res://scripts/survival/inventory_ui.gd", "res://scripts/survival/survival_manual.gd"]:
         var ui = load(path).new()

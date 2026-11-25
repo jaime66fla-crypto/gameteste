@@ -101,7 +101,7 @@ test('flatland groups still spawn close to the ground and reach clients through 
  const {room}=makeWorld();const p=await join(room);
  room.animalSpot=()=>[0,0.3,0];room.spawnAnimals();
  const packet=p.ws.last('aspawn');assert.ok(packet?.l.length>0);
- for(const animal of packet.l){assert.ok(animal.p[1]>=0.2);assert.ok(animal.p[1]<0.5);}
+ for(const animal of packet.l){const floor=terrainHeight(animal.p[0],animal.p[2]);assert.ok(animal.p[1]>=floor+0.2);assert.ok(animal.p[1]<floor+0.5);}
 });
 test('an old saved animal below a mountain is removed and replaced above terrain',async()=>{
  const {room}=makeWorld();const p=await join(room);

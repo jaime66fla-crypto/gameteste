@@ -30,13 +30,26 @@ func run() -> void:
 	check(scene.find_children("EdgeFence", "", true, false).is_empty(), "no boundary walls")
 	await physics_frame
 	await physics_frame
-	for p in [Vector2(0,300), Vector2(84,-40), Vector2(490,0), Vector2(-490,0)]:
+	# Relevo: colinas fora das cidades e o chão de colisão batendo com a altura usada por objetos e servidor.
+	var hills := 0
+	for x in range(-380, 381, 20):
+		for z in range(-380, 381, 20):
+			if Hydro.relief(x, z) > 1.5: hills += 1
+	check(hills > 30, "rolling hills across the island (%d)" % hills)
+	for town in Hydro.Data.world().towns:
+		check(Hydro.relief(float(town.center[0]), float(town.center[1])) == 0.0, "towns stay flat")
+	var hilly: Array[Vector2] = []
+	for x in range(-380, 381, 37):
+		for z in range(-380, 381, 41):
+			if Hydro.relief(x, z) > 2.5 and hilly.size() < 12: hilly.append(Vector2(x, z))
+	check(hilly.size() >= 6, "found hill tops to probe")
+	for p in hilly + [Vector2(0,300), Vector2(84,-40), Vector2(490,0), Vector2(-490,0)]:
 		var query := PhysicsRayQueryParameters3D.create(Vector3(p.x,80,p.y),Vector3(p.x,-30,p.y),1)
 		var hit := scene.get_world_3d().direct_space_state.intersect_ray(query)
 		check(not hit.is_empty(), "terrain collision exists")
-		if not hit.is_empty(): check(absf(hit.position.y-Hydro.ground_height(p.x,p.y)) < 0.5, "terrain collision matches authoritative height")
+		if not hit.is_empty(): check(absf(hit.position.y-Hydro.ground_height(p.x,p.y)) < 0.5, "terrain collision matches authoritative height at %s (%.2f vs %.2f)" % [p, hit.position.y, Hydro.ground_height(p.x,p.y)])
 	var samples := []
-	for p in [Vector2(85,-40),Vector2(105,-12),Vector2(490,0),Vector2(0,300)]:
+	for p in [Vector2(85,-40),Vector2(105,-12),Vector2(490,0),Vector2(0,300),Vector2(-250,40),Vector2(160,230),Vector2(-60,-120)]:
 		samples.append([p.x,p.y,Hydro.ground_height(p.x,p.y),Hydro.water_at(p.x,p.y,1)])
 	print("PARITY_SAMPLES: ", JSON.stringify(samples))
 	scene.free()

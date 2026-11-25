@@ -131,16 +131,17 @@ static func build(p: Dictionary, rules) -> Node3D:
 	var slot: String = rules.slot_type(kind)
 	var k := int(p.get("k", 0))
 	var r := int(p.get("r", 0))
+	var lift := int(p.get("b", 0)) # degrau do relevo (building_rules.gd)
 	match slot:
 		"cell", "stairs":
-			root.position = Vector3((int(p.get("i", 0)) + 0.5) * S, rules.top(k), (int(p.get("j", 0)) + 0.5) * S)
+			root.position = Vector3((int(p.get("i", 0)) + 0.5) * S, rules.top(k, lift), (int(p.get("j", 0)) + 0.5) * S)
 			if kind in ["stairs", "roof"]:
 				root.rotation.y = r * PI * 0.5
 		"edge", "door":
 			var horizontal := str(p.get("o", "h")) == "h"
 			var x: float = (int(p.get("i", 0)) + 0.5) * S if horizontal else int(p.get("i", 0)) * S
 			var z: float = int(p.get("j", 0)) * S if horizontal else (int(p.get("j", 0)) + 0.5) * S
-			root.position = Vector3(x, rules.top(k), z)
+			root.position = Vector3(x, rules.top(k, lift), z)
 			root.rotation.y = 0.0 if horizontal else PI * 0.5
 		_:
 			var v: Array = p.get("p", [0, 0, 0])
@@ -148,13 +149,16 @@ static func build(p: Dictionary, rules) -> Node3D:
 			root.rotation.y = float(p.get("y", 0.0))
 	var body := _body(root, id)
 	match kind:
-		"foundation": _foundation(root, body, S, rules.base)
+		"foundation":
+			# Pilar até o ponto mais baixo do chão embaixo (encosta, morro).
+			var low: float = rules.cell_ground(int(p.get("i", 0)), int(p.get("j", 0))).x
+			_foundation(root, body, S, maxf(rules.base, root.position.y - low))
 		"floor": _floor(root, body, S)
 		"wall": _wall(root, body, S, H)
 		"doorway":
 			_doorway(root, body, S, H)
 			if k == 0:
-				_door_ramps(root, body, rules.base)
+				_door_ramps(root, body, _ramp_drops(p, rules, root.position))
 		"window": _window(root, body, S, H)
 		"door": _door(root, p)
 		"stairs": _stairs(root, body, S, H)
@@ -208,8 +212,13 @@ static func _torch(root: Node3D, body: StaticBody3D, on_wall: bool) -> void:
 	set_fire(root, true)
 
 static func _foundation(root: Node3D, body: StaticBody3D, S: float, base: float) -> void:
-	var h := base + 0.35 # enterrada 35 cm
+	var h := base + 0.35 # enterrada 35 cm no ponto mais baixo
 	_box(root, body, Vector3(0, -h * 0.5, 0), Vector3(S, h, S), "stone")
+	if base > 1.2:
+		# Pilar alto (encosta): vigas de tora nos cantos, para ler como palafita.
+		for cx in [-1.0, 1.0]:
+			for cz in [-1.0, 1.0]:
+				_box(root, null, Vector3(cx * (S * 0.5 - 0.1), -h * 0.5, cz * (S * 0.5 - 0.1)), Vector3(0.24, h, 0.24), "wood_dark")
 	# Tábuas por cima e um rodapé de tora escura (lê-se bem como chão de casa).
 	_box(root, null, Vector3(0, 0.005, 0), Vector3(S - 0.12, 0.012, S - 0.12), "plank")
 	for side in [-1.0, 1.0]:
@@ -237,15 +246,42 @@ static func _doorway(root: Node3D, body: StaticBody3D, S: float, H: float) -> vo
 	_box(root, null, Vector3(0, DOOR_H + 0.05, 0), Vector3(DOOR_W + 0.2, 0.1, WALL_T + 0.04), "wood_dark")
 
 const RAMP_LEN := 1.3 # rampa de acesso da porta do térreo (40 cm em 1,3 m ≈ 17°)
+const RAMP_SLOPE := 0.31 # inclinação máxima da rampa (≈ 17°)
+const RAMP_MAX := 7.0 # rampa mais comprida (casa alta na encosta)
+
+## Quanto cada lado da rampa desce ([lado -Z local, lado +Z local], cada um
+## [queda, comprimento]). Do lado de uma fundação no mesmo degrau ela fica
+## escondida dentro dela; do lado de fora vai até o chão do relevo.
+static func _ramp_drops(p: Dictionary, rules, origin: Vector3) -> Array:
+	var horizontal := str(p.get("o", "h")) == "h"
+	var cells: Array = rules.edge_cells(str(p.get("o", "h")), int(p.get("i", 0)), int(p.get("j", 0)))
+	var out: Array = []
+	for s in [-1.0, 1.0]:
+		# Local +Z vira +Z do mundo (borda "h") ou +X (borda "v", girada 90°).
+		var c: Array = cells[1] if s > 0.0 else cells[0]
+		var inside: Dictionary = rules.floor_at(int(c[0]), int(c[1]), 0, int(p.get("b", 0)))
+		if not inside.is_empty():
+			out.append([rules.base, RAMP_LEN])
+			continue
+		var dir := Vector3(0, 0, s) if horizontal else Vector3(s, 0, 0)
+		var length := RAMP_LEN
+		var drop: float = rules.base
+		for _pass in 3:
+			var foot := origin + dir * length
+			drop = maxf(0.02, origin.y - float(rules.ground.call(foot.x, foot.z)))
+			length = clampf(drop / RAMP_SLOPE, RAMP_LEN, RAMP_MAX)
+		out.append([drop, length])
+	return out
 
 ## Porta no térreo: a fundação fica `base` acima do chão e o corpo não sobe
 ## degrau, então o vão vem com uma rampa de tábuas dos dois lados. Do lado de
 ## dentro ela fica escondida dentro da fundação; do lado de fora desce até o chão.
-static func _door_ramps(root: Node3D, body: StaticBody3D, base: float) -> void:
+static func _door_ramps(root: Node3D, body: StaticBody3D, drops: Array) -> void:
 	var width := DOOR_W + 0.3
-	for s in [-1.0, 1.0]:
+	for n in 2:
+		var s := -1.0 if n == 0 else 1.0
 		var top := Vector3(0, 0, 0)
-		var foot := Vector3(0, -base, s * RAMP_LEN)
+		var foot := Vector3(0, -float(drops[n][0]), s * float(drops[n][1]))
 		var dir := (foot - top).normalized()
 		var right := Vector3.RIGHT
 		var up := dir.cross(right).normalized()

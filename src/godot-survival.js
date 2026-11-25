@@ -20,8 +20,8 @@ import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
-import { BuildGrid } from './godot-building.js';
-import { terrainHeight, mountainIntersects } from './godot-terrain.js';
+import { BuildGrid, liftOf, MAX_LIFT } from './godot-building.js';
+import { terrainHeight } from './godot-terrain.js';
 import { BRANCH_LIMIT, BRANCH_LIFETIME_MS, BRANCH_TREES, treeSeed, branchPeriod, branchSpot } from './godot-tree-branches.js';
 import { ensureAnimalNeeds, animalSnapshot, tickAnimalNeeds, dropTreeFruit, animalForage } from './godot-animal-needs.js';
 
@@ -321,7 +321,7 @@ export class GodotSurvival {
 		this.state = this.fresh();
 		this.dirty = false;
 		// Construções: uma chave por peça ("b:<id>"), fora do estado do mundo (que tem limite de tamanho).
-		this.grid = new BuildGrid(BUILD, BUILDS);
+		this.grid = new BuildGrid(BUILD, BUILDS, terrainHeight);
 		this.buildDirty = new Set();
 		this.buildGone = new Set();
 		ctx.blockConcurrencyWhile(async () => {
@@ -331,6 +331,8 @@ export class GodotSurvival {
 				this.state = saved;
 				if (typeof ctx.storage.list === 'function') {
 					for (const piece of (await ctx.storage.list({ prefix: 'b:' })).values()) this.grid.add(piece);
+					// Bases de antes do relevo: sobem para fora do chão novo (uma vez só).
+					for (const piece of this.grid.liftLegacy()) this.buildDirty.add(piece.id);
 				}
 			}
 			for (const ws of ctx.getWebSockets()) {
@@ -651,7 +653,7 @@ export class GodotSurvival {
 
 	newCharacter() {
 		const spawn = world.spawns[Math.floor(Math.random() * world.spawns.length)];
-		return { p: [spawn[0], 0.2, spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, magazines: {}, back: '', head: '', chest: '', dead: false, infectedAt: 0 };
+		return { p: [spawn[0], round1(terrainHeight(spawn[0], spawn[1]) + 0.2), spawn[1]], hp: 100, hunger: 85, thirst: 85, inv: { ...catalog.starter_kit }, magazines: {}, back: '', head: '', chest: '', dead: false, infectedAt: 0 };
 	}
 
 	restore(saved) {
@@ -1696,7 +1698,7 @@ export class GodotSurvival {
 			out.y = b.y || 0;
 			if (b.wall) out.wall = true;
 		} else {
-			Object.assign(out, { i: b.i, j: b.j, k: b.k, r: b.r || 0 });
+			Object.assign(out, { i: b.i, j: b.j, k: b.k, r: b.r || 0, b: liftOf(b) });
 			if (b.o) out.o = b.o;
 		}
 		if (b.kind === 'door') out.open = !!b.open;
@@ -1757,13 +1759,14 @@ export class GodotSurvival {
 			}
 			if (def.slot === 'edge') {
 				const d = this.grid.distance(p, pl.p);
-				if (d !== null && d < 0.45 && y > this.grid.top(p.k) - 1.6 && y < this.grid.top(p.k) + BUILD.story) return true;
+				const t = this.grid.top(p.k, liftOf(p));
+				if (d !== null && d < 0.45 && y > t - 1.6 && y < t + BUILD.story) return true;
 				continue;
 			}
 			if (def.slot !== 'cell') continue;
 			const inside = x > p.i * S - 0.3 && x < (p.i + 1) * S + 0.3 && z > p.j * S - 0.3 && z < (p.j + 1) * S + 0.3;
 			if (!inside) continue;
-			const top = this.grid.top(p.k);
+			const top = this.grid.top(p.k, liftOf(p));
 			if (p.kind === 'foundation' ? y < top - 0.05 : y > top - 1.9 && y < top + 0.1) return true;
 		}
 		return false;
@@ -1779,7 +1782,6 @@ export class GodotSurvival {
 		else if (p.kind === 'foundation') box = [p.i * S, p.j * S, (p.i + 1) * S, (p.j + 1) * S];
 		else return '';
 		if (box.some((n) => Math.abs(n) > half)) return 'Fora da área do mundo.';
-		if (mountainIntersects(box)) return 'Escolha terreno plano para construir.';
 		const wet = weatherAt(Date.now()-this.state.createdAt).wet;
 		for (const x of [box[0],(box[0]+box[2])/2,box[2]]) for (const z of [box[1],(box[1]+box[3])/2,box[3]]) {
 			if (waterAt(x,z,wet)) return 'Não dá para construir na água.';
@@ -1789,7 +1791,7 @@ export class GodotSurvival {
 			const dz = Math.max(box[1] - pond.z, 0, pond.z - box[3]);
 			if (Math.hypot(dx, dz) < pond.r + 1) return 'Não dá para construir na água.';
 		}
-		if (def.slot === 'free' && p.p[1] > 0.25) return ''; // em cima de piso: o chão embaixo não importa
+		if (def.slot === 'free' && this.grid.supporters(p)[0] !== 'ground') return ''; // em cima de piso: o chão embaixo não importa
 		for (const res of world.resources) {
 			const margin = BLOCKING_RESOURCES[res.kind];
 			if (margin === undefined) continue;
@@ -1811,10 +1813,13 @@ export class GodotSurvival {
 			p.p = vec3(d.p, 6000);
 			if (!p.p) return;
 			p.y = finite(d.y, 100) ? Math.round(d.y * 100) / 100 : 0;
+			p.b = 0; // peça livre já nasce na altura do relevo (não passa por liftLegacy)
 			if (def.wall && d.wall === true) p.wall = true; // tocha presa na parede
 		} else {
 			Object.assign(p, { i: d.i, j: d.j, k: d.k, r: Number.isInteger(d.r) ? ((d.r % 4) + 4) % 4 : 0 });
 			if (def.slot === 'edge' || def.slot === 'door') p.o = d.o;
+			// Sem `b` (cliente antigo): o servidor acha o degrau certo.
+			p.b = d.b === undefined ? this.grid.guessLift(p) : Number.isInteger(d.b) && Math.abs(d.b) <= MAX_LIFT ? d.b : NaN;
 		}
 		const fail = this.grid.check(p, (b) => this.allowed(b.ow, me.tag));
 		if (fail) return note(fail);

@@ -27,6 +27,7 @@ static func build(parent: Node3D, half_size: float) -> void:
 						var color := Color("#5d7a4e")
 						if p.y < -0.2 or maxf(absf(p.x), absf(p.z)) > half_size - 2: color = Color("#b3a177")
 						elif p.y > 8: color = Color("#737964")
+						elif p.y > 0.6: color = color.lerp(Color("#66704f"), smoothstep(0.6, 6.0, p.y)) # topo das colinas mais seco
 						surface.set_color(color)
 						surface.set_uv(Vector2(p.x, p.z) * 0.1)
 						surface.add_vertex(p)

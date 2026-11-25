@@ -3,6 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { terrainHeight } from '../src/godot-terrain.js';
 
 class FakeSocket {
 	constructor() {
@@ -92,7 +93,7 @@ test('animals lose satiety and hydration over time, including legacy animals, wi
 });
 test('a hungry deer grazes real grass after the action time; a satisfied deer cannot keep eating',async()=>{
  const {room}=makeWorld();const p=await join(room);const patch=world.grass[0];
- room.state.animals={a:{id:'a',kind:'deer',hp:80,p:[patch.x,0.3,patch.z],hunger:30,thirst:80}};
+ room.state.animals={a:{id:'a',kind:'deer',hp:80,p:[patch.x,terrainHeight(patch.x,patch.z)+0.3,patch.z],hunger:30,thirst:80}};
  assert.equal(typeof room.animalForage,'function');
  say(room,p,{t:'aforage',a:'a',source:'grass:0',phase:'start'});
  say(room,p,{t:'aforage',a:'a',source:'grass:0',phase:'finish'});assert.equal(room.state.animals.a.hunger,30,'cannot finish instantly');

@@ -9,6 +9,7 @@ const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const WeaponData = preload("res://scripts/weapon_data.gd")
 const CombatFeedbackScript = preload("res://scripts/net/combat_feedback.gd")
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
+const Hydrology = preload("res://scripts/survival/hydrology.gd")
 const ZombieScript = preload("res://scripts/survival/zombie.gd")
 const Melee = preload("res://scripts/melee.gd")
 const InventoryUI = preload("res://scripts/survival/inventory_ui.gd")
@@ -121,7 +122,7 @@ func _ready() -> void:
 	var you: Dictionary = info.get("you", {})
 	var p = _vec(you.get("p"))
 	if p != null:
-		player.global_position = p + Vector3(0, 0.1, 0)
+		player.global_position = _above_ground(p) + Vector3(0, 0.1, 0)
 	# Volta olhando para o mesmo lado de quando saiu.
 	player.set("yaw", float(you.get("y", player.get("yaw"))))
 	my_hp = float(you.get("hp", 100))
@@ -710,12 +711,16 @@ func _on_local_death() -> void:
 	_show_death("VOCÊ MORREU", "Suas coisas ficaram numa mochila onde você caiu.\nVocê renasce de mãos vazias, numa clareira ou na sua cama.", true)
 	PointerMode.release()
 
+## Posição salva antes do relevo pode ter ficado dentro de uma colina: sobe até o chão.
+static func _above_ground(p: Vector3) -> Vector3:
+	return Vector3(p.x, maxf(p.y, Hydrology.ground_height(p.x, p.z) + 0.05), p.z)
+
 func _on_respawned(data: Dictionary) -> void:
 	local_dead = false
 	death_panel.visible = false
 	var p = _vec(data.get("p"))
 	if p != null:
-		player.global_position = p + Vector3(0, 0.2, 0)
+		player.global_position = _above_ground(p) + Vector3(0, 0.2, 0)
 	player.velocity = Vector3.ZERO
 	player.visible = true
 	player.set_physics_process(true)

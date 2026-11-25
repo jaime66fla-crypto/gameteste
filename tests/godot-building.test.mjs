@@ -43,7 +43,8 @@ globalThis.Response = class extends RealResponse {
 };
 
 const { GodotSurvival } = await import('../src/godot-survival.js');
-const { BuildGrid } = await import('../src/godot-building.js');
+const { BuildGrid, LIFT, MAX_PILLAR } = await import('../src/godot-building.js');
+const { terrainHeight } = await import('../src/godot-terrain.js');
 const world = JSON.parse(readFileSync(new URL('../godot/data/survival_world.json', import.meta.url), 'utf8'));
 const catalog = JSON.parse(readFileSync(new URL('../godot/data/survival_items.json', import.meta.url), 'utf8'));
 const RULES = catalog.build_rules;
@@ -80,14 +81,15 @@ const say = (room, player, data) => room.webSocketMessage(player.ws, JSON.string
 const at = (player, p) => (player.me().p = [...p]);
 const rich = (player) => (player.me().inv = { wood: 200, stone: 100, fiber: 100, rope: 20 });
 
-/** Um canto livre do mapa (sem árvore, rocha, arbusto nem lago) de 5 x 5 células. */
+/** Um canto livre e plano do mapa (sem árvore, rocha, arbusto nem lago) de 5 x 5 células. */
 function clearSpot() {
 	for (let i = -70; i < 70; i++) {
 		for (let j = -70; j < 70; j++) {
 			const box = [(i - 1) * S, (j - 1) * S, (i + 4) * S, (j + 4) * S];
 			const blocked = world.resources.some((r) => ['tree', 'rock', 'bush'].includes(r.kind) && r.p[0] > box[0] - 2 && r.p[0] < box[2] + 2 && r.p[2] > box[1] - 2 && r.p[2] < box[3] + 2)
 				|| world.ponds.some((p) => Math.hypot(p.x - (box[0] + box[2]) / 2, p.z - (box[1] + box[3]) / 2) < p.r + 20)
-				|| Math.abs(box[0]) > world.half_size - 20 || Math.abs(box[3]) > world.half_size - 20;
+				|| Math.abs(box[0]) > world.half_size - 20 || Math.abs(box[3]) > world.half_size - 20
+				|| [[0, 0], [1, 0], [0, 1], [1, 1], [0.5, 0.5]].some(([u, v]) => Math.abs(terrainHeight(box[0] + (box[2] - box[0]) * u, box[1] + (box[3] - box[1]) * v)) > 0.01);
 			if (!blocked) return { i, j };
 		}
 	}
@@ -353,4 +355,70 @@ test('only the owner demolishes, getting part of the material back', async () =>
 	say(room, a, { t: 'bdel', b: id });
 	assert.equal(room.grid.pieces.size, 0);
 	assert.equal(a.me().inv.wood, Math.floor(catalog.builds.foundation.cost.wood * RULES.refund));
+});
+
+/** Uma encosta livre (sem árvore, rocha, arbusto nem água) de 2 x 2 células. */
+function slopeSpot(minDrop = 1.2) {
+	for (let i = -100; i < 100; i++) {
+		for (let j = -100; j < 100; j++) {
+			const box = [i * S, j * S, (i + 2) * S, (j + 2) * S];
+			const hs = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([u, v]) => terrainHeight(box[0] + 2 * S * u, box[1] + 2 * S * v));
+			if (Math.max(...hs) - Math.min(...hs) < minDrop || Math.min(...hs) < 0.3) continue;
+			const blocked = world.resources.some((r) => ['tree', 'rock', 'bush', 'ore', 'saltpeter', 'car'].includes(r.kind) && r.p[0] > box[0] - 4 && r.p[0] < box[2] + 4 && r.p[2] > box[1] - 4 && r.p[2] < box[3] + 4)
+				|| world.ponds.some((p) => Math.hypot(p.x - (box[0] + box[2]) / 2, p.z - (box[1] + box[3]) / 2) < p.r + 20);
+			if (!blocked) return { i, j };
+		}
+	}
+	throw new Error('no slope');
+}
+
+test('relief: a foundation on a slope sits on the highest ground with a pillar, and the house builds on its step', async () => {
+	const spot = slopeSpot();
+	const grid = new BuildGrid(RULES, catalog.builds, terrainHeight);
+	const [lo, hi] = grid.cellGround(spot.i, spot.j);
+	assert.ok(hi - lo > 0.3, 'the cell is on a slope');
+	const b = grid.foundationLift(spot.i, spot.j);
+	assert.ok(grid.top(0, b) >= hi + RULES.base - 1e-6 && grid.top(0, b) < hi + RULES.base + LIFT, 'top just above the highest ground');
+	assert.match(grid.check({ kind: 'foundation', i: spot.i, j: spot.j, k: 0, b: b - 4 }), /enterrada/, 'never buried');
+	assert.match(grid.check({ kind: 'foundation', i: spot.i, j: spot.j, k: 0, b: Math.ceil((lo + MAX_PILLAR) / LIFT) + 2 }), /pilar/, 'pillar too tall');
+	const room = makeWorld().room;
+	const a = await join(room);
+	rich(a);
+	at(a, [(spot.i + 1) * S, hi + 0.5, (spot.j - 1) * S]);
+	// Cliente novo manda o degrau; o antigo não manda e o servidor acha sozinho.
+	say(room, a, { t: 'build', kind: 'foundation', i: spot.i, j: spot.j, k: 0, b });
+	say(room, a, { t: 'build', kind: 'foundation', i: spot.i + 1, j: spot.j, k: 0, b: Math.max(b, room.grid.foundationLift(spot.i + 1, spot.j)) });
+	say(room, a, { t: 'build', kind: 'wall', i: spot.i, j: spot.j, k: 0, o: 'h' });
+	say(room, a, { t: 'build', kind: 'wall', i: spot.i, j: spot.j, k: 0, o: 'v', b: b + 3 });
+	assert.match(a.ws.last('note').message, /Precisa/, 'a wall on a different step has no support');
+	const pieces = [...room.grid.pieces.values()];
+	assert.equal(pieces.length, 3, a.ws.last('note')?.message);
+	const wall = pieces.find((p) => p.kind === 'wall');
+	assert.equal(wall.b, b, 'the wall took the foundation step');
+	assert.equal(a.ws.last('bp').b.b, b, 'clients get the step');
+	assert.ok(Math.abs(room.grid.center(wall)[1] - (grid.top(0, b) + RULES.story / 2)) < 1e-6);
+	// Peça livre na encosta: em cima do ponto mais alto embaixo dela, não enterrada.
+	const x = (spot.i + 0.5) * S;
+	const z = (spot.j + 2.6) * S;
+	const free = grid.freeGround({ kind: 'campfire', p: [x, 0, z] });
+	assert.deepEqual(grid.supporters({ kind: 'campfire', p: [x, free[0] - 0.5, z] }), [], 'buried campfire');
+	assert.deepEqual(grid.supporters({ kind: 'campfire', p: [x, free[1], z] }), ['ground']);
+});
+
+test('relief: bases saved before the relief rise out of the new ground once', () => {
+	const spot = slopeSpot();
+	const grid = new BuildGrid(RULES, catalog.builds, terrainHeight);
+	grid.add({ id: 'f1', kind: 'foundation', i: spot.i, j: spot.j, k: 0 });
+	grid.add({ id: 'f2', kind: 'foundation', i: spot.i + 1, j: spot.j, k: 0 });
+	grid.add({ id: 'w1', kind: 'wall', i: spot.i, j: spot.j, k: 0, o: 'h' });
+	grid.add({ id: 'c1', kind: 'chest', p: [(spot.i + 0.5) * S, RULES.base, (spot.j + 0.5) * S], y: 0 });
+	grid.add({ id: 't1', kind: 'campfire', p: [(spot.i + 0.5) * S, 0, (spot.j - 1.5) * S], y: 0 });
+	const changed = grid.liftLegacy();
+	assert.equal(changed.length, 5);
+	const lift = Math.max(grid.foundationLift(spot.i, spot.j), grid.foundationLift(spot.i + 1, spot.j));
+	for (const id of ['f1', 'f2', 'w1']) assert.equal(grid.pieces.get(id).b, lift, id);
+	assert.ok(Math.abs(grid.pieces.get('c1').p[1] - grid.top(0, lift)) < 0.01, 'the chest rose with the house');
+	assert.deepEqual(grid.supporters(grid.pieces.get('c1')).map((p) => p.id), ['f1']);
+	assert.deepEqual(grid.supporters(grid.pieces.get('t1')), ['ground'], 'the campfire sits on the new ground');
+	assert.equal(grid.liftLegacy().length, 0, 'runs once');
 });

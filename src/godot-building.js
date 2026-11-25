@@ -8,14 +8,28 @@
 // Andar k: o chão fica em base + story·k (k = 0 é o topo da fundação).
 // Bordas: 'h' (i, j) é o lado z = j·S de x = i·S a (i+1)·S; 'v' (i, j) é o
 // lado x = i·S de z = j·S a (j+1)·S.
+//
+// Terreno com relevo: cada peça da grade tem um degrau `b` (inteiro, LIFT m
+// cada) somado à altura do andar. A fundação fica logo acima do ponto mais
+// alto do chão embaixo dela e ganha um pilar de pedra até o ponto mais baixo;
+// o que vai em cima herda o mesmo degrau. Peças com degraus diferentes não se
+// apoiam umas nas outras.
 
 export const EDGE_KINDS = ['wall', 'doorway', 'window'];
 const FLOORS = ['floor']; // pisos que seguram parede/escada/peça livre (telhado não)
 const MAX_LEVEL = 6;
 const MAX_CELL = 400; // |i|, |j| (o mundo tem ~240 m de meia largura)
+export const LIFT = 0.25; // altura de um degrau `b`
+export const MAX_LIFT = 160; // |b| (40 m)
+export const MAX_PILLAR = 8; // altura máxima do topo da fundação até o chão mais baixo
+const FREE_R = 0.5; // raio padrão do pé de uma peça livre
+
+/** Degrau da peça (peças antigas não têm: 0). */
+export const liftOf = (p) => (Number.isInteger(p?.b) ? p.b : 0);
 
 export class BuildGrid {
-	constructor(rules, defs) {
+	constructor(rules, defs, ground = () => 0) {
+		this.ground = ground; // altura do chão em (x, z)
 		this.S = rules.cell;
 		this.H = rules.story;
 		this.base = rules.base;
@@ -26,8 +40,38 @@ export class BuildGrid {
 
 	// ------------------------------------------------------------ geometria ---
 
-	top(k) {
-		return this.base + this.H * k;
+	top(k, b = 0) {
+		return this.base + this.H * k + LIFT * b;
+	}
+
+	/** Chão mais baixo e mais alto num retângulo (amostras 5×5). */
+	groundSpan(x0, z0, x1, z1) {
+		let lo = Infinity;
+		let hi = -Infinity;
+		for (let a = 0; a <= 4; a++) {
+			for (let c = 0; c <= 4; c++) {
+				const h = this.ground(x0 + ((x1 - x0) * a) / 4, z0 + ((z1 - z0) * c) / 4);
+				lo = Math.min(lo, h);
+				hi = Math.max(hi, h);
+			}
+		}
+		return [lo, hi];
+	}
+
+	cellGround(i, j) {
+		const { S } = this;
+		return this.groundSpan(i * S, j * S, (i + 1) * S, (j + 1) * S);
+	}
+
+	/** Menor degrau de uma fundação em (i, j): topo `base` acima do chão mais alto. */
+	foundationLift(i, j) {
+		return Math.max(-MAX_LIFT, Math.ceil(this.cellGround(i, j)[1] / LIFT - 1e-6));
+	}
+
+	/** Chão sob o pé de uma peça livre. */
+	freeGround(p) {
+		const r = this.defs[p.kind]?.r || FREE_R;
+		return this.groundSpan(p.p[0] - r, p.p[2] - r, p.p[0] + r, p.p[2] + r);
 	}
 
 	static cellKey(i, j, k) {
@@ -70,9 +114,9 @@ export class BuildGrid {
 		if (slot === 'edge' || slot === 'door') {
 			const x = p.o === 'h' ? (p.i + 0.5) * S : p.i * S;
 			const z = p.o === 'h' ? p.j * S : (p.j + 0.5) * S;
-			return [x, this.top(p.k) + (slot === 'door' ? 1.1 : this.H / 2), z];
+			return [x, this.top(p.k, liftOf(p)) + (slot === 'door' ? 1.1 : this.H / 2), z];
 		}
-		const y = slot === 'stairs' ? this.top(p.k) + this.H / 2 : this.top(p.k) - 0.2;
+		const y = slot === 'stairs' ? this.top(p.k, liftOf(p)) + this.H / 2 : this.top(p.k, liftOf(p)) - 0.2;
 		return [(p.i + 0.5) * S, y, (p.j + 0.5) * S];
 	}
 
@@ -83,8 +127,9 @@ export class BuildGrid {
 		const [x, y, z] = point;
 		if (slot === 'free') return Math.abs(y - p.p[1]) > 3 ? null : Math.hypot(x - p.p[0], z - p.p[2]);
 		// Piso/teto: dá para bater de baixo (dentro de casa) e de cima.
-		const low = slot === 'cell' ? this.top(p.k) - this.H - 0.3 : this.top(p.k) - 2.2;
-		const high = this.top(p.k) + (slot === 'cell' ? 2.4 : this.H + 0.5);
+		const t = this.top(p.k, liftOf(p));
+		const low = slot === 'cell' ? t - this.H - 0.3 : t - 2.2;
+		const high = t + (slot === 'cell' ? 2.4 : this.H + 0.5);
 		if (y < low || y > high) return null;
 		if (slot === 'edge' || slot === 'door') {
 			const [ax, az, bx, bz] = p.o === 'h' ? [p.i * S, p.j * S, (p.i + 1) * S, p.j * S] : [p.i * S, p.j * S, p.i * S, (p.j + 1) * S];
@@ -98,20 +143,21 @@ export class BuildGrid {
 
 	// --------------------------------------------------------------- apoio ---
 
-	edgeAt(o, i, j, k) {
+	/** Parede/vão na borda (no degrau `b`; null = qualquer degrau). */
+	edgeAt(o, i, j, k, b = null) {
 		const piece = this.at(BuildGrid.edgeKey(o, i, j, k));
-		return piece && EDGE_KINDS.includes(piece.kind) ? piece : null;
+		return piece && EDGE_KINDS.includes(piece.kind) && (b === null || liftOf(piece) === b) ? piece : null;
 	}
 
-	floorAt(i, j, k) {
+	floorAt(i, j, k, b = null) {
 		const piece = this.at(BuildGrid.cellKey(i, j, k));
-		if (!piece) return null;
+		if (!piece || (b !== null && liftOf(piece) !== b)) return null;
 		return (k === 0 ? piece.kind === 'foundation' : FLOORS.includes(piece.kind)) ? piece : null;
 	}
 
 	/** Paredes do andar de baixo que seguram o piso/telhado da célula. */
-	wallsUnder(i, j, k) {
-		return BuildGrid.cellEdges(i, j).map(([o, a, b]) => this.edgeAt(o, a, b, k - 1)).filter(Boolean);
+	wallsUnder(i, j, k, b = null) {
+		return BuildGrid.cellEdges(i, j).map(([o, a, c]) => this.edgeAt(o, a, c, k - 1, b)).filter(Boolean);
 	}
 
 	/**
@@ -120,58 +166,64 @@ export class BuildGrid {
 	 */
 	supporters(p) {
 		const slot = this.defs[p.kind]?.slot;
+		const lift = liftOf(p);
 		if (p.kind === 'foundation') return ['ground'];
 		if (slot === 'cell') {
 			if (p.k < 1) return [];
-			const walls = this.wallsUnder(p.i, p.j, p.k);
+			const walls = this.wallsUnder(p.i, p.j, p.k, lift);
 			if (walls.length) return walls;
 			const out = [];
 			for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-				const n = this.floorAt(p.i + di, p.j + dj, p.k);
-				if (n && n.kind === 'floor' && this.wallsUnder(n.i, n.j, n.k).length) out.push(n);
+				const n = this.floorAt(p.i + di, p.j + dj, p.k, lift);
+				if (n && n.kind === 'floor' && this.wallsUnder(n.i, n.j, n.k, lift).length) out.push(n);
 			}
 			return out;
 		}
 		if (slot === 'edge') {
 			const out = [];
 			if (p.k > 0) {
-				const below = this.edgeAt(p.o, p.i, p.j, p.k - 1);
+				const below = this.edgeAt(p.o, p.i, p.j, p.k - 1, lift);
 				if (below) out.push(below);
 			}
 			for (const [a, b] of BuildGrid.edgeCells(p.o, p.i, p.j)) {
-				const f = this.floorAt(a, b, p.k);
+				const f = this.floorAt(a, b, p.k, lift);
 				if (f) out.push(f);
 			}
 			return out;
 		}
 		if (slot === 'door') {
 			const frame = this.at(BuildGrid.edgeKey(p.o, p.i, p.j, p.k));
-			return frame?.kind === 'doorway' ? [frame] : [];
+			return frame?.kind === 'doorway' && liftOf(frame) === lift ? [frame] : [];
 		}
 		if (slot === 'stairs') {
-			const f = this.floorAt(p.i, p.j, p.k);
+			const f = this.floorAt(p.i, p.j, p.k, lift);
 			return f ? [f] : [];
 		}
 		// Peça livre presa na parede (tocha): a parede/vão encostado nela.
 		if (p.wall) return this.wallBehind(p.p);
-		// Peça livre: no chão (y ≈ 0) ou em cima de uma fundação/piso.
-		if (p.p[1] < 0.25) return this.cellUnder(p.p) ? [] : ['ground'];
+		// Peça livre: em cima de uma fundação/piso, ou no chão (apoiada no ponto
+		// mais alto embaixo dela, nunca enterrada nem dentro de uma fundação).
 		const f = this.cellUnder(p.p);
-		return f && Math.abs(this.top(f.k) - p.p[1]) < 0.3 ? [f] : [];
+		if (f && Math.abs(this.top(f.k, liftOf(f)) - p.p[1]) < 0.3) return [f];
+		const [lo, hi] = this.freeGround(p);
+		if (p.p[1] < lo - 0.1 || p.p[1] > hi + 0.25) return [];
+		const found = this.floorAt(Math.floor(p.p[0] / this.S), Math.floor(p.p[2] / this.S), 0);
+		return found && this.top(0, liftOf(found)) > p.p[1] - 0.3 ? [] : ['ground'];
 	}
 
 	/** Parede/vão encostado num ponto (tocha presa na parede): [parede] ou []. */
 	wallBehind(point) {
 		const [x, y, z] = point;
-		const k = Math.floor((y - this.base) / this.H);
-		if (k < 0 || k > MAX_LEVEL) return [];
 		for (const o of ['h', 'v']) {
 			const i = o === 'h' ? Math.floor(x / this.S) : Math.round(x / this.S);
 			const j = o === 'h' ? Math.round(z / this.S) : Math.floor(z / this.S);
 			const gap = o === 'h' ? Math.abs(z - j * this.S) : Math.abs(x - i * this.S);
 			if (gap > 0.3) continue;
-			const w = this.edgeAt(o, i, j, k);
-			if (w) return [w];
+			for (let k = 0; k <= MAX_LEVEL; k++) {
+				const w = this.edgeAt(o, i, j, k);
+				const t = w ? this.top(k, liftOf(w)) : 0;
+				if (w && y >= t && y < t + this.H) return [w];
+			}
 		}
 		return [];
 	}
@@ -183,7 +235,7 @@ export class BuildGrid {
 		let best = null;
 		for (let k = 0; k <= MAX_LEVEL; k++) {
 			const f = this.floorAt(i, j, k);
-			if (f && this.top(k) <= point[1] + 0.3) best = f;
+			if (f && this.top(k, liftOf(f)) <= point[1] + 0.3) best = f;
 		}
 		return best;
 	}
@@ -203,6 +255,15 @@ export class BuildGrid {
 		}
 		if (def.slot === 'cell' && p.kind === 'foundation' && p.k !== 0) return 'A fundação vai no chão.';
 		if (def.slot === 'cell' && p.kind !== 'foundation' && p.k < 1) return 'Piso e telhado vão em cima das paredes.';
+		if (def.slot !== 'free') {
+			if (p.b !== undefined && !(Number.isInteger(p.b) && Math.abs(p.b) <= MAX_LIFT)) return 'Altura inválida.';
+			if (p.kind === 'foundation') {
+				const [lo, hi] = this.cellGround(p.i, p.j);
+				const t = this.top(0, liftOf(p));
+				if (t < hi + 0.15) return 'A fundação ficaria enterrada.';
+				if (t - lo > MAX_PILLAR) return 'Alto demais: o pilar não chega ao chão.';
+			}
+		}
 		const key = this.slotOf(p);
 		if (key && this.slots.has(key)) return 'Já tem uma peça aí.';
 		if (def.slot === 'cell' && p.k >= 1 && this.at(`s:${p.i}:${p.j}:${p.k - 1}`)) return 'A escada passa por aqui.';
@@ -253,6 +314,88 @@ export class BuildGrid {
 			}
 		}
 		return gone;
+	}
+
+	/**
+	 * Degrau de uma peça da grade que veio sem `b` (cliente antigo): a fundação
+	 * fica logo acima do chão; o resto copia o degrau de quem pode segurá-la.
+	 */
+	guessLift(p) {
+		if (p.kind === 'foundation') return this.foundationLift(p.i, p.j);
+		const near = [];
+		const add = (piece) => piece && near.push(liftOf(piece));
+		const slot = this.defs[p.kind]?.slot;
+		if (slot === 'cell' || slot === 'stairs') {
+			for (const [o, a, c] of BuildGrid.cellEdges(p.i, p.j)) add(this.at(BuildGrid.edgeKey(o, a, c, p.k - 1)));
+			add(this.at(BuildGrid.cellKey(p.i, p.j, p.k)));
+			for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) add(this.at(BuildGrid.cellKey(p.i + di, p.j + dj, p.k)));
+		} else if (slot === 'edge' || slot === 'door') {
+			add(this.at(BuildGrid.edgeKey(p.o, p.i, p.j, p.k)));
+			add(this.at(BuildGrid.edgeKey(p.o, p.i, p.j, p.k - 1)));
+			for (const [a, c] of BuildGrid.edgeCells(p.o, p.i, p.j)) add(this.at(BuildGrid.cellKey(a, c, p.k)));
+		}
+		for (const b of near) if (this.supporters({ ...p, b }).length) return b;
+		return near.length ? near[0] : 0;
+	}
+
+	/**
+	 * Construções salvas antes do relevo (sem `b`): cada grupo de células
+	 * encostadas sobe junto até a fundação mais alta ficar fora do chão, e as
+	 * peças livres no chão vão para cima dele. Devolve as peças mudadas.
+	 */
+	liftLegacy() {
+		const changed = [];
+		const cols = new Map(); // "i:j" -> peças antigas da grade nessa coluna (bordas nas duas)
+		const touch = (i, j, piece) => {
+			const key = `${i}:${j}`;
+			if (!cols.has(key)) cols.set(key, []);
+			cols.get(key).push(piece);
+		};
+		for (const p of this.pieces.values()) {
+			if (p.b !== undefined || this.defs[p.kind]?.slot === 'free') continue;
+			if (p.o) for (const [a, c] of BuildGrid.edgeCells(p.o, p.i, p.j)) touch(a, c, p);
+			else touch(p.i, p.j, p);
+		}
+		const colLift = new Map();
+		for (const start of cols.keys()) {
+			if (colLift.has(start)) continue;
+			const group = [start];
+			colLift.set(start, 0);
+			for (let n = 0; n < group.length; n++) {
+				const [i, j] = group[n].split(':').map(Number);
+				for (const [di, dj] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+					const key = `${i + di}:${j + dj}`;
+					if (cols.has(key) && !colLift.has(key)) {
+						colLift.set(key, 0);
+						group.push(key);
+					}
+				}
+			}
+			let lift = 0;
+			for (const key of group) {
+				const [i, j] = key.split(':').map(Number);
+				if (cols.get(key).some((p) => p.kind === 'foundation')) lift = Math.max(lift, this.foundationLift(i, j));
+			}
+			for (const key of group) {
+				colLift.set(key, lift);
+				for (const p of cols.get(key)) {
+					if (p.b !== undefined) continue;
+					p.b = lift;
+					changed.push(p);
+				}
+			}
+		}
+		for (const p of this.pieces.values()) {
+			if (p.b !== undefined || this.defs[p.kind]?.slot !== 'free' || !p.p) continue;
+			const lift = colLift.get(`${Math.floor(p.p[0] / this.S)}:${Math.floor(p.p[2] / this.S)}`) || 0;
+			let y = p.p[1];
+			if (lift) y += lift * LIFT; // em cima de piso ou presa na parede: sobe com a casa
+			else if (y < 0.25) y = Math.max(y, this.freeGround(p)[1]); // no chão: em cima do relevo
+			p.p = [p.p[0], Math.round(y * 100) / 100, p.p[2]];
+			p.b = 0;
+			changed.push(p);
+		}
+		return changed;
 	}
 
 	/** Peças que podem ter perdido o apoio quando `p` sumiu. */

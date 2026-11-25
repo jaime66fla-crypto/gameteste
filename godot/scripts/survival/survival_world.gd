@@ -468,6 +468,7 @@ func _town_sign(town: Dictionary) -> void:
 	var c := Vector3(float(town["center"][0]), 0, float(town["center"][1]))
 	var to_center := (-c).normalized()
 	var p := c + to_center * 34.0
+	p.y = Hydrology.ground_height(p.x, p.z)
 	var post := Node3D.new()
 	post.position = p
 	add_child(post)
