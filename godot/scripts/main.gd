@@ -122,7 +122,7 @@ func _ready() -> void:
     _build_hud(survival)
     _build_quit_dialog(survival)
     add_child(CelStyle.new())
-    _mobile_shadows()
+    _shadow_quality(int(settings["quality"]))
     # O mouse não é recapturado enquanto a mochila ou a confirmação estão abertas.
     player.set("ui_blocking", func() -> bool:
         if quit_dialog != null and quit_dialog.visible:
@@ -286,19 +286,10 @@ func _build_world(_survival: bool = false) -> void:
     # O chão vem de cada mapa: survival_world.gd (floresta), match_map.gd
     # (partidas) e training_ground.gd (treino offline).
 
-## Celular: cada faixa da sombra do sol redesenha a cena inteira. Depois que o
-## mapa (partida, treino ou Sobrevivência) configurou o sol, troca para uma
-## faixa só e encurta o alcance. No PC nada muda.
-const MOBILE_SHADOW_DISTANCE := 40.0
-
-func _mobile_shadows() -> void:
-    if not GameSettings.is_mobile():
-        return
-    var sun := get_node_or_null("Sun") as DirectionalLight3D
-    if sun == null:
-        return
-    sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
-    sun.directional_shadow_max_distance = minf(sun.directional_shadow_max_distance, MOBILE_SHADOW_DISTANCE)
+## Depois que o mapa (partida, treino ou Sobrevivência) configurou o sol, ajusta
+## faixas e alcance da sombra pela qualidade gráfica escolhida no menu.
+func _shadow_quality(quality: int) -> void:
+    GameSettings.apply_shadow_quality(get_node_or_null("Sun") as DirectionalLight3D, quality)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()

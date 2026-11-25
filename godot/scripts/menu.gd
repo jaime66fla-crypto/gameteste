@@ -2904,6 +2904,15 @@ func _show_config() -> void:
     _label("Configurações",28)
     var sensitivity := _slider("Sensibilidade do mouse","SensitivitySlider",20,200,float(settings["sensitivity"]) * 100)
     var volume := _slider("Volume geral","VolumeSlider",0,100,float(settings["volume"]) * 100)
+    # Baixa: 3D a 75% da resolução, sombra curta e MSAA até 2× (PC fraco/celular).
+    _label("Qualidade gráfica",16)
+    var quality := OptionButton.new()
+    quality.name = "QualitySelect"
+    for quality_name in Settings.QUALITY_NAMES:
+        quality.add_item(quality_name)
+    quality.select(int(settings["quality"]))
+    quality.custom_minimum_size.y = 40
+    content.add_child(quality)
     _label("Suavização das bordas",16)
     var aa := OptionButton.new()
     aa.name = "AASelect"
@@ -2926,7 +2935,7 @@ func _show_config() -> void:
     _button("Controles (teclas e mouse)","ControlsButton",_show_controls)
     status = _label("",14)
     _button("Salvar","SaveButton",func():
-        var values := {"sensitivity": sensitivity.value/100.0,"volume": volume.value/100.0,"msaa": aa.selected,"fullscreen": fullscreen.button_pressed}
+        var values := {"sensitivity": sensitivity.value/100.0,"volume": volume.value/100.0,"msaa": aa.selected,"fullscreen": fullscreen.button_pressed,"quality": quality.selected}
         if Settings.save_settings(values) != OK:
             status.text = "Não foi possível salvar as configurações."
             return
