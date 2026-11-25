@@ -389,7 +389,7 @@ func _show_main(notice: String = "") -> void:
     var logged := Net.is_logged_in()
     var first: Button
     if logged:
-        first = _nav_button(nav, "Jogar online", "MultiplayerButton", _show_multiplayer, true, "4 modos de jogo")
+        first = _nav_button(nav, "Jogar online", "MultiplayerButton", _show_multiplayer, true, "Combate e Sobrevivência")
     else:
         first = _nav_button(nav, "Entrar / criar conta", "LoginButton", func(): _show_login(false), true)
     _nav_button(nav, "Treino offline", "StartButton", _start_match, false, "Bonecos de teste")
@@ -1278,20 +1278,44 @@ func _online_screen(active: int) -> bool:
     _online_tabs(active)
     return true
 
-## Segmented control at the top of the online screen.
+const SURVIVAL_COLOR := Color("#e6c98a")
+const SURVIVAL_ART := "res://assets/ui/survival_mode.jpg"
+
+## Top of the online screen: the three combat modes as one segmented control
+## and, apart from them, Survival as its own picture card.
 func _online_tabs(active: int) -> void:
+    var tabs := VBoxContainer.new()
+    tabs.name = "OnlineTabs"
+    tabs.add_theme_constant_override("separation", 6)
+    content.add_child(tabs)
+    var captions := HBoxContainer.new()
+    captions.add_theme_constant_override("separation", 14)
+    tabs.add_child(captions)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 14)
+    tabs.add_child(row)
+    var combat_caption := _plain("COMBATE  ·  PARTIDAS", 11, DIM, caps_font)
+    combat_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    combat_caption.size_flags_stretch_ratio = 2.4
+    captions.add_child(combat_caption)
+    var survival_caption := _plain("MUNDO ABERTO", 11, Color(SURVIVAL_COLOR, 0.8), caps_font)
+    survival_caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    captions.add_child(survival_caption)
     var bar := PanelContainer.new()
-    bar.name = "OnlineTabs"
+    bar.name = "CombatTabs"
+    bar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    bar.size_flags_stretch_ratio = 2.4
     var bg := _box(Color(0, 0, 0, 0.35), LINE, 1, 10)
     bg.set_content_margin_all(4)
     bar.add_theme_stylebox_override("panel", bg)
-    content.add_child(bar)
-    var row := HBoxContainer.new()
-    row.add_theme_constant_override("separation", 4)
-    bar.add_child(row)
-    var titles := ["Eliminatória","Mata-mata","Equipes","Sobrevivência"]
-    var names := ["TabElimination","TabDeathmatch","TabTeams","TabSurvival"]
-    var actions := [_show_multiplayer,_show_deathmatch_tab,_show_teams_tab,_show_survival_tab]
+    row.add_child(bar)
+    var segs := HBoxContainer.new()
+    segs.add_theme_constant_override("separation", 4)
+    bar.add_child(segs)
+    row.add_child(_survival_tab(active == 3))
+    var titles := ["Eliminatória","Mata-mata","Equipes"]
+    var names := ["TabElimination","TabDeathmatch","TabTeams"]
+    var actions := [_show_multiplayer,_show_deathmatch_tab,_show_teams_tab]
     for i in titles.size():
         var on: bool = i == active
         var tab := Button.new()
@@ -1313,7 +1337,101 @@ func _online_tabs(active: int) -> void:
             tab.add_theme_color_override(state, Color("#1a1208") if on else TEXT)
         if not on:
             tab.pressed.connect(actions[i])
-        row.add_child(tab)
+        segs.add_child(tab)
+
+## Survival tab: the world's picture under a dark fade, name on top.
+func _survival_tab(on: bool) -> Button:
+    var tab := Button.new()
+    tab.name = "TabSurvival"
+    tab.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    tab.custom_minimum_size.y = 46
+    tab.clip_contents = true
+    for state in ["normal","hover","pressed","focus"]:
+        tab.add_theme_stylebox_override(state, _box(Color("#0d1210"), Color.TRANSPARENT, 0, 4))
+    var art := _art_rect(1.0 if on else 0.75)
+    tab.add_child(art)
+    var shade := _fade_rect(Color(0, 0, 0, 0.78), Color(0, 0, 0, 0.0))
+    tab.add_child(shade)
+    var label := _plain("Sobrevivência", 15, SURVIVAL_COLOR if on else TEXT, semi_font)
+    label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+    tab.add_child(label)
+    label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    label.offset_left = 14
+    var frame := Panel.new()
+    frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    frame.add_theme_stylebox_override("panel", _box(Color.TRANSPARENT, SURVIVAL_COLOR if on else Color(SURVIVAL_COLOR, 0.28), 2 if on else 1, 4))
+    tab.add_child(frame)
+    frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    if not on:
+        tab.mouse_entered.connect(func(): art.modulate.a = 1.0)
+        tab.mouse_exited.connect(func(): art.modulate.a = 0.75)
+        tab.focus_entered.connect(func(): art.modulate.a = 1.0)
+        tab.focus_exited.connect(func(): art.modulate.a = 0.75)
+        tab.pressed.connect(_show_survival_tab)
+    return tab
+
+## The Survival picture filling its parent (cropped, never stretched).
+func _art_rect(alpha: float = 1.0) -> TextureRect:
+    var art := TextureRect.new()
+    art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    art.texture = load(SURVIVAL_ART) as Texture2D
+    art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+    art.modulate.a = alpha
+    art.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    return art
+
+## Horizontal (or vertical) fade over a picture, so text on it stays readable.
+func _fade_rect(from: Color, to: Color, vertical: bool = false) -> TextureRect:
+    var gradient := Gradient.new()
+    gradient.set_color(0, from)
+    gradient.set_color(1, to)
+    var tex := GradientTexture2D.new()
+    tex.gradient = gradient
+    tex.width = 64
+    tex.height = 64
+    tex.fill_from = Vector2(0, 1) if vertical else Vector2(0, 0)
+    tex.fill_to = Vector2(0, 0) if vertical else Vector2(1, 0)
+    var fade := TextureRect.new()
+    fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    fade.texture = tex
+    fade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    fade.stretch_mode = TextureRect.STRETCH_SCALE
+    fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    return fade
+
+## Big picture at the top of the Survival tab: the world, the mode's name and
+## what sets it apart from the combat modes.
+func _survival_banner() -> void:
+    var banner := Control.new()
+    banner.name = "SurvivalBanner"
+    banner.custom_minimum_size.y = 190
+    banner.clip_contents = true
+    content.add_child(banner)
+    var base := Panel.new()
+    base.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    base.add_theme_stylebox_override("panel", _box(Color("#0d1210"), Color.TRANSPARENT, 0, 4))
+    banner.add_child(base)
+    base.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    banner.add_child(_art_rect())
+    banner.add_child(_fade_rect(Color(0, 0, 0, 0.9), Color(0, 0, 0, 0.0), true))
+    var words := VBoxContainer.new()
+    words.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    words.alignment = BoxContainer.ALIGNMENT_END
+    words.add_theme_constant_override("separation", 2)
+    banner.add_child(words)
+    words.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+    words.offset_left = 18
+    words.offset_right = -18
+    words.offset_bottom = -14
+    words.add_child(_plain("MODO À PARTE  ·  MUNDO ABERTO", 11, SURVIVAL_COLOR, caps_font))
+    words.add_child(_plain("Sobrevivência", 30, TEXT, title_font))
+    words.add_child(_wrap("Floresta, 3 cidades abandonadas e zumbis à noite. Sem rounds: seu personagem fica no mundo.", 13, Color(TEXT, 0.8)))
+    var frame := Panel.new()
+    frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    frame.add_theme_stylebox_override("panel", _box(Color.TRANSPARENT, Color(SURVIVAL_COLOR, 0.45), 1, 4))
+    banner.add_child(frame)
+    frame.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _status_note() -> void:
     var note := _label("",14,MUTED)
@@ -1386,7 +1504,8 @@ func _show_deathmatch_tab() -> void:
 func _show_survival_tab() -> void:
     if not _online_screen(3):
         return
-    _mode_card("Sobrevivência", "Até 16 jogadores",
+    _survival_banner()
+    _mode_card("Como funciona", "Até 16 jogadores",
         "Uma floresta sem nada pronto. Você acorda de mãos vazias: junte galhos, pedras e fibra, fabrique faca, machado e picareta de pedra, corte árvores, colha frutas e ervas e beba nos lagos. De dia a mata é calma; à noite os zumbis saem do escuro.",
         ["Tudo é fabricado: árvore só com machado, rocha só com picareta",
         "Mordida infecta: sem remédio de ervas em 2 minutos você vira zumbi",
