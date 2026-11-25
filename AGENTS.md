@@ -3,9 +3,10 @@
 ## Publicar Campo de Fogo no itch.io — caminho rápido
 
 Quando o Jaime disser **"publique tudo"** (ou "aplique tudo"), isso já é a
-autorização: faça o lançamento do cliente Windows sem perguntar de novo.
+autorização: faça o lançamento do cliente (Windows **e** Android, mesma
+versão) sem perguntar de novo.
 Não leia o projeto inteiro, não rode a suíte toda, não reexplore o código.
-São ~6 comandos. Android está **suspenso**: sempre `-SkipAndroid`.
+São ~6 comandos. Desde a 1.34.0 o Android voltou: **não** use `-SkipAndroid`.
 
 Shell: Windows PowerShell 5.1 (sem `&&`; use `;`). Git não está no PATH:
 
@@ -13,13 +14,15 @@ Shell: Windows PowerShell 5.1 (sem `&&`; use `;`). Git não está no PATH:
 $git = (Get-ChildItem "$env:LOCALAPPDATA\GitHubDesktop\app-*\resources\app\git\cmd\git.exe" | Sort-Object FullName | Select-Object -Last 1).FullName
 $butler = "$env:LOCALAPPDATA\itch-butler\butler.exe"   # já logado; nunca peça/mostre chave
 $target = "jaimexzz/campo-de-fogo:windows"
+$android = "jaimexzz/campo-de-fogo:android"
 ```
 
 ### 1. Estado (1 comando)
 ```powershell
-& $git status --short; & $git log --oneline -3; & $butler status $target; Select-String godot\project.godot -Pattern 'config/version'
+& $git status --short; & $git log --oneline -3; & $butler status jaimexzz/campo-de-fogo; Select-String godot\project.godot -Pattern 'config/version'
 ```
-- Se o `butler status` já mostra a versão nova → já está publicado, pare.
+- Se o `butler status` já mostra a versão nova nos **dois** canais → já está
+  publicado, pare. Só um deles atrasado → envie só esse (ver passo 5).
 - Arquivos modificados que **não** são da sua tarefa (outra ferramenta
   trabalhando) → pergunte ao Jaime se entram; se não, exporte de uma cópia
   limpa (ver "Cópia limpa" abaixo). Ignore sempre `godot/tools/mcp-godot/.tmp-smoke-project`.
@@ -45,19 +48,24 @@ Copy-Item godot\itch\windows\CampoDeFogo.exe "godot\itch\CampoDeFogo_$old.exe"
 & $git add <arquivos da tarefa> godot/project.godot
 & $git commit -F <arquivo-com-mensagem>   # here-string via pipe NÃO funciona
 ```
-O script apaga `godot/itch/windows` — o backup tem que vir antes.
+O script apaga `godot/itch/windows` e `godot/itch/android` — o backup tem que
+vir antes.
 
-### 5. Exportar e publicar (1 comando, ~3–5 min)
+### 5. Exportar e publicar (1 comando, ~5–8 min)
 ```powershell
-Push-Location godot; powershell -ExecutionPolicy Bypass -File tools\publish_itch.ps1 -SkipAndroid; Pop-Location
+Push-Location godot; powershell -ExecutionPolicy Bypass -File tools\publish_itch.ps1; Pop-Location
 ```
+Exporta Windows + APK Android assinado (keystore fora do repo, em
+`%APPDATA%\Godot\keystores\` — o script lê sozinho) e envia os dois canais.
 Já exportou antes e o `export_presets.cfg` já tem a versão? Pode pular o
 export e só enviar:
 `& $butler push godot\itch\windows $target --userversion <versão>`
+`& $butler push godot\itch\android\CampoDeFogo.apk $android --userversion <versão>`
 
 ### 6. Fechar
 ```powershell
-& $butler status $target            # √ + versão nova = no ar
+& $butler status jaimexzz/campo-de-fogo   # √ + versão nova nos dois canais = no ar
+                                          # (o Android pode ficar "∙ processando" ~1 min)
 & $git add godot/export_presets.cfg godot/**/*.uid
 & $git commit -m "export_presets <versão>"
 $env:GIT_TERMINAL_PROMPT="1"; $env:GCM_INTERACTIVE="always"
@@ -77,12 +85,13 @@ animação, UI, som) → não mexa no servidor.
 $dst = "$env:TEMP\cdf_clean\godot"
 robocopy godot $dst /MIR /XD "$((Resolve-Path godot).Path)\itch" /NFL /NDL /NJH /NJS /NP
 # nos arquivos alheios: restaure a versão do HEAD (git show HEAD:<arquivo>) e apague os não rastreados
-Push-Location $dst; powershell -ExecutionPolicy Bypass -File tools\publish_itch.ps1 -SkipAndroid; Pop-Location
+Push-Location $dst; powershell -ExecutionPolicy Bypass -File tools\publish_itch.ps1; Pop-Location
 Copy-Item "$dst\export_presets.cfg" godot\export_presets.cfg
 ```
 
 ### Nunca
 - Mostrar/copiar credenciais (butler, Git, Cloudflare, keystore).
-- Publicar Android sem o Jaime pedir.
+- Publicar só um dos canais quando os dois deveriam sair (Windows e Android
+  andam juntos, mesma versão).
 - Subir `GODOT_MIN_BUILD` ou fazer `wrangler deploy` sem OK.
 - Commitar `godot/itch/`, builds ou `.tmp-smoke-project`.
