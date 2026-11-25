@@ -90,8 +90,9 @@ const ZOMBIE_MAX = 50;
 const ZOMBIE_DAWN_FADE = 0.25; // de dia, chance por tick de cada zumbi perto de alguém sumir
 const NIGHT_START = 20;
 const NIGHT_END = 6;
-// Versão do mundo salvo: mundo de outra versão (a cidade antiga) recomeça do zero.
-export const WORLD_VERSION = 2;
+// Versão do mundo salvo: mundo de outra versão recomeça do zero (personagens,
+// mochilas, bases, carros). 3 = reset geral de 2026-11-25.
+export const WORLD_VERSION = 3;
 /** Chance de um zumbi morto deixar a glândula podre. */
 export const ZOMBIE_GLAND_CHANCE = 0.3;
 /** De dia, zumbis só nas áreas 'day' (cidades), no máximo esta fração da noite. */
@@ -334,6 +335,10 @@ export class GodotSurvival {
 					// Bases de antes do relevo: sobem para fora do chão novo (uma vez só).
 					for (const piece of this.grid.liftLegacy()) this.buildDirty.add(piece.id);
 				}
+			} else if (saved && typeof ctx.storage.deleteAll === 'function') {
+				// Mundo de versão velha: apaga tudo (inclusive as peças "b:") para não
+				// sobrar construção antiga com id repetido no mundo novo.
+				await ctx.storage.deleteAll();
 			}
 			for (const ws of ctx.getWebSockets()) {
 				const meta = ws.deserializeAttachment();
