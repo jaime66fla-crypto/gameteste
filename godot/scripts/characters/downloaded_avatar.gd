@@ -489,12 +489,33 @@ func _prone_arms(weight: float) -> void:
 # ---------------------------------------------------------------- nadando ---
 # Parado na água: corpo em pé, ombros na linha d'água, mãos "remando" de lado
 # na frente do peito e pernas pedalando devagar (boiando).
-# Nadando: crawl — corpo deitado quase na horizontal, cabeça para fora, braços
-# alternados (puxa por baixo, volta por cima da água) e pernas batendo.
+# Nadando: crawl de verdade — corpo deitado quase na horizontal e rolando no
+# próprio eixo para o lado do braço que puxa; cada braço passa pelas fases da
+# braçada (entrada, deslize, pegada com cotovelo alto, puxada sob o peito,
+# empurrada até a coxa, saída pelo cotovelo e recuperação por cima d'água com
+# o cotovelo no alto), a palma virada para trás embaixo d'água; cabeça parada
+# no meio, virando para respirar a cada ciclo; pernas em batida de crawl
+# (6 batidas por ciclo, ponta do pé esticada).
 # O player.gd mantém o corpo na superfície; aqui é só a pose.
-const SWIM_TILT := 1.22 # rad: quanto o corpo deita no crawl
+const SWIM_TILT := 1.36 # rad: quanto o corpo deita no crawl (~78°)
 const SWIM_HIPS_TREAD := 0.62 # altura do quadril boiando (a água fica ~1 m acima do pé)
 const SWIM_HIPS_STROKE := 0.93 # no crawl o quadril sobe até perto da superfície
+const SWIM_ROLL := 0.62 # rad: rolagem máxima do tronco para o lado do braço que puxa
+const SWIM_BREATH := 1.0 # rad: quanto a cabeça vira para respirar
+# Caminho da mão no crawl, relativo ao ombro, em comprimentos de braço (a
+# altura conta da linha média dos ombros, que não sobe nem desce com a rolagem):
+# [fase 0..1, mão (frente, baixo, fora), cotovelo aponta (frente, cima, fora), palma (frente, cima, fora)].
+# Recuperação ~35% do ciclo (rápida, por cima), parte submersa ~65%.
+const CRAWL_KEYS := [
+	[0.00, Vector3(0.78, 0.16, 0.10), Vector3(0.0, 0.5, 1.0), Vector3(0.25, -1.0, 0.15)], # entrada: ponta dos dedos na frente do ombro
+	[0.13, Vector3(0.96, 0.38, 0.04), Vector3(0.0, 0.4, 1.0), Vector3(0.0, -1.0, 0.0)], # deslize: braço todo esticado à frente, embaixo d'água
+	[0.27, Vector3(0.50, 0.70, 0.20), Vector3(0.1, 1.0, 0.8), Vector3(-0.85, -0.5, 0.0)], # pegada: antebraço na vertical, cotovelo alto
+	[0.42, Vector3(0.04, 0.76, -0.12), Vector3(-0.1, 0.8, 1.0), Vector3(-1.0, -0.15, 0.15)], # puxada: mão por baixo do peito, perto do meio
+	[0.56, Vector3(-0.78, 0.46, 0.14), Vector3(-0.4, 0.9, 0.5), Vector3(-1.0, 0.35, 0.1)], # empurrada: mão passa o quadril até a coxa
+	[0.64, Vector3(-0.80, 0.14, 0.24), Vector3(-0.3, 1.0, 0.4), Vector3(-0.2, 0.3, -1.0)], # saída: cotovelo sai primeiro, palma para a coxa
+	[0.80, Vector3(-0.14, -0.10, 0.36), Vector3(0.0, 1.0, 0.5), Vector3(-0.5, 0.0, -1.0)], # recuperação: cotovelo no alto, mão solta rente à água
+	[0.92, Vector3(0.42, -0.06, 0.22), Vector3(0.15, 1.0, 0.6), Vector3(0.1, -0.6, -0.8)], # mão passa perto da cabeça, vai entrar
+]
 var swim_requested := false
 var swim_weight := 0.0
 var _swim_move := 0.0
@@ -502,6 +523,37 @@ var _swim_time := 0.0
 
 func set_swimming(value: bool) -> void:
 	swim_requested = value
+
+## Gira um osso no espaço do esqueleto (também o Hips, que não tem pai).
+func _rotate_bone_global(bone: int, rotation: Basis) -> void:
+	if bone < 0:
+		return
+	if skeleton.get_bone_parent(bone) < 0:
+		skeleton.set_bone_pose_rotation(bone, (rotation * skeleton.get_bone_pose(bone).basis).orthonormalized().get_rotation_quaternion())
+		return
+	Grip._set_global_rotation(skeleton, bone, rotation * skeleton.get_bone_global_pose(bone).basis)
+
+## Ponto da braçada na fase p (0..1): [mão, cotovelo, palma] interpolados
+## pelas chaves de CRAWL_KEYS (curva suave na mão, linear no resto).
+func _crawl_sample(p: float) -> Array:
+	var count := CRAWL_KEYS.size()
+	var i := count - 1
+	for k in count:
+		if float(CRAWL_KEYS[k][0]) > p:
+			i = k - 1
+			break
+	var a: Array = CRAWL_KEYS[i]
+	var b: Array = CRAWL_KEYS[(i + 1) % count]
+	var pre: Array = CRAWL_KEYS[(i - 1 + count) % count]
+	var post: Array = CRAWL_KEYS[(i + 2) % count]
+	var ta := float(a[0])
+	var tb := float(b[0]) + (1.0 if i + 1 >= count else 0.0)
+	var tpre := float(pre[0]) - (1.0 if i - 1 < 0 else 0.0)
+	var tpost := float(post[0]) + (1.0 if i + 2 >= count else 0.0)
+	var u := (p - ta) / maxf(tb - ta, 0.0001)
+	var hand: Vector3 = (a[1] as Vector3).cubic_interpolate_in_time(b[1], pre[1], post[1], u, tb - ta, tpre - ta, tpost - ta)
+	var s := _ease_in_out(u)
+	return [hand, (a[2] as Vector3).lerp(b[2], s), (a[3] as Vector3).lerp(b[3], s)]
 
 func _apply_swim() -> void:
 	var hips := Grip._bone(skeleton, "Hips")
@@ -514,13 +566,20 @@ func _apply_swim() -> void:
 	var t := _swim_time
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1)
-	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
-	# Corpo: deita para a frente no crawl e rola de leve junto com as braçadas.
-	var roll := sin(t) * 0.32 * stroke
+	var side_sign := signf(skeleton.get_bone_global_pose(right_arm).origin.x)
+	var right := Vector3(side_sign, 0, 0)
+	# Fase da braçada do braço direito (o esquerdo vai meio ciclo atrás).
+	var p_right := fposmod(t / TAU, 1.0)
+	# Rolagem no eixo do corpo: mais para o lado do braço que está puxando
+	# (ombro dele afunda, o do braço que volta sobe e sai d'água).
+	var roll_amount := cos(TAU * (p_right - 0.40)) * SWIM_ROLL * stroke * w # + = ombro direito para baixo
+	var roll := -side_sign * roll_amount # ângulo no eixo do corpo (em pé = Y)
 	var bob := sin(t * 2.0) * 0.03 * (1.0 - stroke)
-	var hips_global := skeleton.get_bone_global_pose(hips)
-	var turn := Basis(Vector3.RIGHT, SWIM_TILT * stroke * w) * Basis(Vector3.FORWARD, roll * w)
-	Grip._set_global_rotation(skeleton, hips, turn * hips_global.basis)
+	# Corpo: deita para a frente (eixo lateral) e o quadril rola só parte do
+	# que o peito rola.
+	var tilt := Basis(Vector3.RIGHT, SWIM_TILT * stroke * w)
+	_rotate_bone_global(hips, tilt * Basis(Vector3.UP, roll * 0.55))
+	var body_axis := (tilt * Vector3.UP).normalized() # da bacia para a cabeça
 	var hips_now := skeleton.get_bone_global_pose(hips).origin
 	var target_y := lerpf(SWIM_HIPS_TREAD, SWIM_HIPS_STROKE, stroke) + bob
 	var drop := Vector3(0, (target_y - hips_now.y) * w, 0)
@@ -528,44 +587,96 @@ func _apply_swim() -> void:
 	if parent >= 0:
 		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
 	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
-	# Coluna e cabeça levantam para o rosto ficar fora d'água olhando à frente.
-	for spec in [["Spine", -0.1], ["Spine1", -0.12], ["Spine2", -0.1], ["Neck", -0.28], ["Head", -0.34]]:
+	# Respiração: a cada ciclo o rosto vira para o lado do braço direito
+	# enquanto ele sai e volta por cima (boca na linha d'água), e volta ao meio
+	# antes da mão entrar.
+	var breath := clampf(1.0 - absf(p_right - 0.74) / 0.2, 0.0, 1.0)
+	breath = _ease_in_out(breath) * SWIM_BREATH * stroke * w
+	# Coluna: o peito rola o resto; pescoço e cabeça desfazem a rolagem (a
+	# cabeça fica parada olhando para a frente/baixo) e viram só para respirar.
+	for spec in [["Spine", -0.06, 0.15], ["Spine1", -0.07, 0.15], ["Spine2", -0.05, 0.15], ["Neck", -0.14, -0.45], ["Head", -0.16, -0.4]]:
 		var bone := Grip._bone(skeleton, spec[0])
-		if bone >= 0:
-			Grip._set_global_rotation(skeleton, bone, Basis(Vector3.RIGHT, float(spec[1]) * stroke * w) * skeleton.get_bone_global_pose(bone).basis)
-	# Pernas: retas e batendo (crawl) ou pedalando dobradas (boiando).
+		if bone < 0:
+			continue
+		var twist := roll * float(spec[2])
+		if spec[0] in ["Neck", "Head"]:
+			twist += side_sign * breath * 0.5
+		_rotate_bone_global(bone, Basis(body_axis, twist) * Basis(Vector3.RIGHT, float(spec[1]) * stroke * w))
+	var lateral_axis := (tilt * Vector3.RIGHT).normalized()
+	# Pernas: batida de crawl saindo do quadril, joelho só um pouco dobrado no
+	# começo da descida, ponta do pé esticada; boiando, pedalam dobradas.
 	for side in ["Left", "Right"]:
 		var up_leg := Grip._bone(skeleton, side + "UpLeg")
 		var leg := Grip._bone(skeleton, side + "Leg")
+		var foot := Grip._bone(skeleton, side + "Foot")
 		var phase := 0.0 if side == "Left" else PI
+		var k := t * 3.0 + phase # 3 batidas por perna em cada ciclo de braço
 		if up_leg >= 0:
 			skeleton.set_bone_pose_rotation(up_leg, skeleton.get_bone_pose_rotation(up_leg).slerp(skeleton.get_bone_rest(up_leg).basis.get_rotation_quaternion(), w))
-			var kick := sin(t * 3.0 + phase) * 0.3
+			var kick := -0.07 + sin(k) * 0.16 # pés quase sempre embaixo d'água
 			var pedal := -0.5 + sin(t * 1.6 + phase) * 0.3
-			Grip._set_global_rotation(skeleton, up_leg, Basis(Vector3.RIGHT, lerpf(pedal, kick, stroke) * w) * skeleton.get_bone_global_pose(up_leg).basis)
+			_rotate_bone_global(up_leg, Basis(lateral_axis, lerpf(pedal, kick, stroke) * w))
 		if leg >= 0:
 			skeleton.set_bone_pose_rotation(leg, skeleton.get_bone_pose_rotation(leg).slerp(skeleton.get_bone_rest(leg).basis.get_rotation_quaternion(), w))
-			var knee := lerpf(1.0 + sin(t * 1.6 + phase + 0.8) * 0.35, 0.12 + maxf(0.0, sin(t * 3.0 + phase + 0.6)) * 0.3, stroke)
-			Grip._set_global_rotation(skeleton, leg, Basis(Vector3.RIGHT, knee * w) * skeleton.get_bone_global_pose(leg).basis)
-	# Braços: no crawl cada mão faz um círculo ao lado do ombro (estica à
-	# frente, puxa por baixo do peito até o quadril, volta por cima d'água);
+			var whip := pow(maxf(0.0, sin(k - 0.5)), 1.5) # dobra no alto, estica ao descer
+			var knee := lerpf(1.0 + sin(t * 1.6 + phase + 0.8) * 0.35, 0.06 + whip * 0.36, stroke)
+			_rotate_bone_global(leg, Basis(lateral_axis, knee * w))
+		if foot >= 0:
+			skeleton.set_bone_pose_rotation(foot, skeleton.get_bone_pose_rotation(foot).slerp(skeleton.get_bone_rest(foot).basis.get_rotation_quaternion(), w))
+			var point := lerpf(0.35, 0.95 + sin(k - 1.0) * 0.12, stroke)
+			_rotate_bone_global(foot, Basis(lateral_axis, point * w))
+	# Braços: no crawl cada mão segue o caminho de CRAWL_KEYS ao lado do ombro;
 	# boiando, as mãos varrem de um lado para o outro na frente do peito.
+	var left_arm := Grip._bone(skeleton, "LeftArm")
+	var shoulders_y := skeleton.get_bone_global_pose(right_arm).origin.y
+	if left_arm >= 0:
+		shoulders_y = (shoulders_y + skeleton.get_bone_global_pose(left_arm).origin.y) * 0.5
 	for side in ["Left", "Right"]:
 		var upper := Grip._bone(skeleton, side + "Arm")
+		var fore := Grip._bone(skeleton, side + "ForeArm")
 		var hand := Grip._bone(skeleton, side + "Hand")
-		if upper < 0 or hand < 0:
+		if upper < 0 or fore < 0 or hand < 0:
 			continue
 		var lateral := right if side == "Right" else -right
 		var shoulder := skeleton.get_bone_global_pose(upper).origin
-		var phase := t + (0.0 if side == "Right" else PI)
-		var pull := shoulder + forward * (0.1 + 0.48 * cos(phase)) - up * (0.3 * sin(phase)) + lateral * (0.1 - 0.06 * sin(phase))
+		var arm_length := skeleton.get_bone_rest(fore).origin.length() + skeleton.get_bone_rest(hand).origin.length()
+		var p := p_right if side == "Right" else fposmod(p_right + 0.5, 1.0)
+		var sample := _crawl_sample(p)
+		var path: Vector3 = sample[0]
+		var elbow: Vector3 = sample[1]
+		var palm: Vector3 = sample[2]
+		var pull := Vector3(shoulder.x, shoulders_y, shoulder.z) + (forward * path.x - up * path.y + lateral * path.z) * arm_length
 		var scull := shoulder + forward * 0.32 - up * 0.3 + lateral * (0.2 + 0.12 * sin(t * 1.6 + (0.0 if side == "Right" else PI)))
 		var target := scull.lerp(pull, stroke)
-		var recovering := clampf(-sin(phase), 0.0, 1.0) * stroke # mão voltando por cima: cotovelo alto
-		var pole := lateral * 0.6 + up * lerpf(-0.2, 0.7, recovering) - forward * 0.2
+		var crawl_pole := forward * elbow.x + up * elbow.y + lateral * elbow.z
+		var pole := (lateral * 0.6 - up * 0.2 - forward * 0.2).lerp(crawl_pole.normalized(), stroke)
 		var current := skeleton.get_bone_global_pose(hand).origin
-		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, current.lerp(target, w), pole)
+		_two_bone_ik(upper, fore, hand, current.lerp(target, w), pole)
 		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_pose_rotation(hand).slerp(skeleton.get_bone_rest(hand).basis.get_rotation_quaternion(), w))
+		if stroke * w > 0.01:
+			_orient_swim_hand(side, fore, hand, (forward * palm.x + up * palm.y + lateral * palm.z).normalized(), stroke * w)
+
+## Mão do crawl: dedos seguem o antebraço (punho um pouco dobrado para o lado
+## da palma, como quem "pega" a água) e a palma aponta para `palm`.
+func _orient_swim_hand(side: String, fore: int, hand: int, palm: Vector3, weight: float) -> void:
+	var middle := Grip._bone(skeleton, side + "HandMiddle1")
+	if middle < 0:
+		return
+	var hand_pose := skeleton.get_bone_global_pose(hand)
+	var forearm_dir := (hand_pose.origin - skeleton.get_bone_global_pose(fore).origin).normalized()
+	# Eixos da mão no espaço do osso: dedos (até o dedo médio) e palma (na
+	# pose de descanso em T a palma fica para baixo).
+	var fingers_local := skeleton.get_bone_rest(middle).origin.normalized()
+	var palm_local := skeleton.get_bone_global_rest(hand).basis.orthonormalized().inverse() * Vector3.DOWN
+	palm_local = (palm_local - fingers_local * palm_local.dot(fingers_local)).normalized()
+	var fingers := (forearm_dir + palm * 0.2).normalized()
+	var palm_dir := palm - fingers * palm.dot(fingers)
+	if palm_dir.length_squared() < 0.0001 or palm_local.length_squared() < 0.0001:
+		return
+	palm_dir = palm_dir.normalized()
+	var want := Basis(fingers, palm_dir, fingers.cross(palm_dir)) * Basis(fingers_local, palm_local, fingers_local.cross(palm_local)).inverse()
+	var now := hand_pose.basis.orthonormalized()
+	Grip._set_global_rotation(skeleton, hand, Basis(now.get_rotation_quaternion().slerp(want.get_rotation_quaternion(), weight)))
 
 # ------------------------------------------------- trabalho (machado etc.) ---
 # Golpes com as duas mãos no cabo: levanta devagar por cima do ombro direito e
