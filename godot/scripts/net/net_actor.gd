@@ -86,6 +86,8 @@ var _stuck_timer := 0.0
 var _strafe_phase := randf() * TAU
 var _sees_target := false
 var _move_amount := 0.0
+## Sobrevivência: world.water_at, para a pose de nado de quem está na água.
+var water_query: Callable
 var _death_timer := 0.0
 var hitboxes: Array[StaticBody3D] = []
 # Loot: everyone starts unarmed in online matches.
@@ -539,6 +541,13 @@ func _animate(delta: float, move: float, running: bool, crouch: bool, aim: bool,
 	var local_velocity := visual.global_basis.inverse() * planar_world
 	if visual.has_method("set_prone"):
 		visual.call("set_prone", bool(remote_state.get("pr", false)))
+	if visual.has_method("set_swimming"):
+		# Mesma regra do player.gd: pé mais de 0,75 m abaixo da superfície = nadando.
+		var water: Dictionary = water_query.call(global_position) if water_query.is_valid() else {}
+		var swimming := not water.is_empty() and float(water.get("surface", -100.0)) - global_position.y > 0.75
+		visual.call("set_swimming", swimming)
+		if swimming:
+			air = true
 	visual.call("animate", delta, move, running, crouch, aim, air, reload, Vector2(0, -1), local_velocity)
 
 ## Compact state for the server, same shape as the local player's packet.

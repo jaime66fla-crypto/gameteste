@@ -364,15 +364,23 @@ func _run() -> void:
 	check(av.get("_tool_node") != null, "picareta de pedra na mão")
 	controller.call("_set_action", "", "")
 	player.set("channel_left", 0.0)
-	# Clava: Q faz o golpe lateral (e some depois do golpe).
+	# Clava: ganha um slot; pega no slot, segura na mão e o clique faz o golpe lateral.
 	Net.message.emit({"t": "inv", "inv": {"club": 1}, "weight": 1.4, "cap": 10})
 	await _frames(2)
+	var club_slot := (player.get("slot_order") as Array).find("club") + 1
+	check(club_slot > 0, "clava ganha um slot")
+	player.call("select_melee", "club")
+	await _frames(2)
+	check(str(av.get("work_action")) == "hold" and str(av.get("work_tool")) == "club", "clava do slot aparece na mão")
 	controller.set("_melee_timer", 0.0)
 	controller.call("_melee")
 	await _frames(3)
 	check(str(av.get("work_action")) == "swing" and av.get("_tool_node") != null, "clava: golpe lateral com a clava na mão")
 	await _frames(50)
-	check(str(av.get("work_action")).is_empty(), "o golpe termina sozinho")
+	check(str(av.get("work_action")) == "hold", "o golpe termina sozinho e volta a segurar")
+	player.call("select_melee", "club")
+	await _frames(2)
+	check(str(av.get("work_action")).is_empty(), "apertar o slot de novo guarda a clava")
 	# Carro: batida forte avisa o servidor; quebrado = carcaça e E conserta (com kit).
 	Net.message.emit({"t": "veh", "id": "v0", "kind": "sedan", "color": "#8c1d18", "p": [car.global_position.x, car.global_position.y, car.global_position.z], "yaw": 0.0, "fuel": 0, "driver": null, "hp": 20, "broken": false})
 	await _frames(2)

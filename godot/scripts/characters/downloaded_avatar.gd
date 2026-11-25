@@ -208,6 +208,15 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_finish_pose()
 		return
 	var clip := "idle_with_rifle"
+	swim_weight = move_toward(swim_weight, 1.0 if swim_requested else 0.0, delta * 3.5)
+	_swim_move = _damp(_swim_move, clampf(move_amount, 0.0, 1.0) if swim_requested else 0.0, 4.0)
+	if swim_weight > 0.01:
+		# Nadando: pernas e braços são feitos na pose (_apply_swim); o clipe só
+		# dá a base solta do corpo. Crawl andando, mais rápido quanto mais rápido.
+		_swim_time += delta * lerpf(2.4, 4.6, _swim_move)
+		_play_clip("idle_unarmed" if animation_player.has_animation("idle_unarmed") else "idle_with_rifle", 1.0)
+		_finish_pose()
+		return
 	if prone_weight > 0.5:
 		# Deitado: pernas paradas do clipe; o rastejar é feito na pose.
 		_crawl_time += delta * (6.0 * _move_amount)
@@ -284,6 +293,17 @@ func _finish_pose() -> void:
 	if is_instance_valid(_source_model):
 		_source_model.rotation.y = model_yaw - deg_to_rad(65.0) * _bow_stance
 	_advance_overlay()
+	if swim_weight > 0.01:
+		# Na água: nada de agachar, pé no chão ou arma/ferramenta na mão.
+		_apply_swim()
+		if is_instance_valid(bound_weapon):
+			bound_weapon.visible = false
+		if is_instance_valid(_tool_node):
+			_tool_node.visible = false
+		if is_instance_valid(_bow_model):
+			_bow_model.visible = false
+		_update_backpack()
+		return
 	_apply_crouch()
 	_apply_stand_pose()
 	_apply_foot_ik()
@@ -466,6 +486,87 @@ func _prone_arms(weight: float) -> void:
 		var current := skeleton.get_bone_global_pose(hand).origin
 		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, current.lerp(target, weight * prone_weight), lateral * 0.6 + Vector3(0, -1, 0))
 
+# ---------------------------------------------------------------- nadando ---
+# Parado na água: corpo em pé, ombros na linha d'água, mãos "remando" de lado
+# na frente do peito e pernas pedalando devagar (boiando).
+# Nadando: crawl — corpo deitado quase na horizontal, cabeça para fora, braços
+# alternados (puxa por baixo, volta por cima da água) e pernas batendo.
+# O player.gd mantém o corpo na superfície; aqui é só a pose.
+const SWIM_TILT := 1.22 # rad: quanto o corpo deita no crawl
+const SWIM_HIPS_TREAD := 0.62 # altura do quadril boiando (a água fica ~1 m acima do pé)
+const SWIM_HIPS_STROKE := 0.93 # no crawl o quadril sobe até perto da superfície
+var swim_requested := false
+var swim_weight := 0.0
+var _swim_move := 0.0
+var _swim_time := 0.0
+
+func set_swimming(value: bool) -> void:
+	swim_requested = value
+
+func _apply_swim() -> void:
+	var hips := Grip._bone(skeleton, "Hips")
+	var chest := Grip._bone(skeleton, "Spine2")
+	var right_arm := Grip._bone(skeleton, "RightArm")
+	if hips < 0 or chest < 0 or right_arm < 0:
+		return
+	var w := _ease_in_out(swim_weight)
+	var stroke := _ease_in_out(_swim_move) # 0 boiando, 1 crawl
+	var t := _swim_time
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1)
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	# Corpo: deita para a frente no crawl e rola de leve junto com as braçadas.
+	var roll := sin(t) * 0.32 * stroke
+	var bob := sin(t * 2.0) * 0.03 * (1.0 - stroke)
+	var hips_global := skeleton.get_bone_global_pose(hips)
+	var turn := Basis(Vector3.RIGHT, SWIM_TILT * stroke * w) * Basis(Vector3.FORWARD, roll * w)
+	Grip._set_global_rotation(skeleton, hips, turn * hips_global.basis)
+	var hips_now := skeleton.get_bone_global_pose(hips).origin
+	var target_y := lerpf(SWIM_HIPS_TREAD, SWIM_HIPS_STROKE, stroke) + bob
+	var drop := Vector3(0, (target_y - hips_now.y) * w, 0)
+	var parent := skeleton.get_bone_parent(hips)
+	if parent >= 0:
+		drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
+	skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
+	# Coluna e cabeça levantam para o rosto ficar fora d'água olhando à frente.
+	for spec in [["Spine", -0.1], ["Spine1", -0.12], ["Spine2", -0.1], ["Neck", -0.28], ["Head", -0.34]]:
+		var bone := Grip._bone(skeleton, spec[0])
+		if bone >= 0:
+			Grip._set_global_rotation(skeleton, bone, Basis(Vector3.RIGHT, float(spec[1]) * stroke * w) * skeleton.get_bone_global_pose(bone).basis)
+	# Pernas: retas e batendo (crawl) ou pedalando dobradas (boiando).
+	for side in ["Left", "Right"]:
+		var up_leg := Grip._bone(skeleton, side + "UpLeg")
+		var leg := Grip._bone(skeleton, side + "Leg")
+		var phase := 0.0 if side == "Left" else PI
+		if up_leg >= 0:
+			skeleton.set_bone_pose_rotation(up_leg, skeleton.get_bone_pose_rotation(up_leg).slerp(skeleton.get_bone_rest(up_leg).basis.get_rotation_quaternion(), w))
+			var kick := sin(t * 3.0 + phase) * 0.3
+			var pedal := -0.5 + sin(t * 1.6 + phase) * 0.3
+			Grip._set_global_rotation(skeleton, up_leg, Basis(Vector3.RIGHT, lerpf(pedal, kick, stroke) * w) * skeleton.get_bone_global_pose(up_leg).basis)
+		if leg >= 0:
+			skeleton.set_bone_pose_rotation(leg, skeleton.get_bone_pose_rotation(leg).slerp(skeleton.get_bone_rest(leg).basis.get_rotation_quaternion(), w))
+			var knee := lerpf(1.0 + sin(t * 1.6 + phase + 0.8) * 0.35, 0.12 + maxf(0.0, sin(t * 3.0 + phase + 0.6)) * 0.3, stroke)
+			Grip._set_global_rotation(skeleton, leg, Basis(Vector3.RIGHT, knee * w) * skeleton.get_bone_global_pose(leg).basis)
+	# Braços: no crawl cada mão faz um círculo ao lado do ombro (estica à
+	# frente, puxa por baixo do peito até o quadril, volta por cima d'água);
+	# boiando, as mãos varrem de um lado para o outro na frente do peito.
+	for side in ["Left", "Right"]:
+		var upper := Grip._bone(skeleton, side + "Arm")
+		var hand := Grip._bone(skeleton, side + "Hand")
+		if upper < 0 or hand < 0:
+			continue
+		var lateral := right if side == "Right" else -right
+		var shoulder := skeleton.get_bone_global_pose(upper).origin
+		var phase := t + (0.0 if side == "Right" else PI)
+		var pull := shoulder + forward * (0.1 + 0.48 * cos(phase)) - up * (0.3 * sin(phase)) + lateral * (0.1 - 0.06 * sin(phase))
+		var scull := shoulder + forward * 0.32 - up * 0.3 + lateral * (0.2 + 0.12 * sin(t * 1.6 + (0.0 if side == "Right" else PI)))
+		var target := scull.lerp(pull, stroke)
+		var recovering := clampf(-sin(phase), 0.0, 1.0) * stroke # mão voltando por cima: cotovelo alto
+		var pole := lateral * 0.6 + up * lerpf(-0.2, 0.7, recovering) - forward * 0.2
+		var current := skeleton.get_bone_global_pose(hand).origin
+		_two_bone_ik(upper, Grip._bone(skeleton, side + "ForeArm"), hand, current.lerp(target, w), pole)
+		skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_pose_rotation(hand).slerp(skeleton.get_bone_rest(hand).basis.get_rotation_quaternion(), w))
+
 # ------------------------------------------------- trabalho (machado etc.) ---
 # Golpes com as duas mãos no cabo: levanta devagar por cima do ombro direito e
 # desce rápido na frente (machado na árvore); "pry" é um golpe mais baixo
@@ -474,6 +575,13 @@ const WORK_CYCLE := 0.95
 # Golpe de arma branca (Q): "swing" arma atrás do ombro direito e varre de lado
 # na frente do corpo, uma vez só (SWING_CYCLE segundos), girando o tronco.
 const SWING_CYCLE := 0.55
+const COMBO_WINDOW_MS := 1300
+var _swing_count := 0
+var _last_swing_ms := -100000
+
+## Segundo golpe do combo (de volta, da esquerda para a direita).
+func _swing_mirrored() -> bool:
+	return _swing_count % 2 == 1
 var work_action := ""
 var work_tool := ""
 var _last_delta := 1.0 / 60.0
@@ -618,6 +726,11 @@ func set_action(act: String, tool: String) -> void:
 		return
 	if is_instance_valid(_gathering_audio):
 		_gathering_audio.call("set_action", act)
+	if act == "swing":
+		# Golpes seguidos alternam o lado (ida e volta); uma pausa recomeça.
+		var now := Time.get_ticks_msec()
+		_swing_count = _swing_count + 1 if now - _last_swing_ms < COMBO_WINDOW_MS else 0
+		_last_swing_ms = now
 	work_action = act
 	work_tool = tool
 	if not act.is_empty():
@@ -649,6 +762,8 @@ func _apply_work() -> void:
 	if hips < 0 or chest < 0 or right_arm < 0:
 		return
 	_work_time += _last_delta
+	if is_instance_valid(_tool_node):
+		_tool_node.visible = true # volta a aparecer ao sair da água
 	if is_instance_valid(_gathering_audio):
 		_gathering_audio.call("tick_work", _work_time, WORK_CYCLE)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
@@ -668,9 +783,13 @@ func _apply_work() -> void:
 			"axe", "pick":
 				_apply_heavy_attack(family, chest, spine, right)
 			"knife":
-				_apply_stab(chest, spine, right)
+				# Combo da faca: estocada, depois um corte de volta.
+				if _swing_mirrored():
+					_apply_slash(chest, spine, right, true)
+				else:
+					_apply_stab(chest, spine, right)
 			"machete":
-				_apply_slash(chest, spine, right)
+				_apply_slash(chest, spine, right, _swing_mirrored())
 			"spear":
 				_apply_thrust(chest, spine, right)
 			_:
@@ -840,14 +959,16 @@ func _apply_stab(chest: int, spine: int, right: Vector3) -> void:
 	_place_tool(axis, up, hand_pos - axis * 0.08)
 
 ## Golpe de facão com uma mão: lâmina sobe por cima do ombro direito e corta
-## em diagonal até a frente do quadril esquerdo.
-func _apply_slash(chest: int, spine: int, right: Vector3) -> void:
+## em diagonal até a frente do quadril esquerdo. `backhand` (2º golpe do
+## combo): sobe pelo ombro esquerdo e corta de volta para a direita.
+func _apply_slash(chest: int, spine: int, right: Vector3, backhand: bool = false) -> void:
 	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1)
 	var raised := -0.5
 	var struck := 2.3
 	var rest := 1.3
+	var side := -right if backhand else right # lado de onde o golpe vem
 	var theta := 0.0
 	var impact := 0.0
 	if t < 0.35:
@@ -861,16 +982,18 @@ func _apply_slash(chest: int, spine: int, right: Vector3) -> void:
 		theta = lerpf(struck, rest, _ease_in_out(k))
 		impact = 1.0 - _ease_in_out(k)
 	var progress := clampf((theta - raised) / (struck - raised), 0.0, 1.0)
-	_work_dip = 0.12 * impact
-	_turn_spine(spine, lerpf(0.45, -0.4, progress) * signf(right.x), 0.2 * impact)
+	_work_dip = 0.14 * impact
+	_turn_spine(spine, lerpf(0.45, -0.4, progress) * signf(side.x), 0.22 * impact)
 	var torso := skeleton.get_bone_global_pose(chest).origin
-	var shoulder := torso + right * 0.2 + up * 0.08
+	# De volta a mão cruza o corpo: parte do ombro esquerdo, mais perto do peito.
+	var shoulder := torso + side * (0.12 if backhand else 0.2) + up * 0.08
 	var tilt := 0.8
-	var a := (up * cos(tilt) + right * sin(tilt)).normalized()
+	var a := (up * cos(tilt) + side * sin(tilt)).normalized()
 	var h := (a * cos(theta) + forward * sin(theta)).normalized()
 	var swing := (-a * sin(theta) + forward * cos(theta)).normalized()
-	var hand_pos := shoulder + h * lerpf(0.36, 0.5, progress) + forward * 0.1
-	_grip_on_staff("Right", hand_pos, h, -swing, right * 0.6 - up * 0.4 - forward * 0.2)
+	var hand_pos := shoulder + h * lerpf(0.36, 0.5, progress) + forward * (0.16 if backhand else 0.1)
+	var pole := right * 0.6 - up * (0.1 if backhand else 0.4) - forward * 0.2
+	_grip_on_staff("Right", hand_pos, h, -swing, pole)
 	_left_guard(torso, right, impact)
 	_place_tool(h, swing, hand_pos - h * 0.1)
 
@@ -895,8 +1018,10 @@ func _apply_thrust(chest: int, spine: int, right: Vector3) -> void:
 	var torso := skeleton.get_bone_global_pose(chest).origin
 	# Mãos perto do corpo para os dois braços alcançarem o cabo; a lança anda
 	# para a frente com o tronco e os braços na estocada.
-	var axis := (forward - up * 0.03 - right * 0.06).normalized()
-	var base := torso + right * 0.14 - up * 0.13 + forward * (-0.5 + 0.32 * thrust - 0.12 * back)
+	# 2º golpe do combo: estocada alta (na altura da cabeça do alvo).
+	var high := 1.0 if _swing_mirrored() else 0.0
+	var axis := (forward + up * (0.12 * high - 0.03) - right * 0.06).normalized()
+	var base := torso + right * 0.14 - up * (0.13 - 0.1 * high) + forward * (-0.5 + 0.32 * thrust - 0.12 * back)
 	var right_hand := base + axis * 0.3
 	var left_hand := base + axis * 0.6
 	_grip_on_staff("Right", right_hand, axis, -up, right * 0.6 - up * 0.5)
@@ -910,14 +1035,31 @@ func _apply_hold(chest: int, right_arm: int) -> void:
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
-	var torso := skeleton.get_bone_global_pose(chest).origin
-	if tool_family(work_tool) in ["knife", "machete"]:
+	# Respira (sobe e desce devagar) e balança com o passo: a arma não fica
+	# congelada no ar enquanto o corpo anda.
+	var step := sin(_work_time * 7.5)
+	var sway := up * (sin(_work_time * 1.8) * 0.012 + absf(step) * 0.025 * _move_amount) \
+		+ right * step * 0.018 * _move_amount
+	var torso := skeleton.get_bone_global_pose(chest).origin + sway
+	var family := tool_family(work_tool)
+	if family in ["knife", "machete"]:
 		# Uma mão só: braço meio esticado à frente do quadril direito, lâmina
 		# apontando para a frente e um pouco para cima.
 		var hand_pos := torso + right * 0.22 - up * 0.30 + forward * 0.32
 		var blade := (forward * 0.9 + up * 0.25 + right * 0.1).normalized()
 		_grip_on_staff("Right", hand_pos, blade, -right, right * 0.6 - forward * 0.2 - up * 0.4)
+		if family == "knife":
+			_left_guard(torso, right, 0.0) # faca: mão esquerda em guarda na frente do peito
 		_place_tool(blade, -up, hand_pos - blade * 0.08)
+		return
+	if family == "spear":
+		# Lança deitada ao lado do quadril direito, ponta para a frente e um
+		# pouco para cima; mão direita atrás, esquerda adiante no cabo.
+		var axis := (forward + up * 0.2 - right * 0.05).normalized()
+		var base := torso + right * 0.16 - up * 0.34 - forward * 0.3
+		_grip_on_staff("Right", base + axis * 0.3, axis, -up, right * 0.6 - up * 0.5)
+		_grip_on_staff("Left", base + axis * 0.62, axis, -up, -right * 0.6 - up * 0.5)
+		_place_tool(axis, up, base)
 		return
 	var h := (forward * 0.7 + up * 0.62 - right * 0.12).normalized()
 	var right_hand := torso + right * 0.13 - up * 0.30 + forward * 0.30
@@ -985,43 +1127,45 @@ func _grip_on_staff(side: String, grip_point: Vector3, axis: Vector3, fingers_di
 ## 60–100% termina o movimento do outro lado e relaxa.
 func _apply_swing(chest: int, spine: int, right_arm: int) -> void:
 	var t := clampf(_work_time / SWING_CYCLE, 0.0, 1.0)
-	var wind := 1.35 # ângulo da arma para o lado direito (radianos, a partir da frente)
-	var follow := -1.25
+	var wind := 1.45 # ângulo da arma para o lado direito (radianos, a partir da frente)
+	var follow := -1.3
 	var a := 0.0
 	var lift := 0.0
-	if t < 0.35:
-		var k := _ease_in_out(t / 0.35)
-		a = lerpf(0.3, wind, k)
-		lift = 0.45 * k
-	elif t < 0.6:
-		var k := (t - 0.35) / 0.25
+	var impact := 0.0 # 0..1, pico no meio da varrida: peso do corpo
+	if t < 0.32:
+		# Preparação: arma vai para trás do ombro e sobe um pouco.
+		var k := _ease_in_out(t / 0.32)
+		a = lerpf(0.35, wind, k)
+		lift = 0.5 * k
+	elif t < 0.56:
+		# Varrida rápida, acelerando no começo e chegando com força.
+		var k := (t - 0.32) / 0.24
 		a = lerpf(wind, follow, k * k * (3.0 - 2.0 * k))
-		lift = lerpf(0.45, 0.05, k)
+		lift = lerpf(0.5, 0.0, k)
+		impact = sin(PI * k)
 	else:
-		var k := (t - 0.6) / 0.4
-		a = lerpf(follow, follow * 0.7, k)
-		lift = lerpf(0.05, -0.25, k)
+		# Termina o movimento do outro lado e volta para a guarda.
+		var k := _ease_in_out((t - 0.56) / 0.44)
+		a = lerpf(follow, 0.35, k * k)
+		lift = lerpf(0.0, -0.1, k)
+	# 2º golpe do combo: o mesmo arco de volta (da esquerda para a direita).
+	if _swing_mirrored():
+		a = -a
 	var up := Vector3.UP
 	var forward := Vector3(0, 0, 1)
 	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
-	# O tronco gira junto com o golpe (dá peso ao movimento).
-	if spine >= 0:
-		Grip._set_global_rotation(skeleton, spine, Basis(up, a * 0.35 * signf(right.x)) * skeleton.get_bone_global_pose(spine).basis)
+	# O tronco gira junto com o golpe e inclina no impacto; os joelhos cedem.
+	_work_dip = 0.14 * impact
+	_turn_spine(spine, a * 0.4 * signf(right.x), 0.16 * impact)
 	var torso := skeleton.get_bone_global_pose(chest).origin
-	var pivot := torso + forward * 0.16 + up * 0.02
+	var pivot := torso + forward * (0.16 + 0.06 * impact) + up * 0.02
 	var h := (forward * cos(a) + right * sin(a) + up * lift).normalized()
 	var right_hand := pivot + h * 0.40
 	var left_hand := pivot + h * 0.27
 	for spec in [["Right", right_hand, right], ["Left", left_hand, -right]]:
+		# As duas mãos fechadas no cabo (clava, bastão, pé de cabra...).
 		var pole: Vector3 = (spec[2] as Vector3) * 0.6 - forward * 0.3 - up * 0.5
-		if work_tool == "long_bat":
-			_grip_on_staff(spec[0], spec[1], h, up, pole)
-			continue
-		var side: String = spec[0]
-		var hand := Grip._bone(skeleton, side + "Hand")
-		_two_bone_ik(Grip._bone(skeleton, side + "Arm"), Grip._bone(skeleton, side + "ForeArm"), hand, spec[1], pole)
-		if hand >= 0:
-			skeleton.set_bone_pose_rotation(hand, skeleton.get_bone_rest(hand).basis.get_rotation_quaternion())
+		_grip_on_staff(spec[0], spec[1], h, up, pole)
 	if _tool_node != null:
 		var y := h
 		var z := y.cross(up).normalized()

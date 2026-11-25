@@ -50,7 +50,10 @@ var hit_shake := 0.0 # camera jolt when this player takes damage
 var loadout_limited := false
 var owned_weapons: Dictionary = {}
 ## Online loot: keys 1-5 follow pickup order (first weapon found is 1, the next 2...).
+## Na Sobrevivência as armas brancas entram na mesma fila (melee_slots).
 var slot_order: Array[String] = []
+## Armas brancas que ocupam um slot: id do item -> nome mostrado.
+var melee_slots: Dictionary = {}
 ## Set by the online match: returns true when E was used to open a crate.
 var interact_handler: Callable
 var heal_handler: Callable # F: use a carried medkit (online matches)
@@ -439,6 +442,8 @@ func _unhandled_input(event: InputEvent) -> void:
                 return
             if not loadout_limited or not owned_weapons.is_empty():
                 _toggle_weapon_holster()
+            elif not melee_weapon.is_empty():
+                melee_weapon = "" # só arma branca: H guarda e fica de mãos vazias
             return
         var slots := ["rifle", "sniper", "pistol", "shotgun", "smg", "bow"]
         for index in slots.size():
@@ -449,6 +454,9 @@ func _unhandled_input(event: InputEvent) -> void:
                 if index >= slot_order.size():
                     return
                 slot = slot_order[index]
+                if melee_slots.has(slot):
+                    select_melee(slot)
+                    return
             melee_weapon = "" # pegou a arma de fogo: larga a arma branca
             if has_bow():
                 bow_controller.call("unequip")
@@ -664,6 +672,8 @@ func _physics_process(delta: float) -> void:
         _reload()
     if fishing_active:
         pass # fishing owns combat inputs
+    elif swimming:
+        pass # nadando: as mãos estão na braçada (sem tiro nem golpe)
     elif has_bow():
         pass # bow_controller fires only on release, never through the gun/melee paths
     elif not melee_weapon.is_empty():
@@ -1329,6 +1339,8 @@ func start_unarmed() -> void:
     loadout_limited = true
     owned_weapons.clear()
     slot_order.clear()
+    melee_slots.clear()
+    melee_weapon = ""
     if has_bow():
         bow_controller.call("unequip")
     for weapon_id in reserve_ammo.keys():
@@ -1371,13 +1383,61 @@ func remove_weapon(weapon_id: String) -> void:
     magazines[weapon_id] = 0
     if current_weapon != weapon_id:
         return
-    if slot_order.is_empty():
+    var next_gun := ""
+    for slot in slot_order:
+        if not melee_slots.has(slot):
+            next_gun = slot
+            break
+    if next_gun.is_empty():
         ammo = 0
         reloading = false
         if not weapon_holstered:
             _toggle_weapon_holster()
     else:
-        _equip_weapon(slot_order[0])
+        _equip_weapon(next_gun)
+
+## Sobrevivência: arma branca entrou na mochila — ganha o próximo slot livre
+## (1, 2, 3... na ordem em que as armas chegaram), sem sacar sozinha.
+func give_melee(item_id: String, display_name: String) -> int:
+    if not melee_slots.has(item_id):
+        melee_slots[item_id] = display_name
+        slot_order.append(item_id)
+    return slot_order.find(item_id) + 1
+
+## A arma branca saiu da mochila: libera o slot (os seguintes sobem um).
+func remove_melee(item_id: String) -> void:
+    if not melee_slots.has(item_id):
+        return
+    melee_slots.erase(item_id)
+    slot_order.erase(item_id)
+    if melee_weapon == item_id:
+        melee_weapon = ""
+
+## Tecla do slot de uma arma branca: guarda a arma de fogo/arco e pega a
+## arma branca; apertar de novo a mesma tecla guarda (mãos vazias).
+func select_melee(item_id: String) -> void:
+    if has_bow():
+        bow_controller.call("unequip")
+    if melee_weapon == item_id:
+        melee_weapon = ""
+        return
+    if not weapon_holstered:
+        _toggle_weapon_holster()
+    melee_weapon = item_id
+
+## Nome do que está no slot (arma de fogo ou arma branca).
+func slot_label(slot_id: String) -> String:
+    if melee_slots.has(slot_id):
+        return str(melee_slots[slot_id])
+    return str(WeaponData.stats(slot_id)["name"])
+
+## O slot `slot_id` é o que está na mão agora?
+func slot_in_hand(slot_id: String) -> bool:
+    if melee_slots.has(slot_id):
+        return melee_weapon == slot_id
+    if slot_id == "bow":
+        return has_bow()
+    return slot_id == current_weapon and not weapon_holstered and melee_weapon.is_empty()
 
 ## Called by the online match when the server reports damage to this player.
 func add_hit_shake(strength: float) -> void:
@@ -1440,6 +1500,8 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
         var running := sprinting
         if humanoid_avatar.has_method("set_prone"):
             humanoid_avatar.call("set_prone", prone)
+        if humanoid_avatar.has_method("set_swimming"):
+            humanoid_avatar.call("set_swimming", swimming)
         humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
         return
     if jaime_model != null and jaime_animation != null:
@@ -1686,7 +1748,6 @@ func status_text() -> String:
         # Pickup-order slots, e.g. "[1] PISTOLA  2 FUZIL" (current one in brackets).
         var slots: Array[String] = []
         for i in slot_order.size():
-            var weapon_name := str(WeaponData.stats(slot_order[i])["name"])
-            slots.append(("[%d] %s" if slot_order[i] == current_weapon else "%d %s") % [i + 1, weapon_name])
+            slots.append(("[%d] %s" if slot_in_hand(slot_order[i]) else "%d %s") % [i + 1, slot_label(slot_order[i])])
         notice += "\n" + "  ".join(slots)
     return "PERSONAGEM: %s%s\n" % [character_name, notice] + "ARMA: %s  %s/%s +%s  |  TIROS: %s  |  %s" % [stats["name"], ammo, stats["mag"], reserve_ammo[current_weapon], shots, "RECARREGANDO" if reloading else state]

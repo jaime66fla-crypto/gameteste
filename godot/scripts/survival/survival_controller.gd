@@ -38,6 +38,7 @@ const SWING_TIME := 0.55 # golpe de arma branca (igual ao ciclo "swing" do avata
 const INFECTION_TIME := 120.0
 const MapScript = preload("res://scripts/ui/world_map.gd")
 var _swing_left := 0.0
+var _melee_slots_ready := false
 var infected_left := 0.0 # segundos até virar zumbi (0 = saudável)
 var infection_clock: Control
 var world_map: Control
@@ -257,8 +258,12 @@ func _physics_process(delta: float) -> void:
 		_update_crafting_context()
 	_swing_left = maxf(0.0, _swing_left - delta)
 	# Saiu do lugar ou cancelou: para de golpear (o golpe do bastão dura SWING_TIME).
-	if action != "fish" and not action.is_empty() and float(player.get("channel_left")) <= 0.0 and _swing_left <= 0.0:
-		_set_action("", "")
+	# Parado, a arma branca do slot fica na mão ("hold"); nadando, some.
+	var idle_tool := _held_melee() if not bool(player.get("swimming")) and not local_dead else ""
+	var idle_act := "hold" if not idle_tool.is_empty() else ""
+	var busy := action == "fish" or (not action.is_empty() and action != "hold" and (float(player.get("channel_left")) > 0.0 or _swing_left > 0.0))
+	if not busy and (action != idle_act or action_tool != idle_tool):
+		_set_action(idle_act, idle_tool)
 	_state_timer -= delta
 	if _state_timer <= 0.0:
 		_state_timer = STATE_RATE
@@ -502,6 +507,7 @@ func _add_actor(entry: Dictionary) -> void:
 	var actor: CharacterBody3D = NetActorScript.new()
 	actor.call("setup", id, names[id], false)
 	actor.set("tag_subtitle", str(entry.get("rank", "")))
+	actor.set("water_query", world.water_at)
 	var p = _vec(entry.get("p"))
 	actor.position = (p if p != null else Vector3.ZERO) + Vector3(0, 0.1, 0)
 	actor.connect("damaged", _on_target_damaged)
@@ -613,16 +619,22 @@ func _on_target_damaged(target_id: String, zone: String, point: Vector3, normal:
 	player.get("sound_fx").call("hit_confirm", headshot)
 	_blood(point, normal)
 
-## Q: soco ou a melhor arma branca da mochila, em quem estiver na frente.
+## Arma branca na mão (do slot), se ela ainda está na mochila; "" = mãos vazias.
+func _held_melee() -> String:
+	var held := str(player.get("melee_weapon"))
+	return held if not held.is_empty() and int(inv.get(held, 0)) > 0 else ""
+
+## Clique: golpe com a arma branca da mão (ou soco), em quem estiver na frente.
 func _melee() -> void:
 	if local_dead or _melee_timer > 0.0:
 		return
 	_melee_timer = MELEE_COOLDOWN
-	var best_weapon: Array = SurvivalData.best_melee(inv)
-	var reach := float(SurvivalData.item(str(best_weapon[0])).get("reach", 2.4))
-	# Arma branca na mão: golpe de lado com as duas mãos (todos veem o movimento).
-	if not str(best_weapon[0]).is_empty():
-		_set_action("swing", str(best_weapon[0]))
+	# Golpeia com a arma branca que está na mão (escolhida no slot 1, 2, 3...);
+	# de mãos vazias é soco.
+	var weapon := _held_melee()
+	var reach := float(SurvivalData.item(weapon).get("reach", 2.4))
+	if not weapon.is_empty():
+		_set_action("swing", weapon)
 		_swing_left = SWING_TIME
 	player.get("sound_fx").call("melee_swing")
 	# Sem mira: o alcance da arma a partir do corpo, para a frente do personagem.
@@ -635,7 +647,7 @@ func _melee() -> void:
 	# Construção (parede, porta, baú...): o servidor tira a vida da peça.
 	var build_id := BuildingScript.build_id_of(body)
 	if not build_id.is_empty():
-		Net.send({"t": "bhit", "b": build_id, "item": SurvivalData.best_melee(inv)[0]})
+		Net.send({"t": "bhit", "b": build_id, "item": weapon})
 		player.get("sound_fx").call("melee_impact", false)
 		return
 	var target = body.get("actor") if body != null else null
@@ -644,12 +656,11 @@ func _melee() -> void:
 	var target_id := str(target.get("zombie_id")) if target.get("zombie_id") != null else str(target.get("actor_id"))
 	if target.get("animal_id") != null:
 		target_id = str(target.get("animal_id"))
-	var best: Array = SurvivalData.best_melee(inv)
 	var zone := str(body.get("zone"))
 	if body.has_method("resolve_ray"):
 		# Casca do zumbi: a parte do corpo sai da conta (de perto, sem acerto exato = tronco).
 		zone = str((body.call("resolve_ray", from, forward) as Dictionary).get("zone", "chest"))
-	Net.send({"t": "melee", "target": target_id, "item": best[0], "zone": zone})
+	Net.send({"t": "melee", "target": target_id, "item": weapon, "zone": zone})
 	combat_feedback.call("show_hit", zone == "head")
 	player.get("sound_fx").call("melee_impact", zone == "head")
 	_blood(hit["position"], hit["normal"])
@@ -779,6 +790,18 @@ func _apply_inventory(data: Dictionary) -> void:
 				break
 		if not present:
 			player.call("remove_weapon", w)
+	# Armas brancas também ganham slot (1, 2, 3... na ordem em que chegaram).
+	var melee_slots: Dictionary = player.get("melee_slots")
+	for id in melee_slots.keys():
+		if int(inv.get(id, 0)) <= 0:
+			player.call("remove_melee", id)
+	for item in inv:
+		var id := str(item)
+		if int(inv[item]) > 0 and str(SurvivalData.item(id).get("cat", "")) == "melee" and not melee_slots.has(id):
+			var slot := int(player.call("give_melee", id, SurvivalData.item_name(id)))
+			if slot <= 6 and _melee_slots_ready:
+				_toast("%s no slot %d — aperte %d para pegar" % [SurvivalData.item_name(id), slot, slot])
+	_melee_slots_ready = true # a primeira mochila (ao entrar) não enche a tela de avisos
 	# Reserva de cada arma = munição do tipo dela na mochila.
 	var reserve: Dictionary = player.get("reserve_ammo")
 	for w in player.get("owned_weapons"):

@@ -76,12 +76,13 @@ func build_staged(progress: Callable = Callable()) -> void:
 		_resource(resources_data[i])
 		if i % 100 == 99:
 			await _loading_batch(progress, "Montando florestas e recursos…", 0.32 + 0.5 * float(i) / maxf(1, resources_data.size()))
+	_prepare_pavement(data)
+	_deep_forest()
 	_flush_batches()
 	await _loading_batch(progress, "Preparando vegetação…", 0.84)
 	for town in data.get("towns", []):
 		_town_sign(town)
 	grass_patches = data.get("grass", [])
-	_prepare_pavement(data)
 	_short_grass()
 	for i in grass_patches.size():
 		_tall_grass(grass_patches[i])
@@ -611,6 +612,73 @@ func _resource(res: Dictionary) -> void:
 			slots["empty"] = _slot("bush_empty", xform, false)
 			_collider(body, SphereShape3D.new(), Vector3(0, 0.5 * s, 0), 0.6 * s, 0.0)
 	resources[str(res["id"])] = {"node": body, "kind": kind, "pos": body.position, "parts": parts, "slots": slots, "depleted": false, "r": 0.0}
+
+# -------------------------------------------------------------- mata alta ---
+# Mata fechada no planalto a oeste (entre Vila Ferrugem e Pedra Branca):
+# árvores bem mais altas (1,6–2,5× as normais) e juntas, mais altas no miolo e
+# ralas na borda, com arbustos baixos entre os troncos. É cenário do cliente:
+# o servidor não conhece essas árvores (não dão madeira), por isso não têm id
+# e o protocolo não muda. A mesma semente gera a mesma mata para todo mundo.
+const DEEP_FOREST := {"x": -135.0, "z": -90.0, "r": 55.0, "spacing": 3.6, "seed": 7193}
+const DEEP_FOREST_TREES := ["pine_a", "pine_b", "pine_a", "pine_b", "oak_a", "oak_b", "birch"]
+var deep_forest_trees := 0
+
+func in_deep_forest(point: Vector3) -> bool:
+	return Vector2(point.x - float(DEEP_FOREST["x"]), point.z - float(DEEP_FOREST["z"])).length() < float(DEEP_FOREST["r"])
+
+func _deep_forest() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(DEEP_FOREST["seed"])
+	var center := Vector2(float(DEEP_FOREST["x"]), float(DEEP_FOREST["z"]))
+	var radius := float(DEEP_FOREST["r"])
+	var spacing := float(DEEP_FOREST["spacing"])
+	# Não planta em cima de árvore, pedra, carro ou arbusto que já existe.
+	var taken: Array[Vector2] = []
+	for entry in resources.values():
+		var p: Vector3 = entry["pos"]
+		if Vector2(p.x, p.z).distance_to(center) < radius + 4.0:
+			taken.append(Vector2(p.x, p.z))
+	var body := StaticBody3D.new()
+	body.name = "MataAlta"
+	body.collision_layer = HitboxScript.LAYER_WORLD
+	add_child(body)
+	var trunks: Array[Vector2] = []
+	var steps := int(ceil(radius * 2.0 / spacing))
+	for i in steps + 1:
+		for j in steps + 1:
+			var p := center + Vector2(-radius + (i + rng.randf_range(-0.4, 0.4)) * spacing, -radius + (j + rng.randf_range(-0.4, 0.4)) * spacing)
+			var edge := p.distance_to(center) / radius
+			if edge > 1.0 or (edge > 0.72 and rng.randf() < (edge - 0.72) / 0.28):
+				continue # borda rala, miolo fechado
+			if not Hydrology.water_at(p.x, p.y, 1.0).is_empty():
+				continue
+			var pos := Vector3(p.x, Hydrology.ground_height(p.x, p.y), p.y)
+			if _on_pavement(pos) or _near_any(taken, p, 2.6):
+				continue
+			taken.append(p)
+			trunks.append(p)
+			var variant: String = DEEP_FOREST_TREES[rng.randi() % DEEP_FOREST_TREES.size()]
+			var size := lerpf(2.5, 1.6, edge * edge) * rng.randf_range(0.9, 1.1)
+			_slot(variant, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * size), pos), true)
+			_collider(body, CylinderShape3D.new(), pos + Vector3(0, 1.5 * size, 0), 0.3 * size, 3.0 * size)
+			deep_forest_trees += 1
+	# Sub-bosque: arbustos baixos (sem fruta, só cenário) entre os troncos.
+	for k in 160:
+		var angle := rng.randf() * TAU
+		var p := center + Vector2(cos(angle), sin(angle)) * sqrt(rng.randf()) * radius * 0.95
+		if not Hydrology.water_at(p.x, p.y, 1.0).is_empty() or _near_any(taken, p, 1.4):
+			continue
+		var pos := Vector3(p.x, Hydrology.ground_height(p.x, p.y), p.y)
+		if _on_pavement(pos):
+			continue
+		_slot("bush_empty", Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.35)), pos), true)
+
+static func _near_any(points: Array[Vector2], p: Vector2, distance: float) -> bool:
+	var limit := distance * distance
+	for q in points:
+		if q.distance_squared_to(p) < limit:
+			return true
+	return false
 
 ## Coisa do chão (galho, pedrinha, capim, erva) ou lago: sem corpo nem colisão.
 ## O que aparece na tela fica no lote (MultiMesh) ou na água do lago.

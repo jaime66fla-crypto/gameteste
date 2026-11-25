@@ -72,11 +72,15 @@ func _process(_delta: float) -> void:
 	_extra.visible = not _extra.text.is_empty()
 	var owned: Dictionary = player.get("owned_weapons")
 	var limited := bool(player.get("loadout_limited"))
-	if limited and owned.is_empty():
-		_weapon.text = "DESARMADO"
+	var melee_slots = player.get("melee_slots")
+	var held_melee := str(player.get("melee_weapon"))
+	if limited and (owned.is_empty() or not held_melee.is_empty()):
+		# Sem arma de fogo ou com arma branca na mão: nome dela, sem munição.
+		var held_name := str(player.call("slot_label", held_melee)) if melee_slots is Dictionary and (melee_slots as Dictionary).has(held_melee) else ""
+		_weapon.text = held_name.to_upper() if not held_name.is_empty() else "DESARMADO"
 		_ammo.text = ""
-		_reserve.text = ""
-		_slots.text = ""
+		_reserve.text = "clique: golpear" if not held_name.is_empty() else ""
+		_slots.text = _slot_line(player.get("slot_order"))
 		return
 	var current := str(player.get("current_weapon"))
 	var stats: Dictionary = WeaponData.stats(current)
@@ -86,9 +90,23 @@ func _process(_delta: float) -> void:
 	_ammo.text = str(ammo)
 	_ammo.add_theme_color_override("font_color", Color("#ff7a6a") if ammo == 0 else (Color("#ffd27a") if ammo <= int(stats["mag"]) / 4 else Color.WHITE))
 	_reserve.text = "/ %d" % reserve
+	if limited:
+		_slots.text = _slot_line(player.get("slot_order"))
+		return
 	var parts: Array[String] = []
-	var order: Array = player.get("slot_order") if limited else WeaponData.ORDER
+	var order: Array = WeaponData.ORDER
 	for i in order.size():
 		var name_text := str(WeaponData.stats(order[i])["name"])
 		parts.append(("[%d %s]" if order[i] == current else "%d %s") % [i + 1, name_text])
 	_slots.text = "  ".join(parts)
+
+## "1 Fuzil  [2 Facão]  3 Machado": slots na ordem em que as armas chegaram,
+## o da mão entre colchetes (arma de fogo ou arma branca).
+func _slot_line(order: Array) -> String:
+	var parts: Array[String] = []
+	for i in order.size():
+		var id := str(order[i])
+		var label := str(player.call("slot_label", id)) if player.has_method("slot_label") else str(WeaponData.stats(id)["name"])
+		var held := bool(player.call("slot_in_hand", id)) if player.has_method("slot_in_hand") else false
+		parts.append(("[%d %s]" if held else "%d %s") % [i + 1, label])
+	return "  ".join(parts)
