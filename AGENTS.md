@@ -32,7 +32,7 @@ Suba `config/version` em `godot/project.godot` (1.25.0 → 1.25.1 correção,
 Rode 1–2 testes ligados à mudança, sempre com `--quit-after` (alguns testes
 antigos travam):
 ```powershell
-$g = "C:\Users\jaime\Desktop\Godot area de criação\Godot_v4.7.2-stable_win64.exe"
+$g = "C:\Users\jaime\Documents\Godot area de criação\Godot_v4.7.2-stable_win64.exe"
 & $g --headless --path godot --quit-after 3000 --script res://tests/<teste>.gd
 ```
 Falhas já conhecidas (não são regressão): `tests/match_layout.gd` (16),

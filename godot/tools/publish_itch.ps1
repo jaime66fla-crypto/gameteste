@@ -20,7 +20,7 @@ param(
     [string]$Target = "",            # itch user/game, e.g. "seunome/campo-de-fogo"
     [string]$Channel = "windows",
     [string]$AndroidChannel = "android",
-    [string]$Godot = "C:\Users\jaime\Desktop\Godot area de criação\Godot_v4.7.2-stable_win64_console.exe",
+    [string]$Godot = "C:\Users\jaime\Documents\Godot area de criação\Godot_v4.7.2-stable_win64_console.exe",
     [string]$Butler = "$env:LOCALAPPDATA\itch-butler\butler.exe",
     [string]$Keystore = "$env:APPDATA\Godot\keystores\campodefogo-release.keystore",
     [switch]$SkipAndroid,
