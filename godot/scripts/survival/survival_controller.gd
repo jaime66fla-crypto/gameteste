@@ -20,6 +20,8 @@ const AnimalScript = preload("res://scripts/survival/animal.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const HandTorch = preload("res://scripts/survival/hand_torch.gd")
 const RainWeather = preload("res://scripts/survival/rain_weather.gd")
+const ShipwreckIntro = preload("res://scripts/survival/shipwreck_intro.gd")
+var intro: CanvasLayer # naufrágio do Aurora do Sul (personagem novo)
 var weather: Node3D
 var death_title: Label
 var torch_in_hand := false # tocha acesa na mão (os outros veem pelo "tc" do estado)
@@ -168,9 +170,41 @@ func _ready() -> void:
 	_set_infected(float(you.get("infected", 0)))
 	if bool(you.get("dead", false)):
 		_on_local_death()
-	_feed("Você acordou na floresta sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
+	if ShipwreckIntro.should_play(you):
+		_start_intro()
+		_feed("Você sobreviveu ao naufrágio do Aurora do Sul e chegou à ilha sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
+	else:
+		_feed("Você acordou na ilha sem nada. Junte galhos, pedras e fibra e fabrique suas ferramentas.")
 	_feed("E coletar/beber  •  TAB inventário  •  L manual  •  B construir  •  M mapa  •  CLIQUE golpe  •  F curativo")
 	_feed("De dia a floresta é calma. À noite (20h–6h) os zumbis saem do mato. Nas 3 cidades abandonadas (pontas do mapa) há zumbis até de dia.")
+
+## Intro do naufrágio: trava o jogador e esconde o HUD até acabar (ou pular).
+func _start_intro() -> void:
+	intro = ShipwreckIntro.new()
+	intro.set("controller", self)
+	intro.connect("finished", _on_intro_finished)
+	# Acorda na praia mais perto e começa o jogo ali mesmo (sem "teleporte").
+	intro.call("use_real_beach", main_node, player, player.global_position)
+	add_child(intro)
+	_lock_for_intro.call_deferred() # depois do _ready do main, que solta o jogador
+
+func _lock_for_intro() -> void:
+	if intro == null:
+		return
+	if ui != null: ui.visible = false
+	if "cinematic" in main_node: main_node.set("cinematic", true)
+	player.set_physics_process(false)
+	player.set_process_unhandled_input(false)
+	PointerMode.release()
+
+func _on_intro_finished() -> void:
+	intro = null
+	if ui != null: ui.visible = true
+	if "cinematic" in main_node: main_node.set("cinematic", false)
+	player.set_process_unhandled_input(true)
+	if not local_dead:
+		player.set_physics_process(true)
+		if not ui_open(): PointerMode.capture()
 
 func _exit_tree() -> void:
 	if Net.message.is_connected(_on_message):
@@ -1172,7 +1206,7 @@ var _daylight_timer := 0.0
 
 ## Alguma janela da sobrevivência precisa do cursor (mochila aberta ou tela de morte).
 func ui_open() -> bool:
-	return (inventory != null and inventory.visible) or (manual != null and manual.visible) or (death_panel != null and death_panel.visible) \
+	return intro != null or (inventory != null and inventory.visible) or (manual != null and manual.visible) or (death_panel != null and death_panel.visible) \
 		or (building_ctl != null and bool(building_ctl.call("ui_open")))
 
 ## Infecção (mordida de zumbi): `left` segundos até virar zumbi; 0 = curado.
@@ -1254,6 +1288,8 @@ func _process(delta: float) -> void:
 	clock_label.text = "Dia %d  •  %02d:%02d\n%d/16 online" % [day, int(hour), int(fmod(hour, 1.0) * 60.0), online]
 
 func _unhandled_input(event: InputEvent) -> void:
+	if intro != null:
+		return
 	if driving_ctl != null and bool(driving_ctl.call("handle_input", event)):
 		get_viewport().set_input_as_handled()
 		return

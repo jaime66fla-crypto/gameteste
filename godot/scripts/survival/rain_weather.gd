@@ -66,20 +66,56 @@ func _process(delta: float) -> void:
 	_drops.emitting = rain > 0.02 and not sheltered
 	_sound.volume_db = lerpf(_sound.volume_db, (-26.0 if sheltered else -13.0) + linear_to_db(maxf(0.001, rain)), minf(1, delta * 3))
 
+## Chuva sem chiado: nada de ruído branco puro (é ele que chia). O "corpo"
+## é ruído passado em filtro passa-baixa (~400 Hz, o rumor da chuva longe);
+## por cima, gotas: toques curtos e macios só na faixa média (~0,4–1,5 kHz),
+## em tempos aleatórios. Rajadas lentas de vento mudam o volume. 4 s em loop,
+## com o fim misturado no começo para não estalar na emenda. Sem agudos, 11 kHz
+## bastam (metade do trabalho); fica guardado e a intro usa o mesmo.
+const RAIN_RATE := 11025
+const RAIN_LOOP := RAIN_RATE * 4
+const RAIN_FADE := RAIN_RATE / 4
+
+static var _rain_cache: AudioStreamWAV
+
 static func _rain_sound() -> AudioStreamWAV:
-	var stream := AudioStreamWAV.new()
-	stream.format = AudioStreamWAV.FORMAT_16_BITS
-	stream.mix_rate = 22050
-	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
-	stream.loop_end = 44100
-	var bytes := PackedByteArray()
-	bytes.resize(44100 * 2)
+	if _rain_cache != null:
+		return _rain_cache
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 1905
+	var total := RAIN_LOOP + RAIN_FADE
+	var raw := PackedFloat32Array()
+	raw.resize(total)
+	var deep := 0.0 # rumor grave
 	var low := 0.0
-	for i in 44100:
-		var noise := rng.randf_range(-1, 1)
-		low = lerpf(low, noise, 0.35)
-		bytes.encode_s16(i * 2, int((low * 0.65 + noise * 0.15) * 18000))
+	var mid := 0.0
+	var tap := 0.0 # envelope das gotas
+	var smooth := 0.0 # tira o resto de agudo no fim
+	for i in total:
+		var s := float(i) / RAIN_RATE
+		var white := rng.randf_range(-1.0, 1.0)
+		deep = lerpf(deep, white, 0.07)
+		low = lerpf(low, white, 0.24)
+		mid = lerpf(mid, white, 0.75)
+		if rng.randf() < 38.0 / RAIN_RATE: # ~38 gotas por segundo
+			tap = minf(1.6, tap + rng.randf_range(0.25, 1.0))
+		tap *= 0.993 # cada gota some em ~15 ms
+		var gust := 0.82 + 0.18 * sin(TAU * s / 4.0) * sin(TAU * s / 2.0 + 0.7)
+		var v := deep * 2.2 + low * 0.9 + (mid - low) * (0.12 + tap * 0.55)
+		smooth = lerpf(smooth, v * gust, 0.85)
+		raw[i] = smooth
+	var bytes := PackedByteArray()
+	bytes.resize(RAIN_LOOP * 2)
+	for i in RAIN_LOOP:
+		var v := raw[i]
+		if i < RAIN_FADE: # emenda: o fim do trecho entra por cima do começo
+			v = lerpf(raw[RAIN_LOOP + i], v, float(i) / RAIN_FADE)
+		bytes.encode_s16(i * 2, int(clampf(v * 0.42, -1.0, 1.0) * 30000.0)) # mesmo volume do som antigo
+	var stream := AudioStreamWAV.new()
+	stream.format = AudioStreamWAV.FORMAT_16_BITS
+	stream.mix_rate = RAIN_RATE
+	stream.loop_mode = AudioStreamWAV.LOOP_FORWARD
+	stream.loop_end = RAIN_LOOP
 	stream.data = bytes
+	_rain_cache = stream
 	return stream

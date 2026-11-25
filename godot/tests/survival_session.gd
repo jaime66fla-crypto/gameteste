@@ -157,7 +157,7 @@ func _run() -> void:
 	Net.in_match = true
 	Net.start_info = {
 		"t": "start", "survival": true, "host": "me", "clock": {"day_ms": 1440000, "time": 0},
-		"you": {"id": "me", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 85, "thirst": 85, "dead": false,
+		"you": {"id": "me", "p": [spawn[0], 0.2, spawn[1]], "hp": 100, "hunger": 84, "thirst": 85, "dead": false,
 			"inv": {"berries": 1, "bandage": 1}, "weight": 0.2, "cap": 10},
 		"roster": [{"id": "p2", "name": "Amigo", "rank": "Recruta", "p": [spawn[0] + 4, 0.2, spawn[1]], "dead": false}],
 		"zombies": [{"id": "z1", "kind": "walker", "hp": 60, "p": [spawn[0] + 15, 0.2, spawn[1]]}],
