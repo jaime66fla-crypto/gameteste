@@ -81,14 +81,43 @@ func _run() -> void:
 	await _frames(1)
 	_check(not Input.is_action_pressed("fire"), "Soltar atirar solta fire")
 
-	# Os dois botões de tiro juntos: soltar um não para o outro.
-	var fire_left: Vector2 = touch.call("_center", "fire_left")
-	_touch(2, fire, true)
-	_touch(3, fire_left, true)
-	_touch(2, fire, false)
-	await _frames(1)
-	_check(Input.is_action_pressed("fire"), "Fogo da esquerda segue atirando")
-	_touch(3, fire_left, false)
+	# Nenhuma ação tem dois botões na tela (a pé).
+	var seen := {}
+	for id in touch.call("_visible_ids"):
+		var entry: Array = touch.call("_entry", id)
+		var action: String = entry[2]
+		if action.is_empty():
+			continue
+		_check(not seen.has(action), "Ação %s com dois botões (%s e %s)" % [action, seen.get(action, ""), id])
+		seen[action] = id
+
+	# Seletor de armas: só os slots que existem; tocar troca a arma.
+	var slots: int = touch.call("_slot_count")
+	_check(slots >= 2, "Seletor mostra as armas do treino (got %d)" % slots)
+	var slot2: Vector2 = touch.call("_center", "weapon_2")
+	_touch(3, slot2, true)
+	await _frames(2)
+	_touch(3, slot2, false)
+	await _frames(20)
+	_check(bool((touch.call("_slot_info", 1) as Array)[1]), "Tocar no slot 2 põe a arma 2 na mão")
+
+	# Agachar só segurando: agacha com o dedo em cima, levanta ao soltar.
+	var opts: Dictionary = touch.get("options")
+	opts["crouch_hold"] = 1.0
+	var crouch_btn: Vector2 = touch.call("_center", "crouch")
+	_touch(3, crouch_btn, true)
+	await _frames(2)
+	_check(int(player.get("stance")) == 1, "AGACHA segurando agacha")
+	_touch(3, crouch_btn, false)
+	await _frames(2)
+	_check(int(player.get("stance")) == 0, "Soltar AGACHA (segurando) levanta")
+	opts["crouch_hold"] = 0.0
+	_touch(3, crouch_btn, true)
+	_touch(3, crouch_btn, false)
+	await _frames(2)
+	_check(int(player.get("stance")) == 1, "AGACHA alternando: um toque agacha e fica")
+	player.set("stance", 0)
+	await _frames(2)
 
 	# Mira liga/desliga.
 	var aim: Vector2 = touch.call("_center", "aim")
@@ -195,6 +224,40 @@ func _run() -> void:
 	_check(moved.distance_to(s * Vector2(0.5, 0.5)) < 2.0, "Botão arrastado no editor muda de lugar")
 	var cfg := ConfigFile.new()
 	_check(cfg.load("user://touch_layout.cfg") == OK and cfg.has_section_key("layout", "jump"), "Posição salva em touch_layout.cfg")
+
+	# Preset 4 dedos: tiro vai para o alto à esquerda, mira/pulo para o alto à
+	# direita; posições mexidas voltam ao padrão; o preset fica salvo.
+	touch.call("apply_preset", "4")
+	var fire4: Vector2 = touch.call("_center", "fire")
+	_check(fire4.x < s.x * 0.4 and fire4.y < s.y * 0.5, "Preset 4 dedos: ATIRAR no alto à esquerda (got %s)" % fire4)
+	_check((touch.call("_center", "jump") as Vector2).y < s.y * 0.5, "Preset 4 dedos: PULO no alto")
+	_check((touch.get("custom") as Dictionary).is_empty(), "Trocar de preset volta as posições ao padrão")
+	cfg = ConfigFile.new()
+	cfg.load("user://touch_layout.cfg")
+	_check(str(cfg.get_value("meta", "preset", "")) == "4", "Preset salvo no arquivo")
+	touch.call("apply_preset", "2")
+
+	# Área segura (notch à esquerda): nada fica embaixo dela.
+	touch.set("safe_override", Rect2(Vector2(80, 0), s - Vector2(80, 0)))
+	touch.call("_update_safe")
+	for id in touch.call("_visible_ids"):
+		var c: Vector2 = touch.call("_center", id)
+		_check(c.x - float(touch.call("_radius", id)) >= 79.0 or (touch.call("_entry", id) as Array)[4].x < 0.05, "Botão %s fora da área segura" % id)
+	_check((touch.call("_center", "interact") as Vector2).x > 80.0, "USAR (na borda) respeita a área segura")
+	touch.set("safe_override", Rect2())
+	touch.call("_update_safe")
+
+	# Zona morta: movimento pequeno não anda; depois dela começa do zero.
+	var Joy = load("res://scripts/ui/touch/virtual_joystick.gd")
+	_check(Joy.apply_deadzone(Vector2(0.1, 0), 0.12) == Vector2.ZERO, "Dentro da zona morta não anda")
+	_check(Joy.apply_deadzone(Vector2(0.13, 0), 0.12).x < 0.05, "Logo depois da zona morta começa devagar")
+	_check(is_equal_approx(Joy.apply_deadzone(Vector2(1, 0), 0.12).x, 1.0), "Joystick no fim = 1")
+	var fixed_joy = Joy.new()
+	fixed_joy.fixed = true
+	fixed_joy.rest = Vector2(100, 500)
+	fixed_joy.radius = 70.0
+	_check(not fixed_joy.press(0, Vector2(400, 500)), "Joystick fixo ignora dedo longe dele")
+	_check(fixed_joy.press(0, Vector2(120, 500)) and fixed_joy.base == Vector2(100, 500), "Joystick fixo pega o dedo perto e não sai do lugar")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path("user://touch_layout.cfg"))
 	_finish()
 

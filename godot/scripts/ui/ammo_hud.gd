@@ -3,6 +3,7 @@ extends Control
 ## das armas que você tem. `extra` (Callable -> String) acrescenta uma linha
 ## curta (ex.: kits e granadas no mata-mata).
 const WeaponData = preload("res://scripts/weapon_data.gd")
+const PointerMode = preload("res://scripts/pointer_mode.gd")
 
 var player: Node
 var extra: Callable
@@ -50,6 +51,17 @@ func _ready() -> void:
 	_reserve = _label(22, Color("#b8c2b8"))
 	_reserve.size_flags_vertical = Control.SIZE_SHRINK_END
 	row.add_child(_reserve)
+	if PointerMode.touch_mode():
+		# Celular: embaixo à direita fica o botão de atirar. Munição vai para o
+		# alto à direita, logo abaixo de pausa/loja; a lista de armas vira os
+		# botões de arma no topo, então a linha de teclas some.
+		set_anchors_preset(Control.PRESET_TOP_RIGHT)
+		offset_left = -300
+		offset_top = 82
+		offset_right = -18
+		offset_bottom = 182
+		column.alignment = BoxContainer.ALIGNMENT_BEGIN
+		_slots.visible = false
 
 var suppressed := false # dirigindo, morto, luneta: some
 
