@@ -1482,6 +1482,11 @@ func _toast(text: String) -> void:
 
 # ---------------------------------------------------------------- efeitos ---
 
+# Sangue e traçante: um mesh/material só, reaproveitado em todo golpe/tiro.
+static var _shared_blood_drop: SphereMesh
+static var _shared_tracer_mesh: CylinderMesh
+static var _shared_tracer_material: StandardMaterial3D
+
 func _blood(point: Vector3, normal: Vector3) -> void:
 	var particles := CPUParticles3D.new()
 	particles.one_shot = true
@@ -1494,13 +1499,14 @@ func _blood(point: Vector3, normal: Vector3) -> void:
 	particles.initial_velocity_max = 3.5
 	particles.scale_amount_min = 0.04
 	particles.scale_amount_max = 0.08
-	var mesh := SphereMesh.new()
-	mesh.radius = 0.5
-	mesh.height = 1.0
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color("#6b0f0c")
-	mesh.material = mat
-	particles.mesh = mesh
+	if _shared_blood_drop == null:
+		_shared_blood_drop = SphereMesh.new()
+		_shared_blood_drop.radius = 0.5
+		_shared_blood_drop.height = 1.0
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color("#6b0f0c")
+		_shared_blood_drop.material = mat
+	particles.mesh = _shared_blood_drop
 	main_node.add_child(particles)
 	particles.global_position = point
 	particles.emitting = true
@@ -1510,23 +1516,25 @@ func _tracer(from: Vector3, to: Vector3) -> void:
 	var length := from.distance_to(to)
 	if length < 0.1:
 		return
+	if _shared_tracer_mesh == null:
+		# Cilindro de 1 m: cada traçante estica no eixo Y até o comprimento.
+		_shared_tracer_mesh = CylinderMesh.new()
+		_shared_tracer_mesh.top_radius = 0.012
+		_shared_tracer_mesh.bottom_radius = 0.012
+		_shared_tracer_mesh.height = 1.0
+		_shared_tracer_material = StandardMaterial3D.new()
+		_shared_tracer_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_shared_tracer_material.albedo_color = Color(1.0, 0.85, 0.5, 0.8)
+		_shared_tracer_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	var mesh := MeshInstance3D.new()
-	var cyl := CylinderMesh.new()
-	cyl.top_radius = 0.012
-	cyl.bottom_radius = 0.012
-	cyl.height = length
-	mesh.mesh = cyl
-	var mat := StandardMaterial3D.new()
-	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(1.0, 0.85, 0.5, 0.8)
-	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mesh.material_override = mat
+	mesh.mesh = _shared_tracer_mesh
+	mesh.material_override = _shared_tracer_material
 	main_node.add_child(mesh)
 	mesh.global_position = (from + to) * 0.5
 	var dir := (to - from).normalized()
 	var axis := Vector3.UP.cross(dir)
-	if axis.length() > 0.001:
-		mesh.global_basis = Basis(axis.normalized(), Vector3.UP.angle_to(dir))
+	var rot := Basis(axis.normalized(), Vector3.UP.angle_to(dir)) if axis.length() > 0.001 else Basis.IDENTITY
+	mesh.global_basis = rot * Basis.from_scale(Vector3(1.0, length, 1.0))
 	get_tree().create_timer(0.06).timeout.connect(mesh.queue_free)
 
 func _vec(value) -> Variant:

@@ -9,11 +9,14 @@ var _timer := 0.0
 var _drops: CPUParticles3D
 var _sound: AudioStreamPlayer
 var sheltered := false
+## Gotas por nível de chuva (0–7). Celular: metade — são riscos transparentes
+## e a sobreposição deles pesa na GPU do aparelho.
+var drops_per_step := 50 if OS.has_feature("mobile") else 100
 
 func _ready() -> void:
 	name = "RainWeather"
 	_drops = CPUParticles3D.new()
-	_drops.amount = 700
+	_drops.amount = 7 * drops_per_step
 	_drops.lifetime = 0.65
 	_drops.local_coords = false
 	_drops.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
@@ -52,7 +55,7 @@ func _process(delta: float) -> void:
 		global_position = player.global_position + Vector3(0, 13, 0)
 	if _timer <= 0:
 		_timer = 0.3
-		var amount := maxi(1, roundi(rain * 7.0) * 100)
+		var amount := maxi(1, roundi(rain * 7.0) * drops_per_step)
 		if _drops.amount != amount: _drops.amount = amount
 		if world != null: world.call("set_wetness", float(state.wet))
 		if player != null and is_inside_tree():

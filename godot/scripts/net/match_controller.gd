@@ -773,6 +773,39 @@ func _punch() -> void:
 	player.get("sound_fx").call("melee_impact", zone == "head")
 	_blood_burst(hit["position"], hit["normal"], zone == "head")
 
+# Gota de sangue e traçante: um mesh/material só, reaproveitado em todo tiro
+# (antes cada acerto criava recursos novos — custo e travadas no celular).
+static var _shared_blood_drop: SphereMesh
+static var _shared_tracer_mesh: CylinderMesh
+static var _shared_tracer_material: StandardMaterial3D
+
+static func _blood_drop_mesh() -> SphereMesh:
+	if _shared_blood_drop == null:
+		var drop := SphereMesh.new()
+		drop.radius = 0.022
+		drop.height = 0.044
+		drop.radial_segments = 6
+		drop.rings = 3
+		var material := StandardMaterial3D.new()
+		material.albedo_color = Color("#7a0b0b")
+		material.roughness = 0.4
+		drop.material = material
+		_shared_blood_drop = drop
+	return _shared_blood_drop
+
+## Cilindro de 1 m de altura: cada traçante estica no eixo Y até o comprimento.
+static func _tracer_resources() -> void:
+	if _shared_tracer_mesh != null:
+		return
+	_shared_tracer_mesh = CylinderMesh.new()
+	_shared_tracer_mesh.top_radius = 0.012
+	_shared_tracer_mesh.bottom_radius = 0.012
+	_shared_tracer_mesh.height = 1.0
+	_shared_tracer_mesh.radial_segments = 5
+	_shared_tracer_material = StandardMaterial3D.new()
+	_shared_tracer_material.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	_shared_tracer_material.albedo_color = Color("#ffd08c")
+
 func _blood_burst(point: Vector3, normal: Vector3, headshot: bool) -> void:
 	var particles := CPUParticles3D.new()
 	particles.one_shot = true
@@ -787,16 +820,7 @@ func _blood_burst(point: Vector3, normal: Vector3, headshot: bool) -> void:
 	particles.gravity = Vector3(0, -9.0, 0)
 	particles.scale_amount_min = 0.5
 	particles.scale_amount_max = 1.2
-	var drop := SphereMesh.new()
-	drop.radius = 0.022
-	drop.height = 0.044
-	drop.radial_segments = 6
-	drop.rings = 3
-	var material := StandardMaterial3D.new()
-	material.albedo_color = Color("#7a0b0b")
-	material.roughness = 0.4
-	drop.material = material
-	particles.mesh = drop
+	particles.mesh = _blood_drop_mesh()
 	main_node.add_child(particles)
 	particles.global_position = point
 	particles.emitting = true
@@ -2347,20 +2371,13 @@ func _tracer(from: Vector3, to: Vector3) -> void:
 	var length := minf(delta_pos.length(), 60.0)
 	if length < 0.1:
 		return
+	_tracer_resources()
 	var tracer := MeshInstance3D.new()
-	var cylinder := CylinderMesh.new()
-	cylinder.top_radius = 0.012
-	cylinder.bottom_radius = 0.012
-	cylinder.height = length
-	cylinder.radial_segments = 5
-	tracer.mesh = cylinder
-	var glow := StandardMaterial3D.new()
-	glow.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	glow.albedo_color = Color("#ffd08c")
-	tracer.material_override = glow
+	tracer.mesh = _shared_tracer_mesh
+	tracer.material_override = _shared_tracer_material
 	main_node.add_child(tracer)
 	tracer.global_position = from + delta_pos.normalized() * length * 0.5
-	tracer.quaternion = Quaternion(Vector3.UP, delta_pos.normalized())
+	tracer.basis = Basis(Quaternion(Vector3.UP, delta_pos.normalized())) * Basis.from_scale(Vector3(1.0, length, 1.0))
 	var tween := tracer.create_tween()
 	tween.tween_property(tracer, "transparency", 1.0, 0.09)
 	tween.tween_callback(tracer.queue_free)

@@ -1,6 +1,8 @@
 extends RefCounted
 const PATH := "user://settings.cfg"
 const DEFAULTS := {"sensitivity": 1.0, "volume": 1.0, "msaa": 2, "fullscreen": false} # msaa 2 = 4×
+const MOBILE_MAX_MSAA := 1 # celular: no máximo 2× (4× pesa muito na GPU do aparelho)
+const MOBILE_3D_SCALE := 0.75
 
 static func load_settings(path: String = PATH) -> Dictionary:
     var result := DEFAULTS.duplicate()
@@ -27,7 +29,12 @@ static func save_settings(values: Dictionary, path: String = PATH) -> Error:
 
 static func apply(values: Dictionary, viewport: Viewport) -> void:
     var clean := _normalize(values)
-    viewport.msaa_3d = clean["msaa"]
+    viewport.msaa_3d = mini(clean["msaa"], MOBILE_MAX_MSAA) if is_mobile() else clean["msaa"]
+    # Celular: o 3D é desenhado a 75% da resolução da tela (≈56% dos pixels) e
+    # esticado; a interface (canvas_items) continua na resolução cheia.
+    if is_mobile():
+        viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_BILINEAR
+        viewport.scaling_3d_scale = MOBILE_3D_SCALE
     AudioServer.set_bus_mute(0, clean["volume"] <= 0.0)
     AudioServer.set_bus_volume_db(0, linear_to_db(maxf(clean["volume"],0.001)))
     if DisplayServer.get_name() == "headless":

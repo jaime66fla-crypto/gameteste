@@ -2910,7 +2910,11 @@ func _show_config() -> void:
     aa.add_item("Desligada")
     aa.add_item("2× — equilibrada")
     aa.add_item("4× — maior qualidade")
-    aa.select(int(settings["msaa"]))
+    if Settings.is_mobile():
+        aa.set_item_disabled(2, true) # celular: limitado a 2×
+        aa.select(mini(int(settings["msaa"]), Settings.MOBILE_MAX_MSAA))
+    else:
+        aa.select(int(settings["msaa"]))
     aa.custom_minimum_size.y = 40
     content.add_child(aa)
     var fullscreen := CheckButton.new()

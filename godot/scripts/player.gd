@@ -306,6 +306,7 @@ func _make_avatar() -> void:
     gun_flash.position = Vector3(0,0,-0.57)
     gun_flash.light_color = Color(1,0.65,0.25)
     gun_flash.light_energy = 0
+    gun_flash.visible = false
     gun.add_child(gun_flash)
     _rebuild_weapon_model()
 
@@ -639,6 +640,8 @@ func _physics_process(delta: float) -> void:
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
     muzzle_flare.visible = gun_flash.light_energy > 0.05
+    # Luz apagada fica invisível: senão tudo perto do jogador calcula essa luz.
+    gun_flash.visible = gun_flash.light_energy > 0.0
     gun_kick = move_toward(gun_kick, 0.0, delta * 5.0)
     # Presentation-only animation: never changes projectile aim or character movement.
     var movement_weight := clampf(input_vec.length(), 0.0, 1.0)
@@ -1300,6 +1303,7 @@ func _shoot() -> void:
     shots += 1
     fire_delay = float(stats["interval"])
     gun_flash.light_energy = 2.8
+    gun_flash.visible = true
     gun_kick = float(stats["kick"])
     sound_fx.shot(current_weapon)
     if humanoid_avatar != null and humanoid_avatar.has_method("notify_shot"):
