@@ -60,6 +60,18 @@ h1 span { color: var(--ember); text-shadow: 0 0 40px rgba(255,122,26,.35); }
 label { display: block; font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: .25rem; }
 input { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .55rem .65rem; font: 14px/1.4 var(--body); }
 input:disabled { opacity: .55; }
+.account form { display: contents; }
+.account form[hidden], [hidden] { display: none !important; }
+.who { display: flex; align-items: center; gap: .9rem; flex-wrap: wrap; }
+.who b { font: 900 1.6rem/1 var(--display); }
+.who .bal { font: 500 13px var(--mono); color: var(--muted); }
+.who .bal strong { color: var(--ember); font-size: 1.1rem; }
+.link { background: none; border: 0; color: var(--muted); font: 500 12px var(--mono); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; text-decoration: underline; padding: 0; }
+.msg { grid-column: 1 / -1; margin: 0; font: 12.5px var(--mono); color: var(--muted); min-height: 1.2em; }
+.msg.err { color: var(--flame); } .msg.ok { color: var(--ok); }
+.notice { border-left: 3px solid var(--ember); background: rgba(27,23,24,.92); padding: .8rem 1rem; font-size: .95rem; max-width: 70ch; }
+.notice.ok { border-color: var(--ok); } .notice.err { border-color: var(--flame); }
+.notice b { font: 700 1.05rem var(--display); letter-spacing: .06em; text-transform: uppercase; margin-right: .45em; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; font: 700 1rem/1 var(--display); letter-spacing: .08em; text-transform: uppercase; padding: .85em 1.3em; border-radius: 3px; border: 1px solid var(--ember); text-decoration: none; cursor: pointer; background: var(--ember); color: #1a0d05; }
 .btn:hover:not(:disabled) { background: #ff8f3f; }
@@ -106,12 +118,13 @@ input:disabled { opacity: .55; }
 <div class="wrap">
   <div class="top">
     <a class="back" href="./">← Campo de Fogo</a>
-    <span class="soon"><span class="dot"></span>Pagamento em breve</span>
+    <span class="soon"><span class="dot"></span>PIX · cartão · Mercado Pago</span>
   </div>
 
   <header class="hero">
     <h1>Loja de <span>Brasas</span></h1>
-    <p class="lede">Brasas são a moeda da sua conta no Campo de Fogo. Com elas você libera personagens, skins de armas e roupas na Loja do jogo. A compra pelo site ainda não está ligada: por enquanto, ganhe Brasas jogando.</p>
+    <p class="lede">Brasas são a moeda da sua conta no Campo de Fogo. Com elas você libera personagens, skins de armas e roupas na Loja do jogo. Pague com PIX ou cartão pelo Mercado Pago e as Brasas caem na sua conta.</p>
+    <div class="notice" id="notice" role="status" hidden></div>
   </header>
 
   <ol class="steps" aria-label="Como vai funcionar">
@@ -121,12 +134,16 @@ input:disabled { opacity: .55; }
   </ol>
 
   <section class="account" aria-labelledby="accTitle">
-    <h2 id="accTitle">Sua conta <small>Login liberado junto com o pagamento</small></h2>
-    <div class="fields">
-      <div><label for="user">Nome da conta</label><input id="user" autocomplete="username" placeholder="Seu nome no jogo" disabled></div>
-      <div><label for="pass">Senha</label><input id="pass" type="password" autocomplete="current-password" placeholder="••••••" disabled></div>
-    </div>
-    <button class="btn" type="button" disabled>Em breve</button>
+    <h2 id="accTitle">Sua conta <small>Mesmo nome e senha do jogo</small></h2>
+    <form id="loginForm" novalidate>
+      <div class="fields">
+        <div><label for="user">Nome da conta</label><input id="user" autocomplete="username" maxlength="16" placeholder="Seu nome no jogo"></div>
+        <div><label for="pass">Senha</label><input id="pass" type="password" autocomplete="current-password" maxlength="72" placeholder="••••••"></div>
+      </div>
+      <button class="btn" type="submit" id="loginBtn">Entrar</button>
+    </form>
+    <div class="who" id="who" hidden><b id="whoName"></b><span class="bal">saldo <strong id="whoBal">0</strong> Brasas</span><button class="link" type="button" id="logout">Sair</button></div>
+    <p class="msg" id="msg" role="status"></p>
   </section>
 
   <section aria-labelledby="packsTitle">
@@ -176,8 +193,9 @@ input:disabled { opacity: .55; }
     card.append(el("div", "amount", num(p.brasas)), el("div", "unit", "Brasas"),
       el("div", "bonus", p.bonus > 0 ? "inclui +" + num(p.bonus) + " de bônus" : " "),
       el("div", "price", brl(p.preco_centavos)));
-    const b = el("button", "btn", "Em breve"); b.type = "button"; b.disabled = true;
-    b.setAttribute("aria-label", num(p.brasas) + " Brasas por " + brl(p.preco_centavos) + ": em breve");
+    const b = el("button", "btn", "Comprar"); b.type = "button";
+    b.setAttribute("aria-label", "Comprar " + num(p.brasas) + " Brasas por " + brl(p.preco_centavos));
+    b.addEventListener("click", () => buy(p, b));
     card.append(b);
     packs.append(card);
   });
@@ -188,6 +206,76 @@ input:disabled { opacity: .55; }
     li.append(left, el("span", null, num(price)));
     items.append(li);
   });
+
+  // ---- Conta e pagamento: Worker floral-haze-1c57 (src/godot-payments.js). ?api= troca o servidor para teste local. ----
+  const API = (new URLSearchParams(location.search).get("api") || "https://floral-haze-1c57.jaime66fla.workers.dev").replace(/\/$/, "");
+  const $ = (id) => document.getElementById(id);
+  const saved = { get: (k) => { try { return localStorage.getItem(k); } catch (_) { return null; } }, set: (k, v) => { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (_) {} } };
+  let token = saved.get("cdf_token") || "", me = null;
+  const say = (text, kind) => { $("msg").textContent = text || ""; $("msg").className = "msg" + (kind ? " " + kind : ""); };
+  const notice = (title, text, kind) => { const n = $("notice"); n.hidden = false; n.className = "notice" + (kind ? " " + kind : ""); n.replaceChildren(el("b", null, title), document.createTextNode(text)); };
+
+  async function api(path, body) {
+    const headers = {};
+    if (token) headers.Authorization = "Bearer " + token;
+    if (body) headers["Content-Type"] = "application/json";
+    let r;
+    try { r = await fetch(API + "/godot" + path, { method: body ? "POST" : "GET", headers, body: body ? JSON.stringify(body) : undefined }); }
+    catch (_) { throw new Error("Sem conexão com o servidor do jogo. Tente de novo."); }
+    let data = {}; try { data = await r.json(); } catch (_) {}
+    if (r.status === 401 && path !== "/login") setSession("", null);
+    if (!r.ok) throw Object.assign(new Error(data.error || "Falha no servidor (" + r.status + ")."), { status: r.status });
+    return data;
+  }
+
+  function setSession(t, profile) {
+    token = t || ""; me = profile || null; saved.set("cdf_token", token);
+    $("loginForm").hidden = !!me; $("who").hidden = !me;
+    if (me) { $("whoName").textContent = me.name; $("whoBal").textContent = num(me.brasas || 0); }
+  }
+
+  $("loginForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const name = $("user").value.trim(), password = $("pass").value;
+    if (!name || !password) { say("Digite o nome e a senha da sua conta do jogo.", "err"); return; }
+    $("loginBtn").disabled = true; say("Entrando…");
+    try { const d = await api("/login", { name, password }); setSession(d.token, d.profile); $("pass").value = ""; say("Pronto. Escolha um pacote.", "ok"); }
+    catch (e) { say(e.message, "err"); }
+    finally { $("loginBtn").disabled = false; }
+  });
+  $("logout").addEventListener("click", () => { setSession("", null); say("Você saiu."); });
+
+  async function buy(p, button) {
+    if (!me) { say("Entre com a sua conta do jogo para comprar.", "err"); $("user").focus(); return; }
+    const label = button.textContent; button.disabled = true; button.textContent = "Abrindo…";
+    try { const d = await api("/pay/checkout", { pack: p.id }); location.href = d.url; }
+    catch (e) { say(e.message, "err"); button.disabled = false; button.textContent = label; }
+  }
+
+  // Volta do Mercado Pago: loja.html?pedido=<id>. Acompanha até o crédito cair (PIX pode demorar).
+  async function followOrder(id) {
+    notice("Conferindo", "o seu pagamento…");
+    for (let i = 0; i < 40; i++) {
+      try {
+        const d = await api("/pay/order?id=" + encodeURIComponent(id));
+        setSession(token, d.profile);
+        if (d.order.credited) { notice("Pagamento aprovado", "+" + num(d.order.brasas) + " Brasas na conta de " + d.profile.name + ". Já aparecem no jogo.", "ok"); return; }
+        if (["rejected", "cancelled", "erro", "valor_divergente"].includes(d.order.status)) { notice("Pagamento não aprovado", "nada foi cobrado. Tente de novo ou use outra forma de pagamento.", "err"); return; }
+        if (i === 3) notice("Aguardando", "a confirmação do Mercado Pago. No PIX, pague o código e deixe esta página aberta.");
+      } catch (e) {
+        if (!token) { notice("Entre de novo", "na sua conta para ver este pedido.", "err"); return; }
+        if (e.status === 404) { notice("Pedido não encontrado", "nesta conta. Entre com a conta que fez a compra.", "err"); return; }
+      }
+      await new Promise((r) => setTimeout(r, i < 10 ? 3000 : 8000));
+    }
+    notice("Ainda processando", "as Brasas caem na conta assim que o Mercado Pago confirmar. Pode fechar esta página.");
+  }
+
+  (async () => {
+    if (token) { try { const d = await api("/me"); setSession(token, d.profile); } catch (_) { setSession("", null); } }
+    const pedido = new URLSearchParams(location.search).get("pedido");
+    if (pedido && /^[0-9a-f]{24}$/.test(pedido)) followOrder(pedido);
+  })();
 
   const cv = document.getElementById("embers");
   if (cv && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
