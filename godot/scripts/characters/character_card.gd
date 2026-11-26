@@ -1,5 +1,6 @@
 extends PanelContainer
 const Registry = preload("res://scripts/characters/character_registry.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const WeaponVisuals = preload("res://scripts/weapon_visuals.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 signal selection_requested(id: String)
@@ -12,52 +13,55 @@ const PREVIEW_YAW := deg_to_rad(18.0)
 const SHOWCASE_CLIP := "idle_foldarms"
 var definition: Resource
 var selected := false
+## Carta grande do carrossel (prévia maior).
+var featured := false
 var visual: Node3D
 var preview_ready := false
 
 func _ready() -> void:
-    custom_minimum_size.x = 390
-    var style := StyleBoxFlat.new()
-    style.bg_color = Color("#1b3035")
-    style.border_color = Color("#b8ca91") if selected else Color("#3a565b")
-    style.set_border_width_all(2 if selected else 1)
-    style.set_corner_radius_all(10)
-    for edge in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
-        style.set_content_margin(edge, 16)
+    # Mesmo visual do menu principal (scripts/ui/ui_theme.gd).
+    custom_minimum_size.x = 0 if featured else 390
+    var style := UiTheme.card(18 if featured else 16)
+    if selected:
+        style.border_color = UiTheme.ACCENT
+        style.set_border_width_all(2)
+        style.shadow_color = Color(UiTheme.ACCENT, 0.18)
     add_theme_stylebox_override("panel", style)
     var column := VBoxContainer.new()
     column.add_theme_constant_override("separation", 10)
     add_child(column)
-    var title := Label.new()
-    title.text = definition.display_name
-    title.add_theme_font_size_override("font_size", 21)
-    column.add_child(title)
+    var head := HBoxContainer.new()
+    head.add_theme_constant_override("separation", 10)
+    column.add_child(head)
+    var title := UiTheme.title(definition.display_name, 26 if featured else 21)
+    title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    head.add_child(title)
     _build_preview(column)
-    var description := Label.new()
-    description.text = definition.description
-    description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-    description.custom_minimum_size.y = 44
-    description.add_theme_font_size_override("font_size", 14)
-    column.add_child(description)
-    var state := Label.new()
+    var state := UiTheme.caps("✓ Seu personagem" if selected else "Disponível", 12, UiTheme.ACCENT if selected else UiTheme.DIM)
     state.name = "SelectionState"
-    state.text = "✓ SELECIONADO" if selected else "Disponível"
+    state.size_flags_vertical = Control.SIZE_SHRINK_CENTER
     if not preview_ready:
-        state.text = "Recursos indisponíveis — escolha o Jaime Original"
-    state.add_theme_color_override("font_color", Color("#c8dca1") if selected else Color("#a6bbc0"))
-    state.add_theme_font_size_override("font_size", 14)
-    column.add_child(state)
+        state.text = "Recursos indisponíveis"
+        state.add_theme_color_override("font_color", UiTheme.DANGER)
+    head.add_child(state)
+    var description := UiTheme.label(definition.description, 14, UiTheme.MUTED)
+    description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+    description.custom_minimum_size = Vector2(0, 40)
+    if featured:
+        description.custom_minimum_size.x = 330
+    column.add_child(description)
     var button := Button.new()
     button.name = "Select_" + definition.id
     button.text = "Selecionado" if selected else "Selecionar"
-    button.custom_minimum_size.y = 44
+    button.custom_minimum_size.y = 46
     button.disabled = selected or not preview_ready
+    UiTheme.primary(button, 16)
     button.pressed.connect(func(): selection_requested.emit(definition.id))
     column.add_child(button)
 
 func _build_preview(column: VBoxContainer) -> void:
     var container := SubViewportContainer.new()
-    container.custom_minimum_size = Vector2(300, 250)
+    container.custom_minimum_size = Vector2(330, 300) if featured else Vector2(300, 250)
     container.stretch = true
     container.mouse_filter = Control.MOUSE_FILTER_IGNORE
     column.add_child(container)
@@ -72,7 +76,7 @@ func _build_preview(column: VBoxContainer) -> void:
     var environment := WorldEnvironment.new()
     var settings := Environment.new()
     settings.background_mode = Environment.BG_COLOR
-    settings.background_color = Color("#0d1b22")
+    settings.background_color = UiTheme.PANEL_SOLID
     settings.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
     settings.ambient_light_color = Color("#b2c2cd")
     settings.ambient_light_energy = 0.7

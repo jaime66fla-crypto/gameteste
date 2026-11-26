@@ -10,6 +10,7 @@ var settings: Dictionary
 var content: VBoxContainer
 var status: Label
 var menu_card: PanelContainer
+var page_style: StyleBoxFlat
 var page_width := 430.0
 var selection_feedback: Label
 
@@ -104,6 +105,7 @@ func _ready() -> void:
     panel.content_margin_top = 30
     panel.content_margin_bottom = 28
     card.add_theme_stylebox_override("panel",panel)
+    page_style = panel
     center.add_child(card)
     content = VBoxContainer.new()
     content.add_theme_constant_override("separation",14)
@@ -294,6 +296,7 @@ func _clear() -> void:
         hub = null
     if shell != null:
         shell.visible = true
+    _set_page_bare(false)
 
 func _label(text: String, font_size: int = 16, color: Color = Color("#d6dfd9"), parent: Node = null) -> Label:
     var label := Label.new()
@@ -1070,12 +1073,39 @@ func _set_page_width(width: float) -> void:
     if menu_card:
         menu_card.custom_minimum_size.x = minf(width, get_viewport_rect().size.x - 48)
 
+## Carrossel de personagens: um por vez, no centro, com setas (e ←/→ no teclado).
+var character_index := -1
+var character_stage: CenterContainer
+var character_dots: HBoxContainer
+var character_counter: Label
+const VAULT_WIDTH := 310.0
+
+## Sem o painel escuro da página: o conteúdo fica direto sobre a fumaça e as
+## brasas do fundo, como no menu principal.
+func _set_page_bare(bare: bool) -> void:
+    if menu_card == null or page_style == null:
+        return
+    var style: StyleBox = page_style
+    if bare:
+        style = StyleBoxEmpty.new()
+        for edge in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+            style.set_content_margin(edge, page_style.get_content_margin(edge))
+    menu_card.add_theme_stylebox_override("panel", style)
+
 func _show_characters() -> void:
     _clear()
     _set_page_width(1280.0)
-    _label("PERSONAGENS", 28, Color("#f0f2e9"))
-    _label("Escolha seu personagem. A seleção fica salva para a próxima partida.", 15)
-    # Cofre de roupas (vitrines) à esquerda, cartas dos personagens à direita.
+    _set_page_bare(true)
+    _screen_header("Escolha seu sobrevivente", "Personagens", "Use as setas para ver cada personagem. A seleção fica salva para a próxima partida.")
+    var characters := CharacterRegistry.all_characters()
+    var selected_id := CharacterRegistry.load_selection()
+    if character_index < 0 or character_index >= characters.size():
+        character_index = 0
+        for i in characters.size():
+            if characters[i].id == selected_id:
+                character_index = i
+    # Cofre de roupas à esquerda; o personagem fica no centro da página
+    # (um espaçador do mesmo tamanho do cofre à direita equilibra a linha).
     var row := HBoxContainer.new()
     row.name = "CharactersRow"
     row.add_theme_constant_override("separation", 20)
@@ -1085,23 +1115,123 @@ func _show_characters() -> void:
     vault.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     vault.outfit_changed.connect(_on_outfit_changed)
     row.add_child(vault)
-    var cards := HFlowContainer.new()
-    cards.name = "CharacterCards"
-    cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-    cards.add_theme_constant_override("h_separation", 20)
-    cards.add_theme_constant_override("v_separation", 16)
-    row.add_child(cards)
-    var selected_id := CharacterRegistry.load_selection()
-    for definition in CharacterRegistry.all_characters():
-        var card := CharacterCard.new()
-        card.name = "CharacterCard_" + definition.id
-        card.definition = definition
-        card.selected = definition.id == selected_id
-        card.selection_requested.connect(_select_character)
-        cards.add_child(card)
-    selection_feedback = _label("", 14)
+    var carousel := VBoxContainer.new()
+    carousel.name = "CharacterCarousel"
+    carousel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    carousel.add_theme_constant_override("separation", 12)
+    row.add_child(carousel)
+    var stage_row := HBoxContainer.new()
+    stage_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    stage_row.add_theme_constant_override("separation", 12)
+    carousel.add_child(stage_row)
+    stage_row.add_child(_carousel_arrow("‹", "PrevCharacter", -1))
+    character_stage = CenterContainer.new()
+    character_stage.name = "CharacterCards"
+    stage_row.add_child(character_stage)
+    stage_row.add_child(_carousel_arrow("›", "NextCharacter", 1))
+    var pager := HBoxContainer.new()
+    pager.alignment = BoxContainer.ALIGNMENT_CENTER
+    pager.add_theme_constant_override("separation", 14)
+    carousel.add_child(pager)
+    character_dots = HBoxContainer.new()
+    character_dots.name = "CharacterDots"
+    character_dots.add_theme_constant_override("separation", 8)
+    pager.add_child(character_dots)
+    character_counter = _plain("", 12, MUTED, caps_font)
+    character_counter.name = "CharacterCounter"
+    pager.add_child(character_counter)
+    if get_viewport_rect().size.x >= 1180.0:
+        var balance := Control.new()
+        balance.custom_minimum_size.x = VAULT_WIDTH
+        balance.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        row.add_child(balance)
+        vault.resized.connect(func(): balance.custom_minimum_size.x = vault.size.x)
+    selection_feedback = _plain("", 14, Color("#e0705e"))
     selection_feedback.name = "SelectionFeedback"
-    _button("Voltar", "BackButton", _show_main)
+    selection_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+    content.add_child(selection_feedback)
+    _ghost(_button("Voltar", "BackButton", func():
+        character_index = -1
+        _show_main()))
+    _show_character_at(character_index)
+
+## Seta redonda do carrossel, no estilo dos botões do menu (acende em laranja).
+func _carousel_arrow(glyph: String, node_name: String, step: int) -> Button:
+    var arrow := Button.new()
+    arrow.name = node_name
+    arrow.text = glyph
+    arrow.focus_mode = Control.FOCUS_NONE
+    arrow.custom_minimum_size = Vector2(54, 54)
+    arrow.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    arrow.tooltip_text = "Personagem anterior" if step < 0 else "Próximo personagem"
+    arrow.add_theme_font_size_override("font_size", 34)
+    if title_font != null:
+        arrow.add_theme_font_override("font", title_font)
+    for state in ["normal","hover","pressed","focus","disabled"]:
+        var box := _box(Color(1, 1, 1, 0.05), Color(1, 1, 1, 0.14), 1, 27)
+        box.content_margin_bottom = 6 # o glifo ‹ › fica alto na Inter
+        if state == "hover" or state == "focus":
+            box.bg_color = Color(ACCENT, 0.16)
+            box.border_color = ACCENT
+            box.set_border_width_all(2)
+        elif state == "pressed":
+            box.bg_color = Color(ACCENT, 0.3)
+            box.border_color = ACCENT_HOT
+        arrow.add_theme_stylebox_override(state, box)
+    arrow.add_theme_color_override("font_color", TEXT)
+    for state in ["font_hover_color","font_pressed_color"]:
+        arrow.add_theme_color_override(state, ACCENT)
+    arrow.pressed.connect(_step_character.bind(step))
+    return arrow
+
+func _step_character(step: int) -> void:
+    var count := CharacterRegistry.all_characters().size()
+    if count == 0 or not is_instance_valid(character_stage):
+        return
+    _show_character_at(posmod(character_index + step, count))
+
+## Troca só a carta do centro (o cofre de roupas e o resto da tela ficam).
+func _show_character_at(index: int) -> void:
+    var characters := CharacterRegistry.all_characters()
+    if characters.is_empty() or not is_instance_valid(character_stage):
+        return
+    character_index = clampi(index, 0, characters.size() - 1)
+    for child in character_stage.get_children():
+        character_stage.remove_child(child)
+        child.queue_free()
+    var definition: Resource = characters[character_index]
+    var selected_id := CharacterRegistry.load_selection()
+    var card := CharacterCard.new()
+    card.name = "CharacterCard_" + definition.id
+    card.definition = definition
+    card.selected = definition.id == selected_id
+    card.featured = true
+    card.selection_requested.connect(_select_character)
+    character_stage.add_child(card)
+    for child in character_dots.get_children():
+        child.queue_free()
+    for i in characters.size():
+        var dot := Panel.new()
+        var current := i == character_index
+        var mine: bool = characters[i].id == selected_id
+        dot.custom_minimum_size = Vector2(22 if current else 8, 8)
+        dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+        dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        var color := ACCENT if current else (Color(ACCENT, 0.45) if mine else Color(1, 1, 1, 0.18))
+        dot.add_theme_stylebox_override("panel", _box(color, Color.TRANSPARENT, 0, 4))
+        character_dots.add_child(dot)
+    character_counter.text = "%d / %d" % [character_index + 1, characters.size()]
+
+## ←/→ trocam o personagem antes da navegação de foco da GUI pegar as setas.
+func _carousel_input(event: InputEvent) -> bool:
+    if not is_instance_valid(character_stage) or not character_stage.is_inside_tree():
+        return false
+    var step := -1 if event.is_action_pressed("ui_left") else (1 if event.is_action_pressed("ui_right") else 0)
+    if step == 0:
+        return false
+    get_viewport().set_input_as_handled()
+    _step_character(step)
+    return true
 
 ## A carta do 01 troca de roupa junto com a vitrine.
 func _on_outfit_changed(pieces: PackedStringArray) -> void:
@@ -2897,6 +3027,7 @@ func _control_row(action: String, title: String) -> HBoxContainer:
 ## Captura a nova tecla enquanto uma ação espera (antes de qualquer outro uso do evento).
 func _input(event: InputEvent) -> void:
     if _capturing_action.is_empty():
+        _carousel_input(event)
         return
     if event is InputEventKey and event.pressed and event.physical_keycode == KEY_ESCAPE:
         get_viewport().set_input_as_handled()
