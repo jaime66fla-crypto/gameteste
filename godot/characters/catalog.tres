@@ -1,9 +1,10 @@
-[gd_resource type="Resource" load_steps=6 format=3]
+[gd_resource type="Resource" load_steps=7 format=3]
 [ext_resource type="Script" path="res://scripts/characters/character_catalog.gd" id="1"]
 [ext_resource type="Resource" path="res://characters/avatar.tres" id="2"]
 [ext_resource type="Resource" path="res://characters/remy.tres" id="3"]
 [ext_resource type="Resource" path="res://characters/manequim.tres" id="4"]
 [ext_resource type="Resource" path="res://characters/pato.tres" id="5"]
+[ext_resource type="Resource" path="res://characters/01.tres" id="6"]
 [resource]
 script = ExtResource("1")
-entries = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5")])
+entries = Array[Resource]([ExtResource("2"), ExtResource("3"), ExtResource("4"), ExtResource("5"), ExtResource("6")])

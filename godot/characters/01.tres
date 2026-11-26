@@ -1,0 +1,15 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "01"
+display_name = "01"
+description = "Humano low-poly magro e facetado, com pele humana (MakeHuman). Base para roupas/skins."
+visual_scene = "res://scenes/characters/01.tscn"
+required_resources = PackedStringArray("res://assets/personagens/01/01_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
+fp_sleeve = Color(0.85, 0.67, 0.57, 1)
+fp_sleeve_style = "none"
+fp_skin = Color(0.85, 0.67, 0.57, 1)
+fp_gloves = false

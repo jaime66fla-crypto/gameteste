@@ -8,10 +8,20 @@ extends SceneTree
 ## - skin bind poses recomputed so the mesh rests exactly where it was.
 ## Output: assets/personagens/manequim/manequim_modelo.scn
 ## godot --headless --path godot --script res://tools/characters/build_mannequin_model.gd
-const SOURCE := "res://assets/personagens/ual2/UAL2_Standard.glb"
+## "-- --id=01": same conversion for character 01 (tools/blender/build_01.py ->
+## assets/personagens/01/01.glb, MPFB human whose rig already has Mixamo names).
+var SOURCE := "res://assets/personagens/ual2/UAL2_Standard.glb"
 const REFERENCE := "res://assets/personagens/downloaded/avatar.fbx"
-const OUT_DIR := "res://assets/personagens/manequim"
-const OUT_SCENE := "res://assets/personagens/manequim/manequim_modelo.scn"
+var OUT_DIR := "res://assets/personagens/manequim"
+var OUT_SCENE := "res://assets/personagens/manequim/manequim_modelo.scn"
+## Source rig already uses Mixamo bone names with this prefix ("" = UAL2 names).
+var SOURCE_PREFIX := ""
+## Single flat colour for every surface (alpha 0 = keep the source materials).
+var ALBEDO := Color(0, 0, 0, 0)
+## Skin texture for surfaces whose material is named "Pele*" (character 01:
+## MPFB skin baked in the MakeHuman UV layout; clothing skins can replace it).
+var SKIN_TEXTURE := ""
+var MODEL_NAME := "Manequim"
 const REF_PREFIX := "mixamorig9_"
 const PREFIX := "mixamorig_"
 const BONE_MAP := {
@@ -23,14 +33,25 @@ const BONE_MAP := {
 }
 const FINGERS := {"Thumb": "thumb", "Index": "index", "Middle": "middle", "Ring": "ring", "Pinky": "pinky"}
 ## Plastic look of the example mannequin: yellow shell, purple joints.
-const ROUGHNESS := 0.42
-const SPECULAR := 0.55
+var ROUGHNESS := 0.42
+var SPECULAR := 0.55
 
 func _initialize() -> void:
+	if "--id=01" in OS.get_cmdline_user_args():
+		SOURCE = "res://assets/personagens/01/01.glb"
+		OUT_DIR = "res://assets/personagens/01"
+		OUT_SCENE = "res://assets/personagens/01/01_modelo.scn"
+		SOURCE_PREFIX = "mixamorig_"
+		SKIN_TEXTURE = "res://assets/personagens/01/pele.png"
+		MODEL_NAME = "01"
+		ROUGHNESS = 0.68 # pele: fosca, sem brilho de plástico
+		SPECULAR = 0.35
 	var ok := _build()
 	quit(0 if ok else 1)
 
 func _source_name(suffix: String) -> String:
+	if not SOURCE_PREFIX.is_empty():
+		return SOURCE_PREFIX + suffix
 	if BONE_MAP.has(suffix):
 		return BONE_MAP[suffix]
 	for side in ["Left", "Right"]:
@@ -66,7 +87,7 @@ func _build() -> bool:
 		return false
 	# Turn the mannequin so it faces like the Mixamo reference (+Z).
 	var Clips = load("res://tools/characters/build_ual2_clips.gd")
-	var s_fwd: Vector3 = Clips.forward_of(src, "thigh_l", "thigh_r", "foot_l", "ball_l")
+	var s_fwd: Vector3 = Clips.forward_of(src, _source_name("LeftUpLeg"), _source_name("RightUpLeg"), _source_name("LeftFoot"), _source_name("LeftToeBase"))
 	var r_fwd: Vector3 = Clips.forward_of(ref, REF_PREFIX + "LeftUpLeg", REF_PREFIX + "RightUpLeg", REF_PREFIX + "LeftFoot", REF_PREFIX + "LeftToeBase")
 	var align := Transform3D(Basis(Vector3.UP, atan2(s_fwd.cross(r_fwd).y, s_fwd.dot(r_fwd))), Vector3.ZERO)
 	var count := ref.get_bone_count()
@@ -83,7 +104,7 @@ func _build() -> bool:
 	for b in src.get_bone_count():
 		src_height = maxf(src_height, (align * src.get_bone_global_rest(b).origin).y)
 	# Body size from the hip height (the top joint differs: Ch31 has HeadTop_End).
-	var size_ratio := (align * src.get_bone_global_rest(src.find_bone("pelvis")).origin).y / ref.get_bone_global_rest(ref.find_bone(REF_PREFIX + "Hips")).origin.y
+	var size_ratio := (align * src.get_bone_global_rest(src.find_bone(_source_name("Hips"))).origin).y / ref.get_bone_global_rest(ref.find_bone(REF_PREFIX + "Hips")).origin.y
 	# Joint positions: the mannequin's; bones it lacks (HeadTop_End) follow the
 	# reference offset from their parent, scaled to the mannequin's size.
 	for b in count:
@@ -141,21 +162,30 @@ func _build() -> bool:
 		var rest_vertex_space := align * src.get_bone_global_rest(sb) * src_skin.get_bind_pose(i)
 		skin.add_named_bind(skeleton.get_bone_name(nb), globals[nb].affine_inverse() * rest_vertex_space)
 	var model := Node3D.new()
-	model.name = "ManequimModelo"
+	model.name = MODEL_NAME + "Modelo"
 	model.add_child(skeleton)
 	skeleton.owner = model
 	var mi := MeshInstance3D.new()
-	mi.name = "Manequim"
+	mi.name = MODEL_NAME
 	var mesh := mesh_node.mesh.duplicate() as ArrayMesh
 	for s in mesh.get_surface_count():
 		var source_mat := mesh.surface_get_material(s) as BaseMaterial3D
 		var mat := StandardMaterial3D.new()
-		mat.resource_name = "Manequim_%d" % s
-		if source_mat != null:
+		mat.resource_name = "%s_%d" % [MODEL_NAME, s]
+		if ALBEDO.a > 0.0:
+			mat.albedo_color = ALBEDO
+		elif source_mat != null:
 			mat.albedo_color = source_mat.albedo_color
 			mat.albedo_texture = source_mat.albedo_texture
 			print("material %d: cor %s textura %s" % [s, source_mat.albedo_color, source_mat.albedo_texture != null])
 		mat.roughness = ROUGHNESS
+		if source_mat != null and not SKIN_TEXTURE.is_empty() and source_mat.resource_name.begins_with("Pele"):
+			mat.resource_name = source_mat.resource_name
+			mat.albedo_color = Color.WHITE
+			mat.albedo_texture = load(SKIN_TEXTURE)
+		elif source_mat != null and source_mat.resource_name.begins_with("Olho"):
+			mat.resource_name = source_mat.resource_name
+			mat.roughness = 0.25 # olho úmido, com reflexo
 		mat.metallic_specular = SPECULAR
 		mesh.surface_set_material(s, mat)
 	mi.mesh = mesh
