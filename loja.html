@@ -114,6 +114,16 @@ dialog .msg { margin-top: .6rem; }
 #pixImg { display: block; margin: 0 auto .8rem; width: 220px; height: 220px; background: #fff; padding: 8px; border-radius: 4px; }
 #pixImg[hidden] { display: none; }
 #pixCode { width: 100%; resize: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .5rem; font: 12px/1.4 var(--mono); word-break: break-all; }
+.btn.small { padding: .55em .9em; font-size: .85rem; }
+.btn.ghost { background: transparent; color: var(--ember); }
+.btn.ghost:hover:not(:disabled) { background: rgba(255,122,26,.12); }
+.hist { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.hist li { background: var(--panel-2); padding: .6rem .75rem; display: grid; grid-template-columns: 1fr auto; gap: .1rem .8rem; align-items: baseline; }
+.hist .what { font-weight: 600; }
+.hist .when { font: 500 11px var(--mono); color: var(--muted); }
+.hist .price { font: 700 1rem var(--display); color: var(--ember); text-align: right; }
+.hist .st { font: 500 10.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; text-align: right; color: var(--muted); }
+.hist .st.pago { color: var(--ok); } .hist .st.aguardando { color: var(--ember); } .hist .st.reembolsado, .hist .st.cancelado { color: var(--flame); }
 .pix-ok { margin: 0 0 .3rem; font: 900 1.6rem/1 var(--display); text-transform: uppercase; color: var(--ok); }
 
 @media (max-width: 900px) { .packs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .info { grid-template-columns: 1fr; } }
@@ -145,6 +155,12 @@ dialog .msg { margin-top: .6rem; }
     <li><span><b>Escolha</b> um pacote de Brasas.</span></li>
     <li><span><b>Pague o PIX</b> no app do seu banco. As Brasas caem na conta na hora.</span></li>
   </ol>
+
+  <dialog id="histDialog" aria-labelledby="histTitle">
+    <div class="pix-head"><h2 id="histTitle">Suas compras</h2><button class="link" type="button" data-close-hist aria-label="Fechar">Fechar</button></div>
+    <p class="msg" id="histMsg" role="status"></p>
+    <ul class="hist" id="histList"></ul>
+  </dialog>
 
   <dialog id="pixDialog" aria-labelledby="pixTitle">
     <div class="pix-head"><h2 id="pixTitle">PIX</h2><button class="link" type="button" data-close aria-label="Fechar">Fechar</button></div>
@@ -179,7 +195,7 @@ dialog .msg { margin-top: .6rem; }
       </div>
       <button class="btn" type="submit" id="loginBtn">Entrar</button>
     </form>
-    <div class="who" id="who" hidden><b id="whoName"></b><span class="bal">saldo <strong id="whoBal">0</strong> Brasas</span><button class="link" type="button" id="logout">Sair</button></div>
+    <div class="who" id="who" hidden><b id="whoName"></b><span class="bal">saldo <strong id="whoBal">0</strong> Brasas</span><button class="btn ghost small" type="button" id="histBtn">Histórico de compras</button><button class="link" type="button" id="logout">Sair</button></div>
     <p class="msg" id="msg" role="status"></p>
   </section>
 
@@ -343,6 +359,28 @@ dialog .msg { margin-top: .6rem; }
     }
     if (run === watching) $("pixWait").textContent = "Este PIX expirou. Feche e gere outro.";
   }
+
+  // ---- Histórico de compras de Brasas ----
+  const hist = $("histDialog");
+  const STATUS = { pago: "Pago", aguardando: "Aguardando PIX", expirado: "Expirado", cancelado: "Cancelado", reembolsado: "Reembolsado" };
+  const when = (ms) => new Date(ms).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  $("histBtn").addEventListener("click", async () => {
+    const list = $("histList"); list.replaceChildren();
+    $("histMsg").textContent = "Carregando…"; $("histMsg").className = "msg";
+    hist.showModal();
+    try {
+      const d = await api("/pay/history");
+      setSession(token, d.profile);
+      $("histMsg").textContent = d.orders.length ? "" : "Você ainda não comprou Brasas.";
+      for (const o of d.orders) {
+        const li = el("li");
+        li.append(el("span", "what", num(o.brasas) + " Brasas"), el("span", "price", brl(o.cents)),
+          el("span", "when", when(o.at)), el("span", "st " + o.status, STATUS[o.status] || o.status));
+        list.append(li);
+      }
+    } catch (e) { $("histMsg").textContent = e.message; $("histMsg").className = "msg err"; }
+  });
+  for (const b of document.querySelectorAll("[data-close-hist]")) b.addEventListener("click", () => hist.close());
 
   (async () => {
     if (token) { try { const d = await api("/me"); setSession(token, d.profile); } catch (_) { setSession("", null); } }
