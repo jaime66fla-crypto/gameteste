@@ -225,7 +225,9 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_play_clip("idle_with_rifle", 1.0)
 		_finish_pose()
 		return
-	if not armed:
+	if not armed or (showcase_ready and not moving):
+		# Vitrine armada: corpo em pé e reto (idle sem arma); só os braços vão
+		# para a arma (_showcase_ready_mount). O clipe armado é torto de frente.
 		_play_unarmed(moving, running, planar_velocity)
 		_finish_pose()
 		return
@@ -1985,6 +1987,9 @@ func _update_weapon_mount() -> void:
 		weapon_mount.transform = chest * Transform3D(Basis(Vector3.UP, PI), Vector3(0.0, -0.08, -0.08))
 	if not armed or not is_instance_valid(bound_weapon):
 		return
+	if showcase_ready:
+		_showcase_ready_mount()
+		return
 	if aim_weight > 0.001 and current_clip not in ["punch", "elbow_punch"]:
 		_aim_mount()
 	for side in ["Right", "Left"]:
@@ -2135,6 +2140,57 @@ static func _segment_distance(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3
 
 ## Turn the mount so the barrel (-Z of the weapon model) points from the muzzle
 ## to the aim target, pivoting on the trigger grip so the hand stays put.
+# ------------------------------------------------------------- vitrine ---
+# Pose tática da vitrine (Cofre): "low ready". Coronha no ombro direito, cano
+# à frente e um pouco para baixo, cruzando o corpo; as duas mãos na arma.
+# A pistola fica no "compressed ready", com as duas mãos, junto ao peito.
+var showcase_ready := false
+const SHOWCASE_DOWN := deg_to_rad(30.0)   # cano abaixo da horizontal
+const SHOWCASE_INWARD := deg_to_rad(8.0) # cano cruzando para a esquerda
+
+func _showcase_ready_mount() -> void:
+	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
+	var grip := bound_weapon.get_node_or_null("RightGrip") as Marker3D
+	var shoulder_bone := Grip._bone(skeleton, "RightArm")
+	var chest_bone := Grip._bone(skeleton, "Spine2")
+	if muzzle == null or grip == null or shoulder_bone < 0 or chest_bone < 0:
+		return
+	var is_pistol := weapon_id == "pistol"
+	# Eixos do personagem no mundo (o modelo olha para +Z do esqueleto).
+	var up := skeleton.global_basis.y.normalized()
+	var forward := skeleton.global_basis.z.normalized()
+	var left := up.cross(forward).normalized()
+	var shoulder := skeleton.to_global(skeleton.get_bone_global_pose(shoulder_bone).origin)
+	var chest := skeleton.to_global(skeleton.get_bone_global_pose(chest_bone).origin)
+	var down := SHOWCASE_DOWN * (1.4 if is_pistol else 1.0)
+	var inward := SHOWCASE_INWARD * (1.6 if is_pistol else 1.0)
+	var barrel := (forward.rotated(up, inward)).rotated(left, down).normalized()
+	# Base da arma: -Z no cano e +Y para cima (como _aim_mount entende a arma).
+	var weapon_up := (up - barrel * barrel.dot(up)).normalized()
+	var target := Basis(weapon_up.cross(-barrel).normalized(), weapon_up, -barrel)
+	var local := weapon_mount.global_basis.inverse() * bound_weapon.global_basis
+	weapon_mount.global_basis = target * local.orthonormalized().inverse()
+	# Mão do gatilho: pistola na frente do peito; arma longa abaixo do ombro.
+	var hand: Vector3
+	if is_pistol:
+		hand = chest + forward * 0.36 + left * 0.02 - up * 0.04
+	else:
+		# Arma longa (sniper, escopeta): mais à frente, senão a coronha entra no ombro.
+		var length := float((bound_weapon.get_meta("dimensions_m", Vector3(0, 0, 0.8)) as Vector3).z)
+		hand = shoulder + forward * (0.30 + maxf(length - 0.8, 0.0) * 0.5) - up * 0.22 - left * 0.02
+	weapon_mount.global_position += hand - grip.global_position
+	for side in ["Right", "Left"]:
+		var source := bound_weapon.get_node_or_null(side + "Grip") as Marker3D
+		if source:
+			weapon_mount.get_node(side + "Grip").position = weapon_mount.to_local(source.global_position)
+	var sides: Array[String] = ["Right"]
+	if bound_weapon.get_node_or_null("LeftGrip") != null:
+		sides.append("Left")
+	for side in sides:
+		Grip.solve(skeleton, weapon_mount, side, true)
+	if sides.size() == 1:
+		_relax_left_arm()
+
 func _aim_mount() -> void:
 	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
 	var grip := bound_weapon.get_node_or_null("RightGrip") as Marker3D

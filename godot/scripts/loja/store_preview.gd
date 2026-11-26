@@ -1,4 +1,4 @@
-extends SubViewportContainer
+extends "res://scripts/ui/sharp_viewport.gd"
 ## Prévia 3D de um item da loja (data/store.json), usada na Loja e no Cofre:
 ## personagem parado de braços cruzados, arma com a skin girando ou a peça de
 ## roupa do 01 com a skin girando num pedestal escuro.
@@ -15,17 +15,12 @@ var _spinner: Node3D
 var _visual: Node3D
 
 func _init(id: String = "", size: Vector2 = Vector2(96, 96)) -> void:
+	super()
 	item_id = id
 	custom_minimum_size = size
-	stretch = true
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
 
 func _ready() -> void:
-	var viewport := SubViewport.new()
-	viewport.own_world_3d = true
-	viewport.msaa_3d = Viewport.MSAA_2X
-	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
-	add_child(viewport)
+	super() # SubViewport nítido (scripts/ui/sharp_viewport.gd)
 	var world := Node3D.new()
 	viewport.add_child(world)
 	_lights(world)

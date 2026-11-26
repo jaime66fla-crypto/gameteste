@@ -4,6 +4,7 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const WeaponVisuals = preload("res://scripts/weapon_visuals.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
+const SharpViewport = preload("res://scripts/ui/sharp_viewport.gd")
 signal selection_requested(id: String)
 ## Botões de arma da carta do Cofre: equipar/guardar e trocar a arma da prévia.
 signal weapon_toggle_requested
@@ -24,7 +25,7 @@ var weapon_id := ""
 ## Mostra "Equipar arma" e a troca de arma (só a carta do Cofre).
 var weapon_controls := false
 ## Mais de lado quando armado: a pose de mira de frente fica torta.
-const ARMED_YAW := deg_to_rad(38.0)
+const ARMED_YAW := deg_to_rad(30.0)
 const WEAPON_NAMES := {"pistol": "Pistola", "smg": "Submetralhadora", "shotgun": "Escopeta", "rifle": "Fuzil", "sniper": "Sniper"}
 var visual: Node3D
 var preview_ready := false
@@ -93,10 +94,8 @@ func _build_preview(column: VBoxContainer) -> void:
     var stack := MarginContainer.new()
     stack.name = "PreviewStack"
     column.add_child(stack)
-    var container := SubViewportContainer.new()
+    var container := SharpViewport.new()
     container.custom_minimum_size = Vector2(360, 330) if featured else Vector2(300, 250)
-    container.stretch = true
-    container.mouse_filter = Control.MOUSE_FILTER_IGNORE
     stack.add_child(container)
     if weapon_controls and not weapon_id.is_empty():
         var cycle := Button.new()
@@ -115,12 +114,7 @@ func _build_preview(column: VBoxContainer) -> void:
             corner.add_theme_constant_override(side, 10)
         stack.add_child(corner)
         corner.add_child(cycle)
-    var viewport := SubViewport.new()
-    viewport.name = "PreviewViewport"
-    viewport.own_world_3d = true
-    viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
-    viewport.msaa_3d = Viewport.MSAA_2X
-    container.add_child(viewport)
+    var viewport := container.viewport # nítido na resolução real da tela
     var world := Node3D.new()
     viewport.add_child(world)
     var environment := WorldEnvironment.new()
@@ -203,9 +197,9 @@ func _arm_preview(id: String) -> bool:
     visual.configure_weapon(id, weapon.scale.x)
     visual.call("bind_weapon", weapon)
     visual.call("set_armed", true)
-    if visual.has_method("set_aim_target"):
-        # Mira à frente do personagem, na altura do peito: arma erguida.
-        visual.call("set_aim_target", visual.global_transform * Vector3(0.0, 1.4, -10.0), true)
+    if "showcase_ready" in visual:
+        # Pose tática de vitrine ("low ready", downloaded_avatar.gd).
+        visual.set("showcase_ready", true)
     return true
 
 func _process(delta: float) -> void:
