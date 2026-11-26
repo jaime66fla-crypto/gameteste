@@ -103,6 +103,19 @@ input:disabled { opacity: .55; }
 .items li span:last-child { font: 500 .8rem var(--mono); color: var(--ember); white-space: nowrap; }
 .items li em { display: block; font-style: normal; font: 500 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ash); }
 
+dialog { width: min(420px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-top: 3px solid var(--ember); padding: 1.1rem 1.2rem 1.2rem; }
+dialog::backdrop { background: rgba(10,8,8,.75); }
+dialog .btn { width: 100%; margin-top: .7rem; }
+dialog .msg { margin-top: .6rem; }
+.pix-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; margin-bottom: .8rem; }
+.pix-head h2 { margin: 0; font: 900 1.5rem/1 var(--display); text-transform: uppercase; }
+.pix-tip { margin: 0 0 .8rem; color: var(--muted); font-size: .9rem; }
+.pix-tip b { color: var(--fg); }
+#pixImg { display: block; margin: 0 auto .8rem; width: 220px; height: 220px; background: #fff; padding: 8px; border-radius: 4px; }
+#pixImg[hidden] { display: none; }
+#pixCode { width: 100%; resize: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .5rem; font: 12px/1.4 var(--mono); word-break: break-all; }
+.pix-ok { margin: 0 0 .3rem; font: 900 1.6rem/1 var(--display); text-transform: uppercase; color: var(--ok); }
+
 @media (max-width: 900px) { .packs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .info { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
   .steps { grid-template-columns: 1fr; }
@@ -118,20 +131,44 @@ input:disabled { opacity: .55; }
 <div class="wrap">
   <div class="top">
     <a class="back" href="./">← Campo de Fogo</a>
-    <span class="soon"><span class="dot"></span>PIX · cartão · Mercado Pago</span>
+    <span class="soon"><span class="dot"></span>Pague com PIX · qualquer banco</span>
   </div>
 
   <header class="hero">
     <h1>Loja de <span>Brasas</span></h1>
-    <p class="lede">Brasas são a moeda da sua conta no Campo de Fogo. Com elas você libera personagens, skins de armas e roupas na Loja do jogo. Pague com PIX ou cartão pelo Mercado Pago e as Brasas caem na sua conta.</p>
+    <p class="lede">Brasas são a moeda da sua conta no Campo de Fogo. Com elas você libera personagens, skins de armas e roupas na Loja do jogo. Pague com PIX pelo app de qualquer banco, sem cadastro, e as Brasas caem na sua conta.</p>
     <div class="notice" id="notice" role="status" hidden></div>
   </header>
 
   <ol class="steps" aria-label="Como vai funcionar">
     <li><span><b>Entre</b> com o mesmo nome e senha da sua conta do jogo.</span></li>
     <li><span><b>Escolha</b> um pacote de Brasas.</span></li>
-    <li><span><b>Pague</b> e as Brasas caem na sua conta. Aparecem no jogo na hora.</span></li>
+    <li><span><b>Pague o PIX</b> no app do seu banco. As Brasas caem na conta na hora.</span></li>
   </ol>
+
+  <dialog id="pixDialog" aria-labelledby="pixTitle">
+    <div class="pix-head"><h2 id="pixTitle">PIX</h2><button class="link" type="button" data-close aria-label="Fechar">Fechar</button></div>
+    <form id="pixAskForm" novalidate>
+      <div id="pixAsk">
+        <label for="pixEmail">Seu e-mail (para o comprovante)</label>
+        <input id="pixEmail" type="email" autocomplete="email" maxlength="120" placeholder="voce@exemplo.com">
+        <button class="btn" type="submit" id="pixGo">Gerar PIX</button>
+        <p class="msg" id="pixMsg" role="status"></p>
+      </div>
+    </form>
+    <div id="pixPay" hidden>
+      <p class="pix-tip">Abra o app do seu banco, escolha <b>PIX → Ler QR Code</b> ou <b>PIX Copia e Cola</b>.</p>
+      <img id="pixImg" alt="QR Code do PIX" width="220" height="220">
+      <textarea id="pixCode" readonly rows="3" aria-label="Código PIX copia e cola"></textarea>
+      <button class="btn" type="button" id="pixCopy">Copiar código</button>
+      <p class="msg" id="pixWait" role="status"></p>
+    </div>
+    <div id="pixDone" hidden>
+      <p class="pix-ok">Pagamento aprovado!</p>
+      <p id="pixDoneText"></p>
+      <button class="btn" type="button" data-close>Fechar</button>
+    </div>
+  </dialog>
 
   <section class="account" aria-labelledby="accTitle">
     <h2 id="accTitle">Sua conta <small>Mesmo nome e senha do jogo</small></h2>
@@ -195,7 +232,7 @@ input:disabled { opacity: .55; }
       el("div", "price", brl(p.preco_centavos)));
     const b = el("button", "btn", "Comprar"); b.type = "button";
     b.setAttribute("aria-label", "Comprar " + num(p.brasas) + " Brasas por " + brl(p.preco_centavos));
-    b.addEventListener("click", () => buy(p, b));
+    b.addEventListener("click", () => buy(p));
     card.append(b);
     packs.append(card);
   });
@@ -245,36 +282,70 @@ input:disabled { opacity: .55; }
   });
   $("logout").addEventListener("click", () => { setSession("", null); say("Você saiu."); });
 
-  async function buy(p, button) {
+  // ---- PIX: o site mostra o QR Code; paga-se pelo app de qualquer banco. ----
+  const dlg = $("pixDialog");
+  let chosen = null, watching = 0;
+  const pixStep = (name) => { for (const s of ["pixAsk", "pixPay", "pixDone"]) $(s).hidden = s !== name; };
+  const pixMsg = (text, kind) => { $("pixMsg").textContent = text || ""; $("pixMsg").className = "msg" + (kind ? " " + kind : ""); };
+  const closePix = () => { watching++; if (dlg.open) dlg.close(); };
+
+  function buy(p) {
     if (!me) { say("Entre com a sua conta do jogo para comprar.", "err"); $("user").focus(); return; }
-    const label = button.textContent; button.disabled = true; button.textContent = "Abrindo…";
-    try { const d = await api("/pay/checkout", { pack: p.id }); location.href = d.url; }
-    catch (e) { say(e.message, "err"); button.disabled = false; button.textContent = label; }
+    chosen = p; watching++;
+    $("pixTitle").textContent = num(p.brasas) + " Brasas · " + brl(p.preco_centavos);
+    $("pixEmail").value = saved.get("cdf_email") || "";
+    pixMsg(""); pixStep("pixAsk"); $("pixGo").disabled = false;
+    dlg.showModal(); $("pixEmail").focus();
   }
 
-  // Volta do Mercado Pago: loja.html?pedido=<id>. Acompanha até o crédito cair (PIX pode demorar).
-  async function followOrder(id) {
-    notice("Conferindo", "o seu pagamento…");
-    for (let i = 0; i < 40; i++) {
+  $("pixAskForm").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const email = $("pixEmail").value.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(email)) { pixMsg("Digite um e-mail válido.", "err"); return; }
+    $("pixGo").disabled = true; pixMsg("Gerando o PIX…");
+    try {
+      const d = await api("/pay/pix", { pack: chosen.id, email });
+      saved.set("cdf_email", email);
+      $("pixImg").src = d.qrImage ? "data:image/png;base64," + d.qrImage : "";
+      $("pixImg").hidden = !d.qrImage;
+      $("pixCode").value = d.qr;
+      $("pixCopy").textContent = "Copiar código";
+      $("pixWait").textContent = "Aguardando o pagamento… vale por 30 minutos.";
+      pixStep("pixPay");
+      watchPix(d.order, ++watching);
+    } catch (e) { pixMsg(e.message, "err"); $("pixGo").disabled = false; }
+  });
+
+  $("pixCopy").addEventListener("click", async () => {
+    const code = $("pixCode").value;
+    try { await navigator.clipboard.writeText(code); } catch (_) { $("pixCode").select(); document.execCommand("copy"); }
+    $("pixCopy").textContent = "Copiado!";
+  });
+  for (const b of document.querySelectorAll("[data-close]")) b.addEventListener("click", closePix);
+  dlg.addEventListener("close", () => { watching++; });
+
+  async function watchPix(id, run) {
+    const until = Date.now() + 31 * 60000;
+    while (run === watching && Date.now() < until) {
+      await new Promise((r) => setTimeout(r, 4000));
+      if (run !== watching) return;
       try {
         const d = await api("/pay/order?id=" + encodeURIComponent(id));
         setSession(token, d.profile);
-        if (d.order.credited) { notice("Pagamento aprovado", "+" + num(d.order.brasas) + " Brasas na conta de " + d.profile.name + ". Já aparecem no jogo.", "ok"); return; }
-        if (["rejected", "cancelled", "erro", "valor_divergente"].includes(d.order.status)) { notice("Pagamento não aprovado", "nada foi cobrado. Tente de novo ou use outra forma de pagamento.", "err"); return; }
-        if (i === 3) notice("Aguardando", "a confirmação do Mercado Pago. No PIX, pague o código e deixe esta página aberta.");
-      } catch (e) {
-        if (!token) { notice("Entre de novo", "na sua conta para ver este pedido.", "err"); return; }
-        if (e.status === 404) { notice("Pedido não encontrado", "nesta conta. Entre com a conta que fez a compra.", "err"); return; }
-      }
-      await new Promise((r) => setTimeout(r, i < 10 ? 3000 : 8000));
+        if (d.order.credited) {
+          $("pixDoneText").textContent = "+" + num(d.order.brasas) + " Brasas na conta de " + d.profile.name + ". Já aparecem no jogo.";
+          pixStep("pixDone");
+          notice("Pagamento aprovado", "+" + num(d.order.brasas) + " Brasas na conta de " + d.profile.name + ".", "ok");
+          return;
+        }
+        if (["rejected", "cancelled", "expired", "erro", "valor_divergente"].includes(d.order.status)) { $("pixWait").textContent = "Este PIX expirou ou foi cancelado. Feche e gere outro."; return; }
+      } catch (_) {}
     }
-    notice("Ainda processando", "as Brasas caem na conta assim que o Mercado Pago confirmar. Pode fechar esta página.");
+    if (run === watching) $("pixWait").textContent = "Este PIX expirou. Feche e gere outro.";
   }
 
   (async () => {
     if (token) { try { const d = await api("/me"); setSession(token, d.profile); } catch (_) { setSession("", null); } }
-    const pedido = new URLSearchParams(location.search).get("pedido");
-    if (pedido && /^[0-9a-f]{24}$/.test(pedido)) followOrder(pedido);
   })();
 
   const cv = document.getElementById("embers");
