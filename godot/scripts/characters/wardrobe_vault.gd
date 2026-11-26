@@ -1,6 +1,7 @@
 extends PanelContainer
 ## Painel do Cofre (tela Cofre do menu): tudo o que a conta tem da loja, menos
-## os personagens (esses ficam no carrossel ao lado). Roupas do 01 com
+## os personagens (esses ficam no carrossel à esquerda). Ocupa o lado direito
+## da tela; as vitrines viram uma grade com quantas colunas couberem. Roupas do 01 com
 ## Vestir/Tirar e skins de armas com Equipar/Tirar, cada item numa vitrine com
 ## prévia 3D. O que falta comprar fica na Loja (scripts/loja/store_screen.gd).
 ## As escolhas ficam salvas (character_registry.gd) e o jogador local entra
@@ -9,38 +10,52 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const StorePreview = preload("res://scripts/loja/store_preview.gd")
-const CASE_SIZE := Vector2(88, 88)
-const LIST_HEIGHT := 560.0
+const CASE_SIZE := Vector2(104, 104)
+const LIST_HEIGHT := 240.0 # mínimo: a lista cresce até a altura da carta ao lado
+## Largura mínima de uma vitrine na grade (define quantas colunas cabem).
+const CASE_MIN_WIDTH := 260.0
 
 signal outfit_changed(pieces: PackedStringArray)
 signal store_requested
+## Skin de arma equipada/tirada (a prévia armada do personagem acompanha).
+signal weapon_skin_changed(weapon: String)
 
 var worn := PackedStringArray()
 var _cases := {} # id -> {"panel", "state", "button"}
 var _feedback: Label
 var _balance: Label
+var _grids: Array[GridContainer] = []
 
 func _ready() -> void:
 	custom_minimum_size.x = 340
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_theme_stylebox_override("panel", UiTheme.card(16))
 	worn = Registry.load_outfit()
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 10)
 	add_child(column)
 	column.add_child(UiTheme.caps("SEU COFRE", 12, UiTheme.ACCENT))
-	column.add_child(UiTheme.title("Roupas e skins", 22))
+	var head := HBoxContainer.new()
+	head.add_theme_constant_override("separation", 12)
+	column.add_child(head)
+	var title := UiTheme.title("Roupas e skins", 22)
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(title)
 	_balance = UiTheme.label("", 14, UiTheme.ACCENT, 700)
 	_balance.name = "BrasasBalance"
-	column.add_child(_balance)
+	_balance.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	head.add_child(_balance)
 	var scroll := ScrollContainer.new()
 	scroll.name = "VaultList"
 	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	scroll.custom_minimum_size.y = LIST_HEIGHT
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	column.add_child(scroll)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 8)
+	list.add_theme_constant_override("separation", 10)
 	scroll.add_child(list)
+	scroll.resized.connect(_fit_columns.bind(scroll))
 	_section(list, "skins_personagens", "ROUPAS DO 01", "")
 	_section(list, "skins_armas", "SKINS DE ARMAS", "Nenhuma skin de arma ainda. Compre na Loja com Brasas.")
 	var store := Button.new()
@@ -56,6 +71,7 @@ func _ready() -> void:
 	_feedback.custom_minimum_size.x = 300
 	column.add_child(_feedback)
 	_refresh()
+	_fit_columns.call_deferred(scroll)
 
 func _section(list: VBoxContainer, group: String, title: String, empty_text: String) -> void:
 	list.add_child(UiTheme.caps(title, 11, UiTheme.MUTED))
@@ -65,13 +81,28 @@ func _section(list: VBoxContainer, group: String, title: String, empty_text: Str
 		empty.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		empty.custom_minimum_size.x = 290
 		list.add_child(empty)
+	var grid := GridContainer.new()
+	grid.name = "Grade_" + group
+	grid.columns = 2
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 10)
+	grid.add_theme_constant_override("v_separation", 10)
+	list.add_child(grid)
+	_grids.append(grid)
 	for entry in owned:
-		list.add_child(_build_case(entry))
+		grid.add_child(_build_case(entry))
+
+## Quantas vitrines cabem lado a lado na largura do cofre.
+func _fit_columns(scroll: ScrollContainer) -> void:
+	var columns := maxi(1, int((scroll.size.x - 12.0) / CASE_MIN_WIDTH))
+	for grid in _grids:
+		grid.columns = columns
 
 func _build_case(entry: Dictionary) -> Control:
 	var id := str(entry["id"])
 	var panel := PanelContainer.new()
 	panel.name = "Vitrine_" + id
+	panel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 12)
 	panel.add_child(row)
@@ -103,6 +134,7 @@ func _on_case_pressed(id: String) -> void:
 			return
 		_feedback.text = ""
 		_refresh()
+		weapon_skin_changed.emit(weapon)
 		return
 	_toggle(id)
 

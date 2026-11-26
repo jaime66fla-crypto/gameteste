@@ -1081,7 +1081,9 @@ var character_index := -1
 var character_stage: CenterContainer
 var character_dots: HBoxContainer
 var character_counter: Label
-const VAULT_WIDTH := 310.0
+## Arma na mão da prévia do Cofre ("" = sem arma), com a skin equipada dela.
+var preview_weapon := ""
+const PREVIEW_WEAPONS := ["pistol", "smg", "shotgun", "rifle", "sniper"]
 
 ## Sem o painel escuro da página: o conteúdo fica direto sobre a fumaça e as
 ## brasas do fundo, como no menu principal.
@@ -1107,21 +1109,15 @@ func _show_characters() -> void:
         for i in characters.size():
             if characters[i].id == selected_id:
                 character_index = i
-    # Cofre de roupas à esquerda; o personagem fica no centro da página
-    # (um espaçador do mesmo tamanho do cofre à direita equilibra a linha).
+    # Personagem à esquerda; o cofre de roupas e skins ocupa todo o resto à
+    # direita, em grade.
     var row := HBoxContainer.new()
     row.name = "CharactersRow"
-    row.add_theme_constant_override("separation", 20)
+    row.add_theme_constant_override("separation", 24)
     content.add_child(row)
-    var vault := WardrobeVault.new()
-    vault.name = "WardrobeVault"
-    vault.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-    vault.outfit_changed.connect(_on_outfit_changed)
-    vault.store_requested.connect(_show_store)
-    row.add_child(vault)
     var carousel := VBoxContainer.new()
     carousel.name = "CharacterCarousel"
-    carousel.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+    carousel.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
     carousel.add_theme_constant_override("separation", 12)
     row.add_child(carousel)
     var stage_row := HBoxContainer.new()
@@ -1144,18 +1140,20 @@ func _show_characters() -> void:
     character_counter = _plain("", 12, MUTED, caps_font)
     character_counter.name = "CharacterCounter"
     pager.add_child(character_counter)
-    if get_viewport_rect().size.x >= 1180.0:
-        var balance := Control.new()
-        balance.custom_minimum_size.x = VAULT_WIDTH
-        balance.mouse_filter = Control.MOUSE_FILTER_IGNORE
-        row.add_child(balance)
-        vault.resized.connect(func(): balance.custom_minimum_size.x = vault.size.x)
+    var vault := WardrobeVault.new()
+    vault.name = "WardrobeVault"
+    vault.size_flags_vertical = Control.SIZE_FILL
+    vault.outfit_changed.connect(_on_outfit_changed)
+    vault.store_requested.connect(_show_store)
+    vault.weapon_skin_changed.connect(_on_weapon_skin_changed)
+    row.add_child(vault)
     selection_feedback = _plain("", 14, Color("#e0705e"))
     selection_feedback.name = "SelectionFeedback"
     selection_feedback.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
     content.add_child(selection_feedback)
     _ghost(_button("Voltar", "BackButton", func():
         character_index = -1
+        preview_weapon = ""
         _show_main()))
     _show_character_at(character_index)
 
@@ -1286,6 +1284,10 @@ func _show_character_at(index: int) -> void:
     card.definition = definition
     card.selected = definition.id == selected_id
     card.featured = true
+    card.weapon_id = preview_weapon
+    card.weapon_controls = true
+    card.weapon_toggle_requested.connect(_toggle_preview_weapon)
+    card.weapon_cycle_requested.connect(_cycle_preview_weapon)
     card.selection_requested.connect(_select_character)
     character_stage.add_child(card)
     for child in character_dots.get_children():
@@ -1301,6 +1303,29 @@ func _show_character_at(index: int) -> void:
         dot.add_theme_stylebox_override("panel", _box(color, Color.TRANSPARENT, 0, 4))
         character_dots.add_child(dot)
     character_counter.text = "%d / %d" % [character_index + 1, characters.size()]
+
+## "Equipar arma": a prévia pega a arma (a que tem skin equipada, senão o fuzil).
+func _toggle_preview_weapon() -> void:
+    if preview_weapon.is_empty():
+        preview_weapon = "rifle"
+        for id in PREVIEW_WEAPONS:
+            if not CharacterRegistry.weapon_skin(id).is_empty():
+                preview_weapon = id
+                break
+    else:
+        preview_weapon = ""
+    _show_character_at(character_index)
+
+func _cycle_preview_weapon() -> void:
+    var at := PREVIEW_WEAPONS.find(preview_weapon)
+    preview_weapon = PREVIEW_WEAPONS[posmod(at + 1, PREVIEW_WEAPONS.size())]
+    _show_character_at(character_index)
+
+## Equipou/tirou uma skin no cofre: a prévia mostra essa arma na mão.
+func _on_weapon_skin_changed(weapon: String) -> void:
+    if weapon in PREVIEW_WEAPONS:
+        preview_weapon = weapon
+        _show_character_at(character_index)
 
 ## ←/→ trocam o personagem antes da navegação de foco da GUI pegar as setas.
 func _carousel_input(event: InputEvent) -> bool:

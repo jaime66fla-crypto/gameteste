@@ -74,6 +74,24 @@ func _run() -> void:
         await process_frame
         _check(_cards(menu)[0].name == first, "‹ não dá a volta no carrossel")
     _check(menu.find_child("WardrobeVault", true, false) != null, "Cofre de roupas sumiu")
+    # "Equipar arma": a prévia pega a arma, a troca de arma aparece e "Guardar" tira.
+    var arm := menu.find_child("EquipWeaponButton", true, false) as Button
+    _check(arm != null, "Botão Equipar arma faltando na carta do Cofre")
+    if arm != null:
+        arm.pressed.emit()
+        await process_frame
+        _check(menu.find_child("PreviewWeapon", true, false) != null, "Equipar arma não pôs a arma na prévia")
+        var cycle := menu.find_child("CycleWeaponButton", true, false) as Button
+        _check(cycle != null, "Troca de arma faltando com a arma equipada")
+        if cycle != null:
+            var before := cycle.text
+            cycle.pressed.emit()
+            await process_frame
+            cycle = menu.find_child("CycleWeaponButton", true, false) as Button
+            _check(cycle != null and cycle.text != before, "Troca de arma não trocou")
+        (menu.find_child("EquipWeaponButton", true, false) as Button).pressed.emit()
+        await process_frame
+        _check(menu.find_child("PreviewWeapon", true, false) == null, "Guardar arma não tirou a arma da prévia")
     var shot := ""
     for arg in OS.get_cmdline_user_args():
         if arg.begins_with("shot="):

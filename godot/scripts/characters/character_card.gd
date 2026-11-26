@@ -3,7 +3,11 @@ const Registry = preload("res://scripts/characters/character_registry.gd")
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const WeaponVisuals = preload("res://scripts/weapon_visuals.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 signal selection_requested(id: String)
+## Botões de arma da carta do Cofre: equipar/guardar e trocar a arma da prévia.
+signal weapon_toggle_requested
+signal weapon_cycle_requested
 ## Enquadramento da prévia: corpo inteiro ocupando o quadro, câmera um pouco
 ## abaixo do peito (o personagem parece mais imponente) e de frente-direita.
 const PREVIEW_CAMERA := Vector3(0.3, 1.05, -3.7)
@@ -15,6 +19,13 @@ var definition: Resource
 var selected := false
 ## Carta grande do carrossel (prévia maior).
 var featured := false
+## Arma na mão da prévia (Cofre: "Equipar arma"), com a skin equipada; "" = sem arma.
+var weapon_id := ""
+## Mostra "Equipar arma" e a troca de arma (só a carta do Cofre).
+var weapon_controls := false
+## Mais de lado quando armado: a pose de mira de frente fica torta.
+const ARMED_YAW := deg_to_rad(38.0)
+const WEAPON_NAMES := {"pistol": "Pistola", "smg": "Submetralhadora", "shotgun": "Escopeta", "rifle": "Fuzil", "sniper": "Sniper"}
 var visual: Node3D
 var preview_ready := false
 
@@ -50,21 +61,60 @@ func _ready() -> void:
     if featured:
         description.custom_minimum_size.x = 330
     column.add_child(description)
+    var actions := HBoxContainer.new()
+    actions.name = "CardActions"
+    actions.add_theme_constant_override("separation", 10)
+    column.add_child(actions)
     var button := Button.new()
     button.name = "Select_" + definition.id
     button.text = "Selecionado" if selected else "Selecionar"
     button.custom_minimum_size.y = 46
+    button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     button.disabled = selected or not preview_ready
     UiTheme.primary(button, 16)
     button.pressed.connect(func(): selection_requested.emit(definition.id))
-    column.add_child(button)
+    actions.add_child(button)
+    if weapon_controls and preview_ready and visual.has_method("bind_weapon"):
+        var arm := Button.new()
+        arm.name = "EquipWeaponButton"
+        arm.text = "Guardar arma" if not weapon_id.is_empty() else "Equipar arma"
+        arm.tooltip_text = "Ver o personagem com a arma e a skin equipada"
+        arm.custom_minimum_size.y = 46
+        arm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+        if weapon_id.is_empty():
+            UiTheme.primary(arm, 16)
+        else:
+            UiTheme.secondary(arm, 16)
+        arm.pressed.connect(func(): weapon_toggle_requested.emit())
+        actions.add_child(arm)
 
 func _build_preview(column: VBoxContainer) -> void:
+    # Prévia 3D com a troca de arma por cima (canto superior esquerdo).
+    var stack := MarginContainer.new()
+    stack.name = "PreviewStack"
+    column.add_child(stack)
     var container := SubViewportContainer.new()
-    container.custom_minimum_size = Vector2(330, 300) if featured else Vector2(300, 250)
+    container.custom_minimum_size = Vector2(360, 330) if featured else Vector2(300, 250)
     container.stretch = true
     container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    column.add_child(container)
+    stack.add_child(container)
+    if weapon_controls and not weapon_id.is_empty():
+        var cycle := Button.new()
+        cycle.name = "CycleWeaponButton"
+        var skin := Registry.weapon_skin(weapon_id)
+        cycle.text = "%s  ›" % WEAPON_NAMES.get(weapon_id, weapon_id)
+        cycle.tooltip_text = ("Skin: %s" % StoreCatalog.item(skin).get("nome", skin)) if not skin.is_empty() else "Sem skin (original)"
+        cycle.custom_minimum_size = Vector2(0, 34)
+        cycle.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+        cycle.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+        UiTheme.secondary(cycle, 13)
+        cycle.pressed.connect(func(): weapon_cycle_requested.emit())
+        var corner := MarginContainer.new()
+        corner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+        for side in ["margin_left", "margin_top"]:
+            corner.add_theme_constant_override(side, 10)
+        stack.add_child(corner)
+        corner.add_child(cycle)
     var viewport := SubViewport.new()
     viewport.name = "PreviewViewport"
     viewport.own_world_3d = true
@@ -107,6 +157,12 @@ func _build_preview(column: VBoxContainer) -> void:
     if not preview_ready:
         return
     visual.rotation.y = PREVIEW_YAW
+    if not weapon_id.is_empty() and visual.has_method("set_armed"):
+        visual.rotation.y = ARMED_YAW
+        if _arm_preview(weapon_id):
+            visual.animate(1.0, 0.0, false, false, false, false, false)
+            return
+        visual.rotation.y = PREVIEW_YAW
     if visual.has_method("play_overlay") and visual.has_method("set_armed"):
         # Pose de vitrine: em pé, braços cruzados (UAL2 idle_foldarms), sem arma.
         # A pose de mira do jogo é feita para ser vista por trás e fica torta de frente.
@@ -130,6 +186,27 @@ func _build_preview(column: VBoxContainer) -> void:
             weapon.scale = Vector3.ONE * 0.7
             WeaponVisuals.build(weapon, "rifle")
     visual.animate(1.0, 0.0, false, false, false, false, false)
+
+## Arma do Cofre na mão do personagem, com a skin equipada para ela.
+func _arm_preview(id: String) -> bool:
+    var mount: Node3D = visual.get("weapon_mount")
+    var imported := WeaponProportions.create_model(id, StoreCatalog.texture_path(Registry.weapon_skin(id)))
+    if mount == null or imported == null or not visual.has_method("bind_weapon"):
+        if imported != null:
+            imported.free()
+        return false
+    var weapon := Node3D.new()
+    weapon.name = "PreviewWeapon"
+    mount.add_child(weapon)
+    weapon.add_child(imported)
+    WeaponProportions.apply(weapon, id, imported)
+    visual.configure_weapon(id, weapon.scale.x)
+    visual.call("bind_weapon", weapon)
+    visual.call("set_armed", true)
+    if visual.has_method("set_aim_target"):
+        # Mira à frente do personagem, na altura do peito: arma erguida.
+        visual.call("set_aim_target", visual.global_transform * Vector3(0.0, 1.4, -10.0), true)
+    return true
 
 func _process(delta: float) -> void:
     if preview_ready and is_instance_valid(visual):
