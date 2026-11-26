@@ -58,7 +58,9 @@ func _ready() -> void:
 	board = Label3D.new()
 	board.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	board.font_size = 34
-	board.outline_size = 9
+	board.outline_size = 4
+	board.visibility_range_end = 26.0
+	board.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	board.pixel_size = 0.004
 	board.modulate = Color("#ffe08a")
 	board.position = CENTER + Vector3(0, 3.2, -HALF)
@@ -88,7 +90,7 @@ func _block(center: Vector3, size: Vector3, texture: String) -> void:
 func _build_walls() -> void:
 	var t := 0.25
 	var y := WALL_H * 0.5
-	var wall := "red_grid"
+	var wall := "arena"
 	_block(CENTER + Vector3(0, y, HALF), Vector3(HALF * 2 + t, WALL_H, t), wall)
 	_block(CENTER + Vector3(-HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), wall)
 	_block(CENTER + Vector3(HALF, y, 0), Vector3(t, WALL_H, HALF * 2 + t), wall)
@@ -96,18 +98,9 @@ func _build_walls() -> void:
 	for sign in [-1.0, 1.0]:
 		_block(CENTER + Vector3(sign * (DOOR + side * 0.5), y, -HALF), Vector3(side + t * 0.5, WALL_H, t), wall)
 	# A entrada fica aberta para o jogador; o zumbi é mantido dentro em _process.
-	# Piso marcado (só visual) para destacar a arena.
-	var floor_mesh := MeshInstance3D.new()
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(HALF * 2, HALF * 2)
-	floor_mesh.mesh = plane
-	floor_mesh.position = CENTER + Vector3(0, 0.02, 0)
-	floor_mesh.material_override = TrainingGround.material("light_marks")
-	add_child(floor_mesh)
-
 ## Suporte com o bastão em pé.
 func _build_rack() -> void:
-	_block(RACK + Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.3), "orange_grid")
+	_block(RACK + Vector3(0, 0.45, 0), Vector3(0.5, 0.9, 0.3), "crate")
 	# Em pé no suporte, ponta com pregos para cima.
 	_rack_staff = StaffModel.build()
 	_rack_staff.position = RACK + Vector3(0, 0.62, 0)
@@ -117,7 +110,9 @@ func _build_rack() -> void:
 	tag.text = "BASTÃO LONGO\n[E] pegar / largar"
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.font_size = 28
-	tag.outline_size = 8
+	tag.outline_size = 4
+	tag.visibility_range_end = 14.0
+	tag.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	tag.pixel_size = 0.004
 	tag.position = RACK + Vector3(0, 2.0, 0)
 	add_child(tag)

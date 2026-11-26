@@ -58,7 +58,7 @@ func _build_bow_station() -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(0.7, 0.9, 0.55)
 	stand.mesh = box
-	stand.material_override = TrainingGround.material("orange_grid")
+	stand.material_override = TrainingGround.material("crate")
 	stand.position = BOW_RACK + Vector3(0, 0.45, 0)
 	add_child(stand)
 	_bow_rack_model = BowVisual.new()
@@ -71,7 +71,9 @@ func _label(text: String, pos: Vector3, size: int = 28) -> Label3D:
 	tag.text = text
 	tag.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	tag.font_size = size
-	tag.outline_size = 8
+	tag.outline_size = 4
+	tag.visibility_range_end = 16.0
+	tag.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	tag.pixel_size = 0.004
 	tag.position = pos
 	add_child(tag)
@@ -93,7 +95,7 @@ func _build_rack() -> void:
 	box.size = Vector3(width, 0.08, 0.7)
 	top.mesh = box
 	top.position = RACK + Vector3(0, 0.82, 0)
-	top.material_override = TrainingGround.material("orange_grid")
+	top.material_override = TrainingGround.material("crate")
 	add_child(top)
 	for side in [-1.0, 1.0]:
 		var leg := MeshInstance3D.new()
@@ -101,7 +103,7 @@ func _build_rack() -> void:
 		leg_box.size = Vector3(0.08, 0.8, 0.6)
 		leg.mesh = leg_box
 		leg.position = RACK + Vector3(side * (width * 0.5 - 0.1), 0.4, 0)
-		leg.material_override = TrainingGround.material("dark_grid")
+		leg.material_override = TrainingGround.material("metal")
 		add_child(leg)
 	var shape := BoxShape3D.new()
 	shape.size = Vector3(width, 0.86, 0.7)

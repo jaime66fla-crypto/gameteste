@@ -102,7 +102,8 @@ func _style_mesh(node: MeshInstance3D) -> void:
 	# No hulls on ground slabs, huge terrain, tiny details or distant objects.
 	# Local grow is compensated for imported model scales (including centimetres).
 	var outline := 0.0
-	if world_size.y > 0.08 and world_size.length() > 0.30 and world_size.length() < 45.0:
+	if not get_parent().has_node("TrainingGround") and world_size.y > 0.08 \
+		and world_size.length() > 0.30 and world_size.length() < 45.0:
 		outline = 0.012 / maxf(0.001, maxf(scale_size.x, maxf(scale_size.y, scale_size.z)))
 	if node.material_override != null:
 		node.material_override = material_for(node.material_override, outline)
@@ -113,7 +114,8 @@ func _style_mesh(node: MeshInstance3D) -> void:
 				node.set_surface_override_material(surface, material_for(source, outline))
 
 func material_for(source: Material, outline: float = 0.0) -> Material:
-	if not source is StandardMaterial3D or source.has_meta("cel_styled"):
+	if not source is StandardMaterial3D or source.has_meta("cel_styled") \
+		or source.has_meta("preserve_authored_material"):
 		return source
 	var original := source as StandardMaterial3D
 	# Glass, alpha-scissored leaf cards, lamps, collectible glows and optics
@@ -160,8 +162,8 @@ func material_for(source: Material, outline: float = 0.0) -> Material:
 	return m
 
 func _tune_environment() -> void:
-	# MatchMap already configured its daylight; leave other modes unchanged.
-	if get_parent().get_node_or_null("MatchMap") != null:
+	# Each of these maps configures its own daylight.
+	if get_parent().has_node("MatchMap") or get_parent().has_node("TrainingGround"):
 		return
 	var world := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if world == null or world.environment == null:

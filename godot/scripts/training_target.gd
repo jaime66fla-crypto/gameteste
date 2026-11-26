@@ -19,7 +19,7 @@ func _ready() -> void:
 	var box := BoxMesh.new()
 	box.size = Vector3(size.x, size.y, 0.05)
 	_mesh.mesh = box
-	_material = TrainingGround.material("red_grid", false).duplicate()
+	_material = TrainingGround.material("target").duplicate()
 	_mesh.material_override = _material
 	add_child(_mesh)
 	var shape := CollisionShape3D.new()
@@ -30,7 +30,9 @@ func _ready() -> void:
 	_label = Label3D.new()
 	_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_label.font_size = 30
-	_label.outline_size = 8
+	_label.outline_size = 4
+	_label.visibility_range_end = 32.0
+	_label.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	_label.pixel_size = 0.005
 	_label.modulate = Color("#ffe08a")
 	_label.position = Vector3(0, size.y * 0.5 + 0.45, 0)

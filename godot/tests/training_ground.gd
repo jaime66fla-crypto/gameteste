@@ -1,9 +1,9 @@
 extends SceneTree
-## Campo de treino offline (scripts/training_ground.gd, texturas Kenney):
+## Campo de treino offline (scripts/training_ground.gd):
 ## confere pela colisão real que o nascimento e os bonecos estão livres, que
 ## dá para andar do nascimento até cada zona, que rampas, escada e torre sobem
 ## andando, que o túnel só passa deitado, que as placas de aço estão na linha
-## de tiro, que a borda é murada e que tudo usa as texturas Kenney.
+## de tiro, que a borda é murada e que os materiais do atlas continuam aplicados.
 ## godot --headless --path godot --script res://tests/training_ground.gd
 const Ground = preload("res://scripts/training_ground.gd")
 const Arena = preload("res://scripts/training_arena.gd")
@@ -32,13 +32,17 @@ func _run() -> void:
 	if ground == null:
 		_finish(scene)
 		return
-	# Texturas Kenney em escala de mundo em todas as malhas do campo.
-	var meshes := ground.find_children("Mesh_*", "MeshInstance3D", true, false)
-	_check(meshes.size() >= 5, "o campo usa várias texturas (%d malhas)" % meshes.size())
-	for mesh in meshes:
-		var m := (mesh as MeshInstance3D).material_override as StandardMaterial3D
-		_check(m != null and m.albedo_texture != null and m.albedo_texture.resource_path.contains("kenney_prototype"), "%s usa textura Kenney" % mesh.name)
-		_check(m != null and m.uv1_triplanar and m.uv1_world_triplanar, "%s em escala de mundo (triplanar)" % mesh.name)
+	# O atlas precisa sobreviver ao tratamento cel e conservar os mipmaps.
+	var floor_mesh := ground.get_node("Geometry/Mesh_asphalt") as MeshInstance3D
+	var material := floor_mesh.material_override as StandardMaterial3D
+	_check(material == Ground.material("asphalt"), "cel preserva o material do asfalto")
+	_check(material.albedo_texture.resource_path.ends_with("/asphalt_albedo.png"), "chão sem a grade Kenney")
+	_check(material.albedo_texture.get_image().has_mipmaps(), "asfalto tem mipmaps")
+	var sign_y := 0.0
+	for child in ground.get_children():
+		if child is Label3D and child.text == "ÁREA DE COBERTURA":
+			sign_y = child.position.y
+	_check(sign_y > 1.0, "placa de cobertura acima do chão")
 	var space := player.get_world_3d().direct_space_state
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.36

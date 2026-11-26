@@ -102,7 +102,7 @@ func _ready() -> void:
     player.set_process_unhandled_input(false)
     player.mouse_sensitivity *= float(settings["sensitivity"])
     if not Net.in_match:
-        # Treino offline: campo de prova com as texturas Kenney (training_ground.gd).
+        # Treino offline: campo de prova com os materiais do atlas (training_ground.gd).
         training_ground = TrainingGroundScript.new()
         training_ground.set("sound_fx", player.get("sound_fx"))
         add_child(training_ground)
