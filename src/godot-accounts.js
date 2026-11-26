@@ -4,6 +4,7 @@
 import ranks from '../godot/data/ranks.json' with { type: 'json' };
 import store from '../godot/data/store.json' with { type: 'json' };
 import { installChat } from './godot-chat.js';
+import { installPayments } from './godot-payments.js';
 
 // Loja interna (godot/data/store.json): Brasas ficam na conta; só o servidor
 // soma (XP de partida/sobrevivência) e desconta (compra). Itens de preço 0 são
@@ -138,6 +139,9 @@ export async function handleGodotAccount(request, env, url) {
 	const headers = { 'content-type': 'application/json' };
 	const token = bearer(request, url);
 	if (token) headers.Authorization = 'Bearer ' + token;
+	// Webhook do Mercado Pago: a assinatura vem nos cabeçalhos (src/godot-payments.js).
+	for (const name of ['x-signature', 'x-request-id']) if (request.headers.get(name)) headers[name] = request.headers.get(name);
+	headers['x-public-origin'] = url.origin;
 	const body = request.method === 'POST' ? await request.text() : undefined;
 	return accounts.fetch(new Request('https://internal' + route + url.search, { method: request.method, headers, body }));
 }
@@ -180,6 +184,7 @@ export class GodotAccounts {
 	async fetch(request) {
 		const url = new URL(request.url);
 		try {
+			if (url.pathname.startsWith('/pay/')) return await this.payRoute(request, url, bearer(request, url));
 			switch (url.pathname) {
 				case '/register':
 					return request.method === 'POST' ? this.register(await request.json()) : json({ error: 'Método não permitido.' }, 405);
@@ -563,3 +568,4 @@ export class GodotAccounts {
 }
 
 installChat(GodotAccounts, rankFor);
+installPayments(GodotAccounts, { json, profile, brasasOf, randomHex });

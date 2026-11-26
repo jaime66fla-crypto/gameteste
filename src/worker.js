@@ -2,6 +2,7 @@ import '../public/tactical-rules.js';
 import './tactical-room.js';
 import { handleGodotSocket } from './godot-match.js';
 import { handleGodotAccount, handleGodotChat } from './godot-accounts.js';
+import { SHOP_PATHS, preflight, withCors } from './godot-payments.js';
 import { handleSurvivalSocket, handleSurvivalWorlds } from './godot-survival.js';
 function json(data,status=200){return new Response(JSON.stringify(data),{status,headers:{'content-type':'application/json; charset=utf-8','cache-control':'no-store'}})}
 
@@ -80,6 +81,12 @@ export default {
   if (url.pathname === "/godot/survival") return handleSurvivalSocket(request, env, url);
   if (url.pathname === "/godot/chat") return handleGodotChat(request, env, url);
   if (url.pathname === "/godot/survival/worlds") return handleSurvivalWorlds(request, env);
+  // Loja de Brasas no site (GitHub Pages): CORS para login e pagamento; webhook do Mercado Pago.
+  if (SHOP_PATHS.includes(url.pathname)) {
+   if (request.method === 'OPTIONS') return preflight(request);
+   return withCors(request, await handleGodotAccount(request, env, url));
+  }
+  if (url.pathname === "/godot/pay/webhook") return handleGodotAccount(request, env, url);
   // Godot accounts: register, login, profile (XP / rank), friends list and store (Brasas).
   if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me" || url.pathname === "/godot/friends" || url.pathname === "/godot/leaderboard" || url.pathname.startsWith("/godot/friends/") || url.pathname === "/godot/profile/name" || url.pathname === "/godot/profile/avatar" || url.pathname === "/godot/avatar" || url.pathname === "/godot/store/buy") return handleGodotAccount(request, env, url);
   if (url.pathname === "/ws") {
