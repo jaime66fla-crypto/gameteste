@@ -257,6 +257,60 @@ static func draw(ci: CanvasItem, id: String, r: Rect2, cat: String = "") -> void
 		"zombie_serum":
 			poly.call([[0.4, 0.26], [0.6, 0.26], [0.62, 0.86], [0.38, 0.86]], Color(0.55, 0.68, 0.4, 0.85))
 			poly.call([[0.4, 0.14], [0.6, 0.14], [0.6, 0.26], [0.4, 0.26]], Color("#c44a4a"))
+		"torch":
+			line.call([0.34, 0.9], [0.56, 0.42], 0.08, WOOD)
+			poly.call([[0.5, 0.42], [0.62, 0.48], [0.66, 0.38], [0.54, 0.32]], Color("#c9b27a"))
+			poly.call([[0.52, 0.34], [0.5, 0.2], [0.6, 0.06], [0.64, 0.18], [0.74, 0.12], [0.72, 0.3], [0.64, 0.38]], Color("#e08a2e"))
+			poly.call([[0.58, 0.32], [0.58, 0.22], [0.63, 0.16], [0.68, 0.26], [0.64, 0.33]], Color("#f2c45a"))
+		"bow":
+			ci.draw_arc(p.call(0.26, 0.5), s * 0.44, -1.05, 1.05, 24, OUTLINE, s * 0.08 + 2.0, true)
+			ci.draw_arc(p.call(0.26, 0.5), s * 0.44, -1.05, 1.05, 24, WOOD, s * 0.07, true)
+			var tip_a: Vector2 = p.call(0.26, 0.5) + Vector2(cos(-1.05), sin(-1.05)) * s * 0.44
+			var tip_b: Vector2 = p.call(0.26, 0.5) + Vector2(cos(1.05), sin(1.05)) * s * 0.44
+			ci.draw_line(tip_a, tip_b, Color("#d9d2bf"), maxf(1.0, s * 0.02), true)
+			line.call([0.64, 0.44], [0.64, 0.56], 0.09, Color("#c9b27a"))
+		"stone_arrow", "iron_arrow":
+			var head := STONE if id == "stone_arrow" else Color("#a3a8ac")
+			for k in 2:
+				var dx := k * 0.16
+				line.call([0.14 + dx, 0.86], [0.66 + dx, 0.34], 0.035, WOOD)
+				poly.call([[0.62 + dx, 0.3], [0.8 + dx, 0.2], [0.7 + dx, 0.38]], head)
+				poly.call([[0.14 + dx, 0.86], [0.12 + dx, 0.74], [0.22 + dx, 0.78]], Color("#d9d2bf"))
+				poly.call([[0.14 + dx, 0.86], [0.26 + dx, 0.88], [0.22 + dx, 0.78]], Color("#c44a4a"))
+		"fishing_rod":
+			line.call([0.14, 0.88], [0.82, 0.14], 0.045, WOOD)
+			line.call([0.14, 0.88], [0.3, 0.72], 0.07, WOOD_DARK)
+			ci.draw_line(p.call(0.82, 0.14), p.call(0.8, 0.66), Color("#d9d2bf"), maxf(1.0, s * 0.015), true)
+			dot.call(0.32, 0.72, 0.06, Color("#5e5e5a"))
+			ci.draw_arc(p.call(0.77, 0.7), s * 0.04, 0.0, PI, 10, Color("#b5b9bc"), maxf(1.0, s * 0.025), true)
+		"raw_fish", "cooked_fish":
+			var body := Color("#7d9aa8") if id == "raw_fish" else Color("#a8642e")
+			poly.call([[0.12, 0.5], [0.3, 0.34], [0.56, 0.3], [0.72, 0.44], [0.72, 0.56], [0.56, 0.7], [0.3, 0.66]], body)
+			poly.call([[0.7, 0.5], [0.9, 0.3], [0.86, 0.5], [0.9, 0.7]], body.darkened(0.2))
+			poly.call([[0.36, 0.34], [0.46, 0.22], [0.54, 0.32]], body.darkened(0.2))
+			dot.call(0.24, 0.46, 0.035, Color("#efe6d6") if id == "raw_fish" else Color("#2a2724"))
+			if id == "cooked_fish":
+				for x in [0.38, 0.5, 0.62]:
+					line.call([x, 0.38], [x - 0.05, 0.62], 0.02, Color("#4a2a14"))
+			else:
+				line.call([0.3, 0.52], [0.64, 0.5], 0.015, body.lightened(0.3))
+		"waterskin":
+			poly.call([[0.3, 0.32], [0.7, 0.32], [0.82, 0.6], [0.7, 0.86], [0.3, 0.86], [0.18, 0.6]], LEATHER)
+			poly.call([[0.42, 0.14], [0.58, 0.14], [0.6, 0.32], [0.4, 0.32]], WOOD_DARK)
+			line.call([0.3, 0.52], [0.7, 0.52], 0.02, LEATHER.darkened(0.3))
+			ci.draw_arc(p.call(0.5, 0.3), s * 0.3, PI * 1.1, PI * 1.9, 14, Color("#c9a86b"), maxf(1.0, s * 0.03), true)
+		"molotov":
+			poly.call([[0.36, 0.42], [0.64, 0.42], [0.7, 0.56], [0.7, 0.88], [0.3, 0.88], [0.3, 0.56]], Color(0.45, 0.55, 0.36, 0.85))
+			poly.call([[0.3, 0.64], [0.7, 0.64], [0.7, 0.88], [0.3, 0.88]], Color(0.72, 0.5, 0.2, 0.85))
+			poly.call([[0.44, 0.24], [0.56, 0.24], [0.56, 0.42], [0.44, 0.42]], Color(0.45, 0.55, 0.36, 0.85))
+			line.call([0.5, 0.26], [0.58, 0.14], 0.05, Color("#d9d2bf"))
+			poly.call([[0.56, 0.16], [0.58, 0.04], [0.66, 0.08], [0.7, 0.0], [0.72, 0.14], [0.64, 0.2]], Color("#e08a2e"))
+		"stink_bait":
+			poly.call([[0.2, 0.56], [0.3, 0.38], [0.56, 0.32], [0.78, 0.42], [0.82, 0.62], [0.6, 0.8], [0.3, 0.78]], Color("#6a5a3a"))
+			dot.call(0.44, 0.56, 0.07, Color("#8a2a22"))
+			dot.call(0.64, 0.6, 0.05, Color("#7c8a3e"))
+			for w in [[0.36, 0.24], [0.52, 0.16], [0.68, 0.24]]:
+				ci.draw_arc(p.call(w[0], w[1]), s * 0.05, PI * 0.2, PI * 1.6, 8, Color("#8fa65a"), maxf(1.0, s * 0.025), true)
 		_:
 			var c: Color = CAT_COLOR.get(cat, Color("#9a9389"))
 			var box := Rect2(p.call(0.18, 0.18), Vector2(s, s) * 0.64)
