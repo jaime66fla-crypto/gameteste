@@ -111,6 +111,10 @@ dialog .msg { margin-top: .6rem; }
 .pix-head h2 { margin: 0; font: 900 1.5rem/1 var(--display); text-transform: uppercase; }
 .pix-tip { margin: 0 0 .8rem; color: var(--muted); font-size: .9rem; }
 .pix-tip b { color: var(--fg); }
+.terms-tip { margin: .7rem 0; font-size: .82rem; }
+.legal { margin: 0; font: 12px var(--mono); color: var(--ash); text-align: center; }
+.legal a { color: var(--muted); }
+.legal a:hover { color: var(--ember); }
 #pixImg { display: block; margin: 0 auto .8rem; width: 220px; height: 220px; background: #fff; padding: 8px; border-radius: 4px; }
 #pixImg[hidden] { display: none; }
 #pixCode { width: 100%; resize: none; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .5rem; font: 12px/1.4 var(--mono); word-break: break-all; }
@@ -168,6 +172,7 @@ dialog .msg { margin-top: .6rem; }
       <div id="pixAsk">
         <label for="pixEmail">Seu e-mail (para o comprovante)</label>
         <input id="pixEmail" type="email" autocomplete="email" maxlength="120" placeholder="voce@exemplo.com">
+        <p class="pix-tip terms-tip">Ao gerar o PIX você concorda com os <a href="termos.html#compras" target="_blank" rel="noopener">Termos de Uso</a>. Não gastou as Brasas? Pode pedir o dinheiro de volta em até 7 dias.</p>
         <button class="btn" type="submit" id="pixGo">Gerar PIX</button>
         <p class="msg" id="pixMsg" role="status"></p>
       </div>
@@ -216,6 +221,8 @@ dialog .msg { margin-top: .6rem; }
       <ul class="items" id="items"></ul>
     </div>
   </div>
+
+  <p class="legal"><a href="termos.html">Termos de Uso e Privacidade</a> · Pagamentos por PIX processados pelo Mercado Pago</p>
 </div>
 
 <script>
