@@ -24,6 +24,7 @@ const ACTIONS := [
 	["shoulder_swap", "Alternar lado da mira", "Combate", KEY_Q],
 	["lean_left", "Inclinar à esquerda (mirando)", "Combate", KEY_J],
 	["lean_right", "Inclinar à direita (mirando)", "Combate", KEY_E],
+	["shield", "Escudo: fixar / soltar a guarda (FIXA)", "Combate", -MOUSE_BUTTON_MIDDLE],
 	["weapon_1", "Arma 1", "Armas", KEY_1],
 	["weapon_2", "Arma 2", "Armas", KEY_2],
 	["weapon_3", "Arma 3", "Armas", KEY_3],

@@ -214,6 +214,23 @@ static func draw(ci: CanvasItem, id: String, r: Rect2, cat: String = "") -> void
 			poly.call([[0.26, 0.2], [0.42, 0.2], [0.5, 0.34], [0.58, 0.2], [0.74, 0.2], [0.84, 0.36], [0.78, 0.86], [0.22, 0.86], [0.16, 0.36]], Color("#5d5a54"))
 			poly.call([[0.3, 0.46], [0.5, 0.42], [0.48, 0.62], [0.28, 0.64]], Color("#7a4a30"))
 			poly.call([[0.54, 0.56], [0.74, 0.52], [0.72, 0.74], [0.52, 0.76]], Color("#6e6a64"))
+		"wood_shield":
+			var rim := func(cx: float, cy: float, radius: float, color: Color) -> void:
+				var pts := []
+				for i in 20:
+					var a := TAU * i / 20.0
+					pts.append([cx + cos(a) * radius, cy + sin(a) * radius])
+				poly.call(pts, color)
+			rim.call(0.5, 0.5, 0.38, Color("#3a3b3c"))
+			rim.call(0.5, 0.5, 0.33, WOOD)
+			for x in [0.37, 0.5, 0.63]:
+				line.call([x, 0.2], [x, 0.8], 0.012, WOOD_DARK)
+			dot.call(0.5, 0.5, 0.08, Color("#4a4c4e"))
+		"tactical_shield":
+			poly.call([[0.26, 0.1], [0.74, 0.1], [0.8, 0.18], [0.8, 0.9], [0.2, 0.9], [0.2, 0.18]], Color("#25292c"))
+			poly.call([[0.36, 0.22], [0.64, 0.22], [0.64, 0.31], [0.36, 0.31]], Color("#5d7a88"))
+			line.call([0.28, 0.5], [0.72, 0.5], 0.02, Color("#14171a"))
+			line.call([0.28, 0.66], [0.72, 0.66], 0.02, Color("#14171a"))
 		"canned_food":
 			poly.call([[0.26, 0.24], [0.74, 0.24], [0.74, 0.82], [0.26, 0.82]], Color("#8c9094"))
 			poly.call([[0.26, 0.38], [0.74, 0.38], [0.74, 0.66], [0.26, 0.66]], Color("#8a5a2a"))

@@ -10,7 +10,10 @@ const LAYER_HITBOXES := 4
 ## Degraus de escada só para os pés (raio do IK): ninguém colide nem atira
 ## neles; o corpo anda na rampa invisível (parkour_district._stairs).
 const LAYER_FOOT_PROBE := 8
-const SHOT_MASK := LAYER_WORLD | LAYER_HITBOXES
+## Escudo na mão de outro jogador (shield_model.gd): segura tiros e golpes,
+## mas ninguém tropeça nele (não está na máscara de movimento).
+const LAYER_SHIELD := 16
+const SHOT_MASK := LAYER_WORLD | LAYER_HITBOXES | LAYER_SHIELD
 ## Damage multipliers per zone. Keep in sync with ZONE_MULTIPLIER in src/godot-match.js.
 const MULTIPLIER := {"head": 2.0, "chest": 1.0, "pelvis": 0.9, "arm": 0.7, "leg": 0.7}
 

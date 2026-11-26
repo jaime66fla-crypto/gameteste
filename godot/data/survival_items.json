@@ -49,6 +49,8 @@
     "iron_helmet":   {"name": "Capacete de ferro",    "weight": 1.5,  "cat": "armor",    "armor": 0.25, "slot": "head"},
     "iron_vest":     {"name": "Colete de placas",     "weight": 4.0,  "cat": "armor",    "armor": 0.3,  "slot": "chest"},
     "torch":         {"name": "Tocha",                "weight": 0.5,  "cat": "gear",     "desc": "Acenda na mão para ver de noite, ou finque no chão / prenda na parede para iluminar a área"},
+    "wood_shield":   {"name": "Escudo de madeira",    "weight": 3.0,  "cat": "gear",     "shield": 0.6, "desc": "No braço esquerdo, com a arma na mão direita. FIXA levanta a guarda: segura tiros, mordidas e golpes de frente (−60%)"},
+    "tactical_shield": {"name": "Escudo tático",      "weight": 6.5,  "cat": "gear",     "shield": 0.85, "desc": "Escudo balístico com visor, no braço esquerdo. FIXA levanta a guarda: segura tiros e golpes de frente (−85%). Pesado: em guarda só anda"},
 
     "bow":           {"name": "Arco",                 "weight": 0.8,  "cat": "weapon",   "weapon": "bow", "ammo": "stone_arrow", "desc": "Arma de longe, silenciosa"},
     "stone_arrow":   {"name": "Flecha de pedra",      "weight": 0.05, "cat": "ammo"},
@@ -93,7 +95,7 @@
     "shelf":      {"name": "Prateleira",           "empty": 0.4,  "rolls": [1, 2], "table": [["canned_food", 30, 1, 2], ["water_bottle", 26, 1, 1], ["cloth", 8, 1, 1], ["glass", 6, 1, 1]]},
     "car_trunk":  {"name": "Porta-malas",          "empty": 0.55, "rolls": [1, 1], "table": [["scrap", 20, 1, 2], ["water_bottle", 10, 1, 1], ["rope", 10, 1, 1], ["gasoline", 10, 1, 1], ["repair_kit", 4, 1, 1], ["crowbar", 4, 1, 1], ["a_9mm", 6, 4, 10], ["a_12g", 4, 2, 5], ["w_shotgun", 1, 1, 1], ["manual_page", 3, 1, 1]]},
     "fuel":       {"name": "Tambor de combustível","empty": 0.4,  "rolls": [1, 1], "table": [["gasoline", 60, 1, 1], ["scrap", 20, 1, 1], ["rubber", 20, 1, 1]]},
-    "gun_locker": {"name": "Armário de armas",     "empty": 0.35, "rolls": [1, 2], "table": [["w_pistol", 12, 1, 1], ["w_shotgun", 7, 1, 1], ["w_smg", 4, 1, 1], ["w_rifle", 2, 1, 1], ["a_9mm", 26, 6, 16], ["a_12g", 18, 3, 8], ["a_556", 10, 8, 20], ["manual_page", 6, 1, 1]]}
+    "gun_locker": {"name": "Armário de armas",     "empty": 0.35, "rolls": [1, 2], "table": [["w_pistol", 12, 1, 1], ["w_shotgun", 7, 1, 1], ["w_smg", 4, 1, 1], ["w_rifle", 2, 1, 1], ["a_9mm", 26, 6, 16], ["a_12g", 18, 3, 8], ["a_556", 10, 8, 20], ["tactical_shield", 2, 1, 1], ["manual_page", 6, 1, 1]]}
   },
   "_resources_comment": "Coleta segurando E. 'needs': só coleta com a ferramenta desse tipo (sem ela, nada). 'tool' sem 'needs': a ferramenta rende mais ('bonus'). 'drink': mata a sede na hora (lago, nunca acaba). 'regrow' em segundos (0 = não acaba).",
   "resources": {
@@ -128,6 +130,7 @@
     {"id": "leather_cap", "name": "Capuz de couro",     "era": 2, "needs": {"hide": 3, "rope": 1},               "gives": ["leather_cap", 1], "station": "workbench"},
     {"id": "leather_vest","name": "Colete de couro",    "era": 2, "needs": {"hide": 6, "rope": 2},               "gives": ["leather_vest", 1],"station": "workbench"},
     {"id": "torch",       "name": "Tocha",              "era": 2, "needs": {"stick": 1, "fiber": 2, "charcoal": 1}, "gives": ["torch", 1]},
+    {"id": "wood_shield", "name": "Escudo de madeira",  "era": 2, "needs": {"wood": 3, "stick": 2, "rope": 2},   "gives": ["wood_shield", 1], "station": "workbench"},
     {"id": "bow",         "name": "Arco",               "era": 2, "needs": {"stick": 3, "rope": 2},              "gives": ["bow", 1],         "station": "workbench"},
     {"id": "stone_arrow", "name": "Flechas de pedra",   "era": 2, "needs": {"stick": 1, "stone": 1, "fiber": 1}, "gives": ["stone_arrow", 4], "station": "workbench"},
     {"id": "waterskin",   "name": "Cantil de couro",    "era": 2, "needs": {"hide": 2, "rope": 1},               "gives": ["waterskin", 1],   "station": "workbench", "soon": true},
@@ -148,6 +151,7 @@
     {"id": "gunpowder",   "name": "Pólvora",            "era": 4, "needs": {"charcoal": 1, "saltpeter": 2},      "gives": ["gunpowder", 2],   "station": "chem_table"},
     {"id": "pipe",        "name": "Cano de metal",      "era": 4, "needs": {"scrap": 3},                         "gives": ["pipe", 1],        "station": "workshop"},
     {"id": "repair_kit",  "name": "Kit de reparos",     "era": 4, "needs": {"scrap": 3, "mech_parts": 2, "nails": 6}, "gives": ["repair_kit", 1], "station": "workshop"},
+    {"id": "tactical_shield", "name": "Escudo tático", "era": 4, "needs": {"scrap": 8, "iron_bar": 2, "glass": 1, "rubber": 1}, "gives": ["tactical_shield", 1], "station": "workshop"},
     {"id": "scrap_vest",  "name": "Colete de sucata",   "era": 4, "needs": {"scrap": 6, "hide": 2, "rope": 2},   "gives": ["scrap_vest", 1],  "station": "workshop"},
     {"id": "ammo_12g",    "name": "Cartuchos calibre 12","era": 4, "needs": {"gunpowder": 1, "scrap": 1},        "gives": ["a_12g", 4],       "station": "workshop", "page": true},
     {"id": "ammo_9mm",    "name": "Munição 9 mm",       "era": 4, "needs": {"gunpowder": 1, "scrap": 1},         "gives": ["a_9mm", 8],       "station": "workshop", "page": true},

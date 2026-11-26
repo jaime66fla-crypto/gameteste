@@ -341,6 +341,9 @@ func apply_state(state: Dictionary) -> void:
 	var torch_on := bool(state.get("tc", false))
 	if torch_on != HandTorch.is_on(self):
 		HandTorch.set_on(self, torch_on)
+	# Sobrevivência: escudo no braço esquerdo; em guarda (FIXA) segura os tiros.
+	if visual != null and visual.has_method("set_shield"):
+		visual.call("set_shield", str(state.get("sh", "")), bool(state.get("sg", false)), true)
 
 ## Sobrevivência: golpe de trabalho (machado/pé de cabra) visto pelos outros.
 func set_action(act: String, tool: String) -> void:
@@ -370,6 +373,8 @@ func die() -> void:
 	name_tag.visible = false
 	_death_timer = 0.0
 	HandTorch.set_on(self, false)
+	if visual != null and visual.has_method("set_shield"):
+		visual.call("set_shield", "", false, true)
 
 ## Mata-mata: volta à partida noutro lugar, com vida cheia e só a pistola.
 func revive(at: Vector3, weapon: String) -> void:

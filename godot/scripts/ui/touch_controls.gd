@@ -39,6 +39,8 @@ const BUTTONS := [
 	["crouch", "AGACHA", "crouch", "crouch", Vector2(0.92, 0.89), 32.0],
 	["reload", "RECARGA", "reload", "hold", Vector2(0.71, 0.50), 28.0],
 	["heal", "CURAR", "heal", "hold", Vector2(0.70, 0.88), 26.0],
+	# Escudo no braço: toque levanta/abaixa a guarda (só aparece com escudo).
+	["shield", "FIXA", "shield", "hold", Vector2(0.83, 0.43), 30.0],
 	["sprint", "CORRER", "sprint", "sprint", Vector2(0.27, 0.50), 28.0],
 	["interact", "USAR", "interact", "hold", Vector2(0.05, 0.44), 28.0],
 	["grenade", "GRANADA", "grenade", "hold", Vector2(0.05, 0.58), 28.0],
@@ -70,6 +72,7 @@ const PRESET_4 := {
 	"crouch": [Vector2(0.86, 0.56), 32.0],
 	"reload": [Vector2(0.64, 0.30), 28.0],
 	"heal": [Vector2(0.94, 0.88), 26.0],
+	"shield": [Vector2(0.75, 0.55), 30.0],
 }
 const PRESETS := {"2": "2 dedos (polegares)", "4": "4 dedos (garra)"}
 ## Teclas dos botões de tecla (quem escuta é o match_controller).
@@ -186,6 +189,8 @@ func _visible_ids() -> Array:
 			continue
 		if id == "score" and not _has_scoreboard():
 			continue
+		if id == "shield" and not editing and not _has_shield():
+			continue
 		if entry[3] == "slot" and int(id.trim_prefix("weapon_")) > slots:
 			continue
 		ids.append(id)
@@ -193,6 +198,9 @@ func _visible_ids() -> Array:
 
 func _is_driving() -> bool:
 	return survival and match_controller != null and match_controller.has_method("is_driving") and bool(match_controller.call("is_driving"))
+
+func _has_shield() -> bool:
+	return player != null and is_instance_valid(player) and not str(player.get("shield_id")).is_empty()
 
 func _has_shop() -> bool:
 	return match_controller != null and is_instance_valid(match_controller) and match_controller.get("shop") != null

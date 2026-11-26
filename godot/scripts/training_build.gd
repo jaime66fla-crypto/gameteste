@@ -19,8 +19,9 @@ var main_node: Node
 var player: CharacterBody3D
 var ui: CanvasLayer
 ## Treino: construir é grátis; esta mochila de exemplo só serve para testar o baú.
-var inv: Dictionary = {"wood": 20, "stone": 15, "fiber": 20, "rope": 6, "stick": 10, "scrap": 6, "iron_bar": 4, "canned_food": 3, "water_bottle": 2, "torch": 5}
+var inv: Dictionary = {"wood": 20, "stone": 15, "fiber": 20, "rope": 6, "stick": 10, "scrap": 6, "iron_bar": 4, "canned_food": 3, "water_bottle": 2, "torch": 5, "wood_shield": 1, "tactical_shield": 1}
 var torch_in_hand := false
+var shield_in_arm := ""
 var inventory: Control # tela do inventário (com o baú do lado)
 var manual: Control # manual de sobrevivência (só leitura no treino)
 var _chest_id := ""
@@ -90,6 +91,8 @@ func _ready() -> void:
 	inventory.connect("use_requested", func(item):
 		if str(item) == "torch":
 			set_torch(not torch_in_hand)
+		elif SurvivalData.item(str(item)).has("shield"):
+			set_shield("" if shield_in_arm == str(item) else str(item))
 		else:
 			_toast("SÓ NA SOBREVIVÊNCIA"))
 	inventory.connect("place_requested", func(item):
@@ -182,14 +185,28 @@ func _take(k: String, item: String) -> void:
 func _sync_inventory() -> void:
 	if torch_in_hand and int(inv.get("torch", 0)) <= 0:
 		set_torch(false)
+	if not shield_in_arm.is_empty() and int(inv.get(shield_in_arm, 0)) <= 0:
+		set_shield("")
 	inventory.call("set_inventory", inv, SurvivalData.inventory_weight(inv), CARRY_CAP)
 	manual.call("set_inventory", inv)
 	if not _chest_id.is_empty():
 		_show_chest()
 
+## Escudo no braço esquerdo (treino). Tira a tocha: a mão esquerda é uma só.
+func set_shield(id: String) -> void:
+	shield_in_arm = id if not id.is_empty() and int(inv.get(id, 0)) > 0 else ""
+	if not shield_in_arm.is_empty() and torch_in_hand:
+		set_torch(false)
+	player.call("set_shield", shield_in_arm)
+	inventory.set("shield_on", shield_in_arm)
+	if inventory.visible:
+		inventory.call("_refresh")
+
 ## Tocha na mão (treino): só aparece/some aqui, sem servidor.
 func set_torch(on: bool) -> void:
 	torch_in_hand = on and int(inv.get("torch", 0)) > 0
+	if torch_in_hand and not shield_in_arm.is_empty():
+		set_shield("")
 	HandTorch.set_on(player, torch_in_hand)
 	inventory.set("torch_lit", torch_in_hand)
 	if inventory.visible:

@@ -200,6 +200,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	if current_clip in ["punch", "elbow_punch"] and animation_player.is_playing():
 		_apply_crouch()
 		_update_weapon_mount()
+		_apply_shield()
+		_place_shield()
 		_update_backpack()
 		return
 	if current_clip in ["punch", "elbow_punch"] and not animation_player.is_playing():
@@ -302,6 +304,7 @@ func _finish_pose() -> void:
 			_tool_node.visible = false
 		if is_instance_valid(_bow_model):
 			_bow_model.visible = false
+		_apply_shield()
 		_update_backpack()
 		return
 	_apply_crouch()
@@ -311,11 +314,13 @@ func _finish_pose() -> void:
 	_apply_body_dynamics()
 	if bow_active and work_action.is_empty():
 		_apply_bow_pose()
+		_apply_shield()
 		_update_backpack()
 		return
 	if not work_action.is_empty():
 		_apply_work()
 		_apply_overlay()
+		_apply_shield()
 		_update_backpack()
 		return
 	# An action that uses the hands puts the gun away while it plays.
@@ -331,7 +336,9 @@ func _finish_pose() -> void:
 		_prone_arms(unarmed_weight)
 	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
 		_relax_arms(unarmed_weight * (1.0 - _run_arms))
+	_apply_shield()
 	_apply_overlay()
+	_place_shield()
 	_update_backpack()
 
 # ------------------------------------------------------ dinâmica do corpo ---
@@ -1287,6 +1294,107 @@ func _apply_swing(chest: int, spine: int, right_arm: int) -> void:
 
 # -------------------------------------------------------------- mochila ---
 ## Mochila nas costas (Sobrevivência): "" tira. Tamanho e cor pelo tipo.
+# --------------------------------------------------------------- escudo ---
+# Escudo no braço esquerdo (escudo tático / de madeira). Dois jeitos:
+# - carregando: braço solto ao lado do corpo, punho na mão, face para fora;
+# - em guarda (botão FIXA): antebraço na frente do peito, face para a frente
+#   cobrindo do quadril aos olhos (no tático o visor fica na linha dos olhos).
+# A arma de fogo continua na mão direita (uma mão só). Some nadando, deitado,
+# com o arco, trabalhando com ferramenta ou numa ação que usa as duas mãos.
+const ShieldModel = preload("res://scripts/weapons/shield_model.gd")
+const SHIELD_RAISE_RATE := 6.0
+var shield_id := ""
+var shield_raised := false
+var shield_blocking := false # outros jogadores: o escudo segura tiros (corpo na camada LAYER_SHIELD)
+var shield_weight := 0.0 # 0 carregando, 1 em guarda
+var _shield: Node3D
+var _shield_hand_offset := Transform3D.IDENTITY # escudo em relação à mão esquerda (após o IK)
+var _shield_posed := false
+
+## `id` vazio tira o escudo. `raised` = guarda alta (FIXA).
+func set_shield(id: String, raised: bool, blocking: bool = false) -> void:
+	if not ShieldModel.is_shield(id):
+		id = ""
+	shield_raised = raised and not id.is_empty()
+	if id == shield_id and blocking == shield_blocking:
+		return
+	shield_id = id
+	shield_blocking = blocking
+	if _shield != null:
+		if _shield.get_parent() != null:
+			_shield.get_parent().remove_child(_shield)
+		_shield.queue_free()
+		_shield = null
+
+func _shield_in_hand() -> bool:
+	return _shield != null and _shield.visible
+
+func _apply_shield() -> void:
+	_shield_posed = false
+	if shield_id.is_empty() or skeleton == null:
+		return
+	if _shield == null:
+		_shield = ShieldModel.build(shield_id, shield_blocking)
+		skeleton.add_child(_shield)
+	var hidden := swim_weight > 0.01 or prone_weight > 0.5 or bow_active or not work_action.is_empty() or _overlay_arm_weight() > 0.3
+	_shield.visible = not hidden
+	_set_shield_blocking(not hidden)
+	shield_weight = move_toward(shield_weight, 1.0 if shield_raised and not hidden else 0.0, _last_delta * SHIELD_RAISE_RATE)
+	if hidden:
+		return
+	var chest := Grip._bone(skeleton, "Spine2")
+	var left_arm := Grip._bone(skeleton, "LeftArm")
+	var right_arm := Grip._bone(skeleton, "RightArm")
+	var hand := Grip._bone(skeleton, "LeftHand")
+	if chest < 0 or left_arm < 0 or right_arm < 0 or hand < 0:
+		return
+	var up := Vector3.UP
+	var forward := Vector3(0, 0, 1) # frente do modelo no espaço do esqueleto
+	var right := Vector3(signf(skeleton.get_bone_global_pose(right_arm).origin.x), 0, 0)
+	var left := -right
+	var torso := skeleton.get_bone_global_pose(chest).origin
+	var shoulder := skeleton.get_bone_global_pose(left_arm).origin
+	# Carregando: mão ao lado da coxa, escudo de pé com a face para fora.
+	var step := sin(Time.get_ticks_msec() * 0.0075) * 0.02 * _move_amount # balança com o passo
+	var carry_grip := shoulder + left * 0.08 - up * 0.46 + forward * (0.07 + step)
+	var carry_basis := _shield_frame(up, (left * 0.9 + forward * 0.3).normalized())
+	# Guarda: punho na frente do peito; o tático desce um pouco (visor nos olhos).
+	var drop := 0.14 if shield_id == "tactical_shield" else 0.06
+	var guard_grip := torso + left * 0.07 + forward * 0.29 - up * drop
+	var guard_basis := _shield_frame((up - forward * 0.06).normalized(), (forward + left * 0.12).normalized())
+	var w := _smooth(shield_weight)
+	var grip := carry_grip.lerp(guard_grip, w)
+	var basis := Basis(carry_basis.get_rotation_quaternion().slerp(guard_basis.get_rotation_quaternion(), w))
+	# Indicador apontando para dentro (guarda) / para a frente (carregando).
+	var flip := 1.0 if guard_basis.x.dot(right) >= 0.0 else -1.0
+	var axis := basis.x * flip
+	var fingers := basis.z * 0.6 - basis.y * 0.8
+	var pole := (left * 0.35 - forward * 0.6).lerp(left * 0.5 - up * 0.7 - forward * 0.2, w)
+	_grip_on_staff("Left", grip, axis, fingers, pole)
+	var shield_xform := Transform3D(basis, grip)
+	_shield_hand_offset = skeleton.get_bone_global_pose(hand).affine_inverse() * shield_xform
+	_shield.transform = shield_xform
+	_shield_posed = true
+
+## Depois das ações por cima (overlay): o escudo acompanha a mão de verdade.
+func _place_shield() -> void:
+	if not _shield_posed or _shield == null:
+		return
+	var hand := Grip._bone(skeleton, "LeftHand")
+	if hand >= 0:
+		_shield.transform = skeleton.get_bone_global_pose(hand) * _shield_hand_offset
+
+func _set_shield_blocking(on: bool) -> void:
+	var body := _shield.get_node_or_null("ShieldBody") as StaticBody3D
+	if body != null:
+		body.collision_layer = ShieldModel.HitboxScript.LAYER_SHIELD if on else 0
+
+## Base do escudo: Z = face (para onde aponta), Y = para cima.
+static func _shield_frame(up_hint: Vector3, face: Vector3) -> Basis:
+	var z := face.normalized()
+	var y := (up_hint - z * up_hint.dot(z)).normalized()
+	return Basis(y.cross(z).normalized(), y, z)
+
 const BACKPACK_LOOK := {
 	"school_bag": [Vector3(0.30, 0.38, 0.14), Color("#2f5d8a")],
 	"sack_bag": [Vector3(0.32, 0.34, 0.16), Color("#8a7a5a")],
@@ -1914,7 +2022,8 @@ func _update_weapon_mount() -> void:
 	if barrel_direction.length_squared() > 0.000001:
 		weapon_mount.global_position += barrel_direction.normalized() * (0.06 if is_pistol else 0.035)
 	var grip_sides: Array[String] = ["Right"]
-	if not is_pistol:
+	# Com escudo a mão esquerda está no punho dele: a arma vai só na direita.
+	if not is_pistol and not _shield_in_hand():
 		grip_sides.append("Left")
 	for iteration in range(8):
 		var moved := false
@@ -1935,9 +2044,9 @@ func _update_weapon_mount() -> void:
 		_aim_mount()
 	for side in grip_sides:
 		Grip.solve(skeleton, weapon_mount, side, true)
-	if is_pistol:
+	if is_pistol and not _shield_in_hand():
 		_relax_left_arm()
-	else:
+	elif not is_pistol:
 		_clear_stock_from_arm()
 
 # Arma longa: o cotovelo direito vem do clipe e, em alguns corpos/armas, o

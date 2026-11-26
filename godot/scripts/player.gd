@@ -139,6 +139,12 @@ var muzzle_flare: MeshInstance3D
 var gun_kick := 0.0
 var current_weapon := "pistol"
 var weapon_holstered := false
+## Escudo no braço esquerdo (item da sobrevivência): id do item ("" = sem escudo)
+## e a guarda alta, que liga/desliga no botão FIXA (ação "shield").
+var shield_id := ""
+var shield_raised := false
+const SHIELD_GUARD_SPEED := 2.5 # em guarda: anda, não corre
+const SHIELD_ONE_HAND_SPREAD := 1.35 # arma longa numa mão só (a esquerda está no escudo)
 var reserve_ammo := {"pistol": 90, "smg": 150, "rifle": 150, "shotgun": 36, "sniper": 25, "bow": 20}
 var magazines := {"pistol": 15, "smg": 30, "rifle": 30, "shotgun": 6, "sniper": 5, "bow": 0}
 var weapon_model: Node3D
@@ -395,6 +401,19 @@ func swap_shoulder() -> void:
 func is_scope_active() -> bool:
     return not has_bow() and not weapon_holstered and current_weapon == "sniper" and aiming and not reloading
 
+## Põe (id do item) ou tira ("") o escudo do braço esquerdo.
+func set_shield(id: String) -> void:
+    if id != shield_id:
+        shield_raised = false
+    shield_id = id
+
+## Botão FIXA: levanta / abaixa a guarda do escudo.
+func toggle_shield_guard() -> void:
+    if shield_id.is_empty() or swimming or prone or climbing or has_bow():
+        shield_raised = false
+        return
+    shield_raised = not shield_raised
+
 func _unhandled_input(event: InputEvent) -> void:
     if fishing_active and not event is InputEventMouseMotion:
         return
@@ -411,6 +430,10 @@ func _unhandled_input(event: InputEvent) -> void:
         if event.is_action("shoulder_swap"):
             if PointerMode.is_captured() and not (ui_blocking.is_valid() and bool(ui_blocking.call())):
                 swap_shoulder()
+            return
+        if event.is_action("shield"):
+            if PointerMode.is_captured() and not (ui_blocking.is_valid() and bool(ui_blocking.call())):
+                toggle_shield_guard()
             return
         if climbing and (event.is_action("grenade") or event.is_action("interact") or event.is_action("heal")):
             return # mãos ocupadas na escalada
@@ -585,6 +608,11 @@ func _physics_process(delta: float) -> void:
     swimming = not water.is_empty() and float(water.get("surface", -100)) - global_position.y > 0.75
     var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
     if swimming: current_speed = minf(current_speed, 2.6)
+    if shield_raised:
+        if swimming or prone or climbing or has_bow():
+            shield_raised = false # mãos ocupadas: a guarda cai
+        else:
+            current_speed = minf(current_speed, SHIELD_GUARD_SPEED)
     current_speed *= 1.0 - LAND_SLOWDOWN * clampf(_land_recovery / LAND_RECOVERY_TIME, 0.0, 1.0)
     _land_recovery = maxf(0.0, _land_recovery - delta)
     var grounded_before := is_on_floor()
@@ -635,7 +663,7 @@ func _physics_process(delta: float) -> void:
     var actual_velocity := get_real_velocity()
     _update_body_facing(delta, actual_velocity)
     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
-    sprinting = Input.is_action_pressed("sprint") and not aiming and not crouching and not prone and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
+    sprinting = Input.is_action_pressed("sprint") and not aiming and not shield_raised and not crouching and not prone and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
     _animate_avatar(delta, actual_move, is_on_floor())
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
@@ -1173,6 +1201,8 @@ func current_spread() -> float:
     var stats: Dictionary = WeaponData.stats(current_weapon)
     var planar_speed := Vector2(velocity.x, velocity.z).length()
     var spread := float(stats["spread"]) * (WeaponData.AIM_SPREAD if aiming else 1.0)
+    if not shield_id.is_empty() and current_weapon != "pistol":
+        spread *= SHIELD_ONE_HAND_SPREAD
     if prone:
         spread *= WeaponData.CROUCH_SPREAD * 0.6 # deitado e apoiado: o tiro mais firme
     elif crouching:
@@ -1506,6 +1536,8 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
             humanoid_avatar.call("set_prone", prone)
         if humanoid_avatar.has_method("set_swimming"):
             humanoid_avatar.call("set_swimming", swimming)
+        if humanoid_avatar.has_method("set_shield"):
+            humanoid_avatar.call("set_shield", shield_id, shield_raised)
         humanoid_avatar.call("animate", delta, input_amount, running, crouching, aiming, not grounded, reloading, Input.get_vector("move_left", "move_right", "move_forward", "move_back"), humanoid_avatar.global_basis.inverse() * get_real_velocity())
         return
     if jaime_model != null and jaime_animation != null:

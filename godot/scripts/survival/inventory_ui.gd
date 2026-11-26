@@ -24,6 +24,7 @@ signal store_requested(container_id: String, item: String, amount: int)
 signal place_requested(item: String) # tocha: fincar no chão / prender na parede
 
 var torch_lit := false # tocha acesa na mão (muda o texto do botão)
+var shield_on := "" # escudo no braço esquerdo (muda o texto do botão)
 
 const SurvivalData = preload("res://scripts/survival/survival_data.gd")
 const CAT_ORDER := ["weapon", "ammo", "armor", "melee", "medical", "food", "drink", "gear", "fuel", "material"]
@@ -716,7 +717,7 @@ func _primary(id: String) -> void:
 	var entry := SurvivalData.item(id)
 	if container_store and not container_id.is_empty():
 		_request_amount("store", id, int(inv.get(id, 0)))
-	elif entry.has("use") or entry.has("repair") or id == "torch":
+	elif entry.has("use") or entry.has("repair") or id == "torch" or entry.has("shield"):
 		use_requested.emit(id)
 	elif str(entry.get("slot", "")) in ["back", "head", "chest"]:
 		equip_requested.emit(id)
@@ -766,6 +767,11 @@ func _refresh_detail() -> void:
 		var place := _button("Fincar / prender na parede")
 		place.pressed.connect(func(): place_requested.emit(id))
 		actions.add_child(place)
+	if entry.has("shield"):
+		# Escudo: no braço esquerdo (arma na direita); FIXA levanta a guarda.
+		var arm := _button("Tirar do braço" if shield_on == id else "Pôr no braço", not container_store)
+		arm.pressed.connect(func(): use_requested.emit(id))
+		actions.add_child(arm)
 	if str(entry.get("slot", "")) == "back":
 		var eq := _button("Equipar nas costas", true)
 		eq.pressed.connect(func(): equip_requested.emit(id))

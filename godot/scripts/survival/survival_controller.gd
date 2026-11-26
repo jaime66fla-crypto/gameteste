@@ -25,6 +25,7 @@ var intro: CanvasLayer # naufrágio do Aurora do Sul (personagem novo)
 var weather: Node3D
 var death_title: Label
 var torch_in_hand := false # tocha acesa na mão (os outros veem pelo "tc" do estado)
+var shield_in_arm := "" # escudo no braço esquerdo (os outros veem pelo "sh"/"sg" do estado)
 var animals: Dictionary = {} # id -> Animal
 const FishingScript = preload("res://scripts/survival/survival_fishing.gd")
 var fishing_ctl: Node
@@ -307,7 +308,7 @@ func _physics_process(delta: float) -> void:
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") and action.is_empty() else action, "tool": "bow" if player.call("has_bow") and action.is_empty() else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand})
+			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") and action.is_empty() else action, "tool": "bow" if player.call("has_bow") and action.is_empty() else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand, "sh": shield_in_arm, "sg": player.get("shield_raised")})
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE
@@ -741,6 +742,7 @@ func _on_local_death() -> void:
 	_set_infected(0.0)
 	local_dead = true
 	set_torch(false)
+	set_shield("")
 	_respawn_left = 8.0
 	inventory.call("close")
 	if manual != null and manual.visible:
@@ -803,6 +805,8 @@ func _apply_inventory(data: Dictionary) -> void:
 	inventory.set("known", data.get("known", []))
 	if torch_in_hand and int(inv.get("torch", 0)) <= 0:
 		set_torch(false) # fincou, guardou ou largou a última tocha
+	if not shield_in_arm.is_empty() and int(inv.get(shield_in_arm, 0)) <= 0:
+		set_shield("") # guardou, largou ou perdeu o escudo
 	_dress(player.get("humanoid_avatar"), back)
 	var owned: Dictionary = player.get("owned_weapons")
 	for item in inv:
@@ -885,9 +889,21 @@ func _on_take_all(container_id: String) -> void:
 func _on_drop(item: String, amount: int) -> void:
 	Net.send({"t": "drop", "item": item, "n": amount, "op": inventory.call("operation_token")})
 
+## Escudo no braço esquerdo ("" tira). A mão esquerda é uma só: apaga a tocha.
+func set_shield(id: String) -> void:
+	shield_in_arm = id if not id.is_empty() and int(inv.get(id, 0)) > 0 and not local_dead else ""
+	if not shield_in_arm.is_empty() and torch_in_hand:
+		set_torch(false)
+	player.call("set_shield", shield_in_arm)
+	inventory.set("shield_on", shield_in_arm)
+	if inventory.visible:
+		inventory.call("_refresh")
+
 ## Acende/apaga a tocha da mão (só com uma tocha na mochila).
 func set_torch(on: bool) -> void:
 	torch_in_hand = on and int(inv.get("torch", 0)) > 0 and not local_dead
+	if torch_in_hand and not shield_in_arm.is_empty():
+		set_shield("")
 	HandTorch.set_on(player, torch_in_hand)
 	inventory.set("torch_lit", torch_in_hand)
 	if inventory.visible:
@@ -905,6 +921,10 @@ func _on_use(item: String) -> void:
 	if item == "torch":
 		set_torch(not torch_in_hand)
 		_toast("TOCHA ACESA NA MÃO" if torch_in_hand else "TOCHA APAGADA")
+		return
+	if entry.has("shield"):
+		set_shield("" if shield_in_arm == item else item)
+		_toast(("%s NO BRAÇO — FIXA LEVANTA A GUARDA" % SurvivalData.item_name(item).to_upper()) if not shield_in_arm.is_empty() else "ESCUDO GUARDADO")
 		return
 	if item == "repair_kit":
 		var car := str(driving_ctl.call("repairable_near", player.global_position))

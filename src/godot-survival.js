@@ -219,6 +219,23 @@ export function armorFactor(player, zone, weapon = '') {
 	return 1;
 }
 
+/**
+ * Fração do dano que passa pelo escudo: só com a guarda alta (FIXA) e o golpe
+ * vindo de frente (cone de ±60° para onde o jogador olha). O tiro que acerta o
+ * próprio escudo já para nele no cliente de quem atirou; isto cobre o que
+ * passa por baixo/do lado, mordidas e golpes.
+ */
+export function shieldFactor(player, from) {
+	if (!player.guard || !player.shield || !Array.isArray(from) || !Array.isArray(player.p)) return 1;
+	const dx = from[0] - player.p[0];
+	const dz = from[2] - player.p[2];
+	const len = Math.hypot(dx, dz);
+	if (len < 0.001) return 1;
+	const yaw = player.y || 0; // frente do personagem = -Z girado pelo yaw
+	const facing = (dx * -Math.sin(yaw) + dz * -Math.cos(yaw)) / len;
+	return facing >= 0.5 ? 1 - (ITEMS[player.shield]?.shield || 0) : 1;
+}
+
 function addItems(inv, item, n) {
 	if (!ITEMS[item] || !(n > 0)) return;
 	inv[item] = (inv[item] || 0) + n;
@@ -767,10 +784,13 @@ export class GodotSurvival {
 				me.p = p;
 				me.stance = stanceOf(d);
 				if (finite(d.y, 1000)) me.y = d.y;
+				// Escudo no braço esquerdo (só se tiver na mochila) e a guarda alta (FIXA).
+				me.shield = typeof d.sh === 'string' && ITEMS[d.sh]?.shield && (me.inv[d.sh] || 0) > 0 ? d.sh : '';
+				me.guard = !!d.sg && !!me.shield;
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, dv: me.vehicle || '', ch: characterId(d.ch),
+					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, sh: me.shield, sg: me.guard, dv: me.vehicle || '', ch: characterId(d.ch),
 					act: me.fishing ? 'fish' : ['chop', 'pry', 'swing', 'hold', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: me.fishing ? 'fishing_rod' : typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
 					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],
@@ -941,11 +961,11 @@ export class GodotSurvival {
 		if (!target || target.dead || target.id === attacker.id || !this.sessions.has(target.id)) return;
 		if (target.vehicle) return; // dentro do carro ninguém se machuca (o carro protege)
 		if (flat(attacker.p, target.p) > reach + 2) return;
-		this.damagePlayer(target, amount, attacker.id, weapon, zone, attacker);
+		this.damagePlayer(target, amount, attacker.id, weapon, zone, attacker, attacker.p);
 	}
 
-	damagePlayer(target, amount, by, weapon, zone = null, attacker = null) {
-		amount *= armorFactor(target, zone, weapon);
+	damagePlayer(target, amount, by, weapon, zone = null, attacker = null, from = null) {
+		amount *= armorFactor(target, zone, weapon) * shieldFactor(target, from);
 		target.hp = Math.max(0, round1(target.hp - amount));
 		const killed = target.hp === 0;
 		this.broadcast({ t: 'hp', id: target.id, hp: target.hp, by, w: weapon, zone, killed });
@@ -1055,7 +1075,7 @@ export class GodotSurvival {
 		if (now - (zombie.lastHit || 0) < ZOMBIE_ATTACK_MS) return;
 		if (Math.hypot(zombie.p[0] - target.p[0], zombie.p[2] - target.p[2]) > ZOMBIE_REACH + ZOMBIE_REACH_LAG) return;
 		zombie.lastHit = now;
-		this.damagePlayer(target, ZOMBIE_KINDS[zombie.kind]?.damage || 9, zombie.id, 'zombie');
+		this.damagePlayer(target, ZOMBIE_KINDS[zombie.kind]?.damage || 9, zombie.id, 'zombie', null, null, zombie.p);
 		// Mordida infecta: começa o relógio de 2 minutos (só uma infecção por vez).
 		if (!target.dead && !target.infectedAt) {
 			target.infectedAt = now;
@@ -1214,7 +1234,7 @@ export class GodotSurvival {
 		if (Math.abs(animal.p[1] - target.p[1]) > 2.5) return;
 		animal.lastHit = now;
 		if (prey) return this.hurtAnimal(prey, rule.damage, animal);
-		this.damagePlayer(target, rule.damage, animal.id, 'a_' + animal.kind);
+		this.damagePlayer(target, rule.damage, animal.id, 'a_' + animal.kind, null, null, animal.p);
 	}
 
 	/** Golpe/tiro num animal; morto, vira uma carcaça (mochila no chão) com carne e couro. */
