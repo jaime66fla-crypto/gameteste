@@ -6,6 +6,7 @@ const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
+const Avatar01 = preload("res://scripts/characters/avatar_01.gd")
 const OUTFIT_MODEL := "res://assets/personagens/01/01_modelo.scn"
 const SPIN_SPEED := 0.6
 const SHOWCASE_CLIP := "idle_foldarms"
@@ -118,13 +119,13 @@ func _outfit_piece(world: Node3D) -> void:
 		instance.free()
 		return
 	var skin := StoreCatalog.texture_path(item_id)
-	if not skin.is_empty() and ResourceLoader.exists(skin):
+	var textura: Texture2D = load(skin) as Texture2D if not skin.is_empty() and ResourceLoader.exists(skin) else null
+	var relevo := Avatar01.relevo_da_peca(StoreCatalog.piece(item_id))
+	if textura != null or relevo != null:
 		for s in mesh_node.mesh.get_surface_count():
 			var mat := mesh_node.get_active_material(s) as StandardMaterial3D
 			if mat != null:
-				mat = mat.duplicate() as StandardMaterial3D
-				mat.albedo_texture = load(skin) as Texture2D
-				mesh_node.set_surface_override_material(s, mat)
+				mesh_node.set_surface_override_material(s, Avatar01.vestir_material(mat, textura, relevo))
 	var box := mesh_node.mesh.get_aabb()
 	_spinner = Node3D.new()
 	world.add_child(_spinner)

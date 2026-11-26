@@ -76,16 +76,31 @@ func trocar_textura(peca: String, textura: Texture2D) -> void:
 			originais.append(no.get_surface_override_material(s))
 		no.set_meta("material_original", originais)
 	var originais: Array = no.get_meta("material_original")
+	var relevo := relevo_da_peca(peca)
 	for s in no.mesh.get_surface_count():
 		no.set_surface_override_material(s, originais[s])
-		if textura == null:
+		if textura == null and relevo == null:
 			continue
 		var mat := no.get_active_material(s) as StandardMaterial3D
 		if mat == null:
 			continue
-		mat = mat.duplicate() as StandardMaterial3D
+		no.set_surface_override_material(s, vestir_material(mat, textura, relevo))
+
+## Relevo do tecido da peça (roupas/<peça>_normal.png, de paint_roupas.py), ou null.
+static func relevo_da_peca(peca: String) -> Texture2D:
+	var caminho := "res://assets/personagens/01/roupas/%s_normal.png" % peca
+	return load(caminho) as Texture2D if ResourceLoader.exists(caminho) else null
+
+## Cópia do material da peça com a textura da skin (null = mantém) e o relevo.
+static func vestir_material(mat: StandardMaterial3D, textura: Texture2D, relevo: Texture2D) -> StandardMaterial3D:
+	mat = mat.duplicate() as StandardMaterial3D
+	if textura != null:
 		mat.albedo_texture = textura
-		no.set_surface_override_material(s, mat)
+	if relevo != null:
+		mat.normal_enabled = true
+		mat.normal_texture = relevo
+		mat.normal_scale = 1.0
+	return mat
 
 func _peca(peca: String) -> MeshInstance3D:
 	if _source_model == null:
