@@ -10,6 +10,7 @@ const BrasasShop = preload("res://scripts/loja/brasas_shop.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 const Controls = preload("res://scripts/controls.gd")
+const TermsScreen = preload("res://scripts/ui/terms.gd")
 var settings: Dictionary
 var content: VBoxContainer
 var status: Label
@@ -195,12 +196,50 @@ func _show_login(create: bool, message: String = "") -> void:
     name_field.text = Net.load_name()
     var password := _field("Senha (mínimo 6 caracteres)","AccountPassword",true)
     var confirm: LineEdit = _field("Repita a senha","AccountPasswordConfirm",true) if create else null
+    # Criar conta exige aceitar os Termos de Uso; quem só entra vê o aviso e o link.
+    var accept: CheckBox = null
+    var terms_row := HBoxContainer.new()
+    terms_row.name = "TermsRow"
+    terms_row.alignment = BoxContainer.ALIGNMENT_CENTER
+    terms_row.add_theme_constant_override("separation", 4)
+    content.add_child(terms_row)
+    if create:
+        accept = CheckBox.new()
+        accept.name = "AcceptTerms"
+        accept.text = "Li e aceito os"
+        accept.focus_mode = Control.FOCUS_ALL
+        accept.add_theme_font_size_override("font_size", 15)
+        accept.add_theme_constant_override("h_separation", 8)
+        # Sem o fundo inclinado dos botões do menu: só a caixinha e o texto.
+        for state in ["normal","hover","pressed","hover_pressed","focus","disabled"]:
+            accept.add_theme_stylebox_override(state, _box(Color.TRANSPARENT, Color(ACCENT, 0.6) if state == "focus" else Color.TRANSPARENT, 1 if state == "focus" else 0, 3))
+        for state in ["font_color","font_hover_color","font_pressed_color","font_hover_pressed_color","font_focus_color"]:
+            accept.add_theme_color_override(state, TEXT)
+        accept.add_theme_icon_override("unchecked", _check_icon(false))
+        accept.add_theme_icon_override("checked", _check_icon(true))
+        terms_row.add_child(accept)
+    else:
+        terms_row.add_child(_plain("Ao entrar você concorda com os", 14, MUTED))
+    var terms_link := LinkButton.new()
+    terms_link.name = "ReadTermsButton"
+    terms_link.text = "Termos de Uso"
+    terms_link.underline = LinkButton.UNDERLINE_MODE_ALWAYS
+    terms_link.add_theme_font_size_override("font_size", 15 if create else 14)
+    for state in ["font_color","font_hover_color","font_focus_color","font_pressed_color"]:
+        terms_link.add_theme_color_override(state, ACCENT if state == "font_color" else ACCENT_HOT)
+    terms_link.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    terms_link.pressed.connect(_show_terms)
+    terms_row.add_child(terms_link)
     var feedback := _label(message,15,Color("#f0a08a"))
     feedback.name = "LoginFeedback"
     var submit := _button("Criar conta e entrar" if create else "Entrar","LoginSubmit",Callable(),true)
     submit.pressed.connect(func():
         if confirm != null and confirm.text != password.text:
             feedback.text = "As senhas não são iguais."
+            return
+        if accept != null and not accept.button_pressed:
+            feedback.add_theme_color_override("font_color",Color("#f0a08a"))
+            feedback.text = "Para criar a conta, aceite os Termos de Uso."
             return
         submit.disabled = true
         feedback.add_theme_color_override("font_color",Color("#d6dfd9"))
@@ -642,9 +681,61 @@ func _footer(parent: Node) -> void:
     var gap := Control.new()
     gap.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     row.add_child(gap)
+    var terms := LinkButton.new()
+    terms.name = "FooterTermsButton"
+    terms.text = "TERMOS DE USO"
+    terms.underline = LinkButton.UNDERLINE_MODE_ON_HOVER
+    terms.add_theme_font_override("font", caps_font)
+    terms.add_theme_font_size_override("font_size", 12)
+    terms.add_theme_color_override("font_color", MUTED)
+    for state in ["font_hover_color","font_focus_color","font_pressed_color"]:
+        terms.add_theme_color_override(state, ACCENT)
+    terms.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    terms.pressed.connect(_show_terms)
+    row.add_child(terms)
+    row.add_child(_plain("·", 12, DIM))
     var version := _plain("VERSÃO " + Net.game_version(), 12, DIM, caps_font)
     version.name = "VersionLabel"
     row.add_child(version)
+
+## Caixinha de marcar desenhada aqui (a padrão some no fundo escuro): borda cinza ou laranja com ✓.
+func _check_icon(checked: bool) -> ImageTexture:
+    const S := 20
+    var img := Image.create(S, S, false, Image.FORMAT_RGBA8)
+    img.fill(Color.TRANSPARENT)
+    for y in S:
+        for x in S:
+            var edge := x < 2 or y < 2 or x >= S - 2 or y >= S - 2
+            if checked:
+                img.set_pixel(x, y, ACCENT)
+            elif edge:
+                img.set_pixel(x, y, MUTED)
+    if checked:
+        var ink := Color("#1a1208")
+        var points := [Vector2(5, 10), Vector2(8.5, 13.5), Vector2(15, 6)]
+        for i in 2:
+            var a: Vector2 = points[i]
+            var b: Vector2 = points[i + 1]
+            for step in 41:
+                var p := a.lerp(b, step / 40.0)
+                for dy in range(-1, 2):
+                    for dx in range(-1, 1):
+                        var q := Vector2i(roundi(p.x) + dx, roundi(p.y) + dy)
+                        if q.x >= 0 and q.y >= 0 and q.x < S and q.y < S:
+                            img.set_pixelv(q, ink)
+    return ImageTexture.create_from_image(img)
+
+## Termos de Uso por cima da tela atual (scripts/ui/terms.gd); o que estava digitado continua lá.
+func _show_terms() -> void:
+    var open := get_node_or_null("TermsOverlay")
+    if open != null and not open.is_queued_for_deletion():
+        return
+    var overlay := TermsScreen.new()
+    var previous := get_viewport().gui_get_focus_owner()
+    overlay.closed.connect(func():
+        if is_instance_valid(previous) and previous.is_inside_tree() and previous.is_visible_in_tree():
+            previous.grab_focus())
+    add_child(overlay)
 
 ## Dark card with a thin accent strip on top; returns the column to fill.
 func _side_panel(parent: Node, panel_name: String) -> VBoxContainer:
@@ -3177,6 +3268,7 @@ func _show_config() -> void:
     fullscreen.visible = not Settings.is_mobile() # celular é sempre tela cheia
     content.add_child(fullscreen)
     _button("Controles (teclas e mouse)","ControlsButton",_show_controls)
+    _button("Termos de Uso e Privacidade","TermsButton",_show_terms)
     status = _label("",14)
     _button("Salvar","SaveButton",func():
         var values := {"sensitivity": sensitivity.value/100.0,"volume": volume.value/100.0,"msaa": aa.selected,"fullscreen": fullscreen.button_pressed,"quality": quality.selected}
