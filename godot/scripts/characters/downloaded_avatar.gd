@@ -186,6 +186,8 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	if not ready_ok:
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
+	_showcase_aim_weight = move_toward(_showcase_aim_weight, 1.0 if showcase_aim else 0.0, delta * 5.0)
+	_showcase_kick = move_toward(_showcase_kick, 0.0, delta * SHOWCASE_KICK_RETURN)
 	_last_delta = delta
 	_airborne = airborne
 	_planar_speed = Vector2(planar_velocity.x, planar_velocity.z).length()
@@ -2147,6 +2149,22 @@ static func _segment_distance(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3
 var showcase_ready := false
 const SHOWCASE_DOWN := deg_to_rad(30.0)   # cano abaixo da horizontal
 const SHOWCASE_INWARD := deg_to_rad(8.0) # cano cruzando para a esquerda
+## Vitrine mirando (Cofre: "Mirando"/"Atirando"): cano reto à frente, coronha
+## no ombro (pistola: braços esticados na altura do ombro). Troca suave.
+var showcase_aim := false
+var _showcase_aim_weight := 0.0
+## Coice do último tiro da vitrine: 1 no disparo, volta a 0 em ~0,15 s.
+var _showcase_kick := 0.0
+const SHOWCASE_KICK_RETURN := 7.0
+## Quanto o cano sobe (rad) e a arma recua (m) no pico do coice.
+const SHOWCASE_KICK := {"pistol": [0.30, 0.05], "smg": [0.10, 0.04], "rifle": [0.12, 0.045], "shotgun": [0.24, 0.07], "sniper": [0.20, 0.07]}
+
+## Um tiro da vitrine: o cano sobe e a arma recua, depois volta sozinha.
+func showcase_fire() -> void:
+	_showcase_kick = 1.0
+
+func showcase_kick() -> float:
+	return _showcase_kick
 
 func _showcase_ready_mount() -> void:
 	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
@@ -2162,8 +2180,12 @@ func _showcase_ready_mount() -> void:
 	var left := up.cross(forward).normalized()
 	var shoulder := skeleton.to_global(skeleton.get_bone_global_pose(shoulder_bone).origin)
 	var chest := skeleton.to_global(skeleton.get_bone_global_pose(chest_bone).origin)
-	var down := SHOWCASE_DOWN * (1.4 if is_pistol else 1.0)
-	var inward := SHOWCASE_INWARD * (1.6 if is_pistol else 1.0)
+	var aim := _smooth(_showcase_aim_weight)
+	var kick_profile: Array = SHOWCASE_KICK.get(weapon_id, SHOWCASE_KICK["rifle"])
+	# Coice: sobe rápido e volta devagar (curva do quadrado do tempo restante).
+	var kick := _showcase_kick * _showcase_kick
+	var down := lerpf(SHOWCASE_DOWN * (1.4 if is_pistol else 1.0), 0.0, aim) - float(kick_profile[0]) * kick
+	var inward := lerpf(SHOWCASE_INWARD * (1.6 if is_pistol else 1.0), deg_to_rad(2.0), aim)
 	var barrel := (forward.rotated(up, inward)).rotated(left, down).normalized()
 	# Base da arma: -Z no cano e +Y para cima (como _aim_mount entende a arma).
 	var weapon_up := (up - barrel * barrel.dot(up)).normalized()
@@ -2178,6 +2200,23 @@ func _showcase_ready_mount() -> void:
 		# Arma longa (sniper, escopeta): mais à frente, senão a coronha entra no ombro.
 		var length := float((bound_weapon.get_meta("dimensions_m", Vector3(0, 0, 0.8)) as Vector3).z)
 		hand = shoulder + forward * (0.30 + maxf(length - 0.8, 0.0) * 0.5) - up * 0.22 - left * 0.02
+	if aim > 0.001:
+		var aimed: Vector3
+		var shoulder_height := (shoulder - chest).dot(up)
+		if is_pistol:
+			# Braços esticados, pistola no meio do peito na altura do ombro.
+			aimed = chest + forward * 0.46 + up * (shoulder_height - 0.03) + left * 0.01
+		else:
+			# Coronha no ombro (um pouco para dentro e à frente da cabeça do
+			# úmero): a mão fica onde o cabo cai com a coronha encostada ali.
+			var length := float((bound_weapon.get_meta("dimensions_m", Vector3(0, 0, 0.8)) as Vector3).z)
+			# Fim da coronha na linha do cano (o cabo fica abaixo dela).
+			var butt := muzzle.global_position - barrel * length
+			var pocket := shoulder + left * 0.06 + forward * 0.07 + up * 0.02
+			aimed = pocket + (grip.global_position - butt)
+		hand = hand.lerp(aimed, aim)
+	# Coice: a arma recua (e sobe um pouco) junto com o cano.
+	hand += (-forward * float(kick_profile[1]) + up * float(kick_profile[1]) * 0.35) * kick
 	weapon_mount.global_position += hand - grip.global_position
 	for side in ["Right", "Left"]:
 		var source := bound_weapon.get_node_or_null(side + "Grip") as Marker3D

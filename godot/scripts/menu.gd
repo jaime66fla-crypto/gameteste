@@ -1175,6 +1175,8 @@ var character_counter: Label
 ## Arma na mão da prévia do Cofre ("" = sem arma), com a skin equipada dela.
 var preview_weapon := ""
 const PREVIEW_WEAPONS := ["pistol", "smg", "shotgun", "rifle", "sniper"]
+## Pose da prévia armada do Cofre: "idle" (parado), "aim" (mirando), "fire" (atirando).
+var preview_pose := "idle"
 
 ## Sem o painel escuro da página: o conteúdo fica direto sobre a fumaça e as
 ## brasas do fundo, como no menu principal.
@@ -1245,6 +1247,7 @@ func _show_characters() -> void:
     _ghost(_button("Voltar", "BackButton", func():
         character_index = -1
         preview_weapon = ""
+        preview_pose = "idle"
         _show_main()))
     _show_character_at(character_index)
 
@@ -1379,6 +1382,8 @@ func _show_character_at(index: int) -> void:
     card.weapon_controls = true
     card.weapon_toggle_requested.connect(_toggle_preview_weapon)
     card.weapon_cycle_requested.connect(_cycle_preview_weapon)
+    card.pose = preview_pose
+    card.pose_changed.connect(_on_preview_pose_changed)
     card.selection_requested.connect(_select_character)
     character_stage.add_child(card)
     for child in character_dots.get_children():
@@ -1405,7 +1410,15 @@ func _toggle_preview_weapon() -> void:
                 break
     else:
         preview_weapon = ""
+        preview_pose = "idle"
     _show_character_at(character_index)
+
+## Parado/Mirando/Atirando na carta do Cofre. Sem arma na mão, mirar ou atirar
+## equipa uma (a com skin, senão o fuzil); com arma, a carta troca sozinha.
+func _on_preview_pose_changed(pose: String) -> void:
+    preview_pose = pose
+    if preview_weapon.is_empty() and pose != "idle":
+        _toggle_preview_weapon()
 
 func _cycle_preview_weapon() -> void:
     var at := PREVIEW_WEAPONS.find(preview_weapon)
