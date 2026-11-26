@@ -15,15 +15,32 @@ extends SceneTree
 ## - fingers are mapped too (UAL has 4 segments, Mixamo 3).
 ## Usage (from the repo root):
 ##   godot --headless --path godot --script res://tools/characters/build_ual2_clips.gd
-const SOURCE := "res://assets/personagens/ual2/UAL2_Standard.glb"
+## The first Universal Animation Library (same rig, assets/personagens/ual1/)
+## goes through the same retarget with the "ual1" user argument:
+##   godot --headless --path godot --script res://tools/characters/build_ual2_clips.gd -- ual1
 const TARGET_MODEL := "res://assets/personagens/downloaded/avatar.fbx"
-const OUT_DIR := "res://assets/personagens/ual2/clips/"
 const TARGET_ROOT := "Skeleton3D:"
 const PREFIX := "mixamorig9_"
 const FPS := 30.0
-## Clips that cycle (the rest play once).
-const LOOPING := ["Idle_FoldArms", "Idle_Lantern", "Idle_No", "Idle_Rail", "Idle_Rail_Call", "Idle_Shield", "Idle_TalkingPhone", "Yes", "NinjaJump_Idle", "Slide", "Walk_Carry", "Zombie_Idle", "Zombie_Walk_Fwd", "Farm_Watering"]
+## Per library: source GLB, output folder and the clips that cycle (the rest play once).
+const LIBRARIES := {
+	"ual2": {
+		"source": "res://assets/personagens/ual2/UAL2_Standard.glb",
+		"out": "res://assets/personagens/ual2/clips/",
+		"looping": ["Idle_FoldArms", "Idle_Lantern", "Idle_No", "Idle_Rail", "Idle_Rail_Call", "Idle_Shield", "Idle_TalkingPhone", "Yes", "NinjaJump_Idle", "Slide", "Walk_Carry", "Zombie_Idle", "Zombie_Walk_Fwd", "Farm_Watering"],
+	},
+	"ual1": {
+		"source": "res://assets/personagens/ual1/UAL1_Standard.glb",
+		"out": "res://assets/personagens/ual1/clips/",
+		"looping": ["Crouch_Fwd", "Crouch_Idle", "Dance", "Driving", "Fixing_Kneeling", "Idle", "Idle_Talking", "Idle_Torch", "Jog_Fwd", "Jump", "Pistol_Aim_Down", "Pistol_Aim_Neutral", "Pistol_Aim_Up", "Pistol_Idle", "Push", "Sitting_Idle", "Sitting_Talking", "Spell_Simple_Idle", "Sprint", "Swim_Fwd", "Swim_Idle", "Sword_Idle", "Walk", "Walk_Formal"],
+	},
+}
 const SKIP := ["A_TPose"]
+
+var SOURCE := ""
+var OUT_DIR := ""
+var LOOPING: Array = []
+var TAG := "UAL2"
 const BONE_MAP := {
 	"Hips": "pelvis", "Spine": "spine_01", "Spine1": "spine_02", "Spine2": "spine_03", "Neck": "neck_01", "Head": "Head",
 	"LeftShoulder": "clavicle_l", "LeftArm": "upperarm_l", "LeftForeArm": "lowerarm_l", "LeftHand": "hand_l",
@@ -36,6 +53,14 @@ const FINGERS := {"Thumb": "thumb", "Index": "index", "Middle": "middle", "Ring"
 var align := Basis.IDENTITY # turns source world space so it faces like the target
 
 func _initialize() -> void:
+	var library := "ual2"
+	for arg in OS.get_cmdline_user_args():
+		if LIBRARIES.has(arg):
+			library = arg
+	SOURCE = LIBRARIES[library]["source"]
+	OUT_DIR = LIBRARIES[library]["out"]
+	LOOPING = LIBRARIES[library]["looping"]
+	TAG = library.to_upper()
 	call_deferred("_build")
 
 func _build() -> void:
@@ -48,11 +73,11 @@ func _build() -> void:
 	var source := source_model.find_child("Skeleton3D", true, false) as Skeleton3D
 	var player := source_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
 	if target == null or source == null or player == null:
-		printerr("UAL2: modelo ou biblioteca não carregou")
+		printerr(TAG + ": modelo ou biblioteca não carregou")
 		quit(1)
 		return
 	align = _facing_alignment(source, target)
-	print("UAL2: alinhamento de frente ", rad_to_deg(align.get_euler().y), "°")
+	print(TAG + ": alinhamento de frente ", rad_to_deg(align.get_euler().y), "°")
 	var failed := false
 	var count := 0
 	for clip_name in player.get_animation_list():
@@ -62,7 +87,7 @@ func _build() -> void:
 		count += 1
 	source_model.free()
 	target_model.free()
-	print("UAL2 CLIPS: %d  %s" % [count, "FAIL" if failed else "PASS"])
+	print(TAG + " CLIPS: %d  %s" % [count, "FAIL" if failed else "PASS"])
 	quit(1 if failed else 0)
 
 ## Horizontal facing of a skeleton from the hip line (feet splay outwards and
@@ -148,7 +173,7 @@ func _retarget(player: AnimationPlayer, clip: String, source: Skeleton3D, target
 	result.length = frames / FPS
 	var looping := clip in LOOPING
 	result.loop_mode = Animation.LOOP_LINEAR if looping else Animation.LOOP_NONE
-	result.set_meta("source", "UAL2_Standard.glb:" + clip)
+	result.set_meta("source", SOURCE.get_file() + ":" + clip)
 	var tracks: Array[int] = []
 	var source_bones: Array[int] = []
 	var corrections: Array[Basis] = []
@@ -208,5 +233,5 @@ func _retarget(player: AnimationPlayer, clip: String, source: Skeleton3D, target
 		result.set_meta("ground_speed", travel.length() * scale / source_animation.length)
 	var out := OUT_DIR + clip.to_lower() + ".tres"
 	var error := ResourceSaver.save(result, out)
-	print("UAL2 %-22s %.2fs %s %s save=%d" % [clip, result.length, "loop" if looping else "once", ("%.2f m/s" % float(result.get_meta("ground_speed"))) if result.has_meta("ground_speed") else "", error])
+	print(TAG + " %-22s %.2fs %s %s save=%d" % [clip, result.length, "loop" if looping else "once", ("%.2f m/s" % float(result.get_meta("ground_speed"))) if result.has_meta("ground_speed") else "", error])
 	return error == OK

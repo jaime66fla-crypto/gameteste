@@ -1762,6 +1762,12 @@ func play_action_for(action: String, seconds: float) -> bool:
 # tronco e o IK/mira por baixo não "estala" quando a ação acaba.
 const UAL_DIR := "res://assets/personagens/ual2/clips/"
 const UAL_CLIPS := ["chest_open", "climbup_1m", "consume", "farm_harvest", "farm_plantseed", "farm_watering", "hit_knockback", "idle_foldarms", "idle_lantern", "idle_no", "idle_rail", "idle_rail_call", "idle_shield", "idle_shield_break", "idle_talkingphone", "laytoidle", "melee_hook", "melee_hook_rec", "ninjajump_idle", "ninjajump_land", "ninjajump_start", "overhandthrow", "shield_dash", "shield_oneshot", "slide", "slide_exit", "slide_start", "sword_block", "sword_dash", "sword_heavy_combo", "sword_regular_a", "sword_regular_a_rec", "sword_regular_b", "sword_regular_b_rec", "sword_regular_c", "sword_regular_combo", "treechopping", "walk_carry", "yes", "zombie_idle", "zombie_scratch", "zombie_walk_fwd"]
+## Universal Animation Library 1 (mesmo rig, mesmo build_ual2_clips.gd com
+## "-- ual1"): reações, morte, pistola, agachar, rolar, sentar, nadar...
+## Os nomes não colidem com os da UAL2; todos ficam no mesmo ual_clips.
+const UAL1_DIR := "res://assets/personagens/ual1/clips/"
+const UAL1_CLIPS := ["crouch_fwd", "crouch_idle", "dance", "death01", "driving", "fixing_kneeling", "hit_chest", "hit_head", "idle", "idle_talking", "idle_torch", "interact", "jog_fwd", "jump", "jump_land", "jump_start", "pickup_table", "pistol_aim_down", "pistol_aim_neutral", "pistol_aim_up", "pistol_idle", "pistol_reload", "pistol_shoot", "punch_cross", "punch_jab", "push", "roll", "sitting_enter", "sitting_exit", "sitting_idle", "sitting_talking", "spell_simple_enter", "spell_simple_exit", "spell_simple_idle", "spell_simple_shoot", "sprint", "swim_fwd", "swim_idle", "sword_attack", "sword_idle", "walk", "walk_formal"]
+const DEATH_CLIP := "death01"
 ## Gatilhos do jogo -> [clipe, máscara, velocidade, peso máximo, segundos (-1 = clipe todo)].
 const ACTIONS := {
 	"throw": ["overhandthrow", "upper", 1.25, 1.0, -1.0], # granada
@@ -1769,7 +1775,7 @@ const ACTIONS := {
 	"open": ["chest_open", "full", 1.2, 1.0, -1.0], # revistar recipiente / caixa
 	"harvest": ["farm_harvest", "full", 1.3, 1.0, -1.0], # colher fruta do arbusto
 	"plant": ["farm_plantseed", "full", 1.0, 1.0, -1.0],
-	"hit": ["hit_knockback", "upper", 1.0, 0.6, 0.3], # recuo de um golpe forte (sem a queda)
+	"hit": ["hit_chest", "upper", 1.0, 0.8, -1.0], # tranco de um tiro forte (UAL1, 0,33 s)
 	"get_up": ["laytoidle", "full", 1.3, 1.0, -1.0], # levantar do chão
 	"climb": ["climbup_1m", "full", 1.0, 1.0, -1.0],
 	"hook": ["melee_hook", "upper", 1.0, 1.0, -1.0],
@@ -1795,6 +1801,7 @@ var _overlay_until := -1.0 # seconds of a looping clip to play (-1 = one cycle)
 var _overlay_stopping := false
 var _overlay_fidget := false
 var overlay_hold_hips := false # a ação não mexe na altura do quadril (escalada)
+var _overlay_hold_end := false # para no último quadro em vez de sair (morte)
 var _idle_time := 0.0
 var _fidget_index := 0
 var _masks := {}
@@ -1822,7 +1829,23 @@ func play_overlay(clip_name: String, mask: String = "full", speed: float = 1.0, 
 	_overlay_stopping = false
 	_overlay_fidget = false
 	overlay_hold_hips = false
+	_overlay_hold_end = false
 	return true
+
+## Morte: o corpo cai com o Death01 (UAL1) e fica deitado no último quadro
+## até clear_death() (renascer). Precisa de animate() seguindo a cada quadro.
+func play_death() -> bool:
+	if not play_overlay(DEATH_CLIP, "full"):
+		return false
+	_overlay_hold_end = true
+	return true
+
+## Volta na hora para a pose normal (renascer não pode mostrar o corpo caído).
+func clear_death() -> void:
+	if _overlay_name == DEATH_CLIP:
+		_overlay_name = ""
+		_overlay_weight = 0.0
+	_overlay_hold_end = false
 
 ## Escalada: o clipe inteiro em `seconds`, sem a subida do quadril (quem sobe
 ## é a cápsula do jogador; o clipe só mexe braços, pernas e tronco).
@@ -1839,13 +1862,19 @@ func play_climb(clip_name: String, seconds: float) -> bool:
 func stop_overlay() -> void:
 	if not _overlay_name.is_empty():
 		_overlay_stopping = true
+		_overlay_hold_end = false
 
 func _load_ual_clips(skeleton_path: String, hip_scale: float, retarget: bool, hip_anchor: Vector3) -> void:
 	var key := "%s|%s|%.3f" % [model_path, skeleton_path, hip_scale]
 	if not _ual_cache.has(key):
 		var built := {}
+		var paths := {}
 		for clip_name in UAL_CLIPS:
-			var source := load(UAL_DIR + clip_name + ".tres") as Animation
+			paths[clip_name] = UAL_DIR + clip_name + ".tres"
+		for clip_name in UAL1_CLIPS:
+			paths[clip_name] = UAL1_DIR + clip_name + ".tres"
+		for clip_name in paths:
+			var source := load(paths[clip_name]) as Animation
 			if source == null:
 				continue
 			var clip := source.duplicate() as Animation
@@ -1905,6 +1934,10 @@ func _advance_overlay() -> void:
 		return
 	var clip: Animation = ual_clips[_overlay_name][0]
 	_overlay_time += _last_delta * _overlay_speed
+	if _overlay_hold_end:
+		_overlay_time = minf(_overlay_time, clip.length)
+		_overlay_weight = move_toward(_overlay_weight, _overlay_max, _last_delta / OVERLAY_FADE_IN)
+		return
 	# One cycle, or only `_overlay_until` seconds of it (a loop, or the first
 	# part of a one-shot, e.g. the recoil of a knockback without the fall).
 	var looping := clip.loop_mode != Animation.LOOP_NONE

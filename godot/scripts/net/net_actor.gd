@@ -90,6 +90,9 @@ var _move_amount := 0.0
 ## Sobrevivência: world.water_at, para a pose de nado de quem está na água.
 var water_query: Callable
 var _death_timer := 0.0
+var _death_animated := false
+## Death01 dura 2,4 s: o corpo fica um pouco no chão antes de sumir.
+const DEATH_ANIMATED_HIDE := 3.6
 var hitboxes: Array[StaticBody3D] = []
 # Loot: everyone starts unarmed in online matches.
 var armed := false
@@ -394,6 +397,8 @@ func die() -> void:
 	HandTorch.set_on(self, false)
 	if visual != null and visual.has_method("set_shield"):
 		visual.call("set_shield", "", false, true)
+	# Corpo cai com a animação de morte (UAL1); sem ela, tomba duro (rotação).
+	_death_animated = visual != null and visual.has_method("play_death") and bool(visual.call("play_death"))
 
 ## Mata-mata: volta à partida noutro lugar, com vida cheia e só a pistola.
 func revive(at: Vector3, weapon: String) -> void:
@@ -408,6 +413,9 @@ func revive(at: Vector3, weapon: String) -> void:
 		body.collision_layer = HitboxScript.LAYER_HITBOXES
 	if visual != null:
 		visual.rotation = Vector3.ZERO
+		if visual.has_method("clear_death"):
+			visual.call("clear_death")
+	_death_animated = false
 	name_tag.visible = true
 	global_position = at
 	target_position = at
@@ -509,11 +517,14 @@ func _physics_process(delta: float) -> void:
 			visual.call("animate", delta, 0.0, false, false, false, false, false, Vector2(0, -1), Vector3.ZERO)
 		return
 	if dead:
-		# Simple fall-over, then disappear.
+		# Death clip (or a simple fall-over), a moment lying down, then disappear.
 		_death_timer += delta
 		if visual != null:
-			visual.rotation.x = lerpf(visual.rotation.x, -PI * 0.5, minf(1.0, delta * 6.0))
-		if _death_timer > 2.5:
+			if _death_animated:
+				visual.call("animate", delta, 0.0, false, false, false, false, false, Vector2(0, -1), Vector3.ZERO)
+			else:
+				visual.rotation.x = lerpf(visual.rotation.x, -PI * 0.5, minf(1.0, delta * 6.0))
+		if _death_timer > (DEATH_ANIMATED_HIDE if _death_animated else 2.5):
 			visible = false
 			set_physics_process(false)
 		return

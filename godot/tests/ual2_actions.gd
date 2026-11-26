@@ -33,7 +33,7 @@ func _run() -> void:
 		await process_frame
 		_check(bool(visual.call("is_visual_ready")), id + " visual must be ready")
 		var clips: Dictionary = visual.get("ual_clips")
-		_check(clips.size() == Avatar.UAL_CLIPS.size(), "%s must load all %d UAL2 clips (got %d)" % [id, Avatar.UAL_CLIPS.size(), clips.size()])
+		_check(clips.size() == Avatar.UAL_CLIPS.size() + Avatar.UAL1_CLIPS.size(), "%s must load all %d UAL1+UAL2 clips (got %d)" % [id, Avatar.UAL_CLIPS.size() + Avatar.UAL1_CLIPS.size(), clips.size()])
 		for clip_name in clips:
 			_check((clips[clip_name][1] as Array).size() >= 50, "%s/%s must drive the rig (%d tracks)" % [id, clip_name, (clips[clip_name][1] as Array).size()])
 		# Armed with a rifle: an action hides the gun while the hands are busy.
@@ -102,6 +102,21 @@ func _run() -> void:
 	for i in 60:
 		picks[NetActorScript.bot_character("bot%d" % i)] = true
 	_check(picks.has("manequim") and picks.has("remy") and picks.has("avatar_ch31"), "Bots must use all three characters")
+	# Death: UAL1 Death01 drops the body and holds it lying down; revive stands it up.
+	var body: Node3D = actor.get("visual")
+	var body_skeleton: Skeleton3D = body.get("skeleton")
+	var hips := body_skeleton.find_bone(str(body.get("bone_prefix")) + "Hips")
+	var standing_hips := body_skeleton.get_bone_global_pose(hips).origin.y
+	actor.call("die")
+	_check(bool(actor.get("_death_animated")), "Death must play the UAL1 clip")
+	for i in 180:
+		await physics_frame
+	_check(str(body.get("_overlay_name")) == Avatar.DEATH_CLIP, "Death clip must hold at its end")
+	_check(is_zero_approx(body.rotation.x), "Animated death must not tip the body over")
+	var lying_hips := body_skeleton.get_bone_global_pose(hips).origin.y
+	_check(lying_hips < standing_hips * 0.5, "Dead body must lie down (hips %.2f -> %.2f)" % [standing_hips, lying_hips])
+	actor.call("revive", Vector3(0, 0, 20), "pistol")
+	_check(not bool(body.call("is_overlay_playing")), "Revive must clear the death pose")
 	scene.queue_free()
 	await process_frame
 	# Zombie legs: UAL2 shamble and idle, and the run without opening Ch31's FBX.
