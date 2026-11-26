@@ -304,11 +304,14 @@ func _physics_process(delta: float) -> void:
 		_state_timer = STATE_RATE
 		var p := player.global_position
 		var v := player.get_real_velocity() if not is_driving() else Vector3.ZERO
-		Net.send({"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
+		var state := {"t": "s", "p": [p.x, p.y, p.z], "y": player.call("network_yaw"), "pi": player.get("pitch"),
 			"w": player.get("current_weapon"), "m": clampf(Vector2(v.x, v.z).length() / 5.0, 0.0, 1.0),
 			"r": player.get("sprinting"), "c": player.get("crouching") or player.get("prone"), "pr": player.get("prone"), "a": player.get("aiming"),
 			"f": not player.is_on_floor() and not is_driving(), "rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z],
-			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") and action.is_empty() else action, "tool": "bow" if player.call("has_bow") and action.is_empty() else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand, "sh": shield_in_arm, "sg": player.get("shield_raised")})
+			"act": ("bow_draw" if player.get("bow_controller").get("draw").drawing else "bow_carry") if player.call("has_bow") and action.is_empty() else action, "tool": "bow" if player.call("has_bow") and action.is_empty() else action_tool, "charge": player.get("bow_controller").get("draw").charge if player.call("has_bow") else 0.0, "ch": player.get("character_id"), "tc": torch_in_hand, "sh": shield_in_arm, "sg": player.get("shield_raised")}
+		if player.has_method("network_cosmetics"):
+			state.merge(player.call("network_cosmetics")) # roupas e skin da arma (rp/ws)
+		Net.send(state)
 	_zombie_timer -= delta
 	if _zombie_timer <= 0.0 and is_host():
 		_zombie_timer = ZOMBIE_RATE

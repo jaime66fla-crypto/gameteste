@@ -24,6 +24,30 @@ export function allowedCharacter(ch, owned) {
 	return Array.isArray(owned) && owned.includes(ch) ? ch : '';
 }
 
+/**
+ * Roupas e skin de arma que os outros podem ver, a partir do estado do cliente:
+ * rp = roupas do 01 (grátis ou compradas, uma por peça, no máximo 4) e
+ * ws = skin comprada da arma que está na mão. Cliente antigo (sem "rp") não
+ * manda rp, e os outros continuam vendo a roupa padrão.
+ */
+export function allowedCosmetics(d, weapon, owned) {
+	const mine = (item) => item.preco <= 0 || (Array.isArray(owned) && owned.includes(item.id));
+	const out = {};
+	if (Array.isArray(d?.rp)) {
+		const pieces = new Set();
+		out.rp = [];
+		for (const id of d.rp.slice(0, 4)) {
+			const item = STORE_ITEMS.get(id);
+			if (!item || item.grupo !== 'skins_personagens' || !mine(item) || pieces.has(item.peca)) continue;
+			pieces.add(item.peca);
+			out.rp.push(id);
+		}
+	}
+	const skin = STORE_ITEMS.get(d?.ws);
+	out.ws = skin && skin.grupo === 'skins_armas' && skin.arma === weapon && mine(skin) ? skin.id : '';
+	return out;
+}
+
 /** Itens da conta na URL interna de entrada numa sala (&own=a,b,c). */
 export const ownedQuery = (session) => '&own=' + encodeURIComponent((session.owned || []).join(','));
 export const ownedFrom = (url) => (url.searchParams.get('own') || '').split(',').filter((id) => STORE_ITEMS.has(id));

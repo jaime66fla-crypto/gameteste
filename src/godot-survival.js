@@ -18,7 +18,7 @@
 // godot/data/survival_items.json (os mesmos arquivos que o jogo lê).
 import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
-import { resolveSession, rankFor, allowedCharacter, ownedQuery, ownedFrom } from './godot-accounts.js';
+import { resolveSession, rankFor, allowedCharacter, allowedCosmetics, ownedQuery, ownedFrom } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 import { BuildGrid, liftOf, MAX_LIFT } from './godot-building.js';
 import { terrainHeight } from './godot-terrain.js';
@@ -792,6 +792,7 @@ export class GodotSurvival {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
 					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, sh: me.shield, sg: me.guard, dv: me.vehicle || '', ch: allowedCharacter(characterId(d.ch), me.owned),
+					...allowedCosmetics(d, WEAPON_DAMAGE[d.w] ? d.w : 'pistol', me.owned), // roupas e skin da arma (rp/ws)
 					act: me.fishing ? 'fish' : ['chop', 'pry', 'swing', 'hold', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: me.fishing ? 'fishing_rod' : typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
 					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],

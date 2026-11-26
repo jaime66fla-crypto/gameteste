@@ -12,6 +12,7 @@ signal bot_heal(actor_id: String) # use a carried medkit
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const HandTorch = preload("res://scripts/survival/hand_torch.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
@@ -125,6 +126,10 @@ func setup(id: String, label: String, bot: bool) -> void:
 ## Personagem visível deste combatente: jogadores mandam o seu no estado ("ch");
 ## bots ganham um fixo pelo id (o mesmo em todos os jogos, sem tráfego de rede).
 var character_id := CharacterRegistry.DEFAULT_ID
+## Roupas (só o 01) e skin da arma que este jogador comprou e está usando, vindas
+## do estado ("rp"/"ws", conferidas pelo servidor). Sem "rp" = roupa padrão.
+var outfit: Variant = null # PackedStringArray quando o jogador mandou
+var weapon_skin := ""
 
 static func bot_character(id: String) -> String:
 	var choices: Array[String] = []
@@ -156,6 +161,7 @@ func set_character(id: String) -> void:
 	weapon_model = null
 	visual = next
 	_build_hitboxes()
+	_apply_outfit()
 	if dead or sleeping:
 		for body in hitboxes:
 			body.collision_layer = 0
@@ -218,7 +224,7 @@ func _set_weapon(id: String) -> void:
 	mount.add_child(gun)
 	weapon_model = Node3D.new()
 	gun.add_child(weapon_model)
-	var imported := WeaponProportions.create_model(id)
+	var imported := WeaponProportions.create_model(id, StoreCatalog.texture_path(weapon_skin) if StoreCatalog.weapon(weapon_skin) == id else "")
 	if imported != null:
 		weapon_model.add_child(imported)
 	WeaponProportions.apply(weapon_model, id, imported)
@@ -226,6 +232,11 @@ func _set_weapon(id: String) -> void:
 		visual.call("configure_weapon", id, weapon_model.scale.x)
 	if visual.has_method("bind_weapon"):
 		visual.call("bind_weapon", weapon_model)
+
+## Veste no boneco as roupas que o jogador mandou (o 01 já nasce com a padrão).
+func _apply_outfit() -> void:
+	if outfit != null and visual != null and visual.has_method("vestir"):
+		visual.call("vestir", outfit)
 
 ## Weapon in hand only when this combatant has one.
 func _apply_armed() -> void:
@@ -328,9 +339,17 @@ func apply_state(state: Dictionary) -> void:
 	var ch := str(state.get("ch", ""))
 	if not ch.is_empty() and ch != character_id:
 		set_character(ch)
+	if state.has("rp") and state["rp"] is Array:
+		var worn := PackedStringArray(state["rp"])
+		if outfit == null or worn != outfit:
+			outfit = worn
+			_apply_outfit()
 	var w := str(state.get("w", weapon_id))
-	if w != weapon_id:
+	var ws := str(state.get("ws", ""))
+	if w != weapon_id or ws != weapon_skin:
+		weapon_skin = ws
 		_set_weapon(w)
+		_apply_armed() # o modelo novo respeita arma guardada/arco
 	var now_armed := not bool(state.get("h", false))
 	if now_armed != armed:
 		armed = now_armed

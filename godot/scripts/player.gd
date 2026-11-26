@@ -223,7 +223,8 @@ func _install_selected_character() -> void:
     character_id = requested_character_id
     var chosen := CharacterRegistry.create_visual(character_id)
     if chosen != null and chosen.has_method("vestir"):
-        chosen.call("vestir", CharacterRegistry.load_outfit()) # cofre de roupas (menu)
+        _network_outfit = Array(CharacterRegistry.load_outfit())
+        chosen.call("vestir", PackedStringArray(_network_outfit)) # cofre de roupas (menu)
     if chosen != null:
         chosen.scale *= height / 1.8
         avatar.add_child(chosen)
@@ -246,6 +247,19 @@ func _install_selected_character() -> void:
     character_fallback_reason = "Visual indisponível; usando Jaime Original. Escolha outro em Personagens."
     character_id = CharacterRegistry.DEFAULT_ID
     _install_humanoid_avatar()
+
+## Roupas vestidas (só no 01) e skin da arma na mão, para os outros jogadores
+## verem: vão no estado de rede como "rp" e "ws" (o servidor confere a posse).
+var _network_outfit: Array = []
+var _network_skins := {} # arma -> skin equipada (lida uma vez por arma)
+
+func network_cosmetics() -> Dictionary:
+    if not _network_skins.has(current_weapon):
+        _network_skins[current_weapon] = CharacterRegistry.weapon_skin(current_weapon)
+    var result := {"ws": _network_skins[current_weapon]}
+    if character_id == "01":
+        result["rp"] = _network_outfit
+    return result
 
 func _install_humanoid_avatar() -> void:
     humanoid_avatar = HumanoidAvatarScript.new()

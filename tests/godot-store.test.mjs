@@ -130,6 +130,22 @@ test('paid characters are only shown to others when the account bought them', as
 	assert.deepEqual(session.data.owned, ['remy']);
 });
 
+test('outfits and weapon skins shown to others: only what the account owns, one per piece, skin of the gun in hand', async () => {
+	const { allowedCosmetics } = await import('../src/godot-accounts.js');
+	// Cliente antigo: sem rp (os outros veem a roupa padrão) e sem skin.
+	assert.deepEqual(allowedCosmetics({ w: 'rifle' }, 'rifle', []), { ws: '' });
+	// Grátis passa; paga só se comprou; peça repetida e item de outro grupo saem.
+	assert.deepEqual(allowedCosmetics({ rp: ['bone_vinho', 'camiseta', 'calca'] }, 'rifle', []).rp, ['camiseta', 'calca']);
+	assert.deepEqual(allowedCosmetics({ rp: ['bone_vinho', 'bone', 'remy', 'rifle_deserto', 7] }, 'rifle', ['bone_vinho']).rp, ['bone_vinho']);
+	assert.deepEqual(allowedCosmetics({ rp: [] }, 'rifle', []).rp, [], 'sem roupa nenhuma também é escolha');
+	assert.equal(allowedCosmetics({ rp: ['a', 'b', 'c', 'd', 'bone'] }, 'rifle', []).rp.length, 0, 'no máximo 4 itens olhados');
+	// Skin: comprada e da arma que está na mão.
+	assert.equal(allowedCosmetics({ ws: 'rifle_deserto' }, 'rifle', []).ws, '');
+	assert.equal(allowedCosmetics({ ws: 'rifle_deserto' }, 'rifle', ['rifle_deserto']).ws, 'rifle_deserto');
+	assert.equal(allowedCosmetics({ ws: 'rifle_deserto' }, 'pistol', ['rifle_deserto']).ws, '');
+	assert.equal(allowedCosmetics({ ws: 'bone_vinho' }, 'rifle', ['bone_vinho']).ws, '');
+});
+
 test('the leaderboard never shows Brasas or owned items', async () => {
 	const { accounts } = service();
 	const token = await register(accounts, 'Fabi');

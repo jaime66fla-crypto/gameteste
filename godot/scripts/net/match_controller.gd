@@ -357,6 +357,8 @@ func _physics_process(delta: float) -> void:
 			"c": player.get("crouching"), "pr": player.get("prone"), "a": player.get("aiming"), "f": not player.is_on_floor(),
 			"rl": player.get("reloading"), "h": player.get("weapon_holstered"), "v": [v.x, v.z], "l": player.get("lean"),
 			"ch": player.get("character_id")}
+		if player.has_method("network_cosmetics"):
+			state.merge(player.call("network_cosmetics")) # roupas e skin da arma (rp/ws)
 		if player.has_method("has_bow") and bool(player.call("has_bow")):
 			var bow: Node = player.get("bow_controller")
 			state["tool"] = "bow"
