@@ -13,7 +13,7 @@ export const SHOP_URL = 'https://jaime66fla-crypto.github.io/gameteste/loja.html
 /** Origens que podem chamar login/pagamento pelo navegador (site + teste local). */
 export const SHOP_ORIGINS = ['https://jaime66fla-crypto.github.io', 'http://localhost:8765'];
 /** Rotas abertas para o site (CORS). O webhook não precisa: quem chama é o Mercado Pago. */
-export const SHOP_PATHS = ['/godot/login', '/godot/me', '/godot/pay/pix', '/godot/pay/order'];
+export const SHOP_PATHS = ['/godot/login', '/godot/me', '/godot/pay/pix', '/godot/pay/order', '/godot/pay/history'];
 
 const MP_API = 'https://api.mercadopago.com';
 const PACKS = new Map((store.pacotes || []).map((pack) => [pack.id, pack]));
@@ -21,6 +21,16 @@ const CHECKOUT_COOLDOWN_MS = 3000;
 const ORDER_RULE = /^[0-9a-f]{24}$/;
 const EMAIL_RULE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/;
 const PIX_MINUTES = 30;
+const HISTORY_ORDERS = 30; // pedidos lembrados por conta (histórico do site)
+
+/** Situação mostrada ao jogador: pago, aguardando, expirado, reembolsado... */
+function orderStatus(order) {
+	if (order.reversed) return 'reembolsado';
+	if (order.credited) return 'pago';
+	if (['rejected', 'cancelled', 'erro', 'valor_divergente'].includes(order.status)) return 'cancelado';
+	if (order.expires && Date.now() > order.expires + 60000) return 'expirado';
+	return 'aguardando';
+}
 
 /** Data no formato que o Mercado Pago pede, no horário de Brasília (UTC-3). */
 function brasiliaTime(ms) {
@@ -104,6 +114,8 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 				return request.method === 'POST' ? this.payPix(token, await request.json(), request) : json({ error: 'Método não permitido.' }, 405);
 			case '/pay/order':
 				return this.payOrder(token, url);
+			case '/pay/history':
+				return this.payHistory(token);
 			case '/pay/webhook':
 				return request.method === 'POST' ? this.payWebhook(request, url) : json({ ok: true });
 		}
@@ -134,6 +146,7 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 		if (Date.now() - (account.lastCheckout || 0) < CHECKOUT_COOLDOWN_MS) return json({ error: 'Aguarde um instante e tente de novo.' }, 429);
 		account.lastCheckout = Date.now();
 		const id = randomHex(12);
+		account.orderIds = [...(account.orderIds || []), id].slice(-HISTORY_ORDERS);
 		const expires = Date.now() + PIX_MINUTES * 60000;
 		const order = { id, account: key, name: account.name, pack: pack.id, brasas: pack.brasas, cents: pack.preco_centavos, status: 'criado', at: Date.now(), expires };
 		await this.ctx.storage.put({ [key]: account, ['order:' + id]: order });
@@ -162,6 +175,25 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 		order.status = payment.status || 'pending';
 		await this.ctx.storage.put('order:' + id, order);
 		return json({ order: id, price: brl(pack.preco_centavos), brasas: pack.brasas, qr: pix.qr_code, qrImage: pix.qr_code_base64 || '', expires });
+	};
+
+	/**
+	 * GET /pay/history: compras de Brasas da conta, mais recentes primeiro. Junta
+	 * os pedidos lembrados (orderIds) com os créditos antigos (brasasBought).
+	 */
+	proto.payHistory = async function (token) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const { key, account } = found;
+		const ids = [...new Set([...(account.orderIds || []), ...(account.brasasBought || []).map((b) => b.order)])];
+		const orders = [];
+		for (const id of ids) {
+			const order = ORDER_RULE.test(String(id)) ? await this.ctx.storage.get('order:' + id) : null;
+			if (!order || order.account !== key || order.status === 'erro') continue;
+			orders.push({ id, pack: order.pack, brasas: order.brasas, cents: order.cents, at: order.at, status: orderStatus(order) });
+		}
+		orders.sort((a, b) => b.at - a.at);
+		return json({ orders, profile: profile(account) });
 	};
 
 	/** GET /pay/order?id=: situação do pedido (só o dono vê). */

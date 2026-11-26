@@ -159,6 +159,26 @@ test('unsigned legacy IPN is acknowledged but never credits', async () => {
 	assert.equal(await brasas(accounts, token), before);
 });
 
+test('history lists only the account own purchases, newest first, with a friendly status', async () => {
+	const payments = new Map();
+	fakeMp(payments);
+	const { accounts, data } = service();
+	const token = await register(accounts, 'Historico');
+	const other = await register(accounts, 'Outro');
+	const first = (await pix(accounts, token)).data.order;
+	payments.get('900').status = 'approved';
+	await webhook(accounts, '900');
+	data.get('acct:historico').lastCheckout = 0;
+	const second = (await pix(accounts, token, { pack: store.pacotes[0].id })).data.order;
+	const h = (await call(accounts, '/pay/history', { token })).data;
+	assert.deepEqual(h.orders.map((o) => o.id).sort(), [first, second].sort());
+	assert.equal(h.orders.find((o) => o.id === first).status, 'pago');
+	assert.equal(h.orders.find((o) => o.id === second).status, 'aguardando');
+	assert.ok(h.orders[0].at >= h.orders[1].at);
+	assert.deepEqual((await call(accounts, '/pay/history', { token: other })).data.orders, []);
+	assert.equal((await call(accounts, '/pay/history')).status, 401);
+});
+
 test('signature check follows the Mercado Pago manifest and CORS only opens to the site', async () => {
 	const h = signed('999');
 	assert.equal(await validSignature({ signature: h['x-signature'], requestId: h['x-request-id'], dataId: '999', secret: SECRET }), true);
