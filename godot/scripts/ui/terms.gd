@@ -85,7 +85,9 @@ Nada nestes termos tira os direitos que o Código de Defesa do Consumidor garant
 Você pode parar de jogar e pedir a exclusão da conta quando quiser. Podemos suspender ou encerrar contas que violem estes termos (seção 5).[/ul]"""],
 	["12. Mudanças nos termos e lei aplicável", """[ul]Podemos atualizar estes termos. A data no topo mostra a versão em vigor. Mudanças importantes serão avisadas no jogo ou no site; continuar jogando depois do aviso significa que você concorda.
 Estes termos seguem as leis do Brasil. Fica eleito o foro do domicílio do consumidor.[/ul]"""],
-	["13. Contato", """Dúvidas, bugs, denúncias, reembolsos e pedidos sobre seus dados: fale conosco pela página do Campo de Fogo no itch.io (jaimexzz.itch.io/campo-de-fogo). Não mande sua senha em nenhuma mensagem."""],
+	["13. Contato", """Reembolsos, pedidos sobre seus dados, denúncias e suspensões: escreva para [b]jaime66fla@gmail.com[/b]. Em pedidos de compra, mande o número do pedido e o nome da sua conta.
+
+Dúvidas e bugs também podem ir na página do Campo de Fogo no itch.io (jaimexzz.itch.io/campo-de-fogo). Não mande sua senha em nenhuma mensagem."""],
 ]
 
 var _margin: MarginContainer
