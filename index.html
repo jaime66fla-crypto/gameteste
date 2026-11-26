@@ -50,6 +50,8 @@ h1 span { color: var(--ember); text-shadow: 0 0 40px rgba(255,122,26,.35); }
 .btn { display: inline-flex; align-items: center; justify-content: center; font: 700 1.05rem/1 var(--display); letter-spacing: .08em; text-transform: uppercase; padding: .9em 1.4em; border-radius: 3px; border: 1px solid var(--ember); text-decoration: none; cursor: pointer; background: var(--ember); color: #1a0d05; }
 .btn:hover { background: #ff8f3f; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.ghost { background: transparent; color: var(--ember); }
+.btn.ghost:hover { background: rgba(255,122,26,.12); }
 .build { font: 12px var(--mono); color: var(--muted); }
 .build b { color: var(--fg); font-weight: 500; }
 .new { border-left: 3px solid var(--flame); background: rgba(27,23,24,.8); padding: .7rem .9rem; font-size: .92rem; }
@@ -106,6 +108,7 @@ textarea { resize: none; height: 3.6em; }
     <p class="lede">Tiro online e sobrevivência em cidades abandonadas. Comece sem nada: colete, fabrique, construa e pesque.</p>
     <div class="cta">
       <a class="btn" href="https://jaimexzz.itch.io/campo-de-fogo#download" target="_blank" rel="noopener">Baixar para Windows</a>
+      <a class="btn ghost" href="loja.html">Loja de Brasas</a>
       <span class="build">versão <b>1.31.0</b> · grátis no itch.io</span>
     </div>
     <div class="new"><b>Novo na 1.31</b><span>pesca com fisgada, combustível em litros, sons da natureza. Teste isso primeiro.</span></div>

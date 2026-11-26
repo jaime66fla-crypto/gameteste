@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Loja de Brasas do Campo de Fogo: pacotes de Brasas para comprar personagens e skins no jogo.">
+<title>Loja de Brasas · Campo de Fogo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@700;900&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+/* Mesma identidade do index.html (cinza-carvão + brasa). Vitrine: o pagamento ainda não está ligado. */
+:root {
+  color-scheme: dark;
+  --bg: #121011; --panel: #1b1718; --panel-2: #241e1d; --line: #3a302c;
+  --fg: #ece4dc; --muted: #a3958a; --ash: #6f625a;
+  --ember: #ff7a1a; --flame: #e5392b; --ok: #7fbf6a;
+  --display: "Big Shoulders Display", "Arial Narrow", Impact, sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; min-height: 100vh; color: var(--fg); font: 15px/1.5 var(--body);
+  background:
+    radial-gradient(70% 60% at 100% 110%, rgba(229,57,43,.26), transparent 60%),
+    radial-gradient(50% 50% at 20% 120%, rgba(255,122,26,.14), transparent 65%),
+    var(--bg);
+}
+a { color: var(--ember); }
+:focus-visible { outline: 2px solid var(--ember); outline-offset: 3px; }
+#embers { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+.wrap {
+  position: relative; max-width: 1100px; margin: 0 auto; padding-block: 1.4rem 3rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid; gap: 2rem;
+}
+.top { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.back { font: 500 12px var(--mono); letter-spacing: .1em; text-transform: uppercase; text-decoration: none; color: var(--muted); }
+.back:hover { color: var(--ember); }
+.soon { font: 500 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ember); display: inline-flex; gap: .6em; align-items: center; border: 1px solid var(--line); padding: .5em .8em; border-radius: 99px; background: rgba(27,23,24,.8); }
+.soon .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--flame); box-shadow: 0 0 10px var(--flame); animation: pulse 1.6s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+.hero { display: grid; gap: .8rem; }
+h1 { font: 900 clamp(2.8rem, 8vw, 5.4rem)/.85 var(--display); text-transform: uppercase; margin: 0; }
+h1 span { color: var(--ember); text-shadow: 0 0 40px rgba(255,122,26,.35); }
+.lede { color: var(--muted); margin: 0; max-width: 58ch; font-size: 1.02rem; }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .6rem; counter-reset: s; }
+.steps li { counter-increment: s; background: rgba(27,23,24,.85); border: 1px solid var(--line); padding: .7rem .9rem; font-size: .9rem; color: var(--muted); display: flex; gap: .7rem; align-items: baseline; }
+.steps li::before { content: counter(s); font: 900 1.5rem/1 var(--display); color: var(--ember); }
+.steps b { color: var(--fg); font-weight: 600; }
+
+/* Conta */
+.account { background: rgba(27,23,24,.92); border: 1px solid var(--line); padding: 1rem 1.1rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .8rem 1.2rem; align-items: end; }
+.account h2 { grid-column: 1 / -1; margin: 0; font: 900 1.35rem/1 var(--display); text-transform: uppercase; letter-spacing: .03em; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; align-items: baseline; }
+.account h2 small { font: 500 11px var(--mono); letter-spacing: .1em; color: var(--muted); text-transform: uppercase; }
+.fields { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+label { display: block; font: 500 10.5px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin-bottom: .25rem; }
+input { width: 100%; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 3px; padding: .55rem .65rem; font: 14px/1.4 var(--body); }
+input:disabled { opacity: .55; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; font: 700 1rem/1 var(--display); letter-spacing: .08em; text-transform: uppercase; padding: .85em 1.3em; border-radius: 3px; border: 1px solid var(--ember); text-decoration: none; cursor: pointer; background: var(--ember); color: #1a0d05; }
+.btn:hover:not(:disabled) { background: #ff8f3f; }
+.btn:disabled { background: transparent; color: var(--muted); border-color: var(--line); cursor: not-allowed; }
+
+/* Pacotes */
+.section-title { font: 900 1.6rem/1 var(--display); text-transform: uppercase; letter-spacing: .03em; margin: 0 0 .9rem; }
+.packs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .9rem; }
+.pack { position: relative; background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); padding: 1.1rem 1rem 1rem; display: grid; gap: .35rem; justify-items: center; text-align: center; }
+.pack.featured { border: 2px solid var(--ember); box-shadow: 0 0 40px rgba(255,122,26,.16); }
+.pack .kicker { font: 500 10.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--ash); }
+.pack.featured .kicker { color: var(--ember); }
+.pack svg { width: 64px; height: 76px; margin: .3rem 0; filter: drop-shadow(0 0 14px rgba(255,122,26,.35)); }
+.pack .amount { font: 900 2.4rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.pack .unit { font: 500 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.pack .bonus { font-size: .85rem; font-weight: 600; color: var(--ok); min-height: 1.3em; }
+.pack .price { font: 700 1.35rem/1 var(--display); color: var(--ember); letter-spacing: .03em; margin: .25rem 0 .55rem; }
+.pack .btn { width: 100%; }
+
+/* Rodapé informativo */
+.info { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); gap: .9rem; }
+.card { background: rgba(27,23,24,.92); border: 1px solid var(--line); padding: 1rem 1.1rem; }
+.card h3 { margin: 0 0 .5rem; font: 900 1.15rem/1 var(--display); text-transform: uppercase; letter-spacing: .04em; }
+.card p { margin: 0 0 .5rem; color: var(--muted); font-size: .92rem; }
+.card p:last-child { margin-bottom: 0; }
+.card b { color: var(--fg); font-weight: 600; }
+.items { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: .4rem; margin: 0; padding: 0; list-style: none; }
+.items li { background: var(--panel-2); padding: .45rem .65rem; display: flex; justify-content: space-between; gap: .5rem; font-size: .86rem; }
+.items li span:last-child { font: 500 .8rem var(--mono); color: var(--ember); white-space: nowrap; }
+.items li em { display: block; font-style: normal; font: 500 9.5px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ash); }
+
+@media (max-width: 900px) { .packs { grid-template-columns: repeat(2, minmax(0, 1fr)); } .info { grid-template-columns: 1fr; } }
+@media (max-width: 640px) {
+  .steps { grid-template-columns: 1fr; }
+  .account { grid-template-columns: 1fr; }
+  .fields { grid-template-columns: 1fr; }
+}
+@media (max-width: 380px) { .packs { grid-template-columns: 1fr; } }
+@media (prefers-reduced-motion: reduce) { .soon .dot { animation: none; } #embers { display: none; } }
+</style>
+</head>
+<body>
+<canvas id="embers" aria-hidden="true"></canvas>
+<div class="wrap">
+  <div class="top">
+    <a class="back" href="./">← Campo de Fogo</a>
+    <span class="soon"><span class="dot"></span>Pagamento em breve</span>
+  </div>
+
+  <header class="hero">
+    <h1>Loja de <span>Brasas</span></h1>
+    <p class="lede">Brasas são a moeda da sua conta no Campo de Fogo. Com elas você libera personagens, skins de armas e roupas na Loja do jogo. A compra pelo site ainda não está ligada: por enquanto, ganhe Brasas jogando.</p>
+  </header>
+
+  <ol class="steps" aria-label="Como vai funcionar">
+    <li><span><b>Entre</b> com o mesmo nome e senha da sua conta do jogo.</span></li>
+    <li><span><b>Escolha</b> um pacote de Brasas.</span></li>
+    <li><span><b>Pague</b> e as Brasas caem na sua conta. Aparecem no jogo na hora.</span></li>
+  </ol>
+
+  <section class="account" aria-labelledby="accTitle">
+    <h2 id="accTitle">Sua conta <small>Login liberado junto com o pagamento</small></h2>
+    <div class="fields">
+      <div><label for="user">Nome da conta</label><input id="user" autocomplete="username" placeholder="Seu nome no jogo" disabled></div>
+      <div><label for="pass">Senha</label><input id="pass" type="password" autocomplete="current-password" placeholder="••••••" disabled></div>
+    </div>
+    <button class="btn" type="button" disabled>Em breve</button>
+  </section>
+
+  <section aria-labelledby="packsTitle">
+    <h2 class="section-title" id="packsTitle">Pacotes</h2>
+    <div class="packs" id="packs"></div>
+  </section>
+
+  <div class="info">
+    <div class="card">
+      <h3>Ganhe Brasas jogando</h3>
+      <p>Toda conta começa com <b>100 Brasas</b>.</p>
+      <p>Depois, você ganha <b>1 Brasa a cada 10 XP</b> nas partidas online e na Sobrevivência. A sobra de XP passa para a próxima partida.</p>
+      <p>Abra a Loja pelo menu do jogo para gastar.</p>
+    </div>
+    <div class="card">
+      <h3>O que dá para comprar</h3>
+      <ul class="items" id="items"></ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  // Cópia de godot/data/store.json ("pacotes" e alguns "items"). Ao mudar preço lá, mude aqui.
+  // "brasas" já inclui o bônus.
+  const PACKS = [
+    { id: "brasas_500",  brasas: 500,  bonus: 0,    preco_centavos: 490 },
+    { id: "brasas_1100", brasas: 1100, bonus: 100,  preco_centavos: 990 },
+    { id: "brasas_2400", brasas: 2400, bonus: 400,  preco_centavos: 1990, destaque: true },
+    { id: "brasas_6500", brasas: 6500, bonus: 1500, preco_centavos: 4990 }
+  ];
+  const ITEMS = [
+    ["Pato Tático", "Personagem", 600], ["Remy", "Personagem", 500], ["Avatar CH31", "Personagem", 400], ["Manequim", "Personagem", 300],
+    ["Sniper floresta", "Skin de arma", 260], ["Fuzil deserto", "Skin de arma", 220], ["Escopeta ferrugem", "Skin de arma", 180], ["Submetralhadora azul-aço", "Skin de arma", 160],
+    ["Pistola oliva", "Skin de arma", 120], ["Calça cinza tática", "Roupa", 220], ["Camiseta oliva", "Roupa", 180], ["Boné vinho", "Roupa", 120]
+  ];
+  const num = (n) => n.toLocaleString("pt-BR");
+  const brl = (c) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  const FLAME = '<svg viewBox="0 0 64 76" aria-hidden="true"><defs><linearGradient id="g{i}" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#e5392b"/><stop offset=".6" stop-color="#ff7a1a"/><stop offset="1" stop-color="#ffc061"/></linearGradient></defs><path fill="url(#g{i})" d="M32 2c4 14 20 22 20 42a20 20 0 0 1-40 0c0-10 5-16 9-20 0 7 3 11 7 12-3-12 0-24 4-34z"/><path fill="#ffd89a" opacity=".85" d="M32 40c3 6 9 9 9 17a9 9 0 0 1-18 0c0-5 3-8 5-10 0 3 1 5 3 6-1-5 0-9 1-13z"/></svg>';
+
+  const packs = document.getElementById("packs");
+  PACKS.forEach((p, i) => {
+    const card = el("article", "pack" + (p.destaque ? " featured" : ""));
+    card.append(el("span", "kicker", p.destaque ? "Mais escolhido" : "Pacote"));
+    card.insertAdjacentHTML("beforeend", FLAME.replaceAll("{i}", i));
+    card.append(el("div", "amount", num(p.brasas)), el("div", "unit", "Brasas"),
+      el("div", "bonus", p.bonus > 0 ? "inclui +" + num(p.bonus) + " de bônus" : " "),
+      el("div", "price", brl(p.preco_centavos)));
+    const b = el("button", "btn", "Em breve"); b.type = "button"; b.disabled = true;
+    b.setAttribute("aria-label", num(p.brasas) + " Brasas por " + brl(p.preco_centavos) + ": em breve");
+    card.append(b);
+    packs.append(card);
+  });
+
+  const items = document.getElementById("items");
+  ITEMS.forEach(([name, kind, price]) => {
+    const li = el("li"); const left = el("span"); left.append(el("em", null, kind), document.createTextNode(name));
+    li.append(left, el("span", null, num(price)));
+    items.append(li);
+  });
+
+  const cv = document.getElementById("embers");
+  if (cv && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const ctx = cv.getContext("2d"); let W, H; const parts = [];
+    const size = () => { W = cv.width = innerWidth * devicePixelRatio; H = cv.height = innerHeight * devicePixelRatio; };
+    size(); addEventListener("resize", size);
+    const spawn = () => ({ x: W * .3 + Math.random() * W * .7, y: H + 10, vy: (0.4 + Math.random()) * devicePixelRatio, vx: (Math.random() - .6) * .5, r: (0.6 + Math.random() * 1.6) * devicePixelRatio, life: 1 });
+    for (let i = 0; i < 36; i++) { const p = spawn(); p.y = Math.random() * H; parts.push(p); }
+    (function tick() {
+      ctx.clearRect(0, 0, W, H);
+      for (const p of parts) {
+        p.y -= p.vy; p.x += p.vx + Math.sin(p.y / 40) * .3; p.life -= .0025;
+        if (p.y < -10 || p.life <= 0) Object.assign(p, spawn());
+        ctx.fillStyle = `rgba(255,${100 + Math.floor(p.life * 60)},30,${Math.max(0, p.life) * .7})`;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      }
+      requestAnimationFrame(tick);
+    })();
+  }
+})();
+</script>
+</body>
+</html>
