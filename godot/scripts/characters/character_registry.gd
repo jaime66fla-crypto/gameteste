@@ -2,6 +2,7 @@ extends RefCounted
 const DEFAULT_ID := "avatar_ch31"
 const DEFAULT_PATH := "user://character_selection.cfg"
 const CATALOG = preload("res://characters/catalog.tres")
+const OUTFIT_PIECES := ["camiseta", "bermuda", "calca", "bone"]
 # Tests may use a separate user:// file; production uses DEFAULT_PATH.
 static var storage_path: String = OS.get_environment("CAMPO_CHARACTER_TEST_PATH") if OS.get_environment("CAMPO_CHARACTER_TEST_PATH").begins_with("user://") else DEFAULT_PATH
 
@@ -38,18 +39,43 @@ static func load_selection() -> String:
     return id if definition(id) != null else DEFAULT_ID
 
 static func select_character(id: String) -> Error:
-    if not storage_path.begins_with("user://"):
-        return ERR_INVALID_PARAMETER
     if definition(id) == null:
         return ERR_INVALID_PARAMETER
     if not is_available(id):
         return ERR_UNAVAILABLE
+    return _save_values({"selected_id": id})
+
+## Roupas vestidas no personagem 01 (ids de avatar_01.gd PECAS), salvas junto
+## com a seleção. Só a vitrine do menu muda; o jogador local veste ao entrar.
+static func load_outfit() -> PackedStringArray:
+    var config := ConfigFile.new()
+    if config.load(storage_path) != OK:
+        return PackedStringArray()
+    var saved = config.get_value("characters", "roupas", PackedStringArray())
+    var result := PackedStringArray()
+    if saved is PackedStringArray or saved is Array:
+        for item in saved:
+            if str(item) in OUTFIT_PIECES and not str(item) in result:
+                result.append(str(item))
+    return result
+
+static func save_outfit(pieces: PackedStringArray) -> Error:
+    var clean := PackedStringArray()
+    for item in pieces:
+        if item in OUTFIT_PIECES and not item in clean:
+            clean.append(item)
+    return _save_values({"roupas": clean})
+
+static func _save_values(values: Dictionary) -> Error:
+    if not storage_path.begins_with("user://"):
+        return ERR_INVALID_PARAMETER
     var config := ConfigFile.new()
     var error := config.load(storage_path)
     # Preserve damaged files for recovery instead of silently overwriting them.
     if error != OK and error != ERR_FILE_NOT_FOUND:
         return error
-    config.set_value("characters", "selected_id", id)
+    for key in values:
+        config.set_value("characters", key, values[key])
     config.set_value("characters", "version", 1)
     var pending := storage_path + ".pending_%s_%s" % [OS.get_process_id(), Time.get_ticks_usec()]
     if FileAccess.file_exists(pending):

@@ -78,10 +78,15 @@ func _build() -> bool:
 	var src_root := (load(SOURCE) as PackedScene).instantiate()
 	var src := src_root.find_child("Skeleton3D", true, false) as Skeleton3D
 	var mesh_node: MeshInstance3D = null
+	# Roupas do 01 (tools/blender/build_01_roupas.py): malhas "Roupa_*" no mesmo rig.
+	var clothes: Array[MeshInstance3D] = []
 	for node in src_root.find_children("*", "MeshInstance3D", true, false):
-		if (node as MeshInstance3D).skin != null:
+		if (node as MeshInstance3D).skin == null:
+			continue
+		if String(node.name).begins_with("Roupa_"):
+			clothes.append(node)
+		elif mesh_node == null:
 			mesh_node = node
-			break
 	if ref == null or src == null or mesh_node == null:
 		printerr("MANEQUIM: modelo de referência ou manequim não carregou")
 		return false
@@ -148,6 +153,33 @@ func _build() -> bool:
 	for b in count:
 		if src_of[b] >= 0:
 			new_of_src[src_of[b]] = b
+	var model := Node3D.new()
+	model.name = MODEL_NAME + "Modelo"
+	model.add_child(skeleton)
+	skeleton.owner = model
+	var mi := _add_mesh(model, skeleton, mesh_node, MODEL_NAME, src, new_of_src, align, globals)
+	var mesh := mi.mesh as ArrayMesh
+	var skin := mi.skin
+	for piece in clothes:
+		var cmi := _add_mesh(model, skeleton, piece, String(piece.name), src, new_of_src, align, globals)
+		cmi.visible = false # avatar_01.gd veste conforme a skin escolhida
+		print("roupa %s: %d tris" % [piece.name, cmi.mesh.get_faces().size() / 3])
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
+	var scene := PackedScene.new()
+	var err := scene.pack(model)
+	if err == OK:
+		err = ResourceSaver.save(scene, OUT_SCENE, ResourceSaver.FLAG_COMPRESS)
+	var hips := skeleton.find_bone(PREFIX + "Hips")
+	var top := skeleton.get_bone_global_rest(skeleton.find_bone(PREFIX + "HeadTop_End")).origin.y
+	print("MANEQUIM: malha %.3f m  topo da cabeça %.3f m  quadril %.3f m  ossos %d  binds %d  cena %s" % [mesh.get_aabb().end.y, top, skeleton.get_bone_global_rest(hips).origin.y, count, skin.get_bind_count(), error_string(err)])
+	model.free()
+	ref_root.free()
+	src_root.free()
+	return err == OK
+
+## Copies one skinned mesh onto the new skeleton: binds move to the Mixamo bone
+## that replaces their bone, materials get the character's look.
+func _add_mesh(model: Node3D, skeleton: Skeleton3D, mesh_node: MeshInstance3D, node_name: String, src: Skeleton3D, new_of_src: Dictionary, align: Transform3D, globals: Array[Transform3D]) -> MeshInstance3D:
 	var src_skin := mesh_node.skin
 	var skin := Skin.new()
 	for i in src_skin.get_bind_count():
@@ -161,12 +193,8 @@ func _build() -> bool:
 		var nb: int = new_of_src.get(walk, 0)
 		var rest_vertex_space := align * src.get_bone_global_rest(sb) * src_skin.get_bind_pose(i)
 		skin.add_named_bind(skeleton.get_bone_name(nb), globals[nb].affine_inverse() * rest_vertex_space)
-	var model := Node3D.new()
-	model.name = MODEL_NAME + "Modelo"
-	model.add_child(skeleton)
-	skeleton.owner = model
 	var mi := MeshInstance3D.new()
-	mi.name = MODEL_NAME
+	mi.name = node_name
 	var mesh := mesh_node.mesh.duplicate() as ArrayMesh
 	for s in mesh.get_surface_count():
 		var source_mat := mesh.surface_get_material(s) as BaseMaterial3D
@@ -183,6 +211,17 @@ func _build() -> bool:
 			mat.resource_name = source_mat.resource_name
 			mat.albedo_color = Color.WHITE
 			mat.albedo_texture = load(SKIN_TEXTURE)
+		elif source_mat != null and source_mat.resource_name.begins_with("Roupa_"):
+			# Tecido fosco; a textura (layout UV do MakeHuman) é a "skin" da peça.
+			var piece := source_mat.resource_name.trim_prefix("Roupa_")
+			mat.resource_name = source_mat.resource_name
+			mat.albedo_color = Color.WHITE
+			mat.albedo_texture = load(OUT_DIR + "/roupas/" + piece + ".png")
+			mat.roughness = 0.92
+			mat.metallic_specular = 0.2
+			mat.cull_mode = BaseMaterial3D.CULL_DISABLED # dentro da manga/barra
+			mesh.surface_set_material(s, mat)
+			continue
 		elif source_mat != null and source_mat.resource_name.begins_with("Olho"):
 			mat.resource_name = source_mat.resource_name
 			mat.roughness = 0.25 # olho úmido, com reflexo
@@ -193,15 +232,4 @@ func _build() -> bool:
 	skeleton.add_child(mi)
 	mi.owner = model
 	mi.skeleton = NodePath("..")
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
-	var scene := PackedScene.new()
-	var err := scene.pack(model)
-	if err == OK:
-		err = ResourceSaver.save(scene, OUT_SCENE, ResourceSaver.FLAG_COMPRESS)
-	var hips := skeleton.find_bone(PREFIX + "Hips")
-	var top := skeleton.get_bone_global_rest(skeleton.find_bone(PREFIX + "HeadTop_End")).origin.y
-	print("MANEQUIM: malha %.3f m  topo da cabeça %.3f m  quadril %.3f m  ossos %d  binds %d  cena %s" % [mesh.get_aabb().end.y, top, skeleton.get_bone_global_rest(hips).origin.y, count, skin.get_bind_count(), error_string(err)])
-	model.free()
-	ref_root.free()
-	src_root.free()
-	return err == OK
+	return mi

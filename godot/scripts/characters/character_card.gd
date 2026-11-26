@@ -96,6 +96,8 @@ func _build_preview(column: VBoxContainer) -> void:
     visual = Registry.create_visual(definition.id)
     if visual == null:
         return
+    if visual.has_method("vestir"):
+        visual.call("vestir", Registry.load_outfit()) # cofre de roupas
     world.add_child(visual)
     preview_ready = not visual.has_method("is_visual_ready") or bool(visual.call("is_visual_ready"))
     if not preview_ready:

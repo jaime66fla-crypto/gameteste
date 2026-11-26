@@ -3,6 +3,7 @@ const PointerMode = preload("res://scripts/pointer_mode.gd")
 const Settings = preload("res://scripts/game_settings.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const CharacterCard = preload("res://scripts/characters/character_card.gd")
+const WardrobeVault = preload("res://scripts/characters/wardrobe_vault.gd")
 const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 const Controls = preload("res://scripts/controls.gd")
 var settings: Dictionary
@@ -1071,14 +1072,25 @@ func _set_page_width(width: float) -> void:
 
 func _show_characters() -> void:
     _clear()
-    _set_page_width(940.0)
+    _set_page_width(1280.0)
     _label("PERSONAGENS", 28, Color("#f0f2e9"))
     _label("Escolha seu personagem. A seleção fica salva para a próxima partida.", 15)
+    # Cofre de roupas (vitrines) à esquerda, cartas dos personagens à direita.
+    var row := HBoxContainer.new()
+    row.name = "CharactersRow"
+    row.add_theme_constant_override("separation", 20)
+    content.add_child(row)
+    var vault := WardrobeVault.new()
+    vault.name = "WardrobeVault"
+    vault.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+    vault.outfit_changed.connect(_on_outfit_changed)
+    row.add_child(vault)
     var cards := HFlowContainer.new()
     cards.name = "CharacterCards"
+    cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
     cards.add_theme_constant_override("h_separation", 20)
     cards.add_theme_constant_override("v_separation", 16)
-    content.add_child(cards)
+    row.add_child(cards)
     var selected_id := CharacterRegistry.load_selection()
     for definition in CharacterRegistry.all_characters():
         var card := CharacterCard.new()
@@ -1090,6 +1102,12 @@ func _show_characters() -> void:
     selection_feedback = _label("", 14)
     selection_feedback.name = "SelectionFeedback"
     _button("Voltar", "BackButton", _show_main)
+
+## A carta do 01 troca de roupa junto com a vitrine.
+func _on_outfit_changed(pieces: PackedStringArray) -> void:
+    var card := content.find_child("CharacterCard_01", true, false)
+    if card != null and is_instance_valid(card.visual) and card.visual.has_method("vestir"):
+        card.visual.call("vestir", pieces)
 
 func _select_character(id: String) -> void:
     var error := CharacterRegistry.select_character(id)

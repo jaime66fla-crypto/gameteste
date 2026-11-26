@@ -41,6 +41,16 @@ def _arg(name, default=None):
 RENDER = _arg("--render")
 EXPORT = "--no-export" not in ARGS
 TRIS = int(_arg("--tris", "6000"))
+# Roupas (build_01_roupas.py): "--sem-roupas" pula; "--vestir=camiseta,calca,bone"
+# escolhe o que aparece no --render (padrão: nada, corpo nu).
+ROUPAS = "--sem-roupas" not in ARGS
+# "--rapido": reusa pele.png e não assa o tecido (só para conferir o encaixe).
+RAPIDO = "--rapido" in ARGS
+SAVE = _arg("--save")
+VESTIR = [p for p in (_arg("--vestir", "") or "").split(",") if p]
+TEX_DIR = os.path.join(GODOT, "assets", "personagens", "01", "roupas")
+sys.path.insert(0, HERE)
+import build_01_roupas as roupas
 
 # Slim adult male, slightly tall (MakeHuman macro sliders, 0..1).
 MACRO = {"gender": 1.0, "age": 0.5, "muscle": 0.4, "weight": 0.3, "proportions": 0.5, "height": 0.6,
@@ -251,7 +261,15 @@ def build():
     bm.free()
     # Human skin: MPFB's procedural skin baked on the hi-res body, in the
     # standard MakeHuman UV layout (clothing skins can be painted on it later).
-    skin_img = bake_skin(body)
+    if RAPIDO and os.path.exists(SKIN_PNG):
+        skin_img = bpy.data.images.load(SKIN_PNG)
+    else:
+        skin_img = bake_skin(body)
+    # Roupas moldadas no corpo ainda em alta resolução (mesmos pesos e UV).
+    pieces, R = {}, None
+    if ROUPAS:
+        R = roupas.regioes(body, rig, eyes)
+        pieces = roupas.moldar(body, R)
     # Hi-res copy: its MakeHuman weights are re-projected after decimation
     # (collapse decimation averages weights badly at shoulders and armpits).
     src = body.copy()
@@ -262,7 +280,7 @@ def build():
     tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
     dec = body.modifiers.new("Decimate", 'DECIMATE')
     dec.decimate_type = 'COLLAPSE'
-    dec.ratio = min(1.0, TRIS / tris)
+    dec.ratio = dec_ratio = min(1.0, TRIS / tris)
     dec.use_symmetry = True
     dec.symmetry_axis = 'X'
     with ctx(body):
@@ -280,7 +298,6 @@ def build():
     with ctx(body):
         bpy.ops.object.modifier_move_to_index(modifier=dt.name, index=0)
         bpy.ops.object.modifier_apply(modifier=dt.name)
-    bpy.data.objects.remove(src)
     # Light smoothing, at most 4 bones per vertex, normalized (glTF/Godot skin).
     smooth_weights(body)
     # Materials: 0 skin texture, then sclera / iris / pupil of the eyeballs.
@@ -300,20 +317,27 @@ def build():
         m.diffuse_color = color
         body.data.materials.append(m)
     add_eyeballs(body, eyes, rig)
+    if ROUPAS:
+        roupas.finalizar(pieces, body, dec_ratio, R, smooth_weights, None if RAPIDO else TEX_DIR)
+        roupas.zonas(body, src, R)
+    bpy.data.objects.remove(src)
     # Bone names as Godot expects them (vertex groups follow the rename).
     for b in rig.data.bones:
         b.name = b.name.replace("mixamorig:", "mixamorig_")
-    for g in body.vertex_groups:
-        g.name = g.name.replace("mixamorig:", "mixamorig_")
+    for ob in [body] + list(pieces.values()):
+        for g in ob.vertex_groups:
+            g.name = g.name.replace("mixamorig:", "mixamorig_")
     top = max((body.matrix_world @ v.co).z for v in body.data.vertices)
     print("01: %d verts, %d tris, %d grupos, topo %.3f m" % (len(body.data.vertices), sum(len(p.vertices) - 2 for p in body.data.polygons), len(body.vertex_groups), top))
-    return rig, body
+    return rig, body, pieces
 
-def export_glb(rig, ob, path):
+def export_glb(rig, ob, pieces, path):
     for o in bpy.context.scene.objects:
         o.select_set(False)
     rig.select_set(True)
     ob.select_set(True)
+    for p in pieces.values():
+        p.select_set(True)
     bpy.context.view_layer.objects.active = rig
     bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_yup=True,
                               export_skins=True, export_animations=False, export_morph=False,
@@ -344,7 +368,8 @@ def render(dirpath):
     sc.camera = cam
     cam.data.lens = 70
     views = {"front": (0, -1, 0.08), "three": (0.55, -0.85, 0.12), "face": (0.35, -1, 0.05),
-             "profile": (1, -0.05, 0.03), "hand": (0.2, -1, 0.3), "side": (1, 0, 0.05)}
+             "profile": (1, -0.05, 0.03), "hand": (0.2, -1, 0.3), "side": (1, 0, 0.05),
+             "back": (-0.4, 1, 0.1)}
     for name, d in views.items():
         d = V(d).normalized()
         target, dist = V((0, 0, 0.93)), 4.8
@@ -357,9 +382,13 @@ def render(dirpath):
         sc.render.filepath = os.path.join(dirpath, "01_%s.png" % name)
         bpy.ops.render.render(write_still=True)
 
-rig, ob = build()
+rig, ob, pieces = build()
 if EXPORT:
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    export_glb(rig, ob, OUT)
+    export_glb(rig, ob, pieces, OUT)
+for name, p in pieces.items():
+    p.hide_render = name not in VESTIR
+if SAVE:
+    bpy.ops.wm.save_as_mainfile(filepath=SAVE)
 if RENDER:
     render(RENDER)

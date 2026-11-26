@@ -221,6 +221,8 @@ func _install_selected_character() -> void:
     requested_character_id = character_id if not character_id.is_empty() else CharacterRegistry.load_selection()
     character_id = requested_character_id
     var chosen := CharacterRegistry.create_visual(character_id)
+    if chosen != null and chosen.has_method("vestir"):
+        chosen.call("vestir", CharacterRegistry.load_outfit()) # cofre de roupas (menu)
     if chosen != null:
         chosen.scale *= height / 1.8
         avatar.add_child(chosen)
