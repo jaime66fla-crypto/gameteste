@@ -1,9 +1,9 @@
-// Compra de Brasas com dinheiro real (Mercado Pago Checkout Pro), vendida no site
+// Compra de Brasas com dinheiro real (PIX pelo Mercado Pago), vendida no site
 // do GitHub Pages (loja.html). Os métodos entram no Durable Object de contas
 // (installPayments) para que crédito e pedido sejam gravados juntos.
 //
-// Fluxo: POST /godot/pay/checkout {pack} (com sessão) cria o pedido e a
-// preferência no Mercado Pago e devolve a URL de pagamento. O Mercado Pago avisa
+// Fluxo: POST /godot/pay/pix {pack, email} (com sessão) cria o pedido e um
+// PIX no Mercado Pago e devolve o QR Code (só PIX: sem login). O Mercado Pago avisa
 // em POST /godot/pay/webhook; só depois de validar a assinatura e consultar o
 // pagamento na API é que as Brasas são creditadas, uma vez por pedido.
 // Segredos do Worker: MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (wrangler secret put).
@@ -13,12 +13,19 @@ export const SHOP_URL = 'https://jaime66fla-crypto.github.io/gameteste/loja.html
 /** Origens que podem chamar login/pagamento pelo navegador (site + teste local). */
 export const SHOP_ORIGINS = ['https://jaime66fla-crypto.github.io', 'http://localhost:8765'];
 /** Rotas abertas para o site (CORS). O webhook não precisa: quem chama é o Mercado Pago. */
-export const SHOP_PATHS = ['/godot/login', '/godot/me', '/godot/pay/checkout', '/godot/pay/order'];
+export const SHOP_PATHS = ['/godot/login', '/godot/me', '/godot/pay/pix', '/godot/pay/order'];
 
 const MP_API = 'https://api.mercadopago.com';
 const PACKS = new Map((store.pacotes || []).map((pack) => [pack.id, pack]));
 const CHECKOUT_COOLDOWN_MS = 3000;
 const ORDER_RULE = /^[0-9a-f]{24}$/;
+const EMAIL_RULE = /^[^\s@]{1,64}@[^\s@]{1,190}\.[a-z]{2,}$/;
+const PIX_MINUTES = 30;
+
+/** Data no formato que o Mercado Pago pede, no horário de Brasília (UTC-3). */
+function brasiliaTime(ms) {
+	return new Date(ms - 3 * 3600000).toISOString().replace('Z', '-03:00');
+}
 
 /** Cabeçalhos CORS para a origem do site (ou nada, se a origem não é a do site). */
 export function corsHeaders(request) {
@@ -93,8 +100,8 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 
 	proto.payRoute = async function (request, url, token) {
 		switch (url.pathname) {
-			case '/pay/checkout':
-				return request.method === 'POST' ? this.payCheckout(token, await request.json(), request) : json({ error: 'Método não permitido.' }, 405);
+			case '/pay/pix':
+				return request.method === 'POST' ? this.payPix(token, await request.json(), request) : json({ error: 'Método não permitido.' }, 405);
 			case '/pay/order':
 				return this.payOrder(token, url);
 			case '/pay/webhook':
@@ -110,42 +117,51 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 		});
 	};
 
-	/** POST /pay/checkout {pack}: cria o pedido e devolve a URL do Checkout Pro. */
-	proto.payCheckout = async function (token, body, request) {
+	/**
+	 * POST /pay/pix {pack, email}: cria o pedido e um pagamento PIX no Mercado
+	 * Pago. Devolve o QR Code (imagem + copia e cola) para o site mostrar; paga-se
+	 * pelo app de qualquer banco, sem conta no Mercado Pago. Vale 30 minutos.
+	 */
+	proto.payPix = async function (token, body, request) {
 		const found = await this.accountFor(token);
 		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
 		const pack = PACKS.get(String(body?.pack || ''));
 		if (!pack) return json({ error: 'Pacote não encontrado.' }, 404);
+		const email = String(body?.email || '').trim().toLowerCase();
+		if (!EMAIL_RULE.test(email)) return json({ error: 'Digite um e-mail válido para receber o comprovante.' }, 400);
 		if (!this.env?.MP_ACCESS_TOKEN) return json({ error: 'A compra de Brasas ainda não está disponível.' }, 503);
 		const { key, account } = found;
 		if (Date.now() - (account.lastCheckout || 0) < CHECKOUT_COOLDOWN_MS) return json({ error: 'Aguarde um instante e tente de novo.' }, 429);
 		account.lastCheckout = Date.now();
 		const id = randomHex(12);
-		const order = { id, account: key, name: account.name, pack: pack.id, brasas: pack.brasas, cents: pack.preco_centavos, status: 'criado', at: Date.now() };
+		const expires = Date.now() + PIX_MINUTES * 60000;
+		const order = { id, account: key, name: account.name, pack: pack.id, brasas: pack.brasas, cents: pack.preco_centavos, status: 'criado', at: Date.now(), expires };
 		await this.ctx.storage.put({ [key]: account, ['order:' + id]: order });
 		const origin = request.headers.get('x-public-origin') || 'https://floral-haze-1c57.jaime66fla.workers.dev';
-		const back = `${SHOP_URL}?pedido=${id}`;
-		const response = await this.mp('/checkout/preferences', {
+		const response = await this.mp('/v1/payments', {
 			method: 'POST',
 			headers: { 'X-Idempotency-Key': id },
 			body: JSON.stringify({
-				items: [{ id: pack.id, title: `${pack.brasas} Brasas · Campo de Fogo`, description: `Pacote de ${pack.brasas} Brasas para a conta ${account.name}`, quantity: 1, unit_price: pack.preco_centavos / 100, currency_id: 'BRL' }],
+				transaction_amount: pack.preco_centavos / 100,
+				description: `${pack.brasas} Brasas · Campo de Fogo (conta ${account.name})`,
+				payment_method_id: 'pix',
+				payer: { email },
 				external_reference: id,
 				notification_url: `${origin}/godot/pay/webhook`,
-				back_urls: { success: back, failure: back, pending: back },
-				auto_return: 'approved',
-				statement_descriptor: 'CAMPO DE FOGO',
+				date_of_expiration: brasiliaTime(expires),
 			}),
 		});
-		if (!response.ok) {
+		const payment = await response.json().catch(() => ({}));
+		const pix = payment?.point_of_interaction?.transaction_data;
+		if (!response.ok || !pix?.qr_code) {
 			order.status = 'erro';
 			await this.ctx.storage.put('order:' + id, order);
-			return json({ error: 'Não foi possível abrir o pagamento. Tente de novo.' }, 502);
+			return json({ error: 'Não foi possível gerar o PIX. Tente de novo.' }, 502);
 		}
-		const pref = await response.json();
-		order.preference = pref.id;
+		order.payment = String(payment.id);
+		order.status = payment.status || 'pending';
 		await this.ctx.storage.put('order:' + id, order);
-		return json({ order: id, url: pref.init_point, price: brl(pack.preco_centavos) });
+		return json({ order: id, price: brl(pack.preco_centavos), brasas: pack.brasas, qr: pix.qr_code, qrImage: pix.qr_code_base64 || '', expires });
 	};
 
 	/** GET /pay/order?id=: situação do pedido (só o dono vê). */
@@ -155,7 +171,8 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 		const id = String(url.searchParams.get('id') || '');
 		const order = ORDER_RULE.test(id) ? await this.ctx.storage.get('order:' + id) : null;
 		if (!order || order.account !== found.key) return json({ error: 'Pedido não encontrado.' }, 404);
-		return json({ order: { id, pack: order.pack, brasas: order.brasas, status: order.status, credited: !!order.credited }, profile: profile(found.account) });
+		const expired = !order.credited && order.expires && Date.now() > order.expires + 60000 && !['approved', 'rejected', 'cancelled'].includes(order.status);
+		return json({ order: { id, pack: order.pack, brasas: order.brasas, status: expired ? 'expired' : order.status, credited: !!order.credited }, profile: profile(found.account) });
 	};
 
 	/**
@@ -170,6 +187,9 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 		const type = url.searchParams.get('type') || url.searchParams.get('topic') || body?.type || '';
 		const dataId = url.searchParams.get('data.id') || body?.data?.id || '';
 		if (type !== 'payment') return json({ ok: true, ignored: type || 'sem tipo' });
+		// IPN antigo (?id=&topic=payment, sem assinatura): o mesmo pagamento chega também
+		// como webhook assinado, então só confirmamos o recebimento para não haver reenvio.
+		if (!request.headers.get('x-signature') && url.searchParams.get('topic')) return json({ ok: true, ignored: 'ipn' });
 		if (!/^\d{1,20}$/.test(String(dataId))) return json({ error: 'Pagamento inválido.' }, 400);
 		const ok = await validSignature({ signature: request.headers.get('x-signature'), requestId: request.headers.get('x-request-id'), dataId, secret: this.env?.MP_WEBHOOK_SECRET });
 		if (!ok) return json({ error: 'Assinatura inválida.' }, 401);
