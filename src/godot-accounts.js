@@ -12,6 +12,17 @@ import { installPayments } from './godot-payments.js';
 const STORE_ITEMS = new Map(store.items.map((item) => [item.id, item]));
 const HISTORY_SIZE = 50;
 
+// Conta do dono do jogo: tem todos os itens pagos da loja sem comprar (inclusive
+// os que entrarem depois). Pela chave da conta, que não muda ao trocar o nome.
+const MASTER_ACCOUNTS = new Set(['acct:jaimexzz.dev']);
+const PAID_ITEMS = store.items.filter((item) => item.preco > 0).map((item) => item.id);
+
+/** Conta master: soma todos os itens pagos ao "owned" (sem tirar nada do que já tinha). */
+export function withMaster(key, account) {
+	if (account && MASTER_ACCOUNTS.has(key)) account.owned = [...new Set([...(account.owned || []), ...PAID_ITEMS])];
+	return account;
+}
+
 /** Saldo atual (contas antigas começam com o bônus inicial). */
 const brasasOf = (account) => (Number.isFinite(account.brasas) ? account.brasas : store.start);
 
@@ -348,6 +359,7 @@ export class GodotAccounts {
 		}
 		account.failures = 0;
 		account.lockedUntil = 0;
+		withMaster(key, account);
 		await this.ctx.storage.put(key, account);
 		return json({ token: await this.newSession(key), profile: profile(account) });
 	}
@@ -360,7 +372,7 @@ export class GodotAccounts {
 			await this.ctx.storage.delete('sess:' + token);
 			return null;
 		}
-		const account = await this.ctx.storage.get(session.account);
+		const account = withMaster(session.account, await this.ctx.storage.get(session.account));
 		return account ? { key: session.account, account } : null;
 	}
 

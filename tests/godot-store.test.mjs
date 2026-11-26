@@ -155,3 +155,19 @@ test('the leaderboard never shows Brasas or owned items', async () => {
 		assert.equal(row.owned, undefined);
 	}
 });
+
+test('master account (jaimexzz.dev) owns every paid item without buying', async () => {
+	const { accounts } = service();
+	const token = await register(accounts, 'jaimexzz.dev');
+	const me = await call(accounts, '/me', { token });
+	assert.equal(me.status, 200);
+	for (const item of paid) assert.ok(me.data.profile.owned.includes(item.id), `master sem ${item.id}`);
+	const before = me.data.profile.brasas;
+	const bought = await call(accounts, '/store/buy', { token, body: { item: paid.at(-1).id } });
+	assert.equal(bought.data.profile.brasas, before, 'master não deveria gastar Brasas');
+	const login = await call(accounts, '/login', { body: { name: 'JaimeXZZ.dev', password: 'segredo1' } });
+	assert.equal(login.data.profile.owned.length >= paid.length, true);
+	const other = await register(accounts, 'outra.conta');
+	const them = await call(accounts, '/me', { token: other });
+	assert.deepEqual(them.data.profile.owned, []);
+});
