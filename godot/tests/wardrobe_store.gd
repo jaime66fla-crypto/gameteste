@@ -107,7 +107,7 @@ func _run() -> void:
 		_check(Array(avatar.get("roupas")) == ["bone", "bermuda"], "Calça e bermuda juntas: %s" % [avatar.get("roupas")])
 		avatar.queue_free()
 
-	# Loja de Brasas (botão + do saldo): pacotes do site, ainda "Em breve".
+	# Loja de Brasas (botão + do saldo): pacotes vendidos no site por PIX.
 	_check(StoreCatalog.format_amount(1250) == "1.250" and StoreCatalog.format_amount(6500) == "6.500" and StoreCatalog.format_amount(90) == "90", "Separador de milhar errado")
 	_check(StoreCatalog.format_brl(1990) == "R$ 19,90" and StoreCatalog.format_brl(490) == "R$ 4,90", "Preço em reais errado")
 	var shop = load("res://scripts/loja/brasas_shop.gd").new()
@@ -116,7 +116,7 @@ func _run() -> void:
 	_check(StoreCatalog.packs().size() >= 3, "Pacotes de Brasas faltando")
 	for pack in StoreCatalog.packs():
 		var pack_button := _find(shop, "BuyPack_" + str(pack["id"])) as Button
-		_check(pack_button != null and pack_button.disabled and pack_button.text == "Em breve", "Pacote sem pagamento deveria estar Em breve: " + str(pack["id"]))
+		_check(pack_button != null and not pack_button.disabled and pack_button.text == "Comprar no site (PIX)", "Pacote deveria abrir a loja do site: " + str(pack["id"]))
 	var shop_balance := (_find(shop, "BrasasShopBalance") as Label).text
 	_check(shop_balance.to_upper() == "SEU SALDO: 300 BRASAS", "Saldo errado na Loja de Brasas: " + shop_balance)
 	shop.queue_free()

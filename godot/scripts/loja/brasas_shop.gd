@@ -1,13 +1,12 @@
 extends VBoxContainer
 ## Loja de Brasas (botão + do saldo no canto do menu): pacotes de Brasas que
-## serão comprados no site do Campo de Fogo (data/store.json "pacotes").
-## O pagamento ainda não está ligado (Fase 2): os botões ficam em "Em breve"
-## e a tela explica como ganhar Brasas jogando enquanto isso.
+## são comprados por PIX no site do Campo de Fogo (data/store.json "pacotes").
+## O botão abre a loja do site no navegador (src/godot-payments.js credita).
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const CARD_WIDTH := 230.0
-## Quando o site de pagamento existir, basta preencher (abre no navegador).
-const SITE_URL := ""
+## Loja de Brasas no site (GitHub Pages); vazio volta a mostrar "Em breve".
+const SITE_URL := "https://jaime66fla-crypto.github.io/gameteste/loja.html"
 
 signal store_requested
 
@@ -25,7 +24,7 @@ func _ready() -> void:
 	add_child(flow)
 	for pack in StoreCatalog.packs():
 		flow.add_child(_card(pack))
-	var note := UiTheme.label("A compra de Brasas pelo site chega numa próxima atualização. Enquanto isso, ganhe Brasas jogando online: 1 a cada %d XP, nas partidas e na Sobrevivência." % int(StoreCatalog._load().get("xp_per_brasa", 10)), 14, UiTheme.MUTED)
+	var note := UiTheme.label("Compre pelo site com PIX (qualquer banco), entrando com esta mesma conta. As Brasas aparecem aqui ao voltar para o menu. Também dá para ganhar jogando online: 1 a cada %d XP, nas partidas e na Sobrevivência." % int(StoreCatalog._load().get("xp_per_brasa", 10)), 14, UiTheme.MUTED)
 	note.name = "BrasasShopNote"
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -79,7 +78,7 @@ func _card(pack: Dictionary) -> Control:
 	var button := Button.new()
 	button.name = "BuyPack_" + id
 	button.custom_minimum_size.y = 40
-	button.text = "Comprar no site" if not SITE_URL.is_empty() else "Em breve"
+	button.text = "Comprar no site (PIX)" if not SITE_URL.is_empty() else "Em breve"
 	button.disabled = SITE_URL.is_empty()
 	button.tooltip_text = "" if not SITE_URL.is_empty() else "A compra pelo site ainda não está disponível."
 	UiTheme.primary(button, 14)
