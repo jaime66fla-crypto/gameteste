@@ -5,6 +5,7 @@ import ranks from '../godot/data/ranks.json' with { type: 'json' };
 import store from '../godot/data/store.json' with { type: 'json' };
 import { installChat } from './godot-chat.js';
 import { installPayments } from './godot-payments.js';
+import { flagPoints } from './godot-anticheat.js';
 
 // Loja interna (godot/data/store.json): Brasas ficam na conta; só o servidor
 // soma (XP de partida/sobrevivência) e desconta (compra). Itens de preço 0 são
@@ -71,6 +72,28 @@ const PBKDF2_ITERATIONS = 100000;
 const MAX_FAILURES = 8; // wrong passwords before a temporary lock
 const LOCK_MS = 5 * 60 * 1000;
 const NAME_RULE = /^[\p{L}\p{N}._-]{3,16}$/u;
+// Anticheat: pontos de infração mandados pelas salas (src/godot-anticheat.js) e ban de conta.
+const CHEAT_INDEX = 'cheats'; // chaves das contas com infrações (painel de admin)
+const CHEAT_INDEX_SIZE = 300;
+const CHEAT_HISTORY = 20; // últimas partidas com infração guardadas na conta
+const ADMIN_TOKEN_MIN = 24; // segredo ADMIN_TOKEN do Worker (wrangler secret put ADMIN_TOKEN)
+const BAN_FOREVER = 0; // until = 0: ban sem prazo
+
+/** Ban em vigor da conta ({until, reason}) ou null. */
+export function banOf(account, now = Date.now()) {
+	const ban = account?.ban;
+	if (!ban) return null;
+	return ban.until === BAN_FOREVER || ban.until > now ? ban : null;
+}
+
+/** Texto mostrado a quem está banido. */
+export function banMessage(ban) {
+	const until = ban.until === BAN_FOREVER ? 'sem prazo' : 'até ' + new Date(ban.until - 3 * 3600000).toISOString().slice(0, 16).replace('T', ' ') + ' (Brasília)';
+	return `Conta suspensa ${until}.` + (ban.reason ? ` Motivo: ${ban.reason}` : '');
+}
+
+/** Dia no horário de Brasília (o teto diário de Brasas vira à meia-noite). */
+const brasiliaDay = (now = Date.now()) => new Date(now - 3 * 3600000).toISOString().slice(0, 10);
 
 function json(data, status = 200) {
 	return new Response(JSON.stringify(data), {
@@ -182,6 +205,10 @@ export async function resolveSession(env, token) {
 	if (!token) return null;
 	const accounts = env.GODOT_ACCOUNTS.get(env.GODOT_ACCOUNTS.idFromName('godot-accounts'));
 	const response = await accounts.fetch(new Request('https://internal/internal/session', { headers: { Authorization: 'Bearer ' + token } }));
+	if (response.status === 403) {
+		const data = await response.json().catch(() => ({}));
+		return { banned: true, message: data.error || 'Conta suspensa.' };
+	}
 	return response.ok ? response.json() : null;
 }
 
@@ -221,6 +248,10 @@ export class GodotAccounts {
 					return request.method === 'POST' ? this.setAvatar(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/avatar':
 					return this.avatar(url);
+				case '/admin/flags':
+				case '/admin/ban':
+				case '/admin/unban':
+					return await this.admin(request, url);
 				case '/store/buy':
 					return request.method === 'POST' ? this.buy(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/friends/add':
@@ -363,6 +394,8 @@ export class GodotAccounts {
 		account.lockedUntil = 0;
 		withMaster(key, account);
 		await this.ctx.storage.put(key, account);
+		const ban = banOf(account);
+		if (ban) return json({ error: banMessage(ban), banned: true }, 403);
 		return json({ token: await this.newSession(key), profile: profile(account) });
 	}
 
@@ -380,11 +413,15 @@ export class GodotAccounts {
 
 	async me(token) {
 		const found = await this.accountFor(token);
-		return found ? json({ profile: profile(found.account) }) : json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const ban = banOf(found.account);
+		return ban ? json({ error: banMessage(ban), banned: true }, 401) : json({ profile: profile(found.account) });
 	}
 
 	async session(token) {
 		const found = await this.accountFor(token);
+		const ban = found && banOf(found.account);
+		if (ban) return json({ error: banMessage(ban), banned: true }, 403);
 		return found ? json({ account: found.key, name: found.account.name, xp: found.account.xp, owned: found.account.owned || [] }) : json({ error: 'invalid' }, 401);
 	}
 
@@ -505,19 +542,31 @@ export class GodotAccounts {
 		account.kills += count(body.kills);
 		account.botKills += count(body.botKills);
 		account.wins += body.win ? 1 : 0;
-		account.matches += 1;
+		account.matches += body.match === false ? 0 : 1; // Sobrevivência: só infrações, sem partida
+		if (body.flags && typeof body.flags === 'object') await this.recordFlags(key, account, body.flags);
 		// Brasas: 1 a cada xp_per_brasa de XP positivo; a sobra fica para a próxima partida.
+		// Teto por dia (brasas_dia_max, horário de Brasília): farmar bots ou zumbis não esvazia a loja.
 		let brasasGained = 0;
+		let brasasCapped = false;
 		if (delta > 0) {
 			const pool = (account.brasaXp || 0) + delta;
-			brasasGained = Math.floor(pool / store.xp_per_brasa);
+			const day = brasiliaDay();
+			if (account.brasasDay !== day) {
+				account.brasasDay = day;
+				account.brasasToday = 0;
+			}
+			const earned = Math.floor(pool / store.xp_per_brasa);
+			const room = Number.isFinite(store.brasas_dia_max) ? Math.max(0, store.brasas_dia_max - (account.brasasToday || 0)) : Infinity;
+			brasasGained = Math.min(earned, room);
+			brasasCapped = brasasGained < earned;
 			account.brasaXp = pool % store.xp_per_brasa;
+			account.brasasToday = (account.brasasToday || 0) + brasasGained;
 			account.brasas = brasasOf(account) + brasasGained;
 		}
 		await this.ctx.storage.put(key, account);
 		await this.updateBoard(key, account);
 		const after = rankFor(account.xp).rankIndex;
-		return json({ profile: profile(account), brasasGained, rankUp: after > before.rankIndex, rankDown: after < before.rankIndex });
+		return json({ profile: profile(account), brasasGained, brasasCapped, rankUp: after > before.rankIndex, rankDown: after < before.rankIndex });
 	}
 
 	// --------------------------------------------------------------- store ---
@@ -540,6 +589,73 @@ export class GodotAccounts {
 		return json({ profile: profile(account), message: `${item.nome} comprado!` });
 	}
 
+	// ----------------------------------------------------------- anticheat ---
+
+	/** Soma as infrações de uma partida na conta e no índice do painel. */
+	async recordFlags(key, account, flags) {
+		const counts = {};
+		for (const [kind, times] of Object.entries(flags)) {
+			const n = Math.max(0, Math.min(100000, Math.floor(Number(times) || 0)));
+			if (n && /^[a-z]{1,16}$/.test(kind)) counts[kind] = n;
+		}
+		const points = flagPoints(counts);
+		if (!points) return;
+		const cheat = account.cheat || { points: 0, counts: {}, history: [] };
+		cheat.points += points;
+		for (const [kind, n] of Object.entries(counts)) cheat.counts[kind] = (cheat.counts[kind] || 0) + n;
+		cheat.history = [...(cheat.history || []), { at: Date.now(), points, counts }].slice(-CHEAT_HISTORY);
+		cheat.last = Date.now();
+		account.cheat = cheat;
+		const index = ((await this.ctx.storage.get(CHEAT_INDEX)) || []).filter((k) => k !== key);
+		index.unshift(key);
+		await this.ctx.storage.put(CHEAT_INDEX, index.slice(0, CHEAT_INDEX_SIZE));
+	}
+
+	/**
+	 * Painel de admin (só com o segredo ADMIN_TOKEN do Worker no Authorization):
+	 *   GET  /admin/flags                       contas com infrações, mais pontos primeiro
+	 *   POST /admin/ban   {name, hours, reason}  hours 0 ou ausente = sem prazo
+	 *   POST /admin/unban {name}
+	 * Sem o segredo (ou com ele errado) a rota nem aparece (404).
+	 */
+	async admin(request, url) {
+		const secret = String(this.env?.ADMIN_TOKEN || '');
+		const given = bearer(request, url);
+		if (secret.length < ADMIN_TOKEN_MIN || !sameHash(given, secret)) return json({ error: 'Rota não encontrada.' }, 404);
+		if (url.pathname === '/admin/flags') {
+			const rows = [];
+			for (const key of (await this.ctx.storage.get(CHEAT_INDEX)) || []) {
+				const account = await this.ctx.storage.get(key);
+				if (!account?.cheat) continue;
+				const ban = banOf(account);
+				rows.push({ name: account.name, points: account.cheat.points, counts: account.cheat.counts, last: account.cheat.last, history: account.cheat.history, matches: account.matches, banned: ban ? { until: ban.until, reason: ban.reason } : null });
+			}
+			rows.sort((a, b) => b.points - a.points || b.last - a.last);
+			return json({ accounts: rows });
+		}
+		if (request.method !== 'POST') return json({ error: 'Método não permitido.' }, 405);
+		const body = await request.json();
+		const key = await this.keyForName(String(body?.name || '').trim());
+		const account = await this.ctx.storage.get(key);
+		if (!account) return json({ error: 'Conta não encontrada.' }, 404);
+		if (url.pathname === '/admin/unban') {
+			delete account.ban;
+			await this.ctx.storage.put(key, account);
+			await this.updateBoard(key, account);
+			return json({ ok: true, message: `${account.name} liberado.` });
+		}
+		const hours = Math.max(0, Number(body?.hours) || 0);
+		account.ban = { until: hours ? Date.now() + hours * 3600000 : BAN_FOREVER, reason: String(body?.reason || '').slice(0, 200), at: Date.now() };
+		await this.ctx.storage.put(key, account);
+		await this.updateBoard(key, account);
+		for (const ws of this.ctx.getWebSockets(key)) {
+			try {
+				ws.close(4003, 'Conta suspensa');
+			} catch {}
+		}
+		return json({ ok: true, message: `${account.name}: ${banMessage(account.ban)}` });
+	}
+
 	// --------------------------------------------------------- leaderboard ---
 
 	/** Stored top list; built once from every account the first time it is needed. */
@@ -558,7 +674,7 @@ export class GodotAccounts {
 
 	async updateBoard(key, account) {
 		const board = (await this.board()).filter((entry) => entry.key !== key);
-		board.push(boardEntry(key, account));
+		if (!banOf(account)) board.push(boardEntry(key, account)); // banido sai do ranking
 		await this.ctx.storage.put(BOARD_KEY, sortBoard(board).slice(0, BOARD_SIZE));
 	}
 
@@ -581,5 +697,5 @@ export class GodotAccounts {
 	}
 }
 
-installChat(GodotAccounts, rankFor);
-installPayments(GodotAccounts, { json, profile, brasasOf, randomHex });
+installChat(GodotAccounts, rankFor, banOf);
+installPayments(GodotAccounts, { json, profile, brasasOf, randomHex, banOf });

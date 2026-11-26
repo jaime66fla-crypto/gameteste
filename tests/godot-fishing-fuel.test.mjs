@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { GodotSurvival } from '../src/godot-survival.js';
+import { MoveGate, CheatLog } from '../src/godot-anticheat.js';
 const make = () => {
  const g = Object.create(GodotSurvival.prototype);
  g.state = {createdAt:Date.now(),vehicles:{}};
+ g.moves=new MoveGate(9.5); g.carMoves=new MoveGate(32.5,{burst:30,grace:12}); g.cheat=new CheatLog();
  g.sent=[]; g.sendTo=(_,m)=>g.sent.push(m); g.sendInv=()=>{}; g.save=()=>{}; g.broadcast=()=>{};g.broadcastNear=()=>{};
  return g;
 };
@@ -32,11 +34,12 @@ test('fishing rewards once during bite; capacity, movement and late hooks fail',
  }
  });
 });
-test('fuel consumes configured liters over cumulative kilometer, remains still and caps refill',()=>{
+test('fuel consumes configured liters over cumulative kilometer, remains still and caps refill',t=>{
+ let now=1e6;t.mock.method(Date,'now',()=>now);
  for(const [kind,rate] of [['sedan',.14],['pickup',.18],['hatch',.11]]){
  const g=make(),p={id:'p',vehicle:'v',p:[0,0,0],inv:{gasoline:2}},v={id:'v',kind,driver:'p',p:[0,0,0],fuel:100,hp:100};g.state.vehicles.v=v;
  g.driveVehicle(p,{v:'v',p:[0,0,0]});assert.equal(v.fuel,100);
- for(let n=1;n<=100;n++)g.driveVehicle(p,{v:'v',p:[n*10,0,0]});assert.ok(Math.abs(v.fuel-(100-rate))<1e-9);
+ for(let n=1;n<=100;n++){now+=500;g.driveVehicle(p,{v:'v',p:[n*10,0,0]});}assert.ok(Math.abs(v.fuel-(100-rate))<1e-9);
  const before=v.fuel;g.driveVehicle(p,{v:'v',p:[2000,0,0]});assert.equal(v.fuel,before);
  v.fuel=0;g.driveVehicle(p,{v:'v',p:[1001,0,0]});assert.deepEqual(v.p,[1000,0,0]);
  v.fuel=99.5;g.refuel(p,{v:'v'},()=>{});assert.equal(v.fuel,100);assert.equal(p.inv.gasoline,1);

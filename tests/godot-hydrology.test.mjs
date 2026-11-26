@@ -33,6 +33,6 @@ test('server shares weather with joining clients, permits sea travel and only dr
  room.webSocketMessage(socket,JSON.stringify({t:'drink_water'}));assert.equal(me.thirst,50);
  room.webSocketMessage(socket,JSON.stringify({t:'drink_water'}));assert.equal(me.thirst,50,'drinking rate is limited');
  me.lastDrink=0;me.p=[490,-2,0];room.webSocketMessage(socket,JSON.stringify({t:'drink_water'}));assert.equal(me.thirst,50,'saltwater is not drinkable');
- room.webSocketMessage(socket,JSON.stringify({t:'s',p:[800,-2,0]}));assert.equal(me.p[0],800,'sea travel is not clipped to the old world');
+ me.p=[795,-2,0];room.webSocketMessage(socket,JSON.stringify({t:'s',p:[800,-2,0]}));assert.equal(me.p[0],800,'sea travel is not clipped to the old world');
  assert.equal(waterAt(490,310,1).fresh,false,'river becomes saltwater at its ocean mouth');
 });

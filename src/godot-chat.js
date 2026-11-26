@@ -36,13 +36,14 @@ export function cleanText(text) {
 const pairKey = (a, b) => 'dm:' + [a, b].sort().join('|');
 
 /** Acrescenta o chat ao Durable Object de contas (usa accountFor e keyForName dele). */
-export function installChat(AccountsClass, rankFor) {
+export function installChat(AccountsClass, rankFor, banOf = () => null) {
 	Object.assign(AccountsClass.prototype, {
 		/** GET /chat (WebSocket): conecta a conta da sessão ao chat. */
 		async chatConnect(request, token) {
 			if (request.headers.get('Upgrade') !== 'websocket') return json({ error: 'WebSocket required' }, 426);
 			const found = await this.accountFor(token);
 			if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+			if (banOf(found.account)) return json({ error: 'Conta suspensa.' }, 403);
 			const pair = new WebSocketPair();
 			const client = pair[0];
 			const server = pair[1];
@@ -91,7 +92,7 @@ export function installChat(AccountsClass, rankFor) {
 			if (!d || typeof d !== 'object') return;
 			const meKey = ws.deserializeAttachment()?.key;
 			const me = meKey && (await this.ctx.storage.get(meKey));
-			if (!me) {
+			if (!me || banOf(me)) {
 				try {
 					ws.close(4001, 'Sessão expirada');
 				} catch {}

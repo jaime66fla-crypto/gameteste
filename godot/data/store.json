@@ -3,6 +3,8 @@
   "currency": "Brasas",
   "start": 100,
   "xp_per_brasa": 10,
+  "_brasas_dia_max": "Teto de Brasas ganhas jogando por dia (horário de Brasília), contra farm de bots/zumbis. Brasas compradas não contam.",
+  "brasas_dia_max": 200,
   "_pacotes": "Pacotes de Brasas vendidos no site (Fase 2: pagamento ainda não ligado). preco_centavos em reais; bonus já está somado em brasas.",
   "pacotes": [
     {"id": "brasas_500", "brasas": 500, "bonus": 0, "preco_centavos": 490},

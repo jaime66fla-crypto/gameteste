@@ -89,6 +89,8 @@ export default {
   if (url.pathname === "/godot/pay/webhook") return handleGodotAccount(request, env, url);
   // Godot accounts: register, login, profile (XP / rank), friends list and store (Brasas).
   if (url.pathname === "/godot/register" || url.pathname === "/godot/login" || url.pathname === "/godot/me" || url.pathname === "/godot/friends" || url.pathname === "/godot/leaderboard" || url.pathname.startsWith("/godot/friends/") || url.pathname === "/godot/profile/name" || url.pathname === "/godot/profile/avatar" || url.pathname === "/godot/avatar" || url.pathname === "/godot/store/buy") return handleGodotAccount(request, env, url);
+  // Painel de anticheat (segredo ADMIN_TOKEN): infrações, ban e desban.
+  if (url.pathname === "/godot/admin/flags" || url.pathname === "/godot/admin/ban" || url.pathname === "/godot/admin/unban") return handleGodotAccount(request, env, url);
   if (url.pathname === "/ws") {
    const room = (url.searchParams.get("room") || "cidade-1").toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 24) || "cidade-1";
    const id = env.GAME_ROOMS.idFromName((url.searchParams.get("mode")==="3d"?"3d:":"")+room);

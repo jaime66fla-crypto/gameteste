@@ -105,7 +105,7 @@ export async function validSignature({ signature, requestId, dataId, secret }) {
 const brl = (cents) => (cents / 100).toFixed(2).replace('.', ',');
 
 /** Junta os métodos de pagamento ao Durable Object de contas. */
-export function installPayments(Accounts, { json, profile, brasasOf, randomHex }) {
+export function installPayments(Accounts, { json, profile, brasasOf, randomHex, banOf = () => null }) {
 	const proto = Accounts.prototype;
 
 	proto.payRoute = async function (request, url, token) {
@@ -137,6 +137,7 @@ export function installPayments(Accounts, { json, profile, brasasOf, randomHex }
 	proto.payPix = async function (token, body, request) {
 		const found = await this.accountFor(token);
 		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		if (banOf(found.account)) return json({ error: 'Conta suspensa: compras bloqueadas.' }, 403);
 		const pack = PACKS.get(String(body?.pack || ''));
 		if (!pack) return json({ error: 'Pacote não encontrado.' }, 404);
 		const email = String(body?.email || '').trim().toLowerCase();

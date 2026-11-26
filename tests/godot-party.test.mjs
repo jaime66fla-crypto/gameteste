@@ -71,6 +71,8 @@ async function join(match, { create = false, code = 'ABCDE', name = 'P' } = {}) 
 	return { status: 101, ws: server, id: server.deserializeAttachment().id };
 }
 const say = (match, player, data) => match.webSocketMessage(player.ws, JSON.stringify(data));
+/** Tiro antes do acerto (como o jogo faz): sem ele o servidor recusa o acerto. */
+const fire = (match, player, w, bot = undefined) => say(match, player, { t: 'shot', w, o: [0, 1.5, 0], e: [1, 1.5, 0], ...(bot ? { bot } : {}) });
 /** One round: `killer` takes out every living player of `team`; then the break ends (alarm). */
 async function winRound(match, killerId, team) {
 	const nextRound = async () => {
@@ -188,11 +190,15 @@ test('2x2 with bots: teams filled, no friendly fire, team wins when the other si
 	const m = match.match;
 	for (const id of Object.keys(m.players)) m.players[id].inv = { rifle: true };
 	// Friendly fire is ignored.
+	fire(match, a, 'rifle');
 	say(match, a, { t: 'hit', target: b.id, zone: 'chest', w: 'rifle' });
 	assert.equal(m.players[b.id].hp, 100);
 	// Wipe out Bravo's bots: Alfa takes round 1, the match goes on.
 	const bots = start.roster.filter((r) => r.team === 1).map((r) => r.id);
-	for (const bot of bots) for (let i = 0; i < 4; i++) say(match, a, { t: 'hit', target: bot, zone: 'chest', w: 'rifle' });
+	for (const bot of bots) for (let i = 0; i < 4; i++) {
+		fire(match, a, 'rifle');
+		say(match, a, { t: 'hit', target: bot, zone: 'chest', w: 'rifle' });
+	}
 	const roundEnd = b.ws.last('round_end');
 	assert.deepEqual([roundEnd.round, roundEnd.team, roundEnd.score, roundEnd.last], [1, 0, [1, 0], false]);
 	assert.equal(b.ws.last('end'), undefined, 'one round is not the match');
@@ -268,12 +274,15 @@ test('bot hits deal the same damage as player weapons (weapon × zone), only wit
 	const m = match.match;
 	const bot = Object.values(m.players).find((p) => p.bot && p.team === 1);
 	bot.inv = { sniper: true };
+	fire(match, a, 'rifle', bot.id);
 	say(match, a, { t: 'hit', bot: bot.id, target: b.id, zone: 'chest', w: 'rifle' });
 	assert.equal(m.players[b.id].hp, 100, 'weapon the bot does not have');
+	fire(match, a, 'sniper', bot.id);
 	say(match, a, { t: 'hit', bot: bot.id, target: b.id, zone: 'leg', w: 'sniper' });
 	assert.equal(m.players[b.id].hp, 100 - 95 * 0.7);
 	bot.inv = { pistol: true };
 	m.players[a.id].hp = 100;
+	fire(match, a, 'pistol', bot.id);
 	say(match, a, { t: 'hit', bot: bot.id, target: a.id, zone: 'head', w: 'pistol' });
 	assert.equal(m.players[a.id].hp, 100 - 22 * 2);
 });
@@ -407,8 +416,10 @@ test('shop: buy within the window, with credits, one of each weapon, carry limit
 	const bot = Object.values(m.players).find((p) => p.bot && p.team !== me.team);
 	me.p = [0, 0, 0];
 	bot.p = [5, 0, 0];
+	fire(match, a, 'sniper');
 	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'sniper', pt: [5, 1.3, 0] });
 	assert.equal(bot.hp, 100);
+	fire(match, a, 'pistol');
 	say(match, a, { t: 'hit', target: bot.id, zone: 'chest', w: 'pistol', pt: [5, 1.3, 0] });
 	assert.ok(bot.hp < 100);
 	// After 2 minutes the shop closes.

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { HitCheck } from '../src/godot-hitcheck.js';
+import { ShotGate, MoveGate, CheatLog } from '../src/godot-anticheat.js';
 import { GodotMatch } from '../src/godot-match.js';
 import { GodotSurvival } from '../src/godot-survival.js';
 const catalog=JSON.parse(readFileSync(new URL('../godot/data/survival_items.json',import.meta.url)));
@@ -9,7 +10,7 @@ const shot={t:'shot',w:'bow',o:[0,1.6,0],e:[40,1.6,0],v:[40,0,0],a:'arrow-1'};
 const hit={t:'hit',w:'bow',target:'target',zone:'chest',pt:[10,1.29375,0],a:'arrow-1'};
 function fixture(Class) {
  const room=Object.create(Class.prototype), me={id:'archer',p:[0,0,0],inv:{bow:1,stone_arrow:1},credits:1000,buyUntil:Infinity}, target={id:'target',p:[10,0,0],hp:100};
- Object.assign(room,{hitCheck:new HitCheck(),hitLog:new Map(),sessions:new Map(),events:[]});
+ Object.assign(room,{hitCheck:new HitCheck(),hitLog:new Map(),sessions:new Map(),events:[],shots:new ShotGate(),moves:new MoveGate(9.5),botMoves:new MoveGate(9.5),zombieMoves:new MoveGate(6),animalMoves:new MoveGate(12),carMoves:new MoveGate(30),cheat:new CheatLog()});
  room.match={phase:'running',host:me.id,players:{archer:me,target},mode:'dm'};
  room.state={host:me.id,players:{archer:me,target},zombies:{},animals:{}};
  room.broadcast=room.broadcastNear=(...args)=>room.events.push(args);

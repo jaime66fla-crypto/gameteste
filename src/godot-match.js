@@ -12,6 +12,7 @@
 import matchMaps from '../godot/data/match_maps.json' with { type: 'json' };
 import { resolveSession, rankFor, XP_REWARDS, allowedCharacter, allowedCosmetics, ownedQuery, ownedFrom } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
+import { ShotGate, MoveGate, CheatLog, FIRE, PLAYER_SPEED, BOT_SPEED, TELEPORT_FLAG_M } from './godot-anticheat.js';
 
 const CAPACITY = 8;
 // Shop: only in custom team rooms (Equipes 2x2/4x4). Everyone gets START_CREDITS
@@ -208,6 +209,7 @@ export async function handleGodotSocket(request, env, url) {
 	const token = header.startsWith('Bearer ') ? header.slice(7).trim() : url.searchParams.get('token') || '';
 	const session = await resolveSession(env, token);
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
+	if (session.banned) return noticeSocket({ t: 'auth', message: session.message });
 	const party = (url.searchParams.get('party') || '').trim().toUpperCase();
 	if (party) return joinParty(request, env, session, party);
 	const invited = (url.searchParams.get('elim') || '').trim().toLowerCase();
@@ -271,6 +273,11 @@ export class GodotMatch {
 		this.sessions = new Map(); // player id -> WebSocket
 		this.hitLog = new Map(); // attacker id -> recent hit timestamps
 		this.hitCheck = new HitCheck(); // alcance, cabeça plausível e taxa de tiros na cabeça
+		// Anticheat (src/godot-anticheat.js): acerto só com tiro, cadência da arma, velocidade máxima.
+		this.shots = new ShotGate();
+		this.moves = new MoveGate(PLAYER_SPEED);
+		this.botMoves = new MoveGate(BOT_SPEED);
+		this.cheat = new CheatLog();
 		this.match = this.fresh('');
 		ctx.blockConcurrencyWhile(async () => {
 			const saved = await ctx.storage.get('match');
@@ -519,6 +526,7 @@ export class GodotMatch {
 		m.crates = shop ? {} : this.mapCrates(map); // team rooms: weapons come from the shop
 		m.phase = 'running';
 		m.startedAt = now;
+		this.resetGates(); // todos acabaram de ser postos no ponto de partida
 		m.host = m.party && m.leader && this.sessions.has(m.leader) ? m.leader : humans[0];
 		this.save();
 		this.broadcast({
@@ -699,6 +707,8 @@ export class GodotMatch {
 			.sort((a, b) => b.d - a.d);
 		const pick = ranked[Math.floor(Math.random() * Math.min(3, ranked.length))];
 		const at = spawns[pick.i];
+		this.moves.forget(p.id);
+		this.botMoves.forget(p.id);
 		Object.assign(p, {
 			dead: false, hp: 100, spawn: pick.i, p: [at[0], 0, at[1]], inv: { [DM_KIT]: true }, medkits: 0, nades: 0, healAt: 0,
 			safeUntil: now + DM_SPAWN_PROTECT_MS,
@@ -736,6 +746,10 @@ export class GodotMatch {
 				if (!state) return;
 				state.ch = allowedCharacter(state.ch, me.owned); // personagem pago só se a conta comprou
 				Object.assign(state, allowedCosmetics(d, state.w, me.owned)); // roupas e skin da arma (rp/ws)
+				// Velocidade máxima: teletransporte vira corrida (a posição do servidor anda só o permitido).
+				const moved = this.moves.move(meta.id, me.p, state.p);
+				if (moved.over > TELEPORT_FLAG_M) this.cheat.add(meta.id, 'teleport');
+				state.p = moved.p;
 				me.p = state.p; // last known position, for loot range and death drops
 				me.stance = stanceOf(state); // a cabeça de quem está agachado/deitado fica mais baixa
 				this.broadcast({ t: 's', id: meta.id, ...state }, meta.id);
@@ -750,6 +764,9 @@ export class GodotMatch {
 					if (!bot?.bot || bot.dead) continue;
 					const state = cleanState(entry);
 					if (!state) continue;
+					const moved = this.botMoves.move(bot.id, bot.p, state.p);
+					if (moved.over > TELEPORT_FLAG_M) this.cheat.add(meta.id, 'teleport');
+					state.p = moved.p;
 					bot.p = state.p;
 					bot.stance = stanceOf(state);
 					list.push({ id: bot.id, ...state });
@@ -764,6 +781,10 @@ export class GodotMatch {
 				const e = vec3(d.e, 1000);
 				if (!o || !e) return;
 				let arrow = {};
+				if (FIRE[d.w] && d.w !== 'bow' && !this.shots.shot(shooter.id, d.w)) {
+					this.cheat.add(meta.id, 'rate'); // mais rápido que a arma: o tiro não vale acerto
+					return;
+				}
 				if (d.w === 'bow') {
 					if (!shooter.inv?.bow || !this.hitCheck.recordArrow({ attacker: shooter, id: d.a, origin: o, velocity: d.v })) return;
 					arrow = { a: d.a, v: d.v };
@@ -858,6 +879,8 @@ export class GodotMatch {
 				const target = m.players[d.target];
 				if (!target || target.dead || target.id === attacker.id) return;
 				if (m.party && target.team === attacker.team) return; // no friendly fire
+				// Cada acerto de bala gasta um chumbo de um tiro recente da mesma arma.
+				if (d.w !== 'bow' && !this.shots.hit(attacker.id, d.w)) return this.cheat.add(meta.id, 'nocredit');
 				let damage = 0;
 				let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : null;
 				if (d.w === 'bow') {
@@ -866,7 +889,9 @@ export class GodotMatch {
 					zone = verdict.zone;
 				} else if (!attacker.bot) {
 					// Alcance da arma e cabeça plausível (cabeça duvidosa vale como peito).
+					const flaggedBefore = this.hitCheck.flagged(attacker.id);
 					const verdict = this.hitCheck.check({ attacker, target, weapon: d.w, zone, point: d.pt });
+					if (!flaggedBefore && this.hitCheck.flagged(attacker.id)) this.cheat.add(meta.id, 'headshots');
 					if (!verdict.ok) return;
 					zone = verdict.zone;
 				}
@@ -908,6 +933,13 @@ export class GodotMatch {
 			if (amount > 0) this.damage(thrower, target, amount, 'grenade', null);
 		}
 		if (this.match === m) this.save();
+	}
+
+	/** Zera tiros e passos (partida nova, rodada nova): todos começam do ponto de partida. */
+	resetGates() {
+		this.shots.reset();
+		this.moves.by.clear();
+		this.botMoves.by.clear();
 	}
 
 	allowHit(attackerId) {
@@ -981,7 +1013,7 @@ export class GodotMatch {
 				new Request('https://internal/internal/xp', {
 					method: 'POST',
 					headers: { 'content-type': 'application/json' },
-					body: JSON.stringify({ account: player.account, xp: player.xpGain || 0, kills: player.playerKills || 0, botKills: player.botKills || 0, win }),
+					body: JSON.stringify({ account: player.account, xp: player.xpGain || 0, kills: player.playerKills || 0, botKills: player.botKills || 0, win, flags: this.cheat.take(player.id) }),
 				}),
 			);
 			if (!response.ok) return;
@@ -1187,6 +1219,7 @@ export class GodotMatch {
 		m.nextRoundAt = 0;
 		if (!m.host || !this.sessions.has(m.host)) m.host = m.order.find((id) => this.sessions.has(id)) || null;
 		this.hitCheck.reset();
+		this.resetGates();
 		this.save();
 		this.broadcast({ t: 'round', ...this.roundInfo(), host: m.host, alive: this.alive().length, buy: ROUND_BUY_MS, duration: ROUND_MS, roster });
 		this.schedule();
@@ -1215,6 +1248,7 @@ export class GodotMatch {
 		this.match = room;
 		this.hitLog.clear();
 		this.hitCheck.reset();
+		this.resetGates();
 		this.save();
 		this.broadcastParty();
 	}
@@ -1246,6 +1280,7 @@ export class GodotMatch {
 		this.sessions.clear();
 		this.hitLog.clear();
 		this.hitCheck.reset();
+		this.resetGates();
 		this.match = this.fresh('');
 		this.ctx.waitUntil(this.ctx.storage.deleteAll());
 	}

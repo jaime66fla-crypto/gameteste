@@ -20,6 +20,7 @@ import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
 import { resolveSession, rankFor, allowedCharacter, allowedCosmetics, ownedQuery, ownedFrom } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
+import { ShotGate, MoveGate, CheatLog, PLAYER_SPEED, ZOMBIE_SPEED, ANIMAL_SPEED, TELEPORT_FLAG_M } from './godot-anticheat.js';
 import { BuildGrid, liftOf, MAX_LIFT } from './godot-building.js';
 import { terrainHeight } from './godot-terrain.js';
 import { BRANCH_LIMIT, BRANCH_LIFETIME_MS, BRANCH_TREES, treeSeed, branchPeriod, branchSpot } from './godot-tree-branches.js';
@@ -106,6 +107,8 @@ const ZOMBIE_SPAWN_BATCH = 6;
 const XP = { zombie: 5, player: 60 };
 // Carros: entrar/abastecer a até 4 m; o motorista manda a posição (10 por segundo).
 const VEHICLE_REACH = 4.2;
+/** Carro mais rápido: 26 m/s (survival_items.json), com folga. */
+const CAR_SPEED = Math.max(...Object.values(catalog.vehicles).map((v) => v.max_speed || 26)) * 1.25;
 const VEHICLE_MAX_STEP = 12; // metros entre dois pacotes (bem acima de 26 m/s × 0,1 s)
 const RAM_MIN_SPEED = 6; // m/s para atropelar um zumbi
 const RAM_DAMAGE_PER_MS = 7; // dano = velocidade × 7 (60 km/h ≈ 115)
@@ -280,6 +283,7 @@ export async function handleSurvivalSocket(request, env, url) {
 	const token = header.startsWith('Bearer ') ? header.slice(7).trim() : url.searchParams.get('token') || '';
 	const session = await resolveSession(env, token);
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
+	if (session.banned) return noticeSocket({ t: 'auth', message: session.message });
 	const query = '&name=' + encodeURIComponent(session.name) + '&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp) + ownedQuery(session);
 	const order = WORLD_NAMES.slice();
 	// Mundo escolhido na lista: só ele (cada mundo guarda o seu próprio personagem).
@@ -336,6 +340,13 @@ export class GodotSurvival {
 		this.sessions = new Map(); // player id -> WebSocket
 		this.hitLog = new Map();
 		this.hitCheck = new HitCheck(); // alcance, cabeça plausível e taxa de tiros na cabeça
+		// Anticheat (src/godot-anticheat.js): acerto só com tiro e bala no pente, cadência, velocidade máxima.
+		this.shots = new ShotGate();
+		this.moves = new MoveGate(PLAYER_SPEED);
+		this.zombieMoves = new MoveGate(ZOMBIE_SPEED, { grace: 12 });
+		this.animalMoves = new MoveGate(ANIMAL_SPEED, { grace: 14 });
+		this.carMoves = new MoveGate(CAR_SPEED, { burst: 30, grace: 12 });
+		this.cheat = new CheatLog();
 		this.state = this.fresh();
 		this.dirty = false;
 		// Construções: uma chave por peça ("b:<id>"), fora do estado do mundo (que tem limite de tamanho).
@@ -515,11 +526,18 @@ export class GodotSurvival {
 		if (!p) return;
 		const step = flat(v.p, p);
 		if (step > VEHICLE_MAX_STEP) return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
+		// Velocidade máxima do carro ao longo do tempo (muitos pacotes curtos também contam).
+		const carStep = this.carMoves.move(v.id, v.p, p);
+		if (carStep.over > 0) {
+			if (carStep.over > TELEPORT_FLAG_M) this.cheat.add(me.id, 'teleport');
+			return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
+		}
 		if (v.fuel <= 0 && step > 0.6) return this.sendTo(me.id, { t: 'veh', ...this.vehiclePacket(v), snap: true });
 		const rule = VEHICLES[v.kind] || VEHICLES.sedan;
 		const before = v.fuel;
 		v.fuel = Math.max(0, v.fuel - (step / 1000) * rule.per_km);
 		v.p = p;
+		this.moves.sync(me.id); // o motorista está onde o carro está
 		v.yaw = finite(d.y, 100) ? d.y : v.yaw;
 		v.speed = finite(d.s, 60) ? Math.abs(d.s) : 0;
 		me.p = p;
@@ -782,6 +800,16 @@ export class GodotSurvival {
 				const p = vec3(d.p, 6000);
 				if (!p) return;
 				if (me.fishing && (me.vehicle || !(me.inv.fishing_rod > 0) || Math.hypot(...p.map((n,i) => n - me.fishing.origin[i])) > 0.8 || Date.now() > me.fishing.biteAt + FISHING_WINDOW_MS + FISHING_DELIVERY_GRACE_MS)) this.cancelFishing(me);
+				// Velocidade máxima: teletransporte vira corrida (a posição do servidor anda só o permitido).
+				if (!me.vehicle) {
+					const moved = this.moves.move(me.id, me.p, p);
+					if (moved.over > TELEPORT_FLAG_M) this.cheat.add(me.id, 'teleport');
+					p[0] = moved.p[0];
+					p[2] = moved.p[2];
+				} else if (me.p) {
+					p[0] = me.p[0]; // no carro quem manda a posição é o carro (drive)
+					p[2] = me.p[2];
+				}
 				me.p = p;
 				me.stance = stanceOf(d);
 				if (finite(d.y, 1000)) me.y = d.y;
@@ -807,6 +835,11 @@ export class GodotSurvival {
 				const o = vec3(d.o, 6000);
 				const e = vec3(d.e, 8000);
 				if (!o || !e) return;
+				// Arma de fogo: precisa ter a arma e bala no pente; cadência da arma. Sem isso o tiro não vale acerto.
+				if (MAGAZINE_SIZE[d.w] && (me.magazines?.[d.w] || 0) > 0 && ownsWeapon(me, d.w) && !this.shots.shot(me.id, d.w)) {
+					this.cheat.add(me.id, 'rate');
+					return;
+				}
 				let arrow = {};
 				if (d.w === 'bow') {
 					const item = Object.keys(me.inv).find((key) => me.inv[key] > 0 && ITEMS[key]?.weapon === 'bow');
@@ -912,6 +945,8 @@ export class GodotSurvival {
 	gunHit(me, d) {
 		const weapon = WEAPON_DAMAGE[d.w] ? d.w : null;
 		if (!weapon || !Object.keys(me.inv).some((item) => me.inv[item] > 0 && ITEMS[item]?.weapon === weapon) || !this.allowHit(me.id)) return;
+		// Cada acerto de bala gasta um chumbo de um tiro recente da mesma arma.
+		if (weapon !== 'bow' && !this.shots.hit(me.id, weapon)) return this.cheat.add(me.id, 'nocredit');
 		let zone = ZONE_MULTIPLIER[d.zone] ? d.zone : 'chest';
 		// Alcance da arma; em jogadores, cabeça plausível e taxa de tiros na cabeça.
 		const s = this.state;
@@ -919,7 +954,9 @@ export class GodotSurvival {
 		if (weapon === 'bow' && !target) return;
 		if (target) {
 			const args = { attacker: me, target, weapon, zone, point: d.pt, player: !!s.players[d.target] };
+			const flaggedBefore = this.hitCheck.flagged(me.id);
 			const verdict = weapon === 'bow' ? this.hitCheck.checkArrow({ ...args, id: d.a }) : this.hitCheck.check(args);
+			if (!flaggedBefore && this.hitCheck.flagged(me.id)) this.cheat.add(me.id, 'headshots');
 			if (!verdict.ok) return;
 			zone = verdict.zone;
 		}
@@ -931,6 +968,8 @@ export class GodotSurvival {
 		const item = typeof d.item === 'string' && me.inv[d.item] && ITEMS[d.item]?.melee ? d.item : '';
 		const damage = item ? ITEMS[item].melee : FIST_DAMAGE;
 		if (!this.allowHit(me.id)) return;
+		// Um golpe a cada 0,6 s no jogo (MELEE_COOLDOWN).
+		if (!this.shots.shot(me.id, 'melee')) return this.cheat.add(me.id, 'rate');
 		this.applyHit(me, d.target, damage * (d.zone === 'head' ? 1.5 : 1), item || 'fist', d.zone === 'head' ? 'head' : 'chest', MELEE_REACH);
 	}
 
@@ -1012,6 +1051,7 @@ export class GodotSurvival {
 		}
 		Object.assign(me, this.newCharacter());
 		if (bed) me.p = [bed.p[0], bed.p[1] + 0.6, bed.p[2]];
+		this.moves.place(me.id);
 		this.clearZombiesNear(me.p, me.id);
 		this.save();
 		this.sendTo(me.id, { t: 'respawned', p: me.p, hp: me.hp, hunger: me.hunger, thirst: me.thirst, ...this.invPacket(me) });
@@ -1025,15 +1065,16 @@ export class GodotSurvival {
 	}
 
 	async flushXp(player) {
-		if (!player?.account || !player.xpGain) return;
-		const gained = player.xpGain;
+		const flags = this.cheat.take(player?.id);
+		if (!player?.account || (!player.xpGain && !flags)) return;
+		const gained = player.xpGain || 0;
 		player.xpGain = 0;
 		try {
 			const accounts = this.env.GODOT_ACCOUNTS.get(this.env.GODOT_ACCOUNTS.idFromName('godot-accounts'));
 			await accounts.fetch(new Request('https://internal/internal/xp', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ account: player.account, xp: gained, kills: player.kills || 0, botKills: 0, win: false }),
+				body: JSON.stringify({ account: player.account, xp: gained, kills: player.kills || 0, botKills: 0, win: false, flags, match: gained > 0 }),
 			}));
 			player.kills = 0;
 		} catch {}
@@ -1045,14 +1086,17 @@ export class GodotSurvival {
 	zombieStates(list) {
 		if (!Array.isArray(list)) return;
 		const s = this.state;
+		if (this.zombieMoves.by.size > 400) for (const id of this.zombieMoves.by.keys()) if (!s.zombies[id]) this.zombieMoves.forget(id);
 		const moved = [];
 		for (const entry of list.slice(0, ZOMBIE_MAX)) {
 			if (!Array.isArray(entry) || entry.length < 6) continue;
 			const zombie = s.zombies[entry[0]];
 			const p = vec3([entry[1], entry[2], entry[3]], 600);
 			if (!zombie || !p) continue;
-			// Um zumbi não anda mais de ~3 m entre dois pacotes (6 por segundo).
+			// Um zumbi não anda mais de ~3 m entre dois pacotes (6 por segundo), nem rápido demais com o tempo.
 			if (flat(zombie.p, p) > 12) continue;
+			const step = this.zombieMoves.move(zombie.id, zombie.p, p);
+			if (step.over > 0) p[0] = step.p[0], p[2] = step.p[2];
 			zombie.p = p;
 			moved.push([zombie.id, p[0], p[1], p[2], finite(entry[4], 100) ? round1(entry[4]) : 0, Number.isInteger(entry[5]) ? entry[5] : 0]);
 		}
@@ -1198,12 +1242,15 @@ export class GodotSurvival {
 	animalStates(list) {
 		const s = this.state;
 		if (!Array.isArray(list) || !s.animals) return;
+		if (this.animalMoves.by.size > 400) for (const id of this.animalMoves.by.keys()) if (!s.animals[id]) this.animalMoves.forget(id);
 		const moved = [];
 		for (const entry of list.slice(0, ANIMAL.max || 40)) {
 			if (!Array.isArray(entry) || entry.length < 6) continue;
 			const animal = s.animals[entry[0]];
 			const p = vec3([entry[1], entry[2], entry[3]], 600);
 			if (!animal || !p || flat(animal.p, p) > 14) continue; // corre no máximo ~10 m/s
+			const step = this.animalMoves.move(animal.id, animal.p, p);
+			if (step.over > 0) p[0] = step.p[0], p[2] = step.p[2];
 			animal.p = p;
 			moved.push([animal.id, p[0], p[1], p[2], finite(entry[4], 100) ? round1(entry[4]) : 0, Number.isInteger(entry[5]) ? entry[5] : 0]);
 		}

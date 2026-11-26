@@ -462,6 +462,7 @@ test('zombie kills sometimes leave a rotten gland; cities have zombies in daylig
 	for (let i = 0; i < 40; i++) {
 		room.state.zombies['zz' + i] = { id: 'zz' + i, kind: 'walker', hp: 1, p: [1, 0, 0] };
 		room.hitLog.clear();
+		room.shots.reset(); // um golpe por vez (cadência do facão)
 		say(room, p, { t: 'melee', target: 'zz' + i, item: 'machete' });
 	}
 	const glands = Object.values(room.state.bags).filter((b) => b.items.zombie_gland);
@@ -571,6 +572,8 @@ test('primitive weapons: the club hits harder than fists; zombies die and give X
 	at(p, [0, 0, 0]);
 	room.state.zombies.z1 = { id: 'z1', kind: 'walker', hp: 60, p: [2, 0, 0] };
 	p.me().inv.w_rifle = 1;
+	p.me().magazines = { rifle: 5 };
+	say(room, p, { t: 'shot', w: 'rifle', o: [0, 1.5, 0], e: [2, 1.5, 0] });
 	say(room, p, { t: 'hit', target: 'z1', w: 'rifle', zone: 'head' });
 	assert.equal(room.state.zombies.z1.hp, 60 - 27 * 2, 'server still knows guns, but the map has none');
 	room.state.zombies.z1.hp = 60;
