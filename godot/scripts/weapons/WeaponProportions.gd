@@ -1,6 +1,7 @@
 extends RefCounted
 ## Local integration component. No original WeaponProportions.gd was supplied/found.
 ## Profiles describe the actual Polyy meshes (visually inspected), never combat stats.
+const WeaponSkins = preload("res://scripts/weapons/weapon_skins.gd")
 const BASE := "res://assets/weapons/polyy/models/"
 const PROFILES := {
     "pistol": {"file":"compact_polymer_pistol.glb", "length":0.18, "yaw":-PI/2.0, "grip":Vector3(0.29,-0.17,0), "support":Vector3(-0.027,0.015,0.008), "right":0.027, "sight":Vector3(0.38,0.415,0)},
@@ -33,22 +34,40 @@ static func create_model(id: String, skin: String = "") -> Node3D:
         model.set_meta("source_path", path)
         model.set_meta("polyy", path.begins_with(BASE))
         if not skin.is_empty() and ResourceLoader.exists(skin):
-            apply_skin(model, load(skin) as Texture2D)
+            apply_skin(model, load(skin) as Texture2D, skin)
     return model
 
-## Troca a cor (textura base) de todas as malhas da arma pela da skin.
-static func apply_skin(model: Node3D, texture: Texture2D) -> void:
+## Veste a arma com a skin: acabamento próprio (scripts/weapons/weapon_skins.gd)
+## ou, sem acabamento, só troca a cor (textura base) de todas as malhas.
+static func apply_skin(model: Node3D, texture: Texture2D, path: String = "") -> void:
     if texture == null:
         return
+    if path.is_empty():
+        path = texture.resource_path
+    var finish := WeaponSkins.material(path, texture)
     for node in model.find_children("*", "MeshInstance3D", true, false):
         var mesh_instance := node as MeshInstance3D
         for surface in mesh_instance.mesh.get_surface_count():
+            if finish != null:
+                mesh_instance.set_surface_override_material(surface, finish)
+                continue
             var material := mesh_instance.get_active_material(surface) as BaseMaterial3D
             if material == null:
                 continue
             material = material.duplicate() as BaseMaterial3D
             material.albedo_texture = texture
             mesh_instance.set_surface_override_material(surface, material)
+
+## Caminho da skin vestida na arma ("" = original). Vale para os dois tipos de material.
+static func skin_path(model: Node3D) -> String:
+    for node in model.find_children("*", "MeshInstance3D", true, false):
+        var mat := (node as MeshInstance3D).get_active_material(0)
+        if mat is ShaderMaterial and mat.has_meta("skin_path"):
+            return str(mat.get_meta("skin_path"))
+        if mat is BaseMaterial3D and (mat as BaseMaterial3D).albedo_texture != null:
+            return (mat as BaseMaterial3D).albedo_texture.resource_path
+        return ""
+    return ""
 
 static func _points(node: Node, relative: Node3D, result: Array[Vector3]) -> void:
     if node is MeshInstance3D:

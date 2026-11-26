@@ -40,6 +40,17 @@ func _lights(world: Node3D) -> void:
 	settings.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	settings.ambient_light_color = Color("#9fb0b8")
 	settings.ambient_light_energy = 0.45
+	# Reflexos de estúdio (céu só para o metal refletir; o fundo segue liso):
+	# sem isso aço polido e verniz ficam pretos na vitrine.
+	var studio := ProceduralSkyMaterial.new()
+	studio.sky_top_color = Color("#c9d6de")
+	studio.sky_horizon_color = Color("#6d7d86")
+	studio.ground_horizon_color = Color("#3a3430")
+	studio.ground_bottom_color = Color("#141414")
+	var sky := Sky.new()
+	sky.sky_material = studio
+	settings.sky = sky
+	settings.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
 	environment.environment = settings
 	world.add_child(environment)
 	var key := DirectionalLight3D.new()

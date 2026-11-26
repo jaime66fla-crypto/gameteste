@@ -25,8 +25,7 @@ func _gun_texture(actor: Node) -> String:
 	var meshes := model.find_children("*", "MeshInstance3D", true, false)
 	if meshes.is_empty():
 		return "<sem malha>"
-	var mat := (meshes[0] as MeshInstance3D).get_active_material(0) as BaseMaterial3D
-	return mat.albedo_texture.resource_path if mat != null and mat.albedo_texture != null else ""
+	return preload("res://scripts/weapons/WeaponProportions.gd").skin_path(model)
 
 func _run() -> void:
 	var world := Node3D.new()

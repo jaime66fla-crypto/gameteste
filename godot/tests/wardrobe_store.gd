@@ -82,7 +82,9 @@ func _run() -> void:
 
 	# A arma criada pelo jogo usa a skin equipada.
 	var rifle := WeaponProportions.create_model("rifle", StoreCatalog.texture_path(Registry.weapon_skin("rifle")))
-	_check(_texture_of(rifle, "").ends_with("rifle_deserto.png"), "Fuzil sem a skin: " + _texture_of(rifle, ""))
+	_check(WeaponProportions.skin_path(rifle).ends_with("rifle_deserto.png"), "Fuzil sem a skin: " + WeaponProportions.skin_path(rifle))
+	var finish := (rifle.find_children("*", "MeshInstance3D", true, false)[0] as MeshInstance3D).get_active_material(0)
+	_check(finish is ShaderMaterial, "A skin do fuzil deveria usar o acabamento próprio (weapon_skin.gdshader)")
 	rifle.free()
 	Registry.set_weapon_skin("rifle", "")
 	_check(Registry.weapon_skin("rifle") == "", "Tirar a skin não funcionou")
