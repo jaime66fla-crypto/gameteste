@@ -12,14 +12,16 @@ import { installPayments } from './godot-payments.js';
 const STORE_ITEMS = new Map(store.items.map((item) => [item.id, item]));
 const HISTORY_SIZE = 50;
 
-// Conta do dono do jogo: tem todos os itens pagos da loja sem comprar (inclusive
-// os que entrarem depois). Pela chave da conta, que não muda ao trocar o nome.
+// Conta do dono do jogo (Jaimexzz.dev): tem todos os itens pagos da loja sem
+// comprar (inclusive os que entrarem depois). Vale pela chave da conta (nome do
+// cadastro) ou pelo nome atual, sem diferenciar maiúsculas.
 const MASTER_ACCOUNTS = new Set(['acct:jaimexzz.dev']);
+const MASTER_NAMES = new Set(['jaimexzz.dev']);
 const PAID_ITEMS = store.items.filter((item) => item.preco > 0).map((item) => item.id);
 
 /** Conta master: soma todos os itens pagos ao "owned" (sem tirar nada do que já tinha). */
 export function withMaster(key, account) {
-	if (account && MASTER_ACCOUNTS.has(key)) account.owned = [...new Set([...(account.owned || []), ...PAID_ITEMS])];
+	if (account && (MASTER_ACCOUNTS.has(key) || MASTER_NAMES.has(String(account.name || '').toLowerCase()))) account.owned = [...new Set([...(account.owned || []), ...PAID_ITEMS])];
 	return account;
 }
 

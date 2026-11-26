@@ -171,3 +171,13 @@ test('master account (jaimexzz.dev) owns every paid item without buying', async 
 	const them = await call(accounts, '/me', { token: other });
 	assert.deepEqual(them.data.profile.owned, []);
 });
+
+test('master by current name: account renamed to Jaimexzz.dev also owns everything', async () => {
+	const { accounts, data } = service();
+	const token = await register(accounts, 'cadastro.antigo');
+	const acc = data.get('acct:cadastro.antigo');
+	acc.name = 'Jaimexzz.dev';
+	data.set('acct:cadastro.antigo', acc);
+	const me = await call(accounts, '/me', { token });
+	for (const item of paid) assert.ok(me.data.profile.owned.includes(item.id), `master sem ${item.id}`);
+});
