@@ -167,6 +167,17 @@ func rename(new_name: String) -> String:
 		return str(response["data"].get("message", "Nick atualizado."))
 	return str(response["data"].get("error", "Não foi possível trocar o nick."))
 
+## Loja interna: compra um item com Brasas (o servidor confere saldo e posse).
+## Devolve {"ok": bool, "message": String}; com ok, profile já tem o saldo novo.
+func buy_item(item_id: String) -> Dictionary:
+	var response := await _api("/store/buy", {"item": item_id})
+	if response["status"] == 200:
+		profile = response["data"].get("profile", profile)
+		return {"ok": true, "message": str(response["data"].get("message", "Comprado!"))}
+	if response["status"] == 401:
+		logout()
+	return {"ok": false, "message": str(response["data"].get("error", "Não foi possível comprar."))}
+
 ## Editar perfil: foto (JPEG/PNG já reduzido) ou PackedByteArray vazio para remover.
 func set_avatar(image_bytes: PackedByteArray) -> String:
 	var payload := Marshalls.raw_to_base64(image_bytes) if not image_bytes.is_empty() else ""

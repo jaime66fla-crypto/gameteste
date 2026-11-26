@@ -1257,6 +1257,8 @@ func _on_xp(data: Dictionary) -> void:
 func _on_profile(data: Dictionary) -> void:
 	var profile: Dictionary = data.get("profile", {})
 	var lines := "\nXP da partida: %+d   •   Total: %d XP\nPatente: %s" % [int(data.get("gained", 0)), int(profile.get("xp", 0)), profile.get("rank", "")]
+	if int(data.get("brasas", 0)) > 0:
+		lines += "\n+%d Brasas   •   Saldo: %d (gaste na Loja)" % [int(data.get("brasas", 0)), int(profile.get("brasas", 0))]
 	if profile.get("nextRankXp") != null:
 		lines += "   (faltam %d XP para %s)" % [int(profile["nextRankXp"]) - int(profile.get("xp", 0)), profile.get("nextRank", "")]
 	if bool(data.get("rankUp", false)):

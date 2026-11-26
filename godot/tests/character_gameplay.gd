@@ -12,8 +12,13 @@ func _frames(count: int) -> void:
 func _run() -> void:
     var registry = load("res://scripts/characters/character_registry.gd")
     registry.storage_path = "user://character_gameplay_%s.cfg" % OS.get_process_id()
-    # Os personagens do catálogo atual (hoje só o avatar_ch31).
+    # Os personagens do catálogo atual. Os da loja precisam estar na conta:
+    # perfil de teste (só na memória) com todos comprados.
     var ids: Array = registry.all_characters().map(func(entry): return entry.id)
+    var net := root.get_node("Net")
+    if str(net.get("session_token")).is_empty():
+        net.set("session_token", "0".repeat(64))
+    net.set("profile", {"name": "Teste", "brasas": 0, "owned": ids})
     for id in ids:
         _check(registry.select_character(id) == OK, "Cannot select " + id)
         var scene: Node3D = load("res://scenes/main.tscn").instantiate()

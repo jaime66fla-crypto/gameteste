@@ -10,7 +10,8 @@ const PROFILES := {
     "smg": {"file":"compact_submachine_gun.glb", "length":0.55, "yaw":PI/2.0, "grip":Vector3(-0.26,-0.16,0), "support":Vector3(-0.032,0.025,-0.23), "right":0.030, "sight":Vector3(-0.21,0.22,0)}
 }
 
-static func create_model(id: String) -> Node3D:
+## skin: textura de uma skin de arma da loja (data/store.json "textura"); vazio = original.
+static func create_model(id: String, skin: String = "") -> Node3D:
     if not PROFILES.has(id):
         return null
     var path := BASE + str(PROFILES[id]["file"])
@@ -31,7 +32,23 @@ static func create_model(id: String) -> Node3D:
         model.rotation.y = yaw
         model.set_meta("source_path", path)
         model.set_meta("polyy", path.begins_with(BASE))
+        if not skin.is_empty() and ResourceLoader.exists(skin):
+            apply_skin(model, load(skin) as Texture2D)
     return model
+
+## Troca a cor (textura base) de todas as malhas da arma pela da skin.
+static func apply_skin(model: Node3D, texture: Texture2D) -> void:
+    if texture == null:
+        return
+    for node in model.find_children("*", "MeshInstance3D", true, false):
+        var mesh_instance := node as MeshInstance3D
+        for surface in mesh_instance.mesh.get_surface_count():
+            var material := mesh_instance.get_active_material(surface) as BaseMaterial3D
+            if material == null:
+                continue
+            material = material.duplicate() as BaseMaterial3D
+            material.albedo_texture = texture
+            mesh_instance.set_surface_override_material(surface, material)
 
 static func _points(node: Node, relative: Node3D, result: Array[Vector3]) -> void:
     if node is MeshInstance3D:

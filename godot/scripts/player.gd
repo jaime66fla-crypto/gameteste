@@ -24,6 +24,7 @@ var body_capsule: CapsuleShape3D
 var standing_probe: CapsuleShape3D
 var sprinting := false
 const WeaponData = preload("res://scripts/weapon_data.gd")
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const MAG_SIZE := 15
 const SoundFXScript = preload("res://scripts/sound_fx.gd")
 const Controls = preload("res://scripts/controls.gd")
@@ -1612,7 +1613,8 @@ func _rebuild_weapon_model() -> void:
     if humanoid_avatar == null or not humanoid_avatar.has_method("bind_weapon"):
         _rebuild_legacy_weapon_model()
         return
-    var imported := WeaponProportions.create_model(current_weapon)
+    # Skin de arma equipada no cofre (loja).
+    var imported := WeaponProportions.create_model(current_weapon, StoreCatalog.texture_path(CharacterRegistry.weapon_skin(current_weapon)))
     if imported == null:
         _rebuild_legacy_weapon_model()
     else:

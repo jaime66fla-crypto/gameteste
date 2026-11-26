@@ -2,7 +2,31 @@
 // One Durable Object instance ("godot-accounts") owns every account so names
 // stay unique. Passwords are stored only as salted PBKDF2-SHA256 hashes.
 import ranks from '../godot/data/ranks.json' with { type: 'json' };
+import store from '../godot/data/store.json' with { type: 'json' };
 import { installChat } from './godot-chat.js';
+
+// Loja interna (godot/data/store.json): Brasas ficam na conta; só o servidor
+// soma (XP de partida/sobrevivência) e desconta (compra). Itens de preço 0 são
+// de todo mundo e não entram em "owned".
+const STORE_ITEMS = new Map(store.items.map((item) => [item.id, item]));
+const HISTORY_SIZE = 50;
+
+/** Saldo atual (contas antigas começam com o bônus inicial). */
+const brasasOf = (account) => (Number.isFinite(account.brasas) ? account.brasas : store.start);
+
+/**
+ * Personagem que os outros podem ver: um personagem pago da loja só vale se a
+ * conta comprou (senão '' e os outros veem o padrão). owned = itens da conta.
+ */
+export function allowedCharacter(ch, owned) {
+	const item = STORE_ITEMS.get(ch);
+	if (!item || item.grupo !== 'personagens' || item.preco <= 0) return ch;
+	return Array.isArray(owned) && owned.includes(ch) ? ch : '';
+}
+
+/** Itens da conta na URL interna de entrada numa sala (&own=a,b,c). */
+export const ownedQuery = (session) => '&own=' + encodeURIComponent((session.owned || []).join(','));
+export const ownedFrom = (url) => (url.searchParams.get('own') || '').split(',').filter((id) => STORE_ITEMS.has(id));
 
 const SESSION_DAYS = 90;
 const PBKDF2_ITERATIONS = 100000;
@@ -55,6 +79,8 @@ function profile(account) {
 		botKills: account.botKills,
 		wins: account.wins,
 		matches: account.matches,
+		brasas: brasasOf(account), // só o dono vê o perfil completo (amigos e ranking usam outros campos)
+		owned: account.owned || [],
 	};
 }
 
@@ -153,6 +179,8 @@ export class GodotAccounts {
 					return request.method === 'POST' ? this.setAvatar(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/avatar':
 					return this.avatar(url);
+				case '/store/buy':
+					return request.method === 'POST' ? this.buy(bearer(request, url), await request.json()) : json({ error: 'Método não permitido.' }, 405);
 				case '/friends/add':
 				case '/friends/accept':
 				case '/friends/decline':
@@ -314,7 +342,7 @@ export class GodotAccounts {
 
 	async session(token) {
 		const found = await this.accountFor(token);
-		return found ? json({ account: found.key, name: found.account.name, xp: found.account.xp }) : json({ error: 'invalid' }, 401);
+		return found ? json({ account: found.key, name: found.account.name, xp: found.account.xp, owned: found.account.owned || [] }) : json({ error: 'invalid' }, 401);
 	}
 
 	// ------------------------------------------------------------ friends ---
@@ -435,10 +463,38 @@ export class GodotAccounts {
 		account.botKills += count(body.botKills);
 		account.wins += body.win ? 1 : 0;
 		account.matches += 1;
+		// Brasas: 1 a cada xp_per_brasa de XP positivo; a sobra fica para a próxima partida.
+		let brasasGained = 0;
+		if (delta > 0) {
+			const pool = (account.brasaXp || 0) + delta;
+			brasasGained = Math.floor(pool / store.xp_per_brasa);
+			account.brasaXp = pool % store.xp_per_brasa;
+			account.brasas = brasasOf(account) + brasasGained;
+		}
 		await this.ctx.storage.put(key, account);
 		await this.updateBoard(key, account);
 		const after = rankFor(account.xp).rankIndex;
-		return json({ profile: profile(account), rankUp: after > before.rankIndex, rankDown: after < before.rankIndex });
+		return json({ profile: profile(account), brasasGained, rankUp: after > before.rankIndex, rankDown: after < before.rankIndex });
+	}
+
+	// --------------------------------------------------------------- store ---
+
+	/** POST /store/buy {item}: compra um item da loja com Brasas (uma vez por conta). */
+	async buy(token, body) {
+		const found = await this.accountFor(token);
+		if (!found) return json({ error: 'Sessão expirada. Entre de novo.' }, 401);
+		const { key, account } = found;
+		const item = STORE_ITEMS.get(String(body?.item || ''));
+		if (!item) return json({ error: 'Item não encontrado na loja.' }, 404);
+		const owned = account.owned || [];
+		if (item.preco <= 0 || owned.includes(item.id)) return json({ profile: profile(account), message: `${item.nome} já é seu.` });
+		const balance = brasasOf(account);
+		if (balance < item.preco) return json({ error: `Faltam ${item.preco - balance} ${store.currency} para ${item.nome}.` }, 402);
+		account.brasas = balance - item.preco;
+		account.owned = [...owned, item.id];
+		account.purchases = [...(account.purchases || []), { item: item.id, price: item.preco, at: Date.now() }].slice(-HISTORY_SIZE);
+		await this.ctx.storage.put(key, account);
+		return json({ profile: profile(account), message: `${item.nome} comprado!` });
 	}
 
 	// --------------------------------------------------------- leaderboard ---

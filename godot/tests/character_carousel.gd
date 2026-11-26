@@ -26,6 +26,15 @@ func _run() -> void:
             break
     for i in 5:
         await process_frame
+    # O carrossel do Cofre só mostra os personagens da conta: perfil de teste
+    # (só na memória) com todos os personagens da loja comprados.
+    var net := root.get_node("Net")
+    if str(net.get("session_token")).is_empty():
+        net.set("session_token", "0".repeat(64))
+    var owned := []
+    for entry in registry.all_characters():
+        owned.append(entry.id)
+    net.set("profile", {"name": "Teste", "brasas": 0, "owned": owned})
     menu.call("_show_characters")
     await process_frame
     var all: Array = registry.all_characters()

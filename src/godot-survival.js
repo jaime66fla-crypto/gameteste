@@ -18,7 +18,7 @@
 // godot/data/survival_items.json (os mesmos arquivos que o jogo lê).
 import world from '../godot/data/survival_world.json' with { type: 'json' };
 import catalog from '../godot/data/survival_items.json' with { type: 'json' };
-import { resolveSession, rankFor } from './godot-accounts.js';
+import { resolveSession, rankFor, allowedCharacter, ownedQuery, ownedFrom } from './godot-accounts.js';
 import { HitCheck, stanceOf } from './godot-hitcheck.js';
 import { BuildGrid, liftOf, MAX_LIFT } from './godot-building.js';
 import { terrainHeight } from './godot-terrain.js';
@@ -280,7 +280,7 @@ export async function handleSurvivalSocket(request, env, url) {
 	const token = header.startsWith('Bearer ') ? header.slice(7).trim() : url.searchParams.get('token') || '';
 	const session = await resolveSession(env, token);
 	if (!session) return noticeSocket({ t: 'auth', message: 'Entre na sua conta para jogar online.' });
-	const query = '&name=' + encodeURIComponent(session.name) + '&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp);
+	const query = '&name=' + encodeURIComponent(session.name) + '&account=' + encodeURIComponent(session.account) + '&xp=' + encodeURIComponent(session.xp) + ownedQuery(session);
 	const order = WORLD_NAMES.slice();
 	// Mundo escolhido na lista: só ele (cada mundo guarda o seu próprio personagem).
 	const chosen = url.searchParams.get('world') || '';
@@ -656,6 +656,7 @@ export class GodotSurvival {
 			id, account, tag: ownerTag(account || id), name: url.searchParams.get('name') || 'Sobrevivente', rank: rankFor(totalXp).rank,
 			xpGain: 0, kills: 0, zkills: 0, useAt: 0, gatherAt: 0, gatherId: '', respawnAt: 0, y: 0,
 			...(saved && Date.now() - saved.savedAt < CHAR_KEEP_MS ? this.restore(saved) : this.newCharacter()),
+			owned: ownedFrom(url), // itens da loja (personagem pago só se a conta comprou)
 		};
 		s.players[id] = player;
 		if (saved) {
@@ -790,7 +791,7 @@ export class GodotSurvival {
 				this.broadcastNear(p, {
 					t: 's', id: me.id, p, y: finite(d.y, 1000) ? d.y : 0, pi: finite(d.pi, 2) ? d.pi : 0,
 					w: WEAPON_DAMAGE[d.w] ? d.w : 'pistol', m: finite(d.m, 1) ? Math.max(0, d.m) : 0,
-					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, sh: me.shield, sg: me.guard, dv: me.vehicle || '', ch: characterId(d.ch),
+					r: !!d.r, c: !!d.c, pr: !!d.pr, a: !!d.a, f: !!d.f, rl: !!d.rl, h: !!d.h, bp: me.back || '', tc: !!d.tc && (me.inv.torch || 0) > 0, sh: me.shield, sg: me.guard, dv: me.vehicle || '', ch: allowedCharacter(characterId(d.ch), me.owned),
 					act: me.fishing ? 'fish' : ['chop', 'pry', 'swing', 'hold', 'open', 'harvest', 'consume', 'bow_draw', 'bow_carry'].includes(d.act) ? d.act : '', tool: me.fishing ? 'fishing_rod' : typeof d.tool === 'string' && (ITEMS[d.tool]?.melee || ITEMS[d.tool]?.weapon === 'bow') ? d.tool : '',
 					charge: finite(d.charge, 1e6) ? Math.max(0, Math.min(1, d.charge)) : 0,
 					v: Array.isArray(d.v) && d.v.length === 2 && d.v.every((n) => finite(n, 50)) ? d.v : [0, 0],

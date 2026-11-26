@@ -9,6 +9,7 @@ signal buy_requested(item: String)
 signal close_requested
 
 const WeaponData = preload("res://scripts/weapon_data.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 const INTER_PATH := "res://assets/fonts/InterVariable.ttf"
 const WEAPONS := ["pistol", "smg", "shotgun", "rifle", "sniper", "bow"]
@@ -179,14 +180,7 @@ func _footer() -> Control:
 	close.text = "Fechar"
 	close.focus_mode = Control.FOCUS_NONE
 	close.custom_minimum_size = Vector2(132, 44)
-	close.add_theme_font_override("font", _semi)
-	close.add_theme_font_size_override("font_size", 15)
-	close.add_theme_stylebox_override("normal", _box(Color(1, 1, 1, 0.05), Color(1, 1, 1, 0.10), 1, 8))
-	close.add_theme_stylebox_override("hover", _box(Color(ACCENT, 0.14), ACCENT, 1, 8))
-	close.add_theme_stylebox_override("pressed", _box(Color(ACCENT, 0.24), ACCENT, 1, 8))
-	close.add_theme_color_override("font_color", TEXT)
-	close.add_theme_color_override("font_hover_color", TEXT)
-	close.add_theme_color_override("font_pressed_color", TEXT)
+	UiTheme.secondary(close, 15) # mesmo visual do menu principal
 	close.pressed.connect(func(): close_requested.emit())
 	footer.add_child(close)
 	return footer

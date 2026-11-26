@@ -1,0 +1,38 @@
+{
+  "_comment": "Loja interna, lida pelo jogo (scripts/loja/store_catalog.gd) e pelo servidor (src/godot-accounts.js). Brasas: moeda da conta (não confundir com os créditos da loja da partida). Toda conta começa com 'start' Brasas e ganha 1 Brasa a cada 'xp_per_brasa' XP positivo. Itens com preco 0 são de todo mundo (o 01 é o personagem padrão e nem entra aqui). Grupos: 'personagens' (id = id do personagem em godot/characters), 'skins_armas' ('arma' + 'textura' que troca a cor da arma) e 'skins_personagens' (roupas do 01: 'peca' é a malha Roupa_<peca>; 'textura' troca a skin dessa peça).",
+  "currency": "Brasas",
+  "start": 100,
+  "xp_per_brasa": 10,
+  "_pacotes": "Pacotes de Brasas vendidos no site (Fase 2: pagamento ainda não ligado). preco_centavos em reais; bonus já está somado em brasas.",
+  "pacotes": [
+    {"id": "brasas_500", "brasas": 500, "bonus": 0, "preco_centavos": 490},
+    {"id": "brasas_1100", "brasas": 1100, "bonus": 100, "preco_centavos": 990},
+    {"id": "brasas_2400", "brasas": 2400, "bonus": 400, "preco_centavos": 1990, "destaque": true},
+    {"id": "brasas_6500", "brasas": 6500, "bonus": 1500, "preco_centavos": 4990}
+  ],
+  "groups": [
+    {"id": "personagens", "nome": "Personagens"},
+    {"id": "skins_armas", "nome": "Skins de armas"},
+    {"id": "skins_personagens", "nome": "Skins de personagens"}
+  ],
+  "items": [
+    {"id": "manequim", "grupo": "personagens", "nome": "Manequim", "tipo": "Personagem", "preco": 300},
+    {"id": "avatar_ch31", "grupo": "personagens", "nome": "Avatar CH31", "tipo": "Personagem", "preco": 400},
+    {"id": "remy", "grupo": "personagens", "nome": "Remy", "tipo": "Personagem", "preco": 500},
+    {"id": "pato", "grupo": "personagens", "nome": "Pato Tático", "tipo": "Personagem", "preco": 600},
+
+    {"id": "pistol_oliva", "grupo": "skins_armas", "nome": "Pistola oliva", "tipo": "Pistola", "arma": "pistol", "preco": 120, "textura": "res://assets/weapons/skins/pistol_oliva.png"},
+    {"id": "smg_azul_aco", "grupo": "skins_armas", "nome": "Submetralhadora azul-aço", "tipo": "Submetralhadora", "arma": "smg", "preco": 160, "textura": "res://assets/weapons/skins/smg_azul_aco.png"},
+    {"id": "shotgun_ferrugem", "grupo": "skins_armas", "nome": "Escopeta ferrugem", "tipo": "Escopeta", "arma": "shotgun", "preco": 180, "textura": "res://assets/weapons/skins/shotgun_ferrugem.png"},
+    {"id": "rifle_deserto", "grupo": "skins_armas", "nome": "Fuzil deserto", "tipo": "Fuzil", "arma": "rifle", "preco": 220, "textura": "res://assets/weapons/skins/rifle_deserto.png"},
+    {"id": "sniper_floresta", "grupo": "skins_armas", "nome": "Sniper floresta", "tipo": "Precisão", "arma": "sniper", "preco": 260, "textura": "res://assets/weapons/skins/sniper_floresta.png"},
+
+    {"id": "bone", "grupo": "skins_personagens", "nome": "Boné", "tipo": "Cabeça", "peca": "bone", "preco": 0},
+    {"id": "bone_vinho", "grupo": "skins_personagens", "nome": "Boné vinho", "tipo": "Cabeça", "peca": "bone", "preco": 120, "textura": "res://assets/personagens/01/roupas/bone_vinho.png"},
+    {"id": "camiseta", "grupo": "skins_personagens", "nome": "Camiseta grafite", "tipo": "Tronco", "peca": "camiseta", "preco": 0},
+    {"id": "camiseta_oliva", "grupo": "skins_personagens", "nome": "Camiseta oliva", "tipo": "Tronco", "peca": "camiseta", "preco": 180, "textura": "res://assets/personagens/01/roupas/camiseta_oliva.png"},
+    {"id": "calca", "grupo": "skins_personagens", "nome": "Calça jeans escura", "tipo": "Pernas", "peca": "calca", "preco": 0},
+    {"id": "calca_cinza", "grupo": "skins_personagens", "nome": "Calça cinza tática", "tipo": "Pernas", "peca": "calca", "preco": 220, "textura": "res://assets/personagens/01/roupas/calca_cinza.png"},
+    {"id": "bermuda", "grupo": "skins_personagens", "nome": "Bermuda oliva", "tipo": "Pernas", "peca": "bermuda", "preco": 0}
+  ]
+}

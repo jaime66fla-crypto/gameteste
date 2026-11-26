@@ -1,8 +1,11 @@
 extends RefCounted
-const DEFAULT_ID := "avatar_ch31"
+## Personagem padrão (de todo mundo); os outros vêm da loja (data/store.json).
+const DEFAULT_ID := "01"
+## Roupas do 01 quando nada foi escolhido ainda no cofre.
+const DEFAULT_OUTFIT := ["bone", "camiseta", "calca"]
 const DEFAULT_PATH := "user://character_selection.cfg"
 const CATALOG = preload("res://characters/catalog.tres")
-const OUTFIT_PIECES := ["camiseta", "bermuda", "calca", "bone"]
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 # Tests may use a separate user:// file; production uses DEFAULT_PATH.
 static var storage_path: String = OS.get_environment("CAMPO_CHARACTER_TEST_PATH") if OS.get_environment("CAMPO_CHARACTER_TEST_PATH").begins_with("user://") else DEFAULT_PATH
 
@@ -36,35 +39,72 @@ static func load_selection() -> String:
     if config.load(storage_path) != OK:
         return DEFAULT_ID
     var id := str(config.get_value("characters", "selected_id", DEFAULT_ID))
-    return id if definition(id) != null else DEFAULT_ID
+    # Personagem da loja que a conta não tem (ou sem login) volta para o padrão.
+    return id if definition(id) != null and StoreCatalog.owns_character(id) else DEFAULT_ID
+
+## Personagens que esta conta pode usar: o padrão e os comprados na loja.
+static func owned_characters() -> Array[Resource]:
+    var result: Array[Resource] = []
+    for entry in all_characters():
+        if StoreCatalog.owns_character(entry.id):
+            result.append(entry)
+    return result
 
 static func select_character(id: String) -> Error:
     if definition(id) == null:
         return ERR_INVALID_PARAMETER
+    if not StoreCatalog.owns_character(id):
+        return ERR_UNAUTHORIZED
     if not is_available(id):
         return ERR_UNAVAILABLE
     return _save_values({"selected_id": id})
 
-## Roupas vestidas no personagem 01 (ids de avatar_01.gd PECAS), salvas junto
-## com a seleção. Só a vitrine do menu muda; o jogador local veste ao entrar.
+## Roupas vestidas no personagem 01 (ids de item de data/store.json), salvas
+## junto com a seleção. Só a vitrine do menu muda; o jogador local veste ao
+## entrar. Itens pagos que a conta não tem (ou sem login) ficam de fora.
 static func load_outfit() -> PackedStringArray:
     var config := ConfigFile.new()
-    if config.load(storage_path) != OK:
-        return PackedStringArray()
-    var saved = config.get_value("characters", "roupas", PackedStringArray())
+    var saved = PackedStringArray(DEFAULT_OUTFIT)
+    if config.load(storage_path) == OK:
+        saved = config.get_value("characters", "roupas", saved)
     var result := PackedStringArray()
     if saved is PackedStringArray or saved is Array:
         for item in saved:
-            if str(item) in OUTFIT_PIECES and not str(item) in result:
+            if StoreCatalog.is_owned(str(item)) and not str(item) in result:
                 result.append(str(item))
     return result
 
 static func save_outfit(pieces: PackedStringArray) -> Error:
     var clean := PackedStringArray()
     for item in pieces:
-        if item in OUTFIT_PIECES and not item in clean:
+        if not StoreCatalog.item(item).is_empty() and not item in clean:
             clean.append(item)
     return _save_values({"roupas": clean})
+
+## Skin equipada numa arma ("rifle" -> "rifle_deserto"), só se a conta comprou.
+static func weapon_skin(weapon: String) -> String:
+    var config := ConfigFile.new()
+    if config.load(storage_path) != OK:
+        return ""
+    var skins = config.get_value("characters", "armas", {})
+    var id := str(skins.get(weapon, "")) if skins is Dictionary else ""
+    return id if StoreCatalog.weapon(id) == weapon and StoreCatalog.is_owned(id) else ""
+
+## Equipa (ou tira, com skin_id vazio) a skin de uma arma.
+static func set_weapon_skin(weapon: String, skin_id: String) -> Error:
+    if not skin_id.is_empty() and StoreCatalog.weapon(skin_id) != weapon:
+        return ERR_INVALID_PARAMETER
+    var config := ConfigFile.new()
+    var skins := {}
+    if config.load(storage_path) == OK:
+        var saved = config.get_value("characters", "armas", {})
+        if saved is Dictionary:
+            skins = saved
+    if skin_id.is_empty():
+        skins.erase(weapon)
+    else:
+        skins[weapon] = skin_id
+    return _save_values({"armas": skins})
 
 static func _save_values(values: Dictionary) -> Error:
     if not storage_path.begins_with("user://"):

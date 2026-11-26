@@ -4,6 +4,10 @@ const Settings = preload("res://scripts/game_settings.gd")
 const CharacterRegistry = preload("res://scripts/characters/character_registry.gd")
 const CharacterCard = preload("res://scripts/characters/character_card.gd")
 const WardrobeVault = preload("res://scripts/characters/wardrobe_vault.gd")
+const UiTheme = preload("res://scripts/ui/ui_theme.gd")
+const StoreScreen = preload("res://scripts/loja/store_screen.gd")
+const BrasasShop = preload("res://scripts/loja/brasas_shop.gd")
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const SfxBank = preload("res://scripts/audio/sfx_bank.gd")
 const Controls = preload("res://scripts/controls.gd")
 var settings: Dictionary
@@ -58,6 +62,7 @@ void fragment() {
 
 var shell: MarginContainer
 var hub: Control
+var brasas_chip: Control # saldo + botão "+" no canto superior esquerdo da tela principal
 var hub_compact := false
 var main_notice := ""
 var embers: CPUParticles2D
@@ -294,6 +299,9 @@ func _clear() -> void:
         remove_child(hub)
         hub.queue_free()
         hub = null
+    if brasas_chip != null:
+        brasas_chip.queue_free()
+        brasas_chip = null
     if shell != null:
         shell.visible = true
     _set_page_bare(false)
@@ -315,27 +323,12 @@ func _button(text: String, node_name: String, action: Callable, primary: bool = 
     button.name = node_name
     button.text = text
     button.custom_minimum_size.y = 48
-    button.add_theme_font_size_override("font_size",16)
-    if semi_font != null:
-        button.add_theme_font_override("font",semi_font)
-    for state in ["normal","hover","pressed","focus","disabled"]:
-        var box := _box(ACCENT if primary else Color(1,1,1,0.05), Color(1,1,1,0.10), 0 if primary else 1, 8)
-        box.content_margin_left = 18
-        box.content_margin_right = 18
-        if state == "hover" or state == "focus":
-            box.bg_color = ACCENT.lightened(0.12) if primary else Color(ACCENT, 0.14)
-            box.border_color = ACCENT
-        elif state == "pressed":
-            box.bg_color = ACCENT.darkened(0.12) if primary else Color(ACCENT, 0.24)
-        elif state == "disabled":
-            box.bg_color = Color(1,1,1,0.04)
-        if state == "focus":
-            box.set_border_width_all(2)
-            box.border_color = TEXT if primary else ACCENT
-        button.add_theme_stylebox_override(state,box)
-    for state in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]:
-        button.add_theme_color_override(state,Color("#1a1208") if primary else TEXT)
-    button.add_theme_color_override("font_disabled_color",DIM)
+    # Mesmo visual do menu principal: laranja inclinado ou secundário com faixa.
+    if primary:
+        UiTheme.primary(button, 16)
+    else:
+        UiTheme.secondary(button, 16)
+    button.focus_mode = Control.FOCUS_ALL # teclado/controle continuam navegando
     if action.is_valid():
         button.pressed.connect(action)
     (parent if parent != null else content).add_child(button)
@@ -358,6 +351,9 @@ func _show_main(notice: String = "") -> void:
     root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     var side_margin := 24 if hub_compact else int(clampf(view.x * 0.055, 40, 96))
     var top_margin := 20 if hub_compact else int(clampf(view.y * 0.06, 28, 64))
+    if Net.is_logged_in():
+        top_margin = maxi(top_margin, 54) # espaço para o saldo de Brasas no canto
+        _build_brasas_chip(side_margin)
     for edge in ["left","right"]:
         root.add_theme_constant_override("margin_" + edge, side_margin)
     for edge in ["top","bottom"]:
@@ -403,7 +399,9 @@ func _show_main(notice: String = "") -> void:
         var friends := _nav_button(nav, "Amigos", "FriendsButton", _show_friends)
         if requests > 0:
             _nav_badge(friends, "%d pedido%s" % [requests, "s" if requests > 1 else ""])
-    _nav_button(nav, "Personagens", "CharactersButton", _show_characters, false, _selected_character_name())
+    # Cofre: personagens, roupas e skins de armas da conta. Loja: o que falta comprar.
+    _nav_button(nav, "Cofre", "CharactersButton", _show_characters, false, _selected_character_name())
+    _nav_button(nav, "Loja", "StoreButton", _show_store, false, ("%s Brasas" % StoreCatalog.format_amount(StoreCatalog.balance())) if logged else "Entre para comprar")
     _nav_button(nav, "Configurações", "ConfigButton", _show_config)
     _nav_divider(nav)
     var quiet := HBoxContainer.new()
@@ -981,6 +979,11 @@ func _build_theme() -> Theme:
     t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.35))
     for type in ["Button", "OptionButton"]:
         var normal := _box(Color(1,1,1,0.06), Color(1,1,1,0.12), 1, 4)
+        if type == "Button":
+            # Botão sem estilo próprio = secundário do menu principal (inclinado, faixa à esquerda).
+            normal = _box(Color(1,1,1,0.045), Color(1,1,1,0.16), 0, 2)
+            normal.skew = Vector2(-0.16, 0)
+            normal.border_width_left = 3
         for side in ["left","right"]:
             normal.set("content_margin_" + side, 14)
         for side in ["top","bottom"]:
@@ -1096,8 +1099,8 @@ func _show_characters() -> void:
     _clear()
     _set_page_width(1280.0)
     _set_page_bare(true)
-    _screen_header("Escolha seu sobrevivente", "Personagens", "Use as setas para ver cada personagem. A seleção fica salva para a próxima partida.")
-    var characters := CharacterRegistry.all_characters()
+    _screen_header("Tudo o que é seu", "Cofre", "Seus personagens, roupas e skins de armas. Use as setas para trocar de personagem; o que você escolhe fica salvo para a próxima partida.")
+    var characters := CharacterRegistry.owned_characters()
     var selected_id := CharacterRegistry.load_selection()
     if character_index < 0 or character_index >= characters.size():
         character_index = 0
@@ -1114,6 +1117,7 @@ func _show_characters() -> void:
     vault.name = "WardrobeVault"
     vault.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
     vault.outfit_changed.connect(_on_outfit_changed)
+    vault.store_requested.connect(_show_store)
     row.add_child(vault)
     var carousel := VBoxContainer.new()
     carousel.name = "CharacterCarousel"
@@ -1155,6 +1159,82 @@ func _show_characters() -> void:
         _show_main()))
     _show_character_at(character_index)
 
+## Saldo de Brasas no canto superior esquerdo: chama, valor e um "+" que abre
+## a Loja de Brasas (pacotes do site).
+func _build_brasas_chip(left_margin: int) -> void:
+    var chip := PanelContainer.new()
+    chip.name = "BrasasChip"
+    brasas_chip = chip
+    var style := _box(Color(0.03, 0.045, 0.05, 0.88), Color(ACCENT, 0.45), 1, 18)
+    style.content_margin_left = 8
+    style.content_margin_right = 4
+    style.content_margin_top = 3
+    style.content_margin_bottom = 3
+    chip.add_theme_stylebox_override("panel", style)
+    add_child(chip)
+    chip.position = Vector2(left_margin, 10)
+    var row := HBoxContainer.new()
+    row.add_theme_constant_override("separation", 8)
+    chip.add_child(row)
+    var flame := TextureRect.new()
+    flame.texture = load("res://icon.png") as Texture2D
+    flame.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+    flame.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+    flame.custom_minimum_size = Vector2(26, 26)
+    flame.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    flame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+    row.add_child(flame)
+    var amount := _plain(StoreCatalog.format_amount(StoreCatalog.balance()), 18, TEXT, title_font)
+    amount.name = "BrasasAmount"
+    amount.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(amount)
+    var unit := _plain("BRASAS", 11, MUTED, caps_font)
+    unit.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+    row.add_child(unit)
+    var plus := Button.new()
+    plus.name = "BuyBrasasButton"
+    plus.text = "+"
+    plus.tooltip_text = "Comprar Brasas"
+    plus.focus_mode = Control.FOCUS_NONE
+    plus.custom_minimum_size = Vector2(30, 30)
+    plus.add_theme_font_size_override("font_size", 22)
+    if title_font != null:
+        plus.add_theme_font_override("font", title_font)
+    for state in ["normal","hover","pressed","focus"]:
+        var box := _box(ACCENT_HOT if state == "pressed" else (ACCENT.lightened(0.14) if state == "hover" else ACCENT), Color.TRANSPARENT, 0, 15)
+        box.content_margin_bottom = 3 # o "+" fica baixo na fonte
+        plus.add_theme_stylebox_override(state, box)
+    for state in ["font_color","font_hover_color","font_pressed_color","font_focus_color"]:
+        plus.add_theme_color_override(state, Color("#1a1208"))
+    plus.pressed.connect(_show_brasas_shop)
+    row.add_child(plus)
+
+## Loja de Brasas: pacotes vendidos no site (o pagamento entra na Fase 2).
+func _show_brasas_shop() -> void:
+    _clear()
+    _set_page_width(1100.0)
+    _set_page_bare(true)
+    _screen_header("Recarregue", "Loja de Brasas", "Pacotes de Brasas para gastar em personagens, skins de armas e roupas.")
+    var shop := BrasasShop.new()
+    shop.store_requested.connect(_show_store)
+    content.add_child(shop)
+    _ghost(_button("Voltar", "BackButton", _show_main))
+
+## Loja: itens à venda em grupos (personagens, skins de armas, skins de
+## personagens), pagos com Brasas. O que é comprado vai para o Cofre.
+func _show_store() -> void:
+    _clear()
+    _set_page_width(1280.0)
+    _set_page_bare(true)
+    _screen_header("Gaste suas Brasas", "Loja", "Personagens, skins de armas e roupas. Tudo o que você compra vai para o seu Cofre.")
+    var store := StoreScreen.new()
+    content.add_child(store)
+    _ghost(_button("Voltar", "BackButton", _show_main))
+    var vault_button := _button("Abrir o Cofre", "VaultButton", func():
+        character_index = -1
+        _show_characters())
+    _ghost(vault_button)
+
 ## Seta redonda do carrossel, no estilo dos botões do menu (acende em laranja).
 func _carousel_arrow(glyph: String, node_name: String, step: int) -> Button:
     var arrow := Button.new()
@@ -1185,14 +1265,14 @@ func _carousel_arrow(glyph: String, node_name: String, step: int) -> Button:
     return arrow
 
 func _step_character(step: int) -> void:
-    var count := CharacterRegistry.all_characters().size()
+    var count := CharacterRegistry.owned_characters().size()
     if count == 0 or not is_instance_valid(character_stage):
         return
     _show_character_at(posmod(character_index + step, count))
 
 ## Troca só a carta do centro (o cofre de roupas e o resto da tela ficam).
 func _show_character_at(index: int) -> void:
-    var characters := CharacterRegistry.all_characters()
+    var characters := CharacterRegistry.owned_characters()
     if characters.is_empty() or not is_instance_valid(character_stage):
         return
     character_index = clampi(index, 0, characters.size() - 1)
@@ -1338,21 +1418,11 @@ func _divider_text(text: String) -> void:
         row.add_child(line)
 
 ## Low-emphasis button (Voltar, Atualizar): no fill until hovered.
-func _ghost(button: Button, height: float = 44.0) -> Button:
-    button.custom_minimum_size.y = height
-    for state in ["normal","hover","pressed","focus","disabled"]:
-        var box := _box(Color(0, 0, 0, 0), Color(1, 1, 1, 0.0), 1, 8)
-        box.content_margin_left = 14
-        box.content_margin_right = 14
-        if state == "hover" or state == "focus":
-            box.bg_color = Color(1, 1, 1, 0.05)
-            box.border_color = LINE
-        elif state == "pressed":
-            box.bg_color = Color(1, 1, 1, 0.09)
-        button.add_theme_stylebox_override(state, box)
-    button.add_theme_color_override("font_color", MUTED)
-    for state in ["font_hover_color","font_pressed_color","font_focus_color"]:
-        button.add_theme_color_override(state, TEXT)
+## Botão discreto (Voltar, links): o mesmo de "Sair da conta" no menu principal.
+func _ghost(button: Button, height: float = 42.0) -> Button:
+    button.custom_minimum_size = Vector2(maxf(button.custom_minimum_size.x, 240.0), height)
+    button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+    UiTheme.quiet(button)
     return button
 
 ## Mode summary: name + capacity tag, description and the key rules as a list.

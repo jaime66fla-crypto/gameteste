@@ -115,6 +115,31 @@ static func secondary(b: Button, size_px: int = 14) -> Button:
 	b.add_theme_color_override("font_disabled_color", DIM)
 	return b
 
+## Botão discreto do menu (Sair da conta, Voltar): contorno fino inclinado,
+## texto em caixa-alta apagado que acende com fundo laranja-queimado.
+static func quiet(b: Button, size_px: int = 13) -> Button:
+	b.text = b.text.to_upper()
+	b.add_theme_font_override("font", font(600, true))
+	b.add_theme_font_size_override("font_size", size_px)
+	for state in ["normal", "hover", "pressed", "focus", "disabled"]:
+		var s := _pad(box(Color(0, 0, 0, 0), Color(1, 1, 1, 0.12), 1, 2), 18, 7)
+		s.skew = Vector2(-0.16, 0)
+		match state:
+			"hover", "focus":
+				s.bg_color = Color(ACCENT_HOT, 0.14)
+				s.border_color = ACCENT_HOT
+			"pressed":
+				s.bg_color = Color(ACCENT_HOT, 0.26)
+				s.border_color = ACCENT_HOT
+			"disabled":
+				s.border_color = Color(1, 1, 1, 0.05)
+		b.add_theme_stylebox_override(state, s)
+	b.add_theme_color_override("font_color", MUTED)
+	for state in ["font_hover_color", "font_pressed_color", "font_focus_color"]:
+		b.add_theme_color_override(state, TEXT)
+	b.add_theme_color_override("font_disabled_color", DIM)
+	return b
+
 ## Aba/filtro: ligada = laranja translúcido com borda laranja.
 static func tab(b: Button, on: bool, size_px: int = 13) -> Button:
 	b.focus_mode = Control.FOCUS_NONE
@@ -182,6 +207,11 @@ static func theme() -> Theme:
 	t.set_color("selection_color", "LineEdit", Color(ACCENT, 0.35))
 	for type in ["Button", "OptionButton"]:
 		var normal := _pad(box(Color(1, 1, 1, 0.06), Color(1, 1, 1, 0.12), 1, 4), 14, 6)
+		if type == "Button":
+			# Botão sem estilo próprio = secundário do menu principal (inclinado, faixa à esquerda).
+			normal = _pad(box(Color(1, 1, 1, 0.045), Color(1, 1, 1, 0.16), 0, 2), 16, 6)
+			normal.skew = Vector2(-0.16, 0)
+			normal.border_width_left = 3
 		var hover := normal.duplicate() as StyleBoxFlat
 		hover.bg_color = Color(ACCENT, 0.16)
 		hover.border_color = ACCENT

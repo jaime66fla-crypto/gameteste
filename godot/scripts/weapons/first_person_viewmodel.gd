@@ -3,6 +3,10 @@ extends Node3D
 ## simple forearms, attached to the camera. Presentation only; shots still
 ## travel along the camera axis (crosshair centre).
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
+## Registro de personagens carregado na hora (preload aqui faria um ciclo:
+## registro → personagens → ... → esta mira).
+const REGISTRY_PATH := "res://scripts/characters/character_registry.gd"
 const WeaponVisuals = preload("res://scripts/weapon_visuals.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 
@@ -122,7 +126,9 @@ func build(id: String) -> void:
     weapon = Node3D.new()
     weapon.name = "ViewWeapon"
     holder.add_child(weapon)
-    var imported := WeaponProportions.create_model(id)
+    # Skin de arma equipada no cofre (loja).
+    var skin: String = load(REGISTRY_PATH).weapon_skin(id)
+    var imported := WeaponProportions.create_model(id, StoreCatalog.texture_path(skin))
     if imported != null:
         weapon.add_child(imported)
     else:

@@ -13,9 +13,13 @@ extends "res://scripts/characters/downloaded_avatar.gd"
 ## Cada peça usa uma textura no layout UV do MakeHuman: skin nova = outra PNG.
 
 const PECAS := ["camiseta", "bermuda", "calca", "bone"]
+const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 
-## Peças vestidas (ids de PECAS). Pode mudar a qualquer momento com vestir().
-@export var roupas: PackedStringArray = PackedStringArray()
+## Itens vestidos (ids de data/store.json; o id básico de cada peça é o nome
+## dela, ex. "bone"; variantes como "bone_vinho" trocam só a textura).
+## Pode mudar a qualquer momento com vestir().
+## Começa vestido (boné, camiseta e calça): é assim que os outros veem o 01.
+@export var roupas: PackedStringArray = PackedStringArray(["bone", "camiseta", "calca"])
 
 var _corpo: MeshInstance3D
 var _corpo_mesh: ArrayMesh
@@ -29,28 +33,51 @@ func _ready() -> void:
 	super()
 	_aplicar_roupas()
 
-## Veste exatamente estas peças (as outras saem). Calça e bermuda não vão juntas:
-## a última da lista vence.
-func vestir(pecas: PackedStringArray) -> void:
+## Veste exatamente estes itens (os outros saem). Um item por peça, e calça e
+## bermuda não vão juntas: o último da lista vence.
+func vestir(itens: PackedStringArray) -> void:
 	var lista := PackedStringArray()
-	for p in pecas:
-		if not p in PECAS or p in lista:
+	for id in itens:
+		var p := _peca_do_item(id)
+		if not p in PECAS or id in lista:
 			continue
-		if p == "calca":
-			lista.erase("bermuda")
-		elif p == "bermuda":
-			lista.erase("calca")
-		lista.append(p)
+		for outro in lista.duplicate():
+			var q := _peca_do_item(outro)
+			if q == p or (p == "calca" and q == "bermuda") or (p == "bermuda" and q == "calca"):
+				lista.erase(outro)
+		lista.append(id)
 	roupas = lista
 	if is_inside_tree():
 		_aplicar_roupas()
 
+## Peça de um item da loja (ids antigos, só com o nome da peça, também valem).
+func _peca_do_item(id: String) -> String:
+	var p := StoreCatalog.piece(id)
+	return p if not p.is_empty() else id
+
+func _pecas_vestidas() -> PackedStringArray:
+	var pecas := PackedStringArray()
+	for id in roupas:
+		pecas.append(_peca_do_item(id))
+	return pecas
+
 ## Troca a textura (skin) de uma peça, ex.: trocar_textura("camiseta", load(...)).
+## null volta para a textura original do modelo.
 func trocar_textura(peca: String, textura: Texture2D) -> void:
 	var no := _peca(peca)
 	if no == null or no.mesh == null:
 		return
+	# Guarda o material original de cada superfície para voltar a ele depois.
+	if not no.has_meta("material_original"):
+		var originais := []
+		for s in no.mesh.get_surface_count():
+			originais.append(no.get_surface_override_material(s))
+		no.set_meta("material_original", originais)
+	var originais: Array = no.get_meta("material_original")
 	for s in no.mesh.get_surface_count():
+		no.set_surface_override_material(s, originais[s])
+		if textura == null:
+			continue
 		var mat := no.get_active_material(s) as StandardMaterial3D
 		if mat == null:
 			continue
@@ -66,10 +93,15 @@ func _peca(peca: String) -> MeshInstance3D:
 func _aplicar_roupas() -> void:
 	if _source_model == null:
 		return
+	var vestidas := _pecas_vestidas()
 	for p in PECAS:
 		var no := _peca(p)
 		if no != null:
-			no.visible = p in roupas
+			no.visible = p in vestidas
+	for id in roupas:
+		var caminho := StoreCatalog.texture_path(id)
+		var textura: Texture2D = load(caminho) as Texture2D if not caminho.is_empty() and ResourceLoader.exists(caminho) else null
+		trocar_textura(_peca_do_item(id), textura)
 	if _corpo == null:
 		_corpo = _source_model.find_child("01", true, false) as MeshInstance3D
 		if _corpo == null:
@@ -83,7 +115,7 @@ func _aplicar_roupas() -> void:
 		if not nome.begins_with("Pele01-"):
 			continue
 		for p in nome.trim_prefix("Pele01-").split("-"):
-			if p in roupas:
+			if p in vestidas:
 				mesh.surface_remove(s)
 				break
 	_corpo.mesh = mesh
