@@ -33,6 +33,9 @@
     {"id": "camiseta_oliva", "grupo": "skins_personagens", "nome": "Camiseta oliva", "tipo": "Tronco", "peca": "camiseta", "preco": 180, "textura": "res://assets/personagens/01/roupas/camiseta_oliva.png"},
     {"id": "calca", "grupo": "skins_personagens", "nome": "Calça jeans escura", "tipo": "Pernas", "peca": "calca", "preco": 0},
     {"id": "calca_cinza", "grupo": "skins_personagens", "nome": "Calça cinza tática", "tipo": "Pernas", "peca": "calca", "preco": 220, "textura": "res://assets/personagens/01/roupas/calca_cinza.png"},
-    {"id": "bermuda", "grupo": "skins_personagens", "nome": "Bermuda oliva", "tipo": "Pernas", "peca": "bermuda", "preco": 0}
+    {"id": "bermuda", "grupo": "skins_personagens", "nome": "Bermuda oliva", "tipo": "Pernas", "peca": "bermuda", "preco": 0},
+    {"id": "tenis_asfalto", "grupo": "skins_personagens", "nome": "Tênis asfalto", "tipo": "Pés", "peca": "tenis", "preco": 180, "textura": "res://assets/personagens/01/roupas/tenis_asfalto.png"},
+    {"id": "tenis_brasa", "grupo": "skins_personagens", "nome": "Tênis brasa", "tipo": "Pés", "peca": "tenis", "preco": 240, "textura": "res://assets/personagens/01/roupas/tenis_brasa.png"},
+    {"id": "tenis_noturno", "grupo": "skins_personagens", "nome": "Tênis noturno", "tipo": "Pés", "peca": "tenis", "preco": 300, "textura": "res://assets/personagens/01/roupas/tenis_noturno.png"}
   ]
 }

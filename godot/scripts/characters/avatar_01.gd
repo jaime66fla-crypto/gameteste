@@ -11,8 +11,10 @@ extends "res://scripts/characters/downloaded_avatar.gd"
 ## coberta está em superfícies "Pele01-<peças>": vestir uma peça tira essas
 ## superfícies do corpo, então a pele nunca atravessa o tecido em movimento.
 ## Cada peça usa uma textura no layout UV do MakeHuman: skin nova = outra PNG.
+## O tênis é moldado no pé por tools/characters/build_01_tenis.gd (UV próprio,
+## texturas de tools/characters/paint_tenis.py).
 
-const PECAS := ["camiseta", "bermuda", "calca", "bone"]
+const PECAS := ["camiseta", "bermuda", "calca", "bone", "tenis"]
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 
 ## Itens vestidos (ids de data/store.json; o id básico de cada peça é o nome

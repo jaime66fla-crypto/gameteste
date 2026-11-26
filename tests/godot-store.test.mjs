@@ -41,7 +41,7 @@ test('catalog is valid: unique ids, known pieces, paid skins have a texture', ()
 	assert.equal(new Set(ids).size, ids.length);
 	for (const item of store.items) {
 		assert.ok(Number.isInteger(item.preco) && item.preco >= 0, item.id);
-		if (item.grupo === 'skins_personagens') assert.ok(['bone', 'camiseta', 'calca', 'bermuda'].includes(item.peca), item.id);
+		if (item.grupo === 'skins_personagens') assert.ok(['bone', 'camiseta', 'calca', 'bermuda', 'tenis'].includes(item.peca), item.id);
 		if (item.grupo !== 'personagens' && item.preco > 0) assert.match(item.textura, /^res:\/\/.+\.png$/, item.id);
 	}
 	assert.ok(paid.length > 0 && store.start > 0 && store.xp_per_brasa > 0);
