@@ -1,17 +1,17 @@
 # real-controller — origem e licença
 
-- Veio de `real-controller-main.zip` (sem LICENSE nem README no zip). Fica fora
-  do export (`addons/*` no `exclude_filter`); o jogo usa só os clipes
-  retargetados em `assets/personagens/downloaded/movements/`:
-  `sprint_unarmed` (sprint_forward), `jump_unarmed_start` (jump_begin),
-  `fall_unarmed` (fall) e `land_unarmed` (jump_land), gerados por
+- Addon **Real Controller** de fdemir (github.com/fdemir/real-controller,
+  código MIT), baixado como `real-controller-main.zip`. Fica fora do export
+  (`addons/*` no `exclude_filter`); o jogo usa só os clipes retargetados em
+  `assets/personagens/downloaded/movements/`: `sprint_unarmed`
+  (HumanM@Sprint01_Forward), `jump_unarmed_start` (Jump01 - Begin),
+  `fall_unarmed` (Fall01) e `land_unarmed` (Jump01 - Land), gerados por
   `tools/characters/build_unarmed_locomotion.gd`.
-- As animações são do rig **HumanM de Kevin Iglesias** (ossos `B-*`, textura
-  `HumanAnimations_ColorPalette`), o mesmo autor do "Human Soldier Animations
-  2.0 FREE" que o jogo já usa (`assets/personagens/jaime/animacoes/`, PDF:
-  Standard Asset Store EULA — uso comercial sim, revenda não, crédito não
-  obrigatório). Sprint/pulo/queda/pouso não estão na lista desse pacote:
-  provavelmente "Human Basic Motions FREE" do mesmo autor.
-- **A confirmar antes de publicar:** a licença do pacote de onde vieram o
-  sprint e o pulo (o site keviniglesias.com não mostra o texto sem script;
-  contato: support@keviniglesias.com).
+- Animações e malha: **Human Basic Motions 2.4 FREE, Kevin Iglesias**
+  (créditos do README do addon; os quatro clipes estão na lista do PDF do
+  pacote, keviniglesias.com/documentation/Human Basic Motions FREE.pdf).
+- Licença (PDF do autor): Standard Asset Store EULA | Fab Standard License —
+  royalty-free e permitido para uso comercial; revenda não permitida;
+  crédito não obrigatório. Mesma licença do "Human Soldier Animations 2.0 FREE"
+  já usado em `assets/personagens/jaime/animacoes/`.
+- O MIT do addon cobre só o código; as animações seguem a licença acima.
