@@ -2476,7 +2476,7 @@ const JUMP_START_FROM := 0.11 # s: fim do agachamento do Jump_Start
 const JUMP_START_UNTIL := 0.55 # s: depois disso, o ciclo Jump
 const AIR_FADE_IN := 0.1
 const AIR_GRACE := 0.15 # s no ar sem ter pulado antes de virar pose de queda
-const AIR_FADE_OUT := 0.07
+const AIR_FADE_OUT := 0.1
 ## Peso máximo das pernas do clipe de pulo (o resto fica da locomoção).
 const AIR_LEGS_MAX := 0.45
 const LAND_FROM := 0.04 # s: o Jump_Land começa um pouco acima do chão
@@ -2488,6 +2488,10 @@ var _air_fall := 0.0 # maior velocidade de queda deste pulo (m/s)
 var _air_jumped := false # saiu do chão pulando (e não caindo de uma beirada)
 var _land_time := -1.0
 var _land_strength := 0.0
+## Segundos desde o toque no chão: o pouso entra em LAND_FADE_IN, não no
+## quadro do toque (o quadril/pé pulava ~0,25 m num quadro).
+var _land_age := 0.0
+const LAND_FADE_IN := 0.08
 ## Sem arma, o pulo usa os clipes HumanM (addon real-controller,
 ## tools/characters/build_unarmed_locomotion.gd): impulsão, queda em loop e
 ## pouso com pernas, quadril e tronco do clipe; os braços do clipe abrem em Y
@@ -2523,6 +2527,7 @@ func _update_air_state(airborne: bool, vertical_speed: float) -> void:
 		_land_full = _air_full_body()
 		var land_from := HM_LAND_FROM if _land_full else LAND_FROM
 		_land_time = land_from if _land_strength > 0.05 else -1.0
+		_land_age = 0.0
 	if airborne:
 		_air_time += _last_delta
 		_air_fall = maxf(_air_fall, -vertical_speed)
@@ -2557,7 +2562,8 @@ func _apply_air() -> void:
 		else:
 			var p := (_land_time - LAND_FROM) / (LAND_END - LAND_FROM)
 			var fade := 1.0 - _smooth((p - 0.55) / 0.45)
-			var w := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0))
+			_land_age += _last_delta
+			var w := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0)) * _smooth(_land_age / LAND_FADE_IN)
 			_blend_ual("jump_land", _land_time, w, mask)
 
 ## Pulo sem arma (máscara "air_body"). Impulsão (sem o agachamento) e a queda em loop
@@ -2588,7 +2594,8 @@ func _apply_air_full() -> void:
 		else:
 			var p := (_land_time - HM_LAND_FROM) / (land.length - HM_LAND_FROM)
 			var fade := 1.0 - _smooth((p - 0.55) / 0.45)
-			var lw := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0))
+			_land_age += _last_delta
+			var lw := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0)) * _smooth(_land_age / LAND_FADE_IN)
 			_blend_ual("land_unarmed", _land_time, lw, mask)
 
 ## Idle fidgets: standing still, unarmed and free for a while plays one idle
