@@ -22,6 +22,9 @@ var ALBEDO := Color(0, 0, 0, 0)
 ## MPFB skin baked in the MakeHuman UV layout; clothing skins can replace it).
 var SKIN_TEXTURE := ""
 var MODEL_NAME := "Manequim"
+## Keep the source (glTF) materials as they are: textures, normal maps; alpha
+## surfaces (hair, brows, lashes) drawn with a depth pre-pass, both sides.
+var KEEP_MATERIALS := false
 const REF_PREFIX := "mixamorig9_"
 const PREFIX := "mixamorig_"
 const BONE_MAP := {
@@ -46,6 +49,15 @@ func _initialize() -> void:
 		MODEL_NAME = "01"
 		ROUGHNESS = 0.68 # pele: fosca, sem brilho de plástico
 		SPECULAR = 0.35
+	elif "--id=02" in OS.get_cmdline_user_args():
+		# 02 (tools/blender/build_02.py): MakeHuman realista, uma malha só com
+		# os materiais/texturas do próprio MakeHuman (pele, olhos, cabelo, roupa).
+		SOURCE = "res://assets/personagens/02/02.glb"
+		OUT_DIR = "res://assets/personagens/02"
+		OUT_SCENE = "res://assets/personagens/02/02_modelo.scn"
+		SOURCE_PREFIX = "mixamorig_"
+		MODEL_NAME = "02"
+		KEEP_MATERIALS = true
 	var ok := _build()
 	quit(0 if ok else 1)
 
@@ -198,6 +210,19 @@ func _add_mesh(model: Node3D, skeleton: Skeleton3D, mesh_node: MeshInstance3D, n
 	var mesh := mesh_node.mesh.duplicate() as ArrayMesh
 	for s in mesh.get_surface_count():
 		var source_mat := mesh.surface_get_material(s) as BaseMaterial3D
+		if KEEP_MATERIALS and source_mat != null:
+			var kept := source_mat.duplicate() as BaseMaterial3D
+			# MPFB's game-engine material wires the texture alpha everywhere:
+			# only strand/card surfaces need it (skin and cloth stay opaque).
+			var strands := ["Hair", "Eyebrows", "Eyelashes"].any(func(part): return kept.resource_name.ends_with(part))
+			if strands:
+				kept.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+				kept.cull_mode = BaseMaterial3D.CULL_DISABLED
+			else:
+				kept.transparency = BaseMaterial3D.TRANSPARENCY_DISABLED
+			print("material %d %s: textura %s normal %s alpha %d" % [s, kept.resource_name, kept.albedo_texture != null, kept.normal_enabled, kept.transparency])
+			mesh.surface_set_material(s, kept)
+			continue
 		var mat := StandardMaterial3D.new()
 		mat.resource_name = "%s_%d" % [MODEL_NAME, s]
 		if ALBEDO.a > 0.0:
