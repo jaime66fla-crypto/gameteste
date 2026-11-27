@@ -18,6 +18,11 @@ func _bounds(node: Node3D, relative: Node3D) -> AABB:
             else:
                 bounds = bounds.expand(point)
     return bounds
+# Distância da palma ao ponto de pegada da arma (era swat_visual.grip_error).
+func _grip_error(visual: Node3D, side: String) -> float:
+    var Grip = load("res://scripts/characters/swat_grip.gd")
+    var mount := visual.get("weapon_mount") as Node3D
+    return Grip.palm_position(visual.get("skeleton"), side).distance_to((mount.get_node(side + "Grip") as Marker3D).global_position)
 func _run() -> void:
     if not ResourceLoader.exists("res://scripts/weapons/WeaponProportions.gd"):
         printerr("WEAPON PROPORTIONS: calibration component missing")
@@ -56,7 +61,9 @@ func _run() -> void:
                 for frame in range(90):
                     visual.animate(1.0/60.0, 1.0 if state in ["walk","run"] else 0.0, state=="run", state=="crouch", state=="aim", false, state=="reload", Vector2(0,-1), Vector3(0,0,-8 if state=="run" else (-5 if state=="walk" else 0)))
                 for side in ["Left", "Right"]:
-                    _check(float(visual.call("grip_error", side)) < 0.012, "Palm contact lost: %s/%s/%s %.3fm" % [weapon,state,side,float(visual.call("grip_error",side))])
+                    if side == "Left" and weapon == "pistol":
+                        continue # pistola: só a mão direita segura (downloaded_avatar.gd grip_sides)
+                    _check(_grip_error(visual, side) < 0.012, "Palm contact lost: %s/%s/%s %.3fm" % [weapon,state,side,_grip_error(visual, side)])
                 var muzzle := model.get_node("Muzzle") as Marker3D
                 _check(player.get("gun_flash").global_position.distance_to(muzzle.global_position) < 0.002, "Flash detached from barrel")
             var profiles = load("res://scripts/weapons/WeaponProportions.gd")

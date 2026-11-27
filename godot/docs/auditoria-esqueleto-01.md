@@ -227,3 +227,32 @@ diferença da rotação local de repouso contra o mesmo osso do Ch31 (⚠ ≥ 20
 | 62 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`RightFoot` | RightFoot | 0,156 | 0,200 | 17,6° |
 | 63 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`RightToeBase` | RightToes | 0,084 | 0,080 | 18,9° |
 | 64 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;`RightToe_End` | — | 0,000 | 0,000 | 0,0° |
+
+## Etapa 3: correções aplicadas (2026-11-26)
+
+Em `scripts/characters/downloaded_avatar.gd` (`_compute_rest_fixes` +
+`_retarget_clip`), calculado no carregamento a partir do próprio esqueleto. A
+correção só entra quando o desvio passa de 2°, então o Ch31 não muda. Pode ser
+desligada pela variável exportada `rest_fixes_enabled`.
+
+- **Pé:** a rotação do pé passa a partir do rest do próprio modelo
+  (`chave * C`, com `C` = rest global do Ch31⁻¹ × rest global do 01). O dedão
+  recebe `C⁻¹ * chave` e mantém a direção que já tinha.
+- **Mão:** torção fixa em volta do eixo do dedo médio, calculada a partir da
+  linha indicador→mindinho (`chave * T`). As pegadas de arma, cajado e nado
+  não mudam: elas já se calibram pela posição dos dedos.
+- A altura do quadril não foi mexida: escalar a translação do quadril piorava
+  o pé. O tornozelo já batia com o Ch31; quem afundava era só o dedão.
+
+| Clipe | Pé antes | Pé depois | Ch31 |
+|---|---|---|---|
+| idle_unarmed | −0,030 m | +0,010 m | 0,000 m |
+| idle_with_rifle | −0,035 m | +0,001 m | 0,000 m |
+| walk_unarmed | −0,031 m | +0,010 m | 0,000 m |
+| walk_with_rifle | −0,028 m | +0,006 m | −0,007 m |
+| run_in_place | −0,028 m | −0,004 m | −0,017 m |
+| jog_unarmed | −0,052 m | −0,052 m (tornozelo, igual ao Ch31) | −0,055 m |
+
+Torção da mão contra o Ch31: esquerda 31° → 4,5°, direita 32° → 0,5°. A
+partir daqui, a auditoria mostra cerca de 19° de "desvio" no pé: é proposital,
+porque o pé do 01 fica plano em vez de copiar o ângulo do Ch31.

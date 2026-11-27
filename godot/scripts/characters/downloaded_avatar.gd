@@ -97,6 +97,8 @@ func _ready() -> void:
 	var skeleton_path := String(animation_player.get_node(animation_player.root_node).get_path_to(skeleton))
 	var hip_scale := skeleton.get_bone_rest(hip_bone).origin.y / CLIP_HIPS_HEIGHT
 	var retarget := bone_prefix != CLIP_PREFIX or skeleton_path != "Skeleton3D" or absf(hip_scale - 1.0) > 0.01
+	if retarget:
+		_compute_rest_fixes()
 	var library := AnimationLibrary.new()
 	# Anchor every clip's Hips horizontally at the skeleton rest position, so the
 	# visible body stays centred on the character origin (collision, camera,
@@ -137,6 +139,63 @@ func _ready() -> void:
 func is_visual_ready() -> bool:
 	return ready_ok
 
+# --- Correções de rest pose no retarget (Etapa 3, docs/auditoria-esqueleto-01.md) ---
+# Os eixos locais dos ossos do 01 são os do Ch31 (a cópia de rotação acerta a
+# direção de todos os membros), mas duas partes da malha ficam em outra posição
+# dentro desse referencial:
+# - Pé: no Ch31 o pé de repouso aponta ~18° mais para baixo; no 01 o pé herdava
+#   esse ângulo e o dedão afundava ~3 cm no chão em quase todo clipe.
+#   Correção: o pé gira a partir do rest DELE pelo mesmo tanto que o do Ch31
+#   (chave * C, C = rest global Ch31⁻¹ * rest global do modelo); o dedão recebe
+#   C⁻¹ * chave para manter a direção que já tinha.
+# - Mão: a linha indicador→mindinho do 01 está ~30° girada em volta do eixo da
+#   mão; palma e dedos ficavam no plano errado nos clipes. Correção: torção fixa
+#   em volta do dedo médio (chave * T). As pegadas (arma, cajado, nado) não
+#   mudam: elas já se calibram pela posição dos dedos.
+## Rest global dos pés do Ch31 (mixamorig9_, avatar.fbx), onde os clipes foram feitos.
+const CLIP_FOOT_REST := {
+	"LeftFoot": Quaternion(0.065333, 0.485401, 0.868524, -0.076051),
+	"RightFoot": Quaternion(-0.062220, 0.490038, 0.866175, 0.075712),
+}
+## Linha indicador→mindinho da mão do Ch31, no espaço local do osso da mão.
+const CLIP_HAND_ACROSS := {
+	"LeftHand": Vector3(-0.997896, 0.062659, 0.016634),
+	"RightHand": Vector3(0.989653, 0.142438, 0.017295),
+}
+## Abaixo disso (graus) o modelo já bate com o Ch31 e nada é corrigido.
+const REST_FIX_MIN_DEG := 2.0
+## Liga/desliga as correções (para comparar no editor).
+@export var rest_fixes_enabled := true
+## sufixo do osso -> [Quaternion, multiplica à direita?]
+var _rest_fixes := {}
+
+func _compute_rest_fixes() -> void:
+	_rest_fixes.clear()
+	if not rest_fixes_enabled:
+		return
+	for side in ["Left", "Right"]:
+		var foot := Grip._bone(skeleton, side + "Foot")
+		if foot >= 0:
+			var c: Quaternion = (CLIP_FOOT_REST[side + "Foot"] as Quaternion).inverse() * skeleton.get_bone_global_rest(foot).basis.get_rotation_quaternion()
+			c = c.normalized()
+			if rad_to_deg(c.get_angle()) > REST_FIX_MIN_DEG:
+				_rest_fixes[side + "Foot"] = [c, true]
+				_rest_fixes[side + "ToeBase"] = [c.inverse(), false]
+		var hand := Grip._bone(skeleton, side + "Hand")
+		var middle := Grip._bone(skeleton, side + "HandMiddle1")
+		var index := Grip._bone(skeleton, side + "HandIndex1")
+		var pinky := Grip._bone(skeleton, side + "HandPinky1")
+		if hand < 0 or middle < 0 or index < 0 or pinky < 0:
+			continue
+		var axis := skeleton.get_bone_rest(middle).origin.normalized()
+		var mine := skeleton.get_bone_rest(index).origin - skeleton.get_bone_rest(pinky).origin
+		var theirs: Vector3 = CLIP_HAND_ACROSS[side + "Hand"]
+		mine = (mine - axis * mine.dot(axis)).normalized()
+		theirs = (theirs - axis * theirs.dot(axis)).normalized()
+		var angle := mine.signed_angle_to(theirs, axis)
+		if absf(rad_to_deg(angle)) > REST_FIX_MIN_DEG:
+			_rest_fixes[side + "Hand"] = [Quaternion(axis, angle), true]
+
 ## Moves a Ch31 clip onto this model's rig: bone names get the model prefix,
 ## the skeleton path follows the model hierarchy, and only the Hips keeps its
 ## position track (scaled to this rig's hip height). Other position/scale
@@ -154,6 +213,12 @@ func _retarget_clip(clip: Animation, skeleton_path: String, hip_scale: float) ->
 			clip.remove_track(track)
 			continue
 		clip.track_set_path(track, NodePath(skeleton_path + ":" + target))
+		if type == Animation.TYPE_ROTATION_3D and _rest_fixes.has(suffix):
+			var fix: Quaternion = _rest_fixes[suffix][0]
+			var right: bool = _rest_fixes[suffix][1]
+			for key in clip.track_get_key_count(track):
+				var q: Quaternion = clip.track_get_key_value(track, key)
+				clip.track_set_key_value(track, key, (q * fix if right else fix * q).normalized())
 		if type == Animation.TYPE_POSITION_3D:
 			for key in clip.track_get_key_count(track):
 				clip.track_set_key_value(track, key, (clip.track_get_key_value(track, key) as Vector3) * hip_scale)
@@ -1949,7 +2014,7 @@ func stop_overlay() -> void:
 		_overlay_hold_end = false
 
 func _load_ual_clips(skeleton_path: String, hip_scale: float, retarget: bool, hip_anchor: Vector3) -> void:
-	var key := "%s|%s|%.3f" % [model_path, skeleton_path, hip_scale]
+	var key := "%s|%s|%.3f|%s" % [model_path, skeleton_path, hip_scale, _rest_fixes.keys()]
 	if not _ual_cache.has(key):
 		var built := {}
 		var paths := {}
