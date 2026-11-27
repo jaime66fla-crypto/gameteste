@@ -53,6 +53,27 @@ func _run() -> void:
 		await _step(visual, 90)
 		_check(not bool(visual.call("is_overlay_playing")), id + ": throw must end by itself")
 		_check(weapon.visible, id + ": gun must come back after the throw")
+		# Reload (3rd person): the hands layer comes in while "reloading" is on.
+		for i in 40:
+			visual.call("animate", 1.0 / 60.0, 0.0, false, false, false, false, true, Vector2(0, -1), Vector3.ZERO)
+			await process_frame
+		_check(float(visual.get("_reload_weight")) > 0.9, id + ": reload must drive the hands")
+		await _step(visual, 40)
+		_check(float(visual.get("_reload_weight")) < 0.01, id + ": reload pose must end with the reload")
+		# Strafing armed: legs from the sideways cycle; forward keeps the rifle walk.
+		await _step(visual, 30, 1.0, Vector3(5.0, 0, 0))
+		_check(float(visual.get("_armed_legs_weight")) > 0.9 and str(visual.get("_armed_legs_clip")).ends_with("_right"), id + ": strafing right must step sideways (%s)" % visual.get("_armed_legs_clip"))
+		await _step(visual, 30, 1.0, Vector3(0, 0, -5.0))
+		_check(float(visual.get("_armed_legs_weight")) < 0.01, id + ": walking forward armed keeps the rifle walk")
+		# Jump: air pose while up, landing cushion after a long fall.
+		for i in 50:
+			visual.call("animate", 1.0 / 60.0, 0.0, false, false, false, true, false, Vector2(0, -1), Vector3(0, 8.5 - 9.8 * i / 60.0, 0))
+			await process_frame
+		_check(float(visual.get("_air_weight")) > 0.9, id + ": jumping must use the air pose")
+		await _step(visual, 3)
+		_check(float(visual.get("_land_time")) >= 0.0, id + ": landing must cushion")
+		await _step(visual, 60)
+		_check(float(visual.get("_air_weight")) < 0.01 and float(visual.get("_land_time")) < 0.0, id + ": air and landing must end on the ground")
 		# Every gameplay action plays and ends; the walk keeps going under upper-body ones.
 		for action in Avatar.ACTIONS:
 			_check(bool(visual.call("has_action", action)), "%s: action %s missing" % [id, action])

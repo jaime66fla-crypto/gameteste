@@ -32,6 +32,8 @@ const UNARMED_JOG_SPEED := 2.3
 ## legs turning over unnaturally fast (the game moves at 5 m/s, a fast jog).
 const UNARMED_RATE_MIN := 0.75
 const UNARMED_RATE_MAX := 1.45
+## 1/s: quão rápido o ritmo dos ciclos acompanha a velocidade real.
+const CLIP_RATE_DAMP := 8.0
 ## Clips whose own arm swing is kept (no procedural "relaxed arms" on top).
 const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed"]
 
@@ -182,13 +184,15 @@ func set_aim_target(point: Vector3, active: bool) -> void:
 	aim_target = point
 	aim_active = active
 
-func animate(delta: float, move_amount: float, running: bool, crouched: bool, _aiming: bool, airborne: bool, _reloading: bool, _movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
+func animate(delta: float, move_amount: float, running: bool, crouched: bool, _aiming: bool, airborne: bool, reloading_now: bool, _movement_direction: Vector2 = Vector2(0, -1), planar_velocity: Vector3 = Vector3.ZERO) -> void:
 	if not ready_ok:
 		return
 	aim_weight = move_toward(aim_weight, 1.0 if aim_active else 0.0, delta * 7.0)
 	_showcase_aim_weight = move_toward(_showcase_aim_weight, 1.0 if showcase_aim else 0.0, delta * 5.0)
 	_showcase_kick = move_toward(_showcase_kick, 0.0, delta * SHOWCASE_KICK_RETURN)
 	_last_delta = delta
+	_update_air_state(airborne, planar_velocity.y)
+	_update_reload(reloading_now)
 	_airborne = airborne
 	_planar_speed = Vector2(planar_velocity.x, planar_velocity.z).length()
 	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
@@ -198,6 +202,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	var moving := move_amount > 0.08 and not airborne
 	locomotion_active = moving
 	_move_amount = move_amount if moving else 0.0
+	_update_armed_legs(moving, running, planar_velocity)
 	_update_idle_fidget(moving)
 	if current_clip in ["punch", "elbow_punch"] and animation_player.is_playing():
 		_apply_crouch()
@@ -290,7 +295,8 @@ func _play_cycle(clip: String, rate: float) -> void:
 		animation_player.play(clip, 0.2)
 		if same_gait:
 			animation_player.seek(phase * animation_player.current_animation_length, false)
-	animation_player.speed_scale = rate
+	# Ritmo amortecido: a velocidade real oscila (rampas, colisões) e o passo dava trancos.
+	animation_player.speed_scale = lerpf(animation_player.speed_scale, rate, minf(1.0, _last_delta * CLIP_RATE_DAMP))
 
 ## Depois do clipe: agachar (pernas), arma nas mãos ou braços soltos.
 func _finish_pose() -> void:
@@ -311,6 +317,8 @@ func _finish_pose() -> void:
 		_apply_shield()
 		_update_backpack()
 		return
+	_apply_armed_legs()
+	_apply_air()
 	_apply_crouch()
 	_apply_stand_pose()
 	_apply_foot_ik()
@@ -1453,11 +1461,87 @@ const CROUCH_LEAN := 0.32 # radianos de inclinação do tronco
 var crouch_weight := 0.0
 var unarmed_weight := 0.0
 var _move_amount := 0.0
+## Agachado e parado: o Crouch_Idle da UAL1 (pernas, quadril e tronco de
+## verdade, com respiração) no lugar da descida por código. Andando agachado
+## continua o código: o Crouch_Fwd anda a 0,45 m/s e o jogo a 2,7 m/s (o pé
+## deslizaria). Desarmado vale o corpo todo; armado só as pernas.
+const CROUCH_IDLE_RATE := 5.0 # 1/s para entrar/sair do clipe parado
+## O Crouch_Idle curva muito o tronco (quadril girado para a frente): a coluna
+## endireita até esta inclinação, perto do agachar antigo (CROUCH_LEAN).
+const CROUCH_IDLE_MAX_LEAN := 0.35
+var _crouch_idle_weight := 0.0
+var _crouch_idle_time := 0.0
+
+func _toe_heights() -> Dictionary:
+	var out := {}
+	for side in ["Left", "Right"]:
+		var toe := Grip._bone(skeleton, side + "ToeBase")
+		if toe >= 0:
+			out[side] = skeleton.get_bone_global_pose(toe).origin.y
+	return out
+
+## Pés de volta ao chão depois de um clipe feito para outras proporções de
+## perna (o Crouch_Idle deixava os dedos 6-8 cm no ar): o quadril desce até o
+## pé mais baixo tocar o chão de antes e o outro pé desce por IK.
+func _plant_toes(before: Dictionary) -> void:
+	var after := _toe_heights()
+	if before.size() < 2 or after.size() < 2:
+		return
+	var lift := {"Left": float(after["Left"]) - float(before["Left"]), "Right": float(after["Right"]) - float(before["Right"])}
+	var common := minf(lift["Left"], lift["Right"])
+	var hips := Grip._bone(skeleton, "Hips")
+	if hips >= 0 and absf(common) > 0.002:
+		var drop := Vector3(0, -common, 0)
+		var parent := skeleton.get_bone_parent(hips)
+		if parent >= 0:
+			drop = skeleton.get_bone_global_pose(parent).basis.inverse() * drop
+		skeleton.set_bone_pose_position(hips, skeleton.get_bone_pose_position(hips) + drop)
+	for side in ["Left", "Right"]:
+		var residual: float = lift[side] - common
+		var foot := Grip._bone(skeleton, side + "Foot")
+		if residual <= 0.005 or foot < 0:
+			continue
+		var pose := skeleton.get_bone_global_pose(foot)
+		_leg_ik(side, pose.origin - Vector3(0, residual, 0), Vector3(0, 0, 1))
+		Grip._set_global_rotation(skeleton, foot, pose.basis)
+
+## Endireita a coluna (girando o osso Spine) até o tronco, do Spine ao
+## pescoço, ficar no máximo `max_lean` rad fora da vertical.
+func _limit_torso_lean(max_lean: float, weight: float) -> void:
+	var spine := Grip._bone(skeleton, "Spine")
+	var neck := Grip._bone(skeleton, "Neck")
+	if spine < 0 or neck < 0 or weight <= 0.001:
+		return
+	var torso := skeleton.get_bone_global_pose(neck).origin - skeleton.get_bone_global_pose(spine).origin
+	if torso.length_squared() < 0.000001:
+		return
+	torso = torso.normalized()
+	var lean := torso.angle_to(Vector3.UP)
+	if lean <= max_lean:
+		return
+	var axis := torso.cross(Vector3.UP)
+	if axis.length_squared() < 0.000001:
+		return
+	var fix := Basis(axis.normalized(), (lean - max_lean) * weight)
+	Grip._set_global_rotation(skeleton, spine, fix * skeleton.get_bone_global_pose(spine).basis)
 
 func _apply_crouch() -> void:
 	if work_action.is_empty():
 		_work_dip = 0.0
-	var w := maxf(crouch_weight, _work_dip)
+	var still := crouch_weight if _move_amount < 0.08 and work_action.is_empty() and not _airborne else 0.0
+	if not ual_clips.has("crouch_idle"):
+		still = 0.0
+	_crouch_idle_weight = move_toward(_crouch_idle_weight, still, _last_delta * CROUCH_IDLE_RATE)
+	if _crouch_idle_weight > 0.001:
+		var loop: Animation = ual_clips["crouch_idle"][0]
+		_crouch_idle_time = fmod(_crouch_idle_time + _last_delta, loop.length)
+		var mask := "full" if unarmed_weight > 0.5 and not aim_active else "legs"
+		var toes_before := _toe_heights()
+		_blend_ual("crouch_idle", _crouch_idle_time, _smooth(_crouch_idle_weight), mask)
+		_plant_toes(toes_before)
+		_limit_torso_lean(CROUCH_IDLE_MAX_LEAN, _smooth(_crouch_idle_weight))
+	# A descida por código cobre o que o clipe parado não cobre (andando, golpes).
+	var w := maxf(crouch_weight * (1.0 - _smooth(_crouch_idle_weight)), _work_dip)
 	if w <= 0.001:
 		return
 	var hips := Grip._bone(skeleton, "Hips")
@@ -1484,7 +1568,7 @@ func _apply_crouch() -> void:
 	if spine >= 0:
 		var spine_global := skeleton.get_bone_global_pose(spine).basis
 		# Frente do modelo é +Z no espaço do esqueleto: girar em X leva o topo para a frente.
-		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, CROUCH_LEAN * crouch_weight) * spine_global)
+		Grip._set_global_rotation(skeleton, spine, Basis(Vector3.RIGHT, CROUCH_LEAN * crouch_weight * (1.0 - _smooth(_crouch_idle_weight))) * spine_global)
 	for side in feet:
 		_leg_ik(side, (feet[side] as Transform3D).origin, Vector3(0, 0, 1))
 		Grip._set_global_rotation(skeleton, Grip._bone(skeleton, side + "Foot"), (feet[side] as Transform3D).basis)
@@ -1913,6 +1997,14 @@ func _mask_weights(mask: String) -> PackedFloat32Array:
 					w = 0.7
 				elif suffix == "Spine":
 					w = 0.4
+			"legs":
+				# Quadril e pernas; a coluna só um pouco (os braços seguem a arma/mira).
+				if suffix == "Hips" or suffix.contains("Leg") or suffix.contains("Foot") or suffix.contains("Toe"):
+					w = 1.0
+				elif suffix == "Spine":
+					w = 0.5
+				elif suffix == "Spine1":
+					w = 0.25
 			"arms":
 				if limb:
 					w = 1.0
@@ -1967,9 +2059,20 @@ func _apply_overlay() -> void:
 	# A one-shot asked to last longer than itself repeats (eating for 3 s).
 	var repeat := clip.loop_mode != Animation.LOOP_NONE or _overlay_until > clip.length
 	var t := fmod(_overlay_time, clip.length) if repeat else minf(_overlay_time, clip.length)
-	var mask := _mask_weights(_overlay_mask)
 	var weight := _smooth(_overlay_weight / maxf(_overlay_max, 0.01)) * _overlay_max
-	for track_info in entry[1]:
+	_blend_ual(_overlay_name, t, weight, _overlay_mask, not overlay_hold_hips)
+
+## Mixes one UAL clip at time `t` over the current pose (per-bone mask weight × `weight`).
+func _blend_ual(clip_name: String, t: float, weight: float, mask_name: String, with_hips := true) -> void:
+	var entry: Array = ual_clips.get(clip_name, [])
+	if entry.is_empty() or weight <= 0.001:
+		return
+	_blend_anim(entry[0], entry[1], t, weight, mask_name, with_hips)
+
+## Same for any clip already retargeted to this rig; `tracks` = [[track, bone, type], ...].
+func _blend_anim(clip: Animation, tracks: Array, t: float, weight: float, mask_name: String, with_hips := true) -> void:
+	var mask := _mask_weights(mask_name)
+	for track_info in tracks:
 		var bone: int = track_info[1]
 		var w := mask[bone] * weight
 		if w <= 0.001:
@@ -1977,9 +2080,150 @@ func _apply_overlay() -> void:
 		if track_info[2] == Animation.TYPE_ROTATION_3D:
 			var q := clip.rotation_track_interpolate(track_info[0], t)
 			skeleton.set_bone_pose_rotation(bone, skeleton.get_bone_pose_rotation(bone).slerp(q, w))
-		elif not overlay_hold_hips:
+		elif with_hips:
 			var p := clip.position_track_interpolate(track_info[0], t)
 			skeleton.set_bone_pose_position(bone, skeleton.get_bone_pose_position(bone).lerp(p, w))
+
+# ------------------------------------------ pernas direcionais (armado) ---
+# Armado só existem o andar e a corrida para a frente (walk_with_rifle,
+# run_in_place): de lado ou de ré os pés andavam para a frente e o corpo
+# deslizava. As pernas passam a vir do ciclo desarmado da direção do
+# movimento (8 direções, andar/trote, na velocidade do chão do clipe) e o
+# tronco e os braços seguem com a arma; o peito volta a olhar para onde
+# olhava antes (o quadril do clipe de lado gira o corpo junto).
+const ARMED_LEGS_RATE := 6.0 # 1/s para entrar/sair
+const ARMED_LEGS_MAX_LEAN := 0.22 # rad: inclinação máxima do tronco andando armado
+var _armed_legs_weight := 0.0
+var _armed_legs_clip := ""
+var _armed_legs_phase := 0.0 # 0..1 do passo; trocar de direção mantém a fase
+var _armed_legs_speed := 1.0
+var _clip_tracks := {} # clipe da biblioteca -> [[track, bone, type], ...]
+
+func _tracks_of(clip_name: String) -> Array:
+	if not _clip_tracks.has(clip_name):
+		var tracks := []
+		var clip := animation_player.get_animation(clip_name)
+		for t in clip.get_track_count():
+			var bone := skeleton.find_bone(String(clip.track_get_path(t)).get_slice(":", 1))
+			var type := clip.track_get_type(t)
+			if bone >= 0 and (type == Animation.TYPE_ROTATION_3D or type == Animation.TYPE_POSITION_3D):
+				tracks.append([t, bone, type])
+		_clip_tracks[clip_name] = tracks
+	return _clip_tracks[clip_name]
+
+func _update_armed_legs(moving: bool, running: bool, planar_velocity: Vector3) -> void:
+	var want := armed and moving and not (running and crouch_weight < 0.5) and swim_weight < 0.01 and prone_weight < 0.5 and work_action.is_empty() and not bow_active
+	if want:
+		var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
+		_direction_sector = _pick_sector(angle)
+		# Para a frente o andar com fuzil já pisa certo (e sobe escada melhor que
+		# o trote, que voa entre os passos): pernas direcionais só fora dele.
+		if _direction_sector == 0:
+			want = false
+	if want:
+		var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
+		var gait := "jog_unarmed" if speed > UNARMED_JOG_SPEED and crouch_weight < 0.5 else "walk_unarmed"
+		var clip: String = gait + DIRECTION_SUFFIXES[_direction_sector]
+		if not animation_player.has_animation(clip):
+			clip = gait
+		if animation_player.has_animation(clip):
+			_armed_legs_clip = clip
+			var ground := float(animation_player.get_animation(clip).get_meta("ground_speed", 1.5))
+			_armed_legs_speed = clampf(speed / maxf(ground, 0.1), UNARMED_RATE_MIN, UNARMED_RATE_MAX)
+		else:
+			want = false
+	_armed_legs_weight = move_toward(_armed_legs_weight, 1.0 if want else 0.0, _last_delta * ARMED_LEGS_RATE)
+	if not _armed_legs_clip.is_empty():
+		var length := animation_player.get_animation(_armed_legs_clip).length
+		_armed_legs_phase = fposmod(_armed_legs_phase + _last_delta * _armed_legs_speed / maxf(length, 0.01), 1.0)
+
+func _apply_armed_legs() -> void:
+	if _armed_legs_weight <= 0.001 or _armed_legs_clip.is_empty():
+		return
+	var clip := animation_player.get_animation(_armed_legs_clip)
+	var left := Grip._bone(skeleton, "LeftArm")
+	var right := Grip._bone(skeleton, "RightArm")
+	var spine := Grip._bone(skeleton, "Spine")
+	var before := Vector3.ZERO
+	if left >= 0 and right >= 0:
+		before = skeleton.get_bone_global_pose(right).origin - skeleton.get_bone_global_pose(left).origin
+	var w := _smooth(_armed_legs_weight)
+	_blend_anim(clip, _tracks_of(_armed_legs_clip), _armed_legs_phase * clip.length, w, "legs")
+	if spine < 0 or before.length_squared() < 0.000001:
+		return
+	# Peito de volta para a mesma direção (só o giro em volta da vertical).
+	var after := skeleton.get_bone_global_pose(right).origin - skeleton.get_bone_global_pose(left).origin
+	var a := Vector2(before.x, before.z)
+	var b := Vector2(after.x, after.z)
+	if a.length_squared() < 0.000001 or b.length_squared() < 0.000001:
+		return
+	var yaw := b.angle_to(a)
+	Grip._set_global_rotation(skeleton, spine, Basis(Vector3.UP, -yaw) * skeleton.get_bone_global_pose(spine).basis)
+	# O trote de ré joga o tronco para trás (a arma subia): tronco quase em pé.
+	_limit_torso_lean(ARMED_LEGS_MAX_LEAN, w)
+
+# ------------------------------------------------ pulo, queda e aterrissagem ---
+# Camada UAL1 por cima da locomoção: no ar, a impulsão do Jump_Start (depois do
+# agachamento, que o pulo do jogo não tem) e o ciclo Jump; ao tocar o chão, o
+# amortecimento do Jump_Land, mais fundo quanto maior a queda e mais leve
+# correndo. Desarmado vale o corpo todo; armado (ou mirando) só as pernas.
+const JUMP_START_FROM := 0.11 # s: fim do agachamento do Jump_Start
+const JUMP_START_UNTIL := 0.55 # s: depois disso, o ciclo Jump
+const AIR_FADE_IN := 0.1
+const AIR_GRACE := 0.15 # s no ar sem ter pulado antes de virar pose de queda
+const AIR_FADE_OUT := 0.07
+const LAND_FROM := 0.04 # s: o Jump_Land começa um pouco acima do chão
+const LAND_END := 0.74 # s: quadril de volta à altura normal
+const LAND_RATE := 1.35 # amortece mais rápido que o clipe (jogo é ágil)
+var _air_time := 0.0
+var _air_weight := 0.0
+var _air_fall := 0.0 # maior velocidade de queda deste pulo (m/s)
+var _air_jumped := false # saiu do chão pulando (e não caindo de uma beirada)
+var _land_time := -1.0
+var _land_strength := 0.0
+
+func _update_air_state(airborne: bool, vertical_speed: float) -> void:
+	if airborne and not _airborne:
+		_air_time = 0.0
+		_air_fall = 0.0
+		_air_jumped = vertical_speed > 1.0
+		_land_time = -1.0
+	elif not airborne and _airborne:
+		# Pela velocidade da queda; jogadores remotos não mandam a vertical: pelo tempo no ar.
+		var by_speed := clampf((_air_fall - 2.5) / 8.0, 0.0, 1.0)
+		var by_time := clampf((_air_time - 0.25) / 0.9, 0.0, 1.0)
+		_land_strength = maxf(by_speed, by_time)
+		_land_time = LAND_FROM if _land_strength > 0.05 else -1.0
+	if airborne:
+		_air_time += _last_delta
+		_air_fall = maxf(_air_fall, -vertical_speed)
+
+func _apply_air() -> void:
+	if swim_weight > 0.01 or prone_weight > 0.01 or overlay_hold_hips or not work_action.is_empty():
+		_air_weight = 0.0
+		_land_time = -1.0
+		return
+	var mask := "full" if unarmed_weight > 0.5 and not aim_active else "legs"
+	# Degrau, rampa e quina tiram o pé do chão por um ou dois quadros: só é
+	# "no ar" quem pulou ou já está caindo há AIR_GRACE.
+	var in_air := _airborne and (_air_jumped or _air_time > AIR_GRACE)
+	_air_weight = move_toward(_air_weight, 1.0 if in_air else 0.0, _last_delta / (AIR_FADE_IN if in_air else AIR_FADE_OUT))
+	if _air_weight > 0.001:
+		var start_t := JUMP_START_FROM + _air_time
+		if _air_jumped and start_t < JUMP_START_UNTIL and ual_clips.has("jump_start"):
+			_blend_ual("jump_start", start_t, _smooth(_air_weight), mask)
+		elif ual_clips.has("jump"):
+			var loop: Animation = ual_clips["jump"][0]
+			_blend_ual("jump", fmod(_air_time, loop.length), _smooth(_air_weight), mask)
+	if _land_time >= 0.0:
+		_land_time += _last_delta * LAND_RATE
+		if _land_time >= LAND_END:
+			_land_time = -1.0
+		else:
+			var p := (_land_time - LAND_FROM) / (LAND_END - LAND_FROM)
+			var fade := 1.0 - _smooth((p - 0.55) / 0.45)
+			var w := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0))
+			_blend_ual("jump_land", _land_time, w, mask)
 
 ## Idle fidgets: standing still, unarmed and free for a while plays one idle
 ## variation (arms folded, phone call, leaning, head shake), cancelled by any input.
@@ -2005,7 +2249,8 @@ func _play_clip(clip: String, rate: float) -> void:
 	if current_clip != clip:
 		current_clip = clip
 		animation_player.play(clip, 0.18)
-	animation_player.speed_scale = rate
+	# Ritmo amortecido: a velocidade real oscila (rampas, colisões) e o passo dava trancos.
+	animation_player.speed_scale = lerpf(animation_player.speed_scale, rate, minf(1.0, _last_delta * CLIP_RATE_DAMP))
 
 func _update_weapon_mount() -> void:
 	if skeleton == null or weapon_mount == null:
@@ -2082,12 +2327,76 @@ func _update_weapon_mount() -> void:
 	# The hand anchoring above only translates; re-aim from the final grip spot.
 	if aim_weight > 0.001 and current_clip not in ["punch", "elbow_punch"]:
 		_aim_mount()
+	var reloading_hands := _reload_weight > 0.001 and not _shield_in_hand() and weapon_id != "bow"
+	if reloading_hands:
+		_reload_mount(is_pistol)
+		if not "Left" in grip_sides:
+			grip_sides.append("Left")
 	for side in grip_sides:
 		Grip.solve(skeleton, weapon_mount, side, true)
-	if is_pistol and not _shield_in_hand():
+	if is_pistol and not _shield_in_hand() and not reloading_hands:
 		_relax_left_arm()
 	elif not is_pistol:
 		_clear_stock_from_arm()
+
+# ------------------------------------------------------------ recarga ---
+# Terceira pessoa (todos veem: o "rl" vai pela rede). A arma gira em volta da
+# mão direita (deita de lado e baixa o cano, mostrando o encaixe do carregador)
+# e a mão esquerda faz o caminho: tira o carregador, desce à cintura, traz o
+# novo, encaixa e volta para a empunhadura. Tempos sobre RELOAD_SECONDS.
+const RELOAD_SECONDS := 3.0 # player.gd ACTION_TIME: toda arma recarrega em 3 s
+const RELOAD_FADE := 6.0 # 1/s
+const RELOAD_ROLL := 0.55 # rad: arma deitada para o lado
+const RELOAD_PITCH := 0.3 # rad: cano para baixo
+## [segundo, ponto] da mão esquerda: grip = empunhadura de sempre (pistola: ao
+## lado da mão direita), mag = encaixe do carregador, out = carregador puxado,
+## belt = cintura esquerda.
+const RELOAD_PATH := [[0.0, "grip"], [0.35, "mag"], [0.6, "out"], [1.15, "belt"], [1.45, "belt"], [2.0, "out"], [2.25, "mag"], [2.55, "mag"], [2.85, "grip"]]
+var reloading := false
+var _reload_time := 0.0
+var _reload_weight := 0.0
+
+func _update_reload(now: bool) -> void:
+	if now and not reloading:
+		_reload_time = 0.0
+	reloading = now
+	if now:
+		_reload_time += _last_delta
+	_reload_weight = move_toward(_reload_weight, 1.0 if now and armed else 0.0, _last_delta * RELOAD_FADE)
+
+func _reload_mount(is_pistol: bool) -> void:
+	var w := _smooth(_reload_weight)
+	var right_grip := weapon_mount.get_node("RightGrip") as Marker3D
+	var left_grip := weapon_mount.get_node("LeftGrip") as Marker3D
+	var muzzle := bound_weapon.get_node_or_null("Muzzle") as Marker3D
+	if muzzle == null:
+		return
+	var pivot := weapon_mount.transform * right_grip.position
+	var barrel := (skeleton.to_local(muzzle.global_position) - pivot).normalized()
+	var side := barrel.cross(Vector3.UP).normalized()
+	# Inclina o corpo da arma em volta da mão que segura o gatilho.
+	var turn := Basis(barrel, -RELOAD_ROLL * w) * Basis(side, -RELOAD_PITCH * w)
+	weapon_mount.transform = Transform3D(turn, pivot - turn * pivot) * weapon_mount.transform
+	barrel = turn * barrel
+	var grip_point := weapon_mount.transform * left_grip.position
+	if is_pistol:
+		grip_point = pivot + barrel * 0.02 + Vector3(0, -0.05, 0) - side * 0.04
+	var mag := pivot + barrel * (0.04 if is_pistol else 0.13) + Vector3(0, -0.11, 0)
+	var points := {"grip": grip_point, "mag": mag, "out": mag + Vector3(0, -0.09, 0.02)}
+	var hip := Grip._bone(skeleton, "LeftUpLeg")
+	points["belt"] = skeleton.get_bone_global_pose(hip).origin + Vector3(0.0, 0.1, 0.12) if hip >= 0 else mag
+	var target: Vector3 = points["grip"]
+	var t := minf(_reload_time, RELOAD_SECONDS)
+	for i in RELOAD_PATH.size() - 1:
+		var a: Array = RELOAD_PATH[i]
+		var b: Array = RELOAD_PATH[i + 1]
+		if t >= float(a[0]) and t <= float(b[0]):
+			var u := _smooth((t - float(a[0])) / maxf(float(b[0]) - float(a[0]), 0.001))
+			target = (points[a[1]] as Vector3).lerp(points[b[1]], u)
+			break
+	# Pistola: a mão esquerda sai do lado do corpo (relaxada) e volta para ele.
+	var rest: Vector3 = points["belt"] if is_pistol else grip_point
+	left_grip.position = weapon_mount.transform.affine_inverse() * rest.lerp(target, w)
 
 # Arma longa: o cotovelo direito vem do clipe e, em alguns corpos/armas, o
 # antebraço caía em cima da linha da coronha (a coronha atravessava o braço).
