@@ -1,7 +1,7 @@
 extends SceneTree
 ## Folhas de conferência dos clipes UAL2 num personagem do catálogo: 14 por
 ## imagem, cada um parado num ponto do clipe (fração --at, padrão 0.45).
-## godot --path godot --script res://tools/characters/capture_ual2.gd -- --id=01 --out=C:/pasta/ual --at=0.45 [--only=a,b,c]
+## godot --path godot --script res://tools/characters/capture_ual2.gd -- --id=atacante --out=C:/pasta/ual --at=0.45 [--only=a,b,c]
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const Avatar = preload("res://scripts/characters/downloaded_avatar.gd")
 const PER_SHEET := 14
@@ -11,7 +11,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	var id := "01"
+	var id := "atacante"
 	var out := "user://ual"
 	var at := 0.45
 	var names: Array = Avatar.UAL_CLIPS.duplicate()

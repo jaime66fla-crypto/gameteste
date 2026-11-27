@@ -30,7 +30,7 @@ var _foot_ik := true
 func _ready() -> void:
 	camera = Stage.build(self)
 	_build_stairs()
-	avatar = load("res://scenes/characters/01.tscn").instantiate()
+	avatar = load("res://scenes/characters/atacante.tscn").instantiate()
 	add_child(avatar)
 	hint = Stage.hint(self, "")
 	await get_tree().process_frame

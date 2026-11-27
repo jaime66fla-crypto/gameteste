@@ -1,9 +1,9 @@
 extends SceneTree
-## Campo de treino offline (scripts/training_ground.gd, texturas Kenney):
+## Campo de treino offline (scripts/training_ground.gd, gráfico do Linha de Fogo):
 ## confere pela colisão real que o nascimento e os bonecos estão livres, que
 ## dá para andar do nascimento até cada zona, que rampas, escada e torre sobem
 ## andando, que o túnel só passa deitado, que as placas de aço estão na linha
-## de tiro, que a borda é murada e que tudo usa as texturas Kenney.
+## de tiro, que a borda é murada e que tudo usa as texturas do Linha de Fogo.
 ## godot --headless --path godot --script res://tests/training_ground.gd
 const Ground = preload("res://scripts/training_ground.gd")
 const Arena = preload("res://scripts/training_arena.gd")
@@ -32,12 +32,12 @@ func _run() -> void:
 	if ground == null:
 		_finish(scene)
 		return
-	# Texturas Kenney em escala de mundo em todas as malhas do campo.
+	# Texturas do Linha de Fogo (assets/textures/lf) em escala de mundo em todas as malhas.
 	var meshes := ground.find_children("Mesh_*", "MeshInstance3D", true, false)
 	_check(meshes.size() >= 5, "o campo usa várias texturas (%d malhas)" % meshes.size())
 	for mesh in meshes:
 		var m := (mesh as MeshInstance3D).material_override as StandardMaterial3D
-		_check(m != null and m.albedo_texture != null and m.albedo_texture.resource_path.contains("kenney_prototype"), "%s usa textura Kenney" % mesh.name)
+		_check(m != null and m.albedo_texture != null and m.albedo_texture.resource_path.contains("textures/lf/") and m.normal_enabled, "%s usa textura do Linha de Fogo com relevo" % mesh.name)
 		_check(m != null and m.uv1_triplanar and m.uv1_world_triplanar, "%s em escala de mundo (triplanar)" % mesh.name)
 	var space := player.get_world_3d().direct_space_state
 	var capsule := CapsuleShape3D.new()

@@ -51,7 +51,8 @@ func _run() -> void:
 				check(material == originals[node.name], str(id) + "/" + str(node.name) + ": authored material retained")
 				check(material.albedo_texture != null, str(id) + "/" + str(node.name) + ": visible surface texture")
 				check(material.normal_enabled and material.normal_texture != null, str(id) + "/" + str(node.name) + ": surface relief")
-				check(material.roughness_texture != null, str(id) + "/" + str(node.name) + ": roughness retained")
+				# Gráfico do Linha de Fogo: rugosidade fixa por superfície (sem mapa de rugosidade).
+				check(material.roughness_texture != null or material.roughness < 1.0, str(id) + "/" + str(node.name) + ": roughness retained")
 				check(material.next_pass == null, str(id) + "/" + str(node.name) + ": no additional render pass")
 		check(world.environment.sky == authored_sky, str(id) + ": authored sky retained")
 		check(is_equal_approx(world.environment.ambient_light_energy, authored_ambient), str(id) + ": ambient lighting retained")

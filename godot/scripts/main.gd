@@ -4,6 +4,8 @@ const PointerMode = preload("res://scripts/pointer_mode.gd")
 const GameSettings = preload("res://scripts/game_settings.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CelStyle = preload("res://scripts/cel_style.gd")
+## false = gráfico do Linha de Fogo (sem o estilo cel/toon).
+const USE_CEL_STYLE := false
 const PlayerScript = preload("res://scripts/player.gd")
 const MatchMapScript = preload("res://scripts/match_map.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
@@ -121,7 +123,11 @@ func _ready() -> void:
         _spawn_training_dummies()
     _build_hud(survival)
     _build_quit_dialog(survival)
-    add_child(CelStyle.new())
+    # Gráfico do Linha de Fogo: materiais PBR com relevo e luz/céu de scripts/lf_graphics.gd.
+    # O estilo cel (cel_style.gd: sombreamento toon, contorno e céu próprios) fica
+    # desligado; para voltar a ele: add_child(CelStyle.new()).
+    if USE_CEL_STYLE:
+        add_child(CelStyle.new())
     _shadow_quality(int(settings["quality"]))
     # O mouse não é recapturado enquanto a mochila ou a confirmação estão abertas.
     player.set("ui_blocking", func() -> bool:
@@ -290,6 +296,10 @@ func _build_world(_survival: bool = false) -> void:
 ## faixas e alcance da sombra pela qualidade gráfica escolhida no menu.
 func _shadow_quality(quality: int) -> void:
     GameSettings.apply_shadow_quality(get_node_or_null("Sun") as DirectionalLight3D, quality)
+    # Gráfico do Linha de Fogo: na Baixa sai o glow e a névoa.
+    var holder := get_node_or_null("WorldEnvironment") as WorldEnvironment
+    if holder != null:
+        preload("res://scripts/lf_graphics.gd").apply_quality(holder.environment, quality)
 
 func _block(pos: Vector3, size: Vector3, color: Color, solid: bool) -> void:
     var root := StaticBody3D.new() if solid else Node3D.new()

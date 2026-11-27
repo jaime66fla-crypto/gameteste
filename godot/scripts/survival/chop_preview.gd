@@ -44,7 +44,7 @@ func _ready() -> void:
 	_rock.position = Vector3(0, 0, -0.95)
 	_rock.visible = false
 	add_child(_rock)
-	avatar = load("res://scenes/characters/01.tscn").instantiate()
+	avatar = load("res://scenes/characters/atacante.tscn").instantiate()
 	avatar.rotation.y = 0.0 # olha para -Z (a árvore)
 	add_child(avatar)
 	camera = Camera3D.new()

@@ -1,9 +1,7 @@
 extends Node3D
-## Treino offline: campo de prova estilo protótipo (100 × 100 m), montado com as
-## texturas Kenney Prototype (CC0, assets/textures/kenney_prototype). Cada
-## textura cobre 2 × 2 m em coordenadas de mundo (triplanar): a linha forte da
-## grade marca 1 m e a fina 25 cm, então dá para medir pulo, rampa e distância
-## só olhando o chão. Zonas (−Z é a frente de quem nasce):
+## Treino offline: campo de prova (100 × 100 m) no gráfico do Linha de Fogo (lajotas de
+## 1 m no chão, então dá para medir pulo, rampa e distância só olhando o chão; os nomes
+## das peças ainda são os da grade Kenney, ver LF_FROM_KENNEY). Zonas (−Z é a frente de quem nasce):
 ##   - estande de tiro na frente do nascimento: bonecos a 6 e 20 m (main.gd),
 ##     marcas a cada 5 m e placas de aço a 34 m;
 ##   - tiro longo na faixa oeste: torre de 6 m com rampa e placas a ~80 m;
@@ -15,7 +13,9 @@ extends Node3D
 ##   - praça livre ao sul do nascimento.
 ## As malhas são juntadas por material (poucas draw calls); toda a colisão fica
 ## num único StaticBody3D. Muro de 4 m e barreira invisível de 30 m na borda.
+const LfGraphics = preload("res://scripts/lf_graphics.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
+const MapMaterials = preload("res://scripts/map_materials.gd")
 const TEX := "res://assets/textures/kenney_prototype/%s.png"
 const HALF := 50.0
 const TILE_M := 2.0 # metros cobertos por uma textura
@@ -42,25 +42,20 @@ var blocks: Array = []
 
 ## Material Kenney em escala de mundo. world = false: a textura acompanha o
 ## objeto (peças que se mexem, como as placas de aço).
+## Peças do treino no gráfico do Linha de Fogo (scripts/map_materials.gd lf()): o chão
+## escuro vira lajota de 1 m (continua dando para medir pulo e distância), as paredes
+## claras viram blocos de pedra, as marcas viram concreto e as cores (alvos, suportes)
+## viram concreto pintado na mesma cor.
+const LF_FROM_KENNEY := {
+	"dark_grid": ["floor", Color.WHITE], "dark_marks": ["floor", Color.WHITE],
+	"light_grid": ["stone", Color.WHITE], "light_marks": ["concrete", Color.WHITE],
+	"orange_grid": ["concrete", Color("#d9822b")], "red_grid": ["concrete", Color("#c8463c")],
+	"green_grid": ["concrete", Color("#5f9a4a")], "purple_grid": ["concrete", Color("#8a5fb0")],
+}
+
 static func material(texture: String, world: bool = true) -> StandardMaterial3D:
-	var key := texture + ("_w" if world else "_l")
-	if _materials.has(key):
-		return _materials[key]
-	var m := StandardMaterial3D.new()
-	m.resource_name = "kenney_" + texture
-	m.albedo_texture = load(TEX % texture)
-	if texture.begins_with("light"):
-		# A cor clara da Kenney estoura no sol e a grade some: um tom abaixo.
-		m.albedo_color = Color(0.7, 0.71, 0.73)
-	m.roughness = 0.85
-	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	m.texture_repeat = true
-	m.uv1_triplanar = true
-	m.uv1_world_triplanar = world
-	m.uv1_triplanar_sharpness = 8.0
-	m.uv1_scale = Vector3.ONE / TILE_M
-	_materials[key] = m
-	return m
+	var spec: Array = LF_FROM_KENNEY.get(texture, ["concrete", Color.WHITE])
+	return MapMaterials.lf(spec[0], spec[1], world)
 
 func _ready() -> void:
 	name = "TrainingGround"
@@ -180,34 +175,11 @@ func _target(pos: Vector3, size: Vector2, title: String) -> void:
 # ------------------------------------------------------------------- base ---
 
 func _tune_environment() -> void:
+	# Gráfico do Linha de Fogo (scripts/lf_graphics.gd).
 	var holder := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
 	if holder == null:
 		return
-	var env := holder.environment
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color("#3b7bb0")
-	sky_material.sky_horizon_color = Color("#b9cfd9")
-	sky_material.ground_bottom_color = Color("#2c2f33")
-	sky_material.ground_horizon_color = Color("#9fb0b8")
-	sky_material.sky_energy_multiplier = 0.85
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	sky.radiance_size = Sky.RADIANCE_SIZE_128
-	env.sky = sky
-	env.background_mode = Environment.BG_SKY
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("#b8c4cc")
-	env.ambient_light_energy = 0.35 # sol + ambiente <= 1,3 (tests/graphics_materials.gd)
-	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	env.tonemap_exposure = 1.0
-	env.fog_enabled = true
-	env.fog_light_color = Color("#a9bcc6")
-	env.fog_density = 0.0012
-	var sun := get_parent().get_node_or_null("Sun") as DirectionalLight3D
-	if sun != null:
-		sun.light_energy = 0.9
-		sun.light_color = Color("#fff4e2")
-		sun.directional_shadow_max_distance = 80.0
+	LfGraphics.apply(holder.environment, get_parent().get_node_or_null("Sun") as DirectionalLight3D)
 
 func _floor() -> void:
 	var size := HALF * 2.0

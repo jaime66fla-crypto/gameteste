@@ -2,7 +2,7 @@ extends SceneTree
 ## Fotos do personagem dentro do mapa, pela câmera do jogo (3ª pessoa):
 ## parado com o fuzil e andando enquanto vira (inclinação nas curvas).
 ## Não mexe na seleção salva do jogador: usa um arquivo de seleção próprio.
-## godot --path godot --script res://tools/characters/capture_ingame.gd -- --id=01 --out=C:/pasta/01
+## godot --path godot --script res://tools/characters/capture_ingame.gd -- --id=atacante --out=C:/pasta/01
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const SELECTION := "user://capture_ingame_selection.cfg"
 
@@ -12,7 +12,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	var id := "01"
+	var id := "atacante"
 	var out := "user://ingame"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--id="):

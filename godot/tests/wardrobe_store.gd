@@ -1,7 +1,7 @@
 extends SceneTree
-## Loja e Cofre: grupos do catálogo, 01 como padrão e personagens pagos
+## Loja e Cofre: grupos do catálogo, soldado atacante como padrão e personagens pagos
 ## travados, Comprar conforme saldo/posse, Cofre só com o que a conta tem,
-## skin de arma equipada e skin de roupa trocando a textura do 01.
+## skin de arma equipada (as roupas do 01 saíram junto com ele).
 ## godot --headless --path godot --quit-after 3000 --script res://tests/wardrobe_store.gd
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const StoreScreen = preload("res://scripts/loja/store_screen.gd")
@@ -34,35 +34,35 @@ func _run() -> void:
 	Registry.storage_path = "user://wardrobe_store_%s.cfg" % OS.get_process_id()
 	var net := root.get_node_or_null("Net")
 	_check(net != null, "Autoload Net faltando")
-	_check(_ids(StoreCatalog.groups()) == ["personagens", "skins_armas", "skins_personagens"], "Grupos da loja errados")
-	_check(Registry.DEFAULT_ID == "01", "O 01 deveria ser o padrão")
+	_check(_ids(StoreCatalog.groups()) == ["personagens", "skins_armas"], "Grupos da loja errados")
+	_check(Registry.DEFAULT_ID == "atacante", "O atacante deveria ser o padrão")
 
-	# Sem conta: só o 01; personagem pago salvo volta para o 01.
-	_check(_ids(Registry.owned_characters()) == ["01"], "Sem login só o 01: %s" % [_ids(Registry.owned_characters())])
+	# Sem conta: os dois soldados (de todo mundo); personagem pago salvo volta para o atacante.
+	_check(_ids(Registry.owned_characters()) == ["atacante", "defensor"], "Sem login os dois soldados: %s" % [_ids(Registry.owned_characters())])
 	_check(Registry.select_character("remy") == ERR_INVALID_PARAMETER, "Personagem removido não deveria ser selecionável")
 	Registry._save_values({"selected_id": "remy"})
-	_check(Registry.load_selection() == "01", "Personagem removido salvo deveria voltar ao 01")
+	_check(Registry.load_selection() == "atacante", "Personagem removido salvo deveria voltar ao atacante")
 	var store := StoreScreen.new()
 	root.add_child(store)
 	await process_frame
 	var buy := _find(store, "Buy_rifle_deserto") as Button
 	_check(buy != null and buy.text == "Comprar" and buy.disabled, "Sem login, Comprar deveria estar desativado")
-	_check(_find(store, "Buy_bone") == null, "Item grátis não deveria estar à venda")
 	_check(_find(store, "Grupo_personagens") == null, "Sem personagens à venda, o grupo não deveria aparecer")
-	for group in ["skins_armas", "skins_personagens"]:
+	_check(_find(store, "Grupo_skins_personagens") == null, "Roupas do 01 não deveriam mais estar na loja")
+	for group in ["skins_armas"]:
 		_check(_find(store, "Grupo_" + group) != null, "Grupo faltando na loja: " + group)
 	store.queue_free()
 
-	# Conta com 300 Brasas que comprou o Remy (removido), o fuzil deserto e o boné vinho.
+	# Conta com 300 Brasas que comprou o Remy (removido), o fuzil deserto e o boné vinho (roupa do 01, removida).
 	net.set("session_token", "0".repeat(64))
 	net.set("profile", {"name": "Teste", "brasas": 300, "owned": ["remy", "rifle_deserto", "bone_vinho"]})
-	_check(_ids(Registry.owned_characters()) == ["01"], "Personagem removido não deveria aparecer no Cofre")
-	_check(Registry.load_selection() == "01", "Quem tinha o Remy volta para o 01")
+	_check(_ids(Registry.owned_characters()) == ["atacante", "defensor"], "Personagem removido não deveria aparecer no Cofre")
+	_check(Registry.load_selection() == "atacante", "Quem tinha o Remy volta para o atacante")
 	store = StoreScreen.new()
 	root.add_child(store)
 	await process_frame
 	_check((_find(store, "Buy_rifle_deserto") as Button).text == "Comprado", "Item da conta deveria aparecer como Comprado")
-	_check(not (_find(store, "Buy_tenis_noturno") as Button).disabled, "Com saldo (300), Tênis noturno deveria estar à venda")
+	_check(not (_find(store, "Buy_sniper_floresta") as Button).disabled, "Com saldo (300), Sniper floresta deveria estar à venda")
 	_check((_find(store, "StoreBalance") as Label).text == "300 Brasas", "Saldo errado na loja")
 	store.queue_free()
 
@@ -72,7 +72,7 @@ func _run() -> void:
 	await process_frame
 	_check(_find(vault, "Vitrine_rifle_deserto") != null, "Skin comprada deveria estar no Cofre")
 	_check(_find(vault, "Vitrine_pistol_oliva") == null, "Skin não comprada não deveria estar no Cofre")
-	_check(_find(vault, "Vitrine_camiseta_oliva") == null, "Roupa não comprada não deveria estar no Cofre")
+	_check(_find(vault, "Vitrine_bone_vinho") == null, "Roupa do 01 (removida) não deveria aparecer no Cofre")
 	var equip := _find(vault, "Vestir_rifle_deserto") as Button
 	_check(equip.text == "Equipar", "Skin de arma deveria ter Equipar")
 	equip.pressed.emit()
@@ -89,25 +89,13 @@ func _run() -> void:
 	Registry.set_weapon_skin("rifle", "")
 	_check(Registry.weapon_skin("rifle") == "", "Tirar a skin não funcionou")
 
-	# Comprar uma roupa já veste (substitui a da mesma peça); a não comprada sai.
+	# Roupas do 01 saíram da loja: nada salvo antes continua vestido.
 	Registry.save_outfit(PackedStringArray(["bone", "camiseta_oliva", "calca"]))
-	_check(Array(Registry.load_outfit()) == ["bone", "calca"], "load_outfit deveria tirar o item não comprado: %s" % [Registry.load_outfit()])
-	StoreScreen.equip("bone_vinho")
-	_check(Array(Registry.load_outfit()) == ["calca", "bone_vinho"], "Equipar o boné vinho: %s" % [Registry.load_outfit()])
-
-	# O 01 já nasce vestido (é assim que os outros o veem) e a skin troca a textura.
-	var avatar := Registry.create_visual("01")
-	_check(avatar != null, "Personagem 01 não carregou")
-	if avatar != null:
-		root.add_child(avatar)
-		await process_frame
-		_check(Array(avatar.get("roupas")) == ["bone", "camiseta", "calca"], "01 deveria nascer vestido")
-		avatar.call("vestir", PackedStringArray(["bone_vinho"]))
-		_check(_texture_of(avatar, "Roupa_bone").ends_with("bone_vinho.png"), "Boné vinho sem a textura nova")
-		avatar.call("vestir", PackedStringArray(["bone", "calca", "bermuda"]))
-		_check(not _texture_of(avatar, "Roupa_bone").ends_with("bone_vinho.png"), "Boné básico ficou com a textura do vinho")
-		_check(Array(avatar.get("roupas")) == ["bone", "bermuda"], "Calça e bermuda juntas: %s" % [avatar.get("roupas")])
-		avatar.queue_free()
+	_check(Registry.load_outfit().is_empty(), "Roupas do 01 removido não deveriam voltar: %s" % [Registry.load_outfit()])
+	var soldier := Registry.create_visual("atacante")
+	_check(soldier != null and not soldier.has_method("vestir"), "Atacante deveria carregar (sem roupas trocáveis)")
+	if soldier != null:
+		soldier.free()
 
 	# Loja de Brasas (botão + do saldo): pacotes vendidos no site por PIX.
 	_check(StoreCatalog.format_amount(1250) == "1.250" and StoreCatalog.format_amount(6500) == "6.500" and StoreCatalog.format_amount(90) == "90", "Separador de milhar errado")

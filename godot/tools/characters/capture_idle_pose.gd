@@ -2,7 +2,7 @@ extends SceneTree
 ## Foto de conferência da pose parada de todos os personagens (desarmado e
 ## armado), vistos de costas em três quartos, como a câmera do jogo.
 ## godot --path godot --script res://tools/characters/capture_idle_pose.gd -- --out=<png>
-const SCENES := ["res://scenes/characters/01.tscn"]
+const SCENES := ["res://scenes/characters/atacante.tscn"]
 
 func _initialize() -> void:
 	create_timer(60.0).timeout.connect(func(): quit(2))

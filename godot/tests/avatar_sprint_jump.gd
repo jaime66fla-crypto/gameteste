@@ -33,7 +33,7 @@ func _hands_below_shoulders(avatar: Node) -> float:
 	return worst
 
 func _run() -> void:
-	var avatar := Registry.create_visual("01")
+	var avatar := Registry.create_visual("atacante")
 	root.add_child(avatar)
 	await process_frame
 	_check(bool(avatar.call("is_visual_ready")), "avatar pronto")
@@ -67,11 +67,17 @@ func _run() -> void:
 	for i in 3:
 		_check(_hands_below_shoulders(avatar) > 0.1, "no ar sem arma (%.2f s) mãos bem abaixo dos ombros, sem Y/T (%.2f m)" % [0.5 + i * 0.1, _hands_below_shoulders(avatar)])
 		_step(avatar, 6, false, Vector3(0, 0.0, -5.0), true)
-	_check(float(avatar.get("_air_weight")) > 0.9, "camada do ar ativa (%.2f)" % float(avatar.get("_air_weight")))
-	_step(avatar, 1, false, Vector3(0, 0, -5.0), false)
-	_check(bool(avatar.get("_land_full")) and float(avatar.get("_land_time")) >= 0.0, "pouso HumanM sem arma")
-	_step(avatar, 60, false, Vector3(0, 0, -5.0), false)
-	_check(float(avatar.get("_land_time")) < 0.0, "pouso termina")
+	if bool(avatar.get("clean_locomotion")):
+		# Soldados (controlador do Linha de Fogo): pulo pelo clipe "jump" da UAL.
+		_check(float(avatar.get("_clean_air")) > 0.9, "pulo do Linha de Fogo ativo (%.2f)" % float(avatar.get("_clean_air")))
+		_step(avatar, 60, false, Vector3(0, 0, -5.0), false)
+		_check(float(avatar.get("_clean_air")) < 0.01, "pulo termina ao pousar (%.2f)" % float(avatar.get("_clean_air")))
+	else:
+		_check(float(avatar.get("_air_weight")) > 0.9, "camada do ar ativa (%.2f)" % float(avatar.get("_air_weight")))
+		_step(avatar, 1, false, Vector3(0, 0, -5.0), false)
+		_check(bool(avatar.get("_land_full")) and float(avatar.get("_land_time")) >= 0.0, "pouso HumanM sem arma")
+		_step(avatar, 60, false, Vector3(0, 0, -5.0), false)
+		_check(float(avatar.get("_land_time")) < 0.0, "pouso termina")
 
 	# Com fuzil: Shift continua na corrida armada e o pulo segue só nas pernas.
 	avatar.call("set_armed", true)

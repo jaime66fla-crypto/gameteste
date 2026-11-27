@@ -60,7 +60,7 @@ func _sequence(label: String) -> Dictionary:
 	return worst.duplicate(true)
 
 func _run() -> void:
-	avatar = Registry.create_visual("01")
+	avatar = Registry.create_visual("atacante")
 	root.add_child(avatar)
 	await process_frame
 	skeleton = avatar.get("skeleton")

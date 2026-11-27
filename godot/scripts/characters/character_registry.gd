@@ -1,8 +1,9 @@
 extends RefCounted
-## Personagem padrão (de todo mundo); os outros vêm da loja (data/store.json).
-const DEFAULT_ID := "01"
-## Roupas do 01 quando nada foi escolhido ainda no cofre.
-const DEFAULT_OUTFIT := ["bone", "camiseta", "calca"]
+## Personagem padrão (de todo mundo): o soldado atacante do Linha de Fogo. O defensor
+## também é de todo mundo; personagens pagos viriam da loja (data/store.json).
+const DEFAULT_ID := "atacante"
+## Roupas trocáveis: nenhum personagem atual tem (eram as peças do 01, removido).
+const DEFAULT_OUTFIT := []
 const DEFAULT_PATH := "user://character_selection.cfg"
 const CATALOG = preload("res://characters/catalog.tres")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
@@ -59,7 +60,7 @@ static func select_character(id: String) -> Error:
         return ERR_UNAVAILABLE
     return _save_values({"selected_id": id})
 
-## Roupas vestidas no personagem 01 (ids de item de data/store.json), salvas
+## Roupas vestidas (ids de item de data/store.json; hoje nenhum personagem as usa), salvas
 ## junto com a seleção. Só a vitrine do menu muda; o jogador local veste ao
 ## entrar. Itens pagos que a conta não tem (ou sem login) ficam de fora.
 static func load_outfit() -> PackedStringArray:

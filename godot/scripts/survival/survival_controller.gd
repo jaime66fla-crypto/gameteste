@@ -1207,20 +1207,22 @@ func _update_daylight() -> void:
 	# Luz do sol: sobe às 6h, a pino ao meio-dia, se põe às 20h.
 	var day_fraction := clampf((hour - 6.0) / 14.0, 0.0, 1.0)
 	var light := sin(day_fraction * PI)
+	# Ao meio-dia chega exatamente no gráfico do Linha de Fogo (scripts/lf_graphics.gd):
+	# sol 1,6 quente, ambiente 0,6, névoa cinza-clara (0,0012), céu azul do Linha.
 	if sun:
 		sun.rotation_degrees.x = -lerpf(8.0, 172.0, day_fraction)
-		sun.light_energy = (0.08 if night else 0.25 + light * 0.75) * (1.0 - float(weather.rain) * 0.65 if weather != null else 1.0)
-		sun.light_color = Color("#ffd2a0").lerp(Color("#fff1dc"), light)
+		sun.light_energy = (0.08 if night else 0.4 + light * 1.2) * (1.0 - float(weather.rain) * 0.65 if weather != null else 1.0)
+		sun.light_color = Color("#ffd2a0").lerp(Color(1, 0.9, 0.76), light)
 	if env:
-		env.ambient_light_energy = 0.07 if night else 0.12 + light * 0.2
-		env.fog_density = (0.012 if night else 0.004) + (float(weather.rain) * 0.006 if weather != null else 0.0)
-		env.fog_light_color = Color("#141b22") if night else Color("#879d9e")
+		env.ambient_light_energy = 0.1 if night else 0.2 + light * 0.4
+		env.fog_density = (0.012 if night else 0.0012) + (float(weather.rain) * 0.006 if weather != null else 0.0)
+		env.fog_light_color = Color("#141b22") if night else Color(0.74, 0.74, 0.74)
 		env.background_energy_multiplier = 0.15 if night else 0.4 + light * 0.6
 		if env.sky != null and env.sky.sky_material is ProceduralSkyMaterial:
 			var storm := float(weather.rain) if weather != null else 0.0
 			var sky := env.sky.sky_material as ProceduralSkyMaterial
-			sky.sky_top_color = Color("#2785d6").lerp(Color("#424e5c"), storm * 0.9)
-			sky.sky_horizon_color = Color("#a9d9f1").lerp(Color("#77838d"), storm * 0.9)
+			sky.sky_top_color = Color(0.3, 0.46, 0.72).lerp(Color("#424e5c"), storm * 0.9)
+			sky.sky_horizon_color = Color(0.76, 0.77, 0.78).lerp(Color("#77838d"), storm * 0.9)
 
 # --------------------------------------------------------------------- HUD ---
 

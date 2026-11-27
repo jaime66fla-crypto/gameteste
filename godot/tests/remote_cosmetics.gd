@@ -1,7 +1,7 @@
 extends SceneTree
 ## Outro jogador (NetActor) com as roupas e a skin de arma que vieram no
-## estado de rede ("rp"/"ws"): sem "rp" fica a roupa padrão do 01; com "rp"
-## veste o que veio; "ws" pinta a arma da mão só se for skin daquela arma.
+## estado de rede ("ws"); "rp" (roupas do 01, removido) de cliente antigo é ignorado;
+## "ws" pinta a arma da mão só se for skin daquela arma.
 ## godot --headless --path godot --quit-after 3000 --script res://tests/remote_cosmetics.gd
 const NetActorScript = preload("res://scripts/net/net_actor.gd")
 var failures: Array[String] = []
@@ -34,23 +34,21 @@ func _run() -> void:
 	actor.call("setup", "probe", "Alvo", false)
 	world.add_child(actor)
 	await _frames(3)
-	var base := {"p": [0.0, 0.0, 0.0], "y": 0.0, "w": "rifle", "h": false, "ch": "01"}
+	var base := {"p": [0.0, 0.0, 0.0], "y": 0.0, "w": "rifle", "h": false, "ch": "atacante"}
 
-	# Cliente antigo (sem rp/ws): roupa padrão e arma original.
+	# Sem ws: arma original.
 	actor.call("apply_state", base)
 	await _frames(3)
-	var visual := actor.get("visual") as Node
-	_check(Array(visual.get("roupas")) == ["bone", "camiseta", "calca"], "Sem rp deveria ficar a roupa padrão: %s" % [visual.get("roupas")])
+	_check(str(actor.get("character_id")) == "atacante", "Estado 'ch' deveria dar o atacante")
 	_check(not _gun_texture(actor).contains("/skins/"), "Sem ws a arma deveria ser a original: " + _gun_texture(actor))
 
-	# Jogador com boné vinho + bermuda e o fuzil deserto na mão.
+	# Fuzil deserto na mão (e "rp" de um cliente antigo com roupas do 01: ignorado sem quebrar).
 	var dressed := base.duplicate()
 	dressed["rp"] = ["bone_vinho", "bermuda"]
 	dressed["ws"] = "rifle_deserto"
 	actor.call("apply_state", dressed)
 	await _frames(3)
-	visual = actor.get("visual") as Node
-	_check(Array(visual.get("roupas")) == ["bone_vinho", "bermuda"], "Roupas do estado não vestidas: %s" % [visual.get("roupas")])
+	_check(actor.get("visual") != null, "Corpo do atacante deveria continuar com rp antigo no estado")
 	_check(_gun_texture(actor).ends_with("rifle_deserto.png"), "Fuzil sem a skin do estado: " + _gun_texture(actor))
 
 	# Trocou para a pistola: skin do fuzil não vale para ela.
@@ -60,16 +58,17 @@ func _run() -> void:
 	await _frames(3)
 	_check(not _gun_texture(actor).contains("/skins/"), "Skin do fuzil não deveria ir para a pistola: " + _gun_texture(actor))
 
-	# Personagem que nao existe mais (cliente antigo) e voltar ao 01 mantém as roupas que ele mandou.
-	var remy := dressed.duplicate()
-	remy["ch"] = "personagem_removido"
-	actor.call("apply_state", remy)
+	# Cliente antigo ainda com o 01 (removido): o corpo vira o atacante; o defensor também vem pela rede.
+	var old := base.duplicate()
+	old["ch"] = "01"
+	actor.call("apply_state", old)
 	await _frames(5)
-	actor.call("apply_state", dressed)
+	_check(str(actor.get("character_id")) == "atacante" and actor.get("visual") != null, "01 removido deveria virar o atacante: %s" % [actor.get("character_id")])
+	var defender := base.duplicate()
+	defender["ch"] = "defensor"
+	actor.call("apply_state", defender)
 	await _frames(5)
-	visual = actor.get("visual") as Node
-	_check(str(actor.get("character_id")) == "01" and Array(visual.get("roupas")) == ["bone_vinho", "bermuda"], "Voltando ao 01 deveria manter as roupas: %s" % [visual.get("roupas")])
-
+	_check(str(actor.get("character_id")) == "defensor" and actor.get("visual") != null, "Estado 'ch' deveria dar o defensor: %s" % [actor.get("character_id")])
 	if failures.is_empty():
 		print("REMOTE COSMETICS: PASS")
 		quit(0)

@@ -30,7 +30,7 @@ func _run() -> void:
         return
     var registry = load("res://scripts/characters/character_registry.gd")
     registry.storage_path = "user://weapon_proportions_%s.cfg" % OS.get_process_id()
-    registry.select_character("01")
+    registry.select_character("atacante")
     var scene: Node3D = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene
@@ -63,7 +63,10 @@ func _run() -> void:
                 for side in ["Left", "Right"]:
                     if side == "Left" and weapon == "pistol":
                         continue # pistola: só a mão direita segura (downloaded_avatar.gd grip_sides)
-                    _check(_grip_error(visual, side) < 0.012, "Palm contact lost: %s/%s/%s %.3fm" % [weapon,state,side,_grip_error(visual, side)])
+                    # Controlador do Linha de Fogo: na recarga a mão esquerda solta a arma e faz o caminho do carregador.
+                    var free_reload: bool = state == "reload" and side == "Left" and bool(visual.get("clean_locomotion"))
+                    if not free_reload:
+                        _check(_grip_error(visual, side) < 0.012, "Palm contact lost: %s/%s/%s %.3fm" % [weapon,state,side,_grip_error(visual, side)])
                 var muzzle := model.get_node("Muzzle") as Marker3D
                 _check(player.get("gun_flash").global_position.distance_to(muzzle.global_position) < 0.002, "Flash detached from barrel")
             var profiles = load("res://scripts/weapons/WeaponProportions.gd")

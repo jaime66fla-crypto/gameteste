@@ -16,7 +16,7 @@ func _run() -> void:
     current_scene = menu
     menu.call("_show_characters")
     await _capture("original")
-    menu.call("_select_character", "01")
+    menu.call("_select_character", "atacante")
     await _capture("swat")
     menu.call("_start_match")
     await process_frame

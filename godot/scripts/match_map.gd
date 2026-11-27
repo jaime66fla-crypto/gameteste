@@ -5,6 +5,7 @@ extends Node3D
 ## grama, asfalto, piso de pedra, concreto, tijolo, telha ondulada, caixotes e
 ## reboco pintado nas casas coloridas).
 ## Uma malha por cor (poucas draw calls) e um StaticBody3D com todas as caixas.
+const LfGraphics = preload("res://scripts/lf_graphics.gd")
 const MatchLayout = preload("res://scripts/net/match_layout.gd")
 const MapMaterials = preload("res://scripts/map_materials.gd")
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
@@ -91,33 +92,11 @@ func _add_box(batches: Dictionary, colour: String, center: Vector3, size: Vector
 			st.add_vertex(corners[index])
 
 func _tune_environment() -> void:
-	var parent := get_parent()
-	if parent == null or parent.get_node_or_null("WorldEnvironment") == null:
+	# Gráfico do Linha de Fogo (scripts/lf_graphics.gd).
+	var holder := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
+	if holder == null:
 		return
-	var env := (parent.get_node("WorldEnvironment") as WorldEnvironment).environment
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color("#3d8fe0")
-	sky_material.sky_horizon_color = Color("#bfe0f7")
-	sky_material.ground_bottom_color = Color("#6f8f6a")
-	sky_material.ground_horizon_color = Color("#bfe0f7")
-	sky_material.sun_angle_max = 4.0
-	var sky := Sky.new()
-	sky.sky_material = sky_material
-	sky.radiance_size = Sky.RADIANCE_SIZE_64
-	env.sky = sky
-	env.background_mode = Environment.BG_SKY
-	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color("#ffffff")
-	env.ambient_light_energy = 0.42
-	env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-	env.tonemap_exposure = 1.0
-	env.fog_enabled = false
-	var sun := parent.get_node_or_null("Sun") as DirectionalLight3D
-	if sun != null:
-		sun.light_energy = 0.88
-		sun.light_color = Color("#fffaf0")
-		sun.rotation_degrees = Vector3(-55, -35, 0)
-		sun.directional_shadow_max_distance = 80.0
+	LfGraphics.apply(holder.environment, get_parent().get_node_or_null("Sun") as DirectionalLight3D)
 
 ## Muro invisível de 30 m em cada borda: ninguém pula nem escala para fora.
 func _edge_barriers() -> void:

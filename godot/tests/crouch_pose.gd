@@ -28,7 +28,7 @@ func _p(skel: Skeleton3D, name: String) -> Vector3:
 	return skel.get_bone_global_pose(Grip._bone(skel, name)).origin
 
 func _run() -> void:
-	var avatar: Node3D = load("res://scenes/characters/01.tscn").instantiate()
+	var avatar: Node3D = load("res://scenes/characters/atacante.tscn").instantiate()
 	root.add_child(avatar)
 	await process_frame
 	check(bool(avatar.call("is_visual_ready")), "avatar carregado")

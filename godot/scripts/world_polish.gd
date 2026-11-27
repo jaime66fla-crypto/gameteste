@@ -2,6 +2,7 @@ extends Node3D
 ## One authored 120 m neighborhood. Roads, plots and entrances share one layout.
 ## Centro da Sobrevivência (data/match_layout.json). As partidas online usam os
 ## mapas de blocos (scripts/match_map.gd); o treino offline, training_ground.gd.
+const LfGraphics = preload("res://scripts/lf_graphics.gd")
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const MapMaterials = preload("res://scripts/map_materials.gd")
 var mat_cache: Dictionary = {}
@@ -71,33 +72,11 @@ func _surface(center: Vector2, size: Vector2, color: String, top: float = 0.025)
     _box(Vector3(center.x, top - 0.01, center.y), Vector3(size.x, 0.02, size.y), color, solid)
 
 func _tune_environment() -> void:
-    var existing := get_parent().get_node("WorldEnvironment") as WorldEnvironment
-    var env := existing.environment
-    var sky_material := ProceduralSkyMaterial.new()
-    sky_material.sky_top_color = Color("#326787")
-    sky_material.sky_horizon_color = Color("#9aafb0")
-    sky_material.ground_bottom_color = Color("#354537")
-    sky_material.ground_horizon_color = Color("#929e94")
-    sky_material.sky_energy_multiplier = 0.75
-    sky_material.ground_energy_multiplier = 0.55
-    sky_material.sun_angle_max = 2.0
-    var sky := Sky.new()
-    sky.sky_material = sky_material
-    sky.radiance_size = Sky.RADIANCE_SIZE_128
-    env.sky = sky
-    env.background_mode = Environment.BG_SKY
-    env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color("#a6b4bd")
-    env.ambient_light_energy = 0.30
-    env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
-    env.tonemap_exposure = 0.95
-    env.fog_enabled = true
-    env.fog_light_color = Color("#879d9e")
-    env.fog_density = 0.0015
-    var sun := get_parent().get_node("Sun") as DirectionalLight3D
-    sun.light_energy = 0.85
-    sun.light_color = Color("#fff1dc")
-    sun.directional_shadow_max_distance = 90.0
+    # Gráfico do Linha de Fogo (scripts/lf_graphics.gd).
+    var holder := get_parent().get_node_or_null("WorldEnvironment") as WorldEnvironment
+    if holder == null:
+        return
+    LfGraphics.apply(holder.environment, get_parent().get_node_or_null("Sun") as DirectionalLight3D)
 
 func _streets() -> void:
     # Ring and central cross use adjacent tiles, never coplanar overlapping slabs.

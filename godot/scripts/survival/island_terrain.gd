@@ -1,14 +1,18 @@
 extends RefCounted
 const Hydro = preload("res://scripts/survival/hydrology.gd")
 const Hitbox = preload("res://scripts/net/hitbox.gd")
+const MapMaterials = preload("res://scripts/map_materials.gd")
+## Brilho médio da textura de grama do Linha de Fogo (a cor do vértice multiplica a textura).
+const GRASS_LUMA := 0.4
 const STEP := 4.0
 const CELLS := 28
 
 static func build(parent: Node3D, half_size: float) -> void:
 	var extent := ceilf((half_size + 140.0) / (STEP * CELLS)) * STEP * CELLS
-	var material := StandardMaterial3D.new()
+	# Gráfico do Linha de Fogo: grama com relevo em triplanar de mundo; a cor do vértice
+	# (praia, encosta seca, pedra no alto) vira só o tom por cima da textura (_tone).
+	var material := (MapMaterials.lf("grass") as StandardMaterial3D).duplicate() as StandardMaterial3D
 	material.vertex_color_use_as_albedo = true
-	material.roughness = 1.0
 	for cz in range(int(-extent), int(extent), int(STEP * CELLS)):
 		for cx in range(int(-extent), int(extent), int(STEP * CELLS)):
 			var samples: Array[Vector3] = []
@@ -45,3 +49,12 @@ static func build(parent: Node3D, half_size: float) -> void:
 			collision.shape = mesh.create_trimesh_shape()
 			body.add_child(collision)
 			parent.add_child(body)
+
+## Cor do terreno -> multiplicador sobre a grama do Linha de Fogo: mantém o matiz (de leve)
+## e a claridade relativa (a praia continua mais clara que a grama).
+static func _tone(c: Color) -> Color:
+	var lum := maxf(c.get_luminance(), 0.05)
+	var hue := Color(minf(c.r / lum, 2.0), minf(c.g / lum, 2.0), minf(c.b / lum, 2.0))
+	var k := clampf(lum / GRASS_LUMA, 0.6, 1.7)
+	var tone := Color.WHITE.lerp(hue, 0.45) * k
+	return Color(minf(tone.r, 1.0), minf(tone.g, 1.0), minf(tone.b, 1.0))

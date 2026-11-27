@@ -3,7 +3,7 @@ extends SceneTree
 ##   <out>_poses.png  6 poses lado a lado (fuzil parado, mirando para cima,
 ##                    andando desarmado, trotando de lado, agachado, correndo)
 ##   <out>_close.png  close do rosto e do tronco (materiais)
-## godot --path godot --script res://tools/characters/capture_character.gd -- --id=01 --out=C:/pasta/01
+## godot --path godot --script res://tools/characters/capture_character.gd -- --id=atacante --out=C:/pasta/01
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
 
@@ -11,7 +11,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	var id := "01"
+	var id := "atacante"
 	var out := "user://capture"
 	for arg in OS.get_cmdline_user_args():
 		if arg.begins_with("--id="):

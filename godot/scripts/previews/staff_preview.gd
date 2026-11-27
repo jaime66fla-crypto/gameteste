@@ -33,7 +33,7 @@ var _camera_locked := false # fotos de perto
 
 func _ready() -> void:
 	camera = Stage.build(self)
-	avatar = load("res://scenes/characters/01.tscn").instantiate()
+	avatar = load("res://scenes/characters/atacante.tscn").instantiate()
 	add_child(avatar)
 	dummy = DummyScript.new()
 	dummy.set("title", "BONECO DE TREINO")

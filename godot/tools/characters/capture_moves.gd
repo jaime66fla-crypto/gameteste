@@ -61,7 +61,7 @@ func _run() -> void:
 	var avatars := []
 	for i in CASES.size():
 		var spec: Array = CASES[i]
-		var avatar := Registry.create_visual("01")
+		var avatar := Registry.create_visual("atacante")
 		world.add_child(avatar)
 		avatar.position = Vector3((i - (CASES.size() - 1) * 0.5) * 1.6, 0, 0)
 		avatar.rotation.y = -PI * 0.5 # de perfil, andando para a direita da foto

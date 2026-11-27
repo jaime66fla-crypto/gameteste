@@ -1,0 +1,15 @@
+[gd_resource type="Resource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = "atacante"
+display_name = "Atacante"
+description = "Soldado atacante do Linha de Fogo (MakeHuman realista): uniforme cáqui, colete de placas oliva e capacete areia."
+visual_scene = "res://scenes/characters/atacante.tscn"
+required_resources = PackedStringArray("res://assets/personagens/atacante/atacante_modelo.scn", "res://assets/personagens/downloaded/movements/run_in_place.tres")
+fp_sleeve = Color(0.55, 0.49, 0.36, 1)
+fp_sleeve_style = "long"
+fp_skin = Color(0.89, 0.7, 0.58, 1)
+fp_gloves = false

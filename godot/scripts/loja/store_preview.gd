@@ -1,13 +1,10 @@
 extends "res://scripts/ui/sharp_viewport.gd"
 ## Prévia 3D de um item da loja (data/store.json), usada na Loja e no Cofre:
-## personagem parado de braços cruzados, arma com a skin girando ou a peça de
-## roupa do 01 com a skin girando num pedestal escuro.
+## personagem parado de braços cruzados ou arma com a skin girando.
 const UiTheme = preload("res://scripts/ui/ui_theme.gd")
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const StoreCatalog = preload("res://scripts/loja/store_catalog.gd")
 const WeaponProportions = preload("res://scripts/weapons/WeaponProportions.gd")
-const Avatar01 = preload("res://scripts/characters/avatar_01.gd")
-const OUTFIT_MODEL := "res://assets/personagens/01/01_modelo.scn"
 const SPIN_SPEED := 0.6
 const SHOWCASE_CLIP := "idle_foldarms"
 
@@ -30,8 +27,6 @@ func _ready() -> void:
 			_character(world)
 		"skins_armas":
 			_weapon(world)
-		_:
-			_outfit_piece(world)
 
 func _lights(world: Node3D) -> void:
 	var environment := WorldEnvironment.new()
@@ -102,51 +97,6 @@ func _weapon(world: Node3D) -> void:
 	holder.position = -box.get_center() / extent
 	_spinner.rotation.y = 0.6
 	_camera(world, Vector3(0, 0.25, 1.45), Vector3(0, 0, 0), 36.0)
-
-## Peça de roupa do 01 (com a skin do item) num pedestal.
-func _outfit_piece(world: Node3D) -> void:
-	var packed := load(OUTFIT_MODEL) as PackedScene
-	if packed == null:
-		return
-	var instance := packed.instantiate() as Node3D
-	var mesh_node: MeshInstance3D = null
-	for node in instance.find_children("*", "MeshInstance3D", true, false):
-		var mi := node as MeshInstance3D
-		mi.visible = mi.name == "Roupa_" + StoreCatalog.piece(item_id)
-		if mi.visible:
-			mesh_node = mi
-	if mesh_node == null:
-		instance.free()
-		return
-	var skin := StoreCatalog.texture_path(item_id)
-	var textura: Texture2D = load(skin) as Texture2D if not skin.is_empty() and ResourceLoader.exists(skin) else null
-	var relevo := Avatar01.relevo_da_peca(StoreCatalog.piece(item_id))
-	if textura != null or relevo != null:
-		for s in mesh_node.mesh.get_surface_count():
-			var mat := mesh_node.get_active_material(s) as StandardMaterial3D
-			if mat != null:
-				mesh_node.set_surface_override_material(s, Avatar01.vestir_material(mat, textura, relevo))
-	var box := mesh_node.mesh.get_aabb()
-	_spinner = Node3D.new()
-	world.add_child(_spinner)
-	_spinner.add_child(instance)
-	instance.position = -box.get_center()
-	_spinner.rotation.y = 0.5
-	var extent := maxf(box.size.y, maxf(box.size.x, box.size.z))
-	var pedestal := MeshInstance3D.new()
-	var disk := CylinderMesh.new()
-	disk.top_radius = maxf(box.size.x, box.size.z) * 0.62
-	disk.bottom_radius = disk.top_radius * 1.05
-	disk.height = extent * 0.04
-	pedestal.mesh = disk
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color("#1d282c")
-	stone.roughness = 0.6
-	pedestal.material_override = stone
-	pedestal.position.y = -box.size.y * 0.5 - disk.height * 0.5 - extent * 0.01
-	world.add_child(pedestal)
-	var distance := extent * 0.5 / tan(deg_to_rad(15.0)) * 1.3
-	_camera(world, Vector3(0, extent * 0.18, distance), Vector3(0, -extent * 0.04, 0), 30.0)
 
 ## Caixa de todas as malhas, no espaço do próprio modelo.
 func _bounds(root: Node3D) -> AABB:

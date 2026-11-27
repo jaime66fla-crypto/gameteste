@@ -44,7 +44,7 @@ func _run() -> void:
 		if arg.begins_with("--out="):
 			out = arg.substr(6)
 	Registry.storage_path = SELECTION
-	Registry.select_character("01")
+	Registry.select_character("atacante")
 	root.size = Vector2i(960, 540)
 	var scene = load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)

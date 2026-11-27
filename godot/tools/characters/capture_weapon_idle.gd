@@ -4,7 +4,7 @@ extends SceneTree
 ## ou o corpo. De costas a coronha pode parecer entrar no quadril quando só
 ## passa atrás dele: a foto de cima tira a dúvida.
 ## Não mexe na seleção salva do jogador: usa um arquivo de seleção próprio.
-## godot --path godot --script res://tools/characters/capture_weapon_idle.gd -- --id=01 --out=C:/pasta/01 [--no-stand]
+## godot --path godot --script res://tools/characters/capture_weapon_idle.gd -- --id=atacante --out=C:/pasta/01 [--no-stand]
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const SELECTION := "user://capture_weapon_idle_selection.cfg"
 const WEAPONS := ["rifle", "pistol", "smg", "shotgun", "sniper"]
@@ -14,7 +14,7 @@ func _initialize() -> void:
 	_run.call_deferred()
 
 func _run() -> void:
-	var id := "01"
+	var id := "atacante"
 	var out := "user://weapon_idle"
 	var stand := true
 	for arg in OS.get_cmdline_user_args():

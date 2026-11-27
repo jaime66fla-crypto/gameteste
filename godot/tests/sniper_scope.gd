@@ -24,7 +24,7 @@ func _run() -> void:
         var registry = load("res://scripts/characters/character_registry.gd")
         swat_test_path = "user://sniper_swat_%s.cfg" % OS.get_process_id()
         registry.storage_path = swat_test_path
-        registry.select_character("01")
+        registry.select_character("atacante")
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene
@@ -104,7 +104,8 @@ func _run() -> void:
         Input.action_press("move_forward")
         await _frames(15)
         Input.action_release("move_forward")
-        _check(player.position.distance_to(start) > 0.5, "Movement remains available while scoped")
+        # Aceleração/atrito do Linha de Fogo (estilo CS): mirando sai devagar do lugar (~0,25 m em 15 quadros).
+        _check(player.position.distance_to(start) > 0.15, "Movement remains available while scoped (%.2f m)" % player.position.distance_to(start))
         player.call("_reload")
         await _frames(2)
         _check(not player.call("is_scope_active") and not overlay.visible, "Reload closes the scope")
@@ -132,7 +133,9 @@ func _run() -> void:
         player.set("yaw", look_before)
         Input.action_release("aim")
         await _frames(45)
-        _check(absf(camera.fov - 72.0) < 0.1, "Releasing aim restores normal FOV")
+        # Visão de ombro igual à do Linha de Fogo (player.gd THIRD_PERSON_FOV).
+        var hip_fov: float = player.get_script().get_script_constant_map().get("THIRD_PERSON_FOV", 72.0)
+        _check(absf(camera.fov - hip_fov) < 0.1, "Releasing aim restores normal FOV (%.1f, esperado %.1f)" % [camera.fov, hip_fov])
         _check((player.get("avatar") as Node3D).visible and not (player.get("viewmodel") as Node3D).visible, "Releasing aim returns to third person")
         player.call("_equip_weapon", "sniper")
         Input.action_press("aim")

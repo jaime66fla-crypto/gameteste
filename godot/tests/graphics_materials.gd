@@ -8,7 +8,9 @@ func _check(condition: bool, message: String) -> void:
 func _texture_check(material: StandardMaterial3D, title: String) -> void:
     _check(material.albedo_texture != null, title + " must have surface texture")
     _check(material.normal_enabled and material.normal_texture != null, title + " must have relief")
-    _check(material.roughness_texture != null, title + " must have surface roughness")
+    # Gráfico do Linha de Fogo (lf_*): rugosidade constante por superfície, sem mapa.
+    if not material.resource_name.begins_with("map_") and not material.resource_name.begins_with("lf_"):
+        _check(material.roughness_texture != null, title + " must have surface roughness")
     if material.albedo_texture == null:
         return
     var image := material.albedo_texture.get_image()
@@ -67,7 +69,9 @@ func _run() -> void:
     _check(env.background_mode == Environment.BG_SKY and env.sky != null, "Sky has a horizon gradient")
     for child in scene.get_children():
         if child is DirectionalLight3D:
-            _check(child.light_energy + env.ambient_light_energy <= 1.3, "Lighting budget avoids washed-out white surfaces")
+            # Linha de Fogo: ACES segura o branco; o orçamento cresce com ele.
+            var budget := 2.3 if env.tonemap_mode == Environment.TONE_MAPPER_ACES else 1.3
+            _check(child.light_energy + env.ambient_light_energy <= budget, "Lighting budget avoids washed-out white surfaces")
     print("GRAPHICS INITIALIZATION: ",Time.get_ticks_msec()-begin,"ms")
     scene.queue_free()
     await process_frame

@@ -8,8 +8,9 @@ extends SceneTree
 ## - skin bind poses recomputed so the mesh rests exactly where it was.
 ## Output: assets/personagens/manequim/manequim_modelo.scn
 ## godot --headless --path godot --script res://tools/characters/build_mannequin_model.gd
-## "-- --id=01": same conversion for character 01 (tools/blender/build_01.py ->
-## assets/personagens/01/01.glb, MPFB human whose rig already has Mixamo names).
+## "-- --id=atacante" / "-- --id=defensor": same conversion for the Linha de Fogo
+## soldiers (fps-tatico/tools/build_soldiers.py -> assets/personagens/<id>/<id>.glb,
+## MPFB humans whose rig already has Mixamo names).
 var SOURCE := "res://assets/personagens/ual2/UAL2_Standard.glb"
 const REFERENCE := "res://assets/personagens/downloaded/avatar.fbx"
 var OUT_DIR := "res://assets/personagens/manequim"
@@ -18,8 +19,8 @@ var OUT_SCENE := "res://assets/personagens/manequim/manequim_modelo.scn"
 var SOURCE_PREFIX := ""
 ## Single flat colour for every surface (alpha 0 = keep the source materials).
 var ALBEDO := Color(0, 0, 0, 0)
-## Skin texture for surfaces whose material is named "Pele*" (character 01:
-## MPFB skin baked in the MakeHuman UV layout; clothing skins can replace it).
+## Skin texture for surfaces whose material is named "Pele*" (MPFB skin baked in
+## the MakeHuman UV layout; unused by the current characters).
 var SKIN_TEXTURE := ""
 var MODEL_NAME := "Manequim"
 ## Keep the source (glTF) materials as they are: textures, normal maps; alpha
@@ -40,15 +41,20 @@ var ROUGHNESS := 0.42
 var SPECULAR := 0.55
 
 func _initialize() -> void:
-	if "--id=01" in OS.get_cmdline_user_args():
-		SOURCE = "res://assets/personagens/01/01.glb"
-		OUT_DIR = "res://assets/personagens/01"
-		OUT_SCENE = "res://assets/personagens/01/01_modelo.scn"
+	var soldier := ""
+	for arg in OS.get_cmdline_user_args():
+		if arg in ["--id=atacante", "--id=defensor"]:
+			soldier = arg.substr(5)
+	if not soldier.is_empty():
+		# Soldados do Linha de Fogo (fps-tatico/tools/build_soldiers.py): MakeHuman
+		# realista com rig "mixamo", roupa do time, colete e capacete, numa malha só
+		# com os materiais/texturas do MakeHuman (como o 02).
+		SOURCE = "res://assets/personagens/%s/%s.glb" % [soldier, soldier]
+		OUT_DIR = "res://assets/personagens/" + soldier
+		OUT_SCENE = "res://assets/personagens/%s/%s_modelo.scn" % [soldier, soldier]
 		SOURCE_PREFIX = "mixamorig_"
-		SKIN_TEXTURE = "res://assets/personagens/01/pele.png"
-		MODEL_NAME = "01"
-		ROUGHNESS = 0.68 # pele: fosca, sem brilho de plástico
-		SPECULAR = 0.35
+		MODEL_NAME = soldier
+		KEEP_MATERIALS = true
 	elif "--id=02" in OS.get_cmdline_user_args():
 		# 02 (tools/blender/build_02.py): MakeHuman realista, uma malha só com
 		# os materiais/texturas do próprio MakeHuman (pele, olhos, cabelo, roupa).
@@ -90,7 +96,7 @@ func _build() -> bool:
 	var src_root := (load(SOURCE) as PackedScene).instantiate()
 	var src := src_root.find_child("Skeleton3D", true, false) as Skeleton3D
 	var mesh_node: MeshInstance3D = null
-	# Roupas do 01 (tools/blender/build_01_roupas.py): malhas "Roupa_*" no mesmo rig.
+	# Roupas trocáveis: malhas "Roupa_*" no mesmo rig (o 01, removido, usava; os soldados não têm).
 	var clothes: Array[MeshInstance3D] = []
 	for node in src_root.find_children("*", "MeshInstance3D", true, false):
 		if (node as MeshInstance3D).skin == null:
@@ -174,7 +180,7 @@ func _build() -> bool:
 	var skin := mi.skin
 	for piece in clothes:
 		var cmi := _add_mesh(model, skeleton, piece, String(piece.name), src, new_of_src, align, globals)
-		cmi.visible = false # avatar_01.gd veste conforme a skin escolhida
+		cmi.visible = false # o script do personagem veste conforme a skin escolhida
 		print("roupa %s: %d tris" % [piece.name, cmi.mesh.get_faces().size() / 3])
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(OUT_DIR))
 	var scene := PackedScene.new()
@@ -214,7 +220,8 @@ func _add_mesh(model: Node3D, skeleton: Skeleton3D, mesh_node: MeshInstance3D, n
 			var kept := source_mat.duplicate() as BaseMaterial3D
 			# MPFB's game-engine material wires the texture alpha everywhere:
 			# only strand/card surfaces need it (skin and cloth stay opaque).
-			var strands := ["Hair", "Eyebrows", "Eyelashes"].any(func(part): return kept.resource_name.ends_with(part))
+			# 02: "02_Hair"; soldados: "Hair_short02" (tipo do asset antes do nome).
+			var strands := ["Hair", "Eyebrows", "Eyelashes"].any(func(part): return kept.resource_name.ends_with(part) or kept.resource_name.begins_with(part + "_"))
 			if strands:
 				kept.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
 				kept.cull_mode = BaseMaterial3D.CULL_DISABLED

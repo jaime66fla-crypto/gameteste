@@ -1,5 +1,5 @@
 {
-  "_comment": "Loja interna, lida pelo jogo (scripts/loja/store_catalog.gd) e pelo servidor (src/godot-accounts.js). Brasas: moeda da conta (não confundir com os créditos da loja da partida). Toda conta começa com 'start' Brasas e ganha 1 Brasa a cada 'xp_per_brasa' XP positivo. Itens com preco 0 são de todo mundo (o 01 é o personagem padrão e nem entra aqui). Grupos: 'personagens' (id = id do personagem em godot/characters), 'skins_armas' ('arma' + 'textura' que troca a cor da arma) e 'skins_personagens' (roupas do 01: 'peca' é a malha Roupa_<peca>; 'textura' troca a skin dessa peça).",
+  "_comment": "Loja interna, lida pelo jogo (scripts/loja/store_catalog.gd) e pelo servidor (src/godot-accounts.js). Brasas: moeda da conta (não confundir com os créditos da loja da partida). Toda conta começa com 'start' Brasas e ganha 1 Brasa a cada 'xp_per_brasa' XP positivo. Itens com preco 0 são de todo mundo (os soldados atacante e defensor são de todo mundo e nem entram aqui). Grupos: 'personagens' (id = id do personagem em godot/characters) e 'skins_armas' ('arma' + 'textura' que troca a cor da arma).",
   "currency": "Brasas",
   "start": 100,
   "xp_per_brasa": 10,
@@ -14,8 +14,7 @@
   ],
   "groups": [
     {"id": "personagens", "nome": "Personagens"},
-    {"id": "skins_armas", "nome": "Skins de armas"},
-    {"id": "skins_personagens", "nome": "Skins de personagens"}
+    {"id": "skins_armas", "nome": "Skins de armas"}
   ],
   "items": [
 
@@ -23,17 +22,6 @@
     {"id": "smg_azul_aco", "grupo": "skins_armas", "nome": "Submetralhadora azul-aço", "tipo": "Submetralhadora", "arma": "smg", "preco": 160, "textura": "res://assets/weapons/skins/smg_azul_aco.png"},
     {"id": "shotgun_ferrugem", "grupo": "skins_armas", "nome": "Escopeta ferrugem", "tipo": "Escopeta", "arma": "shotgun", "preco": 180, "textura": "res://assets/weapons/skins/shotgun_ferrugem.png"},
     {"id": "rifle_deserto", "grupo": "skins_armas", "nome": "Fuzil deserto", "tipo": "Fuzil", "arma": "rifle", "preco": 220, "textura": "res://assets/weapons/skins/rifle_deserto.png"},
-    {"id": "sniper_floresta", "grupo": "skins_armas", "nome": "Sniper floresta", "tipo": "Precisão", "arma": "sniper", "preco": 260, "textura": "res://assets/weapons/skins/sniper_floresta.png"},
-
-    {"id": "bone", "grupo": "skins_personagens", "nome": "Boné", "tipo": "Cabeça", "peca": "bone", "preco": 0},
-    {"id": "bone_vinho", "grupo": "skins_personagens", "nome": "Boné vinho", "tipo": "Cabeça", "peca": "bone", "preco": 120, "textura": "res://assets/personagens/01/roupas/bone_vinho.png"},
-    {"id": "camiseta", "grupo": "skins_personagens", "nome": "Camiseta grafite", "tipo": "Tronco", "peca": "camiseta", "preco": 0},
-    {"id": "camiseta_oliva", "grupo": "skins_personagens", "nome": "Camiseta oliva", "tipo": "Tronco", "peca": "camiseta", "preco": 180, "textura": "res://assets/personagens/01/roupas/camiseta_oliva.png"},
-    {"id": "calca", "grupo": "skins_personagens", "nome": "Calça jeans escura", "tipo": "Pernas", "peca": "calca", "preco": 0},
-    {"id": "calca_cinza", "grupo": "skins_personagens", "nome": "Calça cinza tática", "tipo": "Pernas", "peca": "calca", "preco": 220, "textura": "res://assets/personagens/01/roupas/calca_cinza.png"},
-    {"id": "bermuda", "grupo": "skins_personagens", "nome": "Bermuda oliva", "tipo": "Pernas", "peca": "bermuda", "preco": 0},
-    {"id": "tenis_asfalto", "grupo": "skins_personagens", "nome": "Tênis asfalto", "tipo": "Pés", "peca": "tenis", "preco": 180, "textura": "res://assets/personagens/01/roupas/tenis_asfalto.png"},
-    {"id": "tenis_brasa", "grupo": "skins_personagens", "nome": "Tênis brasa", "tipo": "Pés", "peca": "tenis", "preco": 240, "textura": "res://assets/personagens/01/roupas/tenis_brasa.png"},
-    {"id": "tenis_noturno", "grupo": "skins_personagens", "nome": "Tênis noturno", "tipo": "Pés", "peca": "tenis", "preco": 300, "textura": "res://assets/personagens/01/roupas/tenis_noturno.png"}
+    {"id": "sniper_floresta", "grupo": "skins_armas", "nome": "Sniper floresta", "tipo": "Precisão", "arma": "sniper", "preco": 260, "textura": "res://assets/weapons/skins/sniper_floresta.png"}
   ]
 }

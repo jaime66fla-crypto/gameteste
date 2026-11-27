@@ -8,8 +8,9 @@ signal shot_fired(weapon_id: String, from: Vector3, to: Vector3)
 @export_range(1.5, 2.1, 0.01) var height: float = 1.80
 @export_range(2.0, 10.0, 0.1) var speed: float = 5.0
 @export_range(1.0, 2.5, 0.05) var sprint_multiplier: float = 1.6
-@export_range(2.0, 12.0, 0.1) var jump_velocity: float = 8.5
-@export_range(0.0005, 0.01, 0.0001) var mouse_sensitivity: float = 0.0025
+@export_range(2.0, 12.0, 0.1) var jump_velocity: float = 6.2 # Linha de Fogo (com LF_GRAVITY: ~1,07 m)
+## Linha de Fogo: sensibilidade 2 do CS (0,044° por pixel); as opções multiplicam.
+@export_range(0.0002, 0.01, 0.00001) var mouse_sensitivity: float = 0.000768
 @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CROUCH_SPEED := 2.7
@@ -19,6 +20,46 @@ const AIM_MOVE_SPEED := 2.7
 ## feet do not slide.
 const WALK_SPEED := 1.6
 const PRONE_SPEED := 0.9 # rastejando
+## Controlador de movimento do Linha de Fogo (fps-tatico/scripts/player.gd), estilo CS.
+const LF_RUN_SPEED := 6.0
+const LF_WALK_MULT := 0.52 # Shift: andar silencioso
+const LF_CROUCH_MULT := 0.34
+const LF_ACCEL := 5.5
+const LF_AIR_ACCEL := 12.0
+const LF_AIR_WISH_CAP := 0.8
+const LF_FRICTION := 5.2
+const LF_STOP_SPEED := 2.0
+const LF_GRAVITY := 18.0
+const LF_MAX_SPEED := 7.5 # teto horizontal (abaixo do PLAYER_SPEED 9,5 do anticheat)
+## Arma na mão freia como no Linha de Fogo (fps-tatico/scripts/weapons_db.gd "speed").
+const LF_WEAPON_SPEED := {"pistol": 0.96, "smg": 0.96, "shotgun": 0.88, "rifle": 0.86, "sniper": 0.8}
+
+func _lf_run_speed() -> float:
+    if weapon_holstered or not melee_weapon.is_empty():
+        return LF_RUN_SPEED
+    return LF_RUN_SPEED * float(LF_WEAPON_SPEED.get(current_weapon, 1.0))
+
+func _lf_accelerate(wish_dir: Vector2, wish_speed: float, accel: float, delta: float) -> void:
+    if wish_speed <= 0.0 or wish_dir == Vector2.ZERO:
+        return
+    var current := velocity.x * wish_dir.x + velocity.z * wish_dir.y
+    var add := wish_speed - current
+    if add <= 0.0:
+        return
+    var acc := minf(accel * delta * maxf(wish_speed, LF_RUN_SPEED * 0.5), add)
+    velocity.x += wish_dir.x * acc
+    velocity.z += wish_dir.y * acc
+
+func _lf_friction(delta: float) -> void:
+    var spd := Vector2(velocity.x, velocity.z).length()
+    if spd < 0.05:
+        velocity.x = 0.0
+        velocity.z = 0.0
+        return
+    var control := maxf(spd, LF_STOP_SPEED)
+    var k := maxf(spd - control * LF_FRICTION * delta, 0.0) / spd
+    velocity.x *= k
+    velocity.z *= k
 @export_range(1.0, 60.0, 0.5) var acceleration := 24.0
 @export_range(1.0, 60.0, 0.5) var deceleration := 30.0
 var body_collision: CollisionShape3D
@@ -37,6 +78,11 @@ const FirstPersonViewmodel = preload("res://scripts/weapons/first_person_viewmod
 const HitboxScript = preload("res://scripts/net/hitbox.gd")
 ## Holding aim (except the sniper scope) switches to a CS-style first-person view.
 const BASE_FOV := 72.0
+## Visão em 3ª pessoa igual à do fps-tatico: lente mais aberta, câmera mais perto (2,5 m),
+## 0,5 m para o lado do ombro e 18 cm acima dos olhos.
+const THIRD_PERSON_FOV := 90.0
+const SHOULDER_OFFSET := 0.5
+const CAMERA_ABOVE_EYES := 0.18
 ## ADS zoom per weapon (CoD-like: iron sights ~1.1x, red dot/holo ~1.2-1.3x),
 ## applied to the base FOV. The sniper uses its own scope.
 const ADS_ZOOM := {"pistol": 1.10, "shotgun": 1.10, "smg": 1.20, "rifle": 1.30}
@@ -136,7 +182,7 @@ var arm_pivot: Node3D
 var avatar: Node3D
 var gun: Node3D
 var gun_flash: OmniLight3D
-var cam_distance := 3.6
+var cam_distance := 2.5
 var sound_fx: Node
 var muzzle_flare: MeshInstance3D
 var gun_kick := 0.0
@@ -206,7 +252,7 @@ func _ready() -> void:
     spring_probe.radius = 0.22
     spring.shape = spring_probe
     spring.collision_mask = HitboxScript.LAYER_WORLD
-    spring.position.x = 1.0
+    spring.position.x = SHOULDER_OFFSET
     arm_pivot.add_child(spring)
     camera = Camera3D.new()
     camera.current = true
@@ -253,7 +299,7 @@ func _install_selected_character() -> void:
     character_id = CharacterRegistry.DEFAULT_ID
     _install_humanoid_avatar()
 
-## Roupas vestidas (só no 01) e skin da arma na mão, para os outros jogadores
+## Roupas vestidas (personagem com roupas trocáveis; hoje nenhum) e skin da arma na mão, para os outros jogadores
 ## verem: vão no estado de rede como "rp" e "ws" (o servidor confere a posse).
 var _network_outfit: Array = []
 var _network_skins := {} # arma -> skin equipada (lida uma vez por arma)
@@ -262,7 +308,7 @@ func network_cosmetics() -> Dictionary:
     if not _network_skins.has(current_weapon):
         _network_skins[current_weapon] = CharacterRegistry.weapon_skin(current_weapon)
     var result := {"ws": _network_skins[current_weapon]}
-    if character_id == "01":
+    if humanoid_avatar != null and humanoid_avatar.has_method("vestir"):
         result["rp"] = _network_outfit
     return result
 
@@ -532,7 +578,7 @@ func _apply_mouse_look(relative: Vector2) -> void:
     var sensitivity := mouse_sensitivity / scope_zoom if is_scope_active() else mouse_sensitivity
     if first_person_view and not is_scope_active():
         # Same screen-relative speed as the hip view: scale by the FOV ratio.
-        var ratio := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(BASE_FOV) * 0.5)
+        var ratio := tan(deg_to_rad(camera.fov) * 0.5) / tan(deg_to_rad(THIRD_PERSON_FOV) * 0.5)
         sensitivity *= lerpf(1.0, ratio, ads_sensitivity_scale)
     var previous := Vector2(yaw, pitch)
     yaw -= relative.x * sensitivity
@@ -594,7 +640,7 @@ func _physics_process(delta: float) -> void:
                 done.call()
     var scoped := is_scope_active()
     var wants_first_person := aiming and not scoped and not has_bow()
-    var desired_fov := first_person_fov() if wants_first_person else BASE_FOV
+    var desired_fov := first_person_fov() if wants_first_person else THIRD_PERSON_FOV
     if scoped:
         desired_fov = rad_to_deg(2.0 * atan(tan(deg_to_rad(BASE_FOV) * 0.5) / scope_zoom))
     # Closing the optic restores the shoulder frame before showing the body.
@@ -607,12 +653,13 @@ func _physics_process(delta: float) -> void:
     var spring: SpringArm3D = camera.get_parent()
     var camera_blend := minf(1, delta * 16)
     spring.spring_length = lerpf(spring.spring_length, 0.0 if wants_first_person else (2.15 if aiming else cam_distance), camera_blend)
-    # O ombro fica 1 m para o lado; encostado numa parede esse ponto já estaria do
+    # O ombro fica 0,5 m para o lado; encostado numa parede esse ponto já estaria do
     # outro lado dela (dava para ver através). Limita pelo espaço livre, na hora.
-    var shoulder := 0.0 if wants_first_person else shoulder_side
+    var shoulder := 0.0 if wants_first_person else shoulder_side * SHOULDER_OFFSET
     spring.position.x = _shoulder_room(lerpf(spring.position.x, shoulder, camera_blend))
     var eye_height := height * (0.24 if prone else (0.62 if crouching else 0.92))
-    var shoulder_height := height * (0.30 if prone else (0.59 if crouching else 0.86))
+    # Visão do fps-tatico: a câmera fica um pouco acima dos olhos (vê por cima do ombro).
+    var shoulder_height := height * 0.30 if prone else eye_height + CAMERA_ABOVE_EYES
     arm_pivot.position.y = lerpf(arm_pivot.position.y, eye_height if wants_first_person else shoulder_height, minf(1,delta * 12))
     # The body hides once the camera is inside the head; the viewmodel replaces it.
     first_person_view = wants_first_person and spring.spring_length < FIRST_PERSON_CUTOFF
@@ -628,7 +675,11 @@ func _physics_process(delta: float) -> void:
     var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
     var water: Dictionary = water_query.call(global_position) if water_query.is_valid() else {}
     swimming = not water.is_empty() and float(water.get("surface", -100)) - global_position.y > 0.75
-    var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
+    # Controlador do Linha de Fogo: corre a LF_RUN_SPEED; Shift (e o andar) é o
+    # andar silencioso (52%), agachado 34%; não há sprint.
+    var quiet := Input.is_action_pressed("sprint") or walking
+    var run_speed := _lf_run_speed()
+    var current_speed: float = PRONE_SPEED if prone else (run_speed * LF_CROUCH_MULT if crouching else (run_speed * LF_WALK_MULT if quiet else run_speed))
     # Mirando (botão direito) anda em passo de mira, como nos jogos de mundo
     # aberto: mais lento que o normal (o anticheat só barra quem passa do teto).
     if aiming and not prone: current_speed = minf(current_speed, AIM_MOVE_SPEED)
@@ -641,15 +692,30 @@ func _physics_process(delta: float) -> void:
     current_speed *= 1.0 - LAND_SLOWDOWN * clampf(_land_recovery / LAND_RECOVERY_TIME, 0.0, 1.0)
     _land_recovery = maxf(0.0, _land_recovery - delta)
     var grounded_before := is_on_floor()
+    # Aceleração/atrito do Linha de Fogo (estilo CS): no chão o atrito freia e a
+    # aceleração empurra até a velocidade desejada; no ar só corrige um pouco
+    # (desejo limitado a LF_AIR_WISH_CAP), sem frear o impulso do pulo.
+    var wish := Vector2(movement.x, movement.z)
+    var wish_len := minf(wish.length(), 1.0)
+    var wish_dir := wish.normalized() if wish_len > 0.001 else Vector2.ZERO
+    var wish_speed := current_speed * wish_len
+    if grounded_before:
+        _lf_friction(delta)
+        _lf_accelerate(wish_dir, wish_speed, LF_ACCEL, delta)
+    else:
+        _lf_accelerate(wish_dir, minf(wish_speed, LF_AIR_WISH_CAP), LF_AIR_ACCEL, delta)
+    # Teto: nunca passa da velocidade do passo atual no chão (mirando, escudo, água...).
     var horizontal := Vector2(velocity.x, velocity.z)
-    var desired_velocity := Vector2(movement.x, movement.z) * current_speed
-    var rate := deceleration if desired_velocity.length_squared() < horizontal.length_squared() or horizontal.dot(desired_velocity) < 0.0 else acceleration
-    if not grounded_before:
-        # No ar o impulso do pulo se mantém: só um pouco de correção, sem frear.
-        rate = acceleration * AIR_CONTROL if desired_velocity.length_squared() > 0.01 else 0.0
-    horizontal = horizontal.move_toward(desired_velocity, rate * delta)
-    velocity.x = horizontal.x
-    velocity.z = horizontal.y
+    # Pulo em zigue-zague (bunny hop) não acumula velocidade além de LF_MAX_SPEED:
+    # o anticheat do servidor (src/godot-anticheat.js PLAYER_SPEED 9,5) marcaria infração.
+    if horizontal.length() > LF_MAX_SPEED:
+        horizontal = horizontal.limit_length(LF_MAX_SPEED)
+        velocity.x = horizontal.x
+        velocity.z = horizontal.y
+    if grounded_before and horizontal.length() > current_speed + 0.01 and wish_len > 0.0:
+        horizontal = horizontal.limit_length(maxf(current_speed, horizontal.length() - LF_ACCEL * current_speed * delta))
+        velocity.x = horizontal.x
+        velocity.z = horizontal.y
     # Pulo tolerante: vale apertar um pouco antes de tocar o chão (buffer) e um
     # pouco depois de sair da beirada (coyote time).
     _coyote_left = COYOTE_TIME if grounded_before else maxf(0.0, _coyote_left - delta)
@@ -673,7 +739,7 @@ func _physics_process(delta: float) -> void:
         _jump_buffer_left = 0.0
         _coyote_left = 0.0
     elif not grounded_before:
-        velocity.y -= float(ProjectSettings.get_setting("physics/3d/default_gravity")) * delta
+        velocity.y -= LF_GRAVITY * delta # gravidade do jogador no Linha de Fogo
     else:
         velocity.y = -0.1
     if swimming:
@@ -688,7 +754,7 @@ func _physics_process(delta: float) -> void:
     var actual_velocity := get_real_velocity()
     _update_body_facing(delta, actual_velocity)
     var actual_move := clampf(Vector2(actual_velocity.x, actual_velocity.z).length() / maxf(current_speed, 0.01), 0.0, 1.0)
-    sprinting = Input.is_action_pressed("sprint") and not aiming and not shield_raised and not crouching and not prone and actual_velocity.slide(Vector3.UP).length() > speed + 0.2 and input_vec.length() > 0.1
+    sprinting = false # controlador do Linha de Fogo: Shift é andar silencioso, sem sprint
     _animate_avatar(delta, actual_move, is_on_floor())
     fire_delay = maxf(0, fire_delay - delta)
     gun_flash.light_energy = move_toward(gun_flash.light_energy, 0.0, delta * 55.0)
@@ -949,9 +1015,19 @@ func _update_climb(delta: float) -> void:
         if sound_fx != null and sound_fx.has_method("landing"):
             sound_fx.call("landing", 0.1)
 
+## Postura de tiro sempre pronta (como no fps-tatico): com arma de fogo na mão o corpo fica
+## sempre de frente para a mira, arma levantada nas duas mãos (downloaded_avatar.gd: _apply_ual_stance).
+const ALWAYS_READY := true
+
+## Arma de fogo na mão (não guardada, sem arma branca nem arco).
+func _firearm_in_hand() -> bool:
+    return not weapon_holstered and melee_weapon.is_empty() and not has_bow()
+
 ## Arma de fogo na mão, baixa: não está mirando nem atirou há pouco.
 func _weapon_lowered() -> bool:
-    return not weapon_holstered and melee_weapon.is_empty() and not has_bow() and not aiming and _weapon_ready_left <= 0.0
+    if ALWAYS_READY:
+        return false
+    return _firearm_in_hand() and not aiming and _weapon_ready_left <= 0.0
 
 func face_aim(seconds: float) -> void:
     _face_aim_left = maxf(_face_aim_left, seconds)
@@ -1578,7 +1654,7 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
             # logo depois de um tiro; no resto do tempo vai baixa (pistola ao
             # lado do quadril, arma longa no colo) e o corpo vira para onde anda.
             _weapon_ready_left = maxf(0.0, _weapon_ready_left - delta)
-            var weapon_ready := aiming or _weapon_ready_left > 0.0
+            var weapon_ready := aiming or _weapon_ready_left > 0.0 or (ALWAYS_READY and _firearm_in_hand())
             aim_ready = aim_ready and weapon_ready
             if humanoid_avatar.has_method("set_weapon_ready"):
                 humanoid_avatar.call("set_weapon_ready", weapon_ready)

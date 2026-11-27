@@ -35,7 +35,7 @@ func _run() -> void:
 	var avatars: Array = []
 	for i in kinds.size():
 		for view in 2:
-			var avatar: Node3D = load("res://scenes/characters/01.tscn").instantiate()
+			var avatar: Node3D = load("res://scenes/characters/atacante.tscn").instantiate()
 			world.add_child(avatar)
 			avatar.position = Vector3(-3.75 + (i * 2 + view) * 1.5, 0, 0)
 			avatar.rotation.y = -0.6 if view == 0 else -1.57 # de costas (3/4) e de lado

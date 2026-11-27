@@ -1,29 +1,43 @@
 extends RefCounted
-## Materiais PBR dos mapas, feitos com o atlas de texturas urbanas
-## (assets/textures/maps, recortado por tools/import_map_atlas.gd).
+## Materiais PBR dos mapas, no gráfico do Linha de Fogo: texturas procedurais
+## repetíveis com normal map (assets/textures/lf, geradas por tools/gen_lf_textures.gd
+## a partir do gerador do fps-tatico, com as superfícies que só o Campo de Fogo tem).
 ## - Mapas online (match_map.gd): cada cor da paleta de data/match_maps.json
 ##   vira uma superfície — for_colour().
 ## - Sobrevivência (survival_world.gd e world_polish.gd): os tipos de chão e
 ##   parede de SurfaceMaterials passam a usar estas texturas — surface().
+## - Treino (training_ground.gd): as peças de grade usam lf() direto.
 ## Superfícies que repetem usam triplanar no espaço do mundo (o grão tem sempre
 ## o mesmo tamanho); caixotes usam a imagem inteira em cada face (UV da caixa).
-const TEX := "res://assets/textures/maps/%s_%s.png"
-## tipo: [metros cobertos por uma textura (0 = uma por face), relevo, metálico]
-const KINDS := {
-	"grass": [3.5, 0.35, 0.0],
-	"asphalt": [3.0, 0.7, 0.0],
-	"pavers": [2.4, 0.9, 0.0],
-	"concrete": [3.0, 0.7, 0.0],
-	"brick": [1.2, 0.9, 0.0],
-	"roof": [1.5, 0.9, 0.3],
-	"dirt": [3.0, 0.8, 0.0],
-	"gravel": [1.5, 1.0, 0.0],
-	"leaves": [2.0, 0.8, 0.0],
-	"hazard": [1.0, 0.5, 0.0],
-	"plaster": [3.0, 0.3, 0.0],
-	"crate_wood": [0.0, 0.9, 0.0],
-	"crate_metal": [0.0, 0.9, 0.4],
+## (Antes: atlas de texturas urbanas escuras, assets/textures/maps.)
+const TEX := "res://assets/textures/lf/%s.png"
+const NORMAL := "res://assets/textures/lf/%s_n.png"
+## textura do Linha: [metros cobertos por uma textura, relevo, rugosidade, metálico]
+const LF := {
+	"floor": [4.0, 1.0, 0.95, 0.0], # lajotas de 1 m
+	"plaster": [4.0, 1.0, 0.95, 0.0],
+	"stone": [2.4, 1.0, 0.9, 0.0],
+	"stone_dark": [2.4, 1.0, 0.9, 0.0],
+	"concrete": [2.0, 1.0, 0.9, 0.0],
+	"crate": [1.0, 1.0, 0.85, 0.0],
+	"metal": [2.0, 1.0, 0.6, 0.35],
+	"trim": [2.0, 1.0, 0.9, 0.0],
+	"grass": [3.5, 0.8, 0.95, 0.0],
+	"asphalt": [3.0, 0.8, 0.9, 0.0],
+	"dirt": [3.0, 1.0, 0.95, 0.0],
+	"gravel": [1.5, 1.0, 0.95, 0.0],
+	"leaves": [2.0, 1.0, 0.95, 0.0],
+	"hazard": [1.0, 0.6, 0.8, 0.0],
 }
+## Superfície do jogo -> textura do Linha de Fogo.
+const KINDS := {
+	"grass": "grass", "asphalt": "asphalt", "pavers": "floor", "concrete": "concrete",
+	"brick": "stone", "roof": "metal", "dirt": "dirt", "gravel": "gravel",
+	"leaves": "leaves", "hazard": "hazard", "plaster": "plaster",
+	"crate_wood": "crate", "crate_metal": "metal",
+}
+## Caixotes: uma imagem inteira por face (UV da caixa).
+const PER_FACE := ["crate_wood", "crate_metal"]
 ## Cor da paleta dos mapas online -> superfície.
 const BY_COLOUR := {
 	"grass": "grass", "road": "asphalt", "base": "pavers", "border": "concrete",
@@ -31,15 +45,13 @@ const BY_COLOUR := {
 	"wall": "concrete",
 	"red": "plaster", "blue": "plaster", "yellow": "plaster", "teal": "plaster",
 }
-## Tipos da Sobrevivência (nomes de SurfaceMaterials) -> superfície do atlas.
+## Tipos da Sobrevivência (nomes de SurfaceMaterials) -> superfície.
 const SURVIVAL := {
 	"asphalt": "asphalt", "concrete": "concrete", "grass": "grass",
 	"plaster": "plaster", "roof": "roof", "dirt": "dirt",
 }
-## Só o reboco recebe a cor cheia (é tinta); o resto tem cor própria na foto.
+## Só o reboco recebe a cor cheia (é tinta); o resto tem cor própria na textura.
 const PAINTED := ["plaster"]
-## Tintas trocadas por tons escuros, no clima do atlas (casas azuis).
-const DARK_PAINT := {"blue": "#34495e", "teal": "#2f4f4c"}
 
 static var _cache: Dictionary = {}
 
@@ -47,7 +59,7 @@ static func kind_for(colour: String) -> String:
 	return BY_COLOUR.get(colour, "plaster")
 
 static func per_face(kind: String) -> bool:
-	return float(KINDS[kind][0]) <= 0.0
+	return kind in PER_FACE
 
 ## Tinta de fachada mais sóbria: tira o excesso de saturação da paleta de
 ## brinquedo e puxa um pouco para o quente, como tinta de parede ao sol.
@@ -73,48 +85,46 @@ static func for_colour(colour: String, hex: String) -> StandardMaterial3D:
 	var kind := kind_for(colour)
 	if not kind in PAINTED:
 		return _make(kind, Color.WHITE, true)
-	var tint := Color(DARK_PAINT[colour]) if DARK_PAINT.has(colour) else paint(hex)
-	return _make(kind, tint, true)
+	return _make(kind, paint(hex), true)
 
-## Sobrevivência: null quando o tipo não é do atlas (madeira, metal, tecido...).
+## Sobrevivência: null quando o tipo não é dos mapas (madeira, metal, tecido...).
 static func surface(kind: String, hex: String) -> StandardMaterial3D:
 	if not SURVIVAL.has(kind):
 		return null
-	var atlas: String = SURVIVAL[kind]
-	if not atlas in PAINTED:
-		return _make(atlas, hue_hint(hex), false)
-	return _make(atlas, dark_blue(Color(hex)), false)
-
-## Parede azulada fica num azul-ardósia escuro (o resto da tinta não muda).
-static func dark_blue(c: Color) -> Color:
-	if c.b > c.r + 0.08 and c.b >= c.g:
-		return c.darkened(0.55)
-	return c
+	var mapped: String = SURVIVAL[kind]
+	if not mapped in PAINTED:
+		return _make(mapped, hue_hint(hex), false)
+	return _make(mapped, paint(hex), false)
 
 static func _make(kind: String, tint: Color, double_sided: bool) -> StandardMaterial3D:
-	var key := kind + tint.to_html() + str(double_sided)
+	var m := lf(KINDS[kind], tint, true, per_face(kind), double_sided)
+	m.resource_name = "map_" + kind
+	return m
+
+## Material do Linha de Fogo (textura de assets/textures/lf). world = false: a
+## textura acompanha o objeto (peças que se mexem). per_face: uma imagem por face.
+static func lf(texture: String, tint: Color = Color.WHITE, world: bool = true, face: bool = false, double_sided: bool = false) -> StandardMaterial3D:
+	var key := "%s|%s|%s|%s|%s" % [texture, tint.to_html(), world, face, double_sided]
 	if _cache.has(key):
 		return _cache[key]
-	var spec: Array = KINDS[kind]
+	var spec: Array = LF[texture]
 	var m := StandardMaterial3D.new()
-	m.resource_name = "map_" + kind
+	m.resource_name = "lf_" + texture
 	m.albedo_color = tint
-	m.albedo_texture = load(TEX % [kind, "albedo"])
+	m.albedo_texture = load(TEX % texture)
 	m.normal_enabled = true
-	m.normal_texture = load(TEX % [kind, "normal"])
+	m.normal_texture = load(NORMAL % texture)
 	m.normal_scale = spec[1]
-	m.roughness = 1.0
-	m.roughness_texture = load(TEX % [kind, "rough"])
-	m.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
-	m.metallic = spec[2]
+	m.roughness = spec[2]
+	m.metallic = spec[3]
 	m.metallic_specular = 0.4
 	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	if per_face(kind):
+	if face:
 		m.texture_repeat = false
 	else:
 		m.texture_repeat = true
 		m.uv1_triplanar = true
-		m.uv1_world_triplanar = true
+		m.uv1_world_triplanar = world
 		m.uv1_triplanar_sharpness = 12.0 # caixas: quase sem mistura entre faces
 		m.uv1_scale = Vector3.ONE / float(spec[0])
 	if double_sided:

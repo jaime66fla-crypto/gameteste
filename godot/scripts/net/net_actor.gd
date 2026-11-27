@@ -129,7 +129,7 @@ func setup(id: String, label: String, bot: bool) -> void:
 ## Personagem visível deste combatente: jogadores mandam o seu no estado ("ch");
 ## bots ganham um fixo pelo id (o mesmo em todos os jogos, sem tráfego de rede).
 var character_id := CharacterRegistry.DEFAULT_ID
-## Roupas (só o 01) e skin da arma que este jogador comprou e está usando, vindas
+## Roupas (só personagem com roupas trocáveis; hoje nenhum) e skin da arma que este jogador comprou e está usando, vindas
 ## do estado ("rp"/"ws", conferidas pelo servidor). Sem "rp" = roupa padrão.
 var outfit: Variant = null # PackedStringArray quando o jogador mandou
 var weapon_skin := ""
@@ -236,7 +236,7 @@ func _set_weapon(id: String) -> void:
 	if visual.has_method("bind_weapon"):
 		visual.call("bind_weapon", weapon_model)
 
-## Veste no boneco as roupas que o jogador mandou (o 01 já nasce com a padrão).
+## Veste no boneco as roupas que o jogador mandou (se o personagem tiver roupas trocáveis).
 func _apply_outfit() -> void:
 	if outfit != null and visual != null and visual.has_method("vestir"):
 		visual.call("vestir", outfit)
