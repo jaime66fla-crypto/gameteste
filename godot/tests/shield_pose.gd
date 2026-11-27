@@ -58,7 +58,7 @@ func _run() -> void:
 		env.environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 		env.environment.ambient_light_color = Color(0.6, 0.6, 0.6)
 		root.add_child(env)
-	var avatar: Node3D = load("res://scenes/characters/avatar.tscn").instantiate()
+	var avatar: Node3D = load("res://scenes/characters/01.tscn").instantiate()
 	root.add_child(avatar)
 	await process_frame
 	check(bool(avatar.call("is_visual_ready")), "avatar carregado")

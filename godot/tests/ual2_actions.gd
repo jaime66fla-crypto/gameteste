@@ -1,6 +1,6 @@
 extends SceneTree
 ## UAL2 (Quaternius) clips on every catalog character, the action layer,
-## idle fidgets, the mannequin as a networked body and the zombie legs.
+## idle fidgets, the 01 as a networked body and the zombie legs.
 ## godot --headless --path godot --script res://tests/ual2_actions.gd
 const Registry = preload("res://scripts/characters/character_registry.gd")
 const Avatar = preload("res://scripts/characters/downloaded_avatar.gd")
@@ -26,7 +26,7 @@ func _step(visual: Node, frames: int, move: float = 0.0, velocity := Vector3.ZER
 		await process_frame
 
 func _run() -> void:
-	for id in ["avatar_ch31", "remy", "manequim"]:
+	for id in ["01"]:
 		_check(Registry.is_available(id), id + " must be available")
 		var visual := Registry.create_visual(id)
 		root.add_child(visual)
@@ -100,7 +100,7 @@ func _run() -> void:
 		_check(not bool(visual.call("is_overlay_playing")), id + ": walking must cancel the fidget")
 		visual.queue_free()
 		await process_frame
-	# The mannequin as a remote player's body: hitboxes on its bones.
+	# The 01 as a remote player's body: hitboxes on its bones.
 	var scene = load("res://scenes/main.tscn").instantiate()
 	root.add_child(scene)
 	current_scene = scene
@@ -111,18 +111,18 @@ func _run() -> void:
 	actor.rotation.y = PI
 	scene.add_child(actor)
 	await process_frame
-	actor.call("apply_state", {"p": [0.0, 0.0, 20.0], "y": PI, "w": "rifle", "h": false, "ch": "manequim"})
+	actor.call("apply_state", {"p": [0.0, 0.0, 20.0], "y": PI, "w": "rifle", "h": false, "ch": "01"})
 	for i in 20:
 		await physics_frame
-	_check(str(actor.get("character_id")) == "manequim", "State 'ch' must switch the body to the mannequin")
+	_check(str(actor.get("character_id")) == "01", "State 'ch' must give the remote body the 01")
 	var space := actor.get_world_3d().direct_space_state
 	var base := actor.global_position
 	var hit := space.intersect_ray(PhysicsRayQueryParameters3D.create(base + Vector3(0, 1.62, 3), base + Vector3(0, 1.62, -3), HitboxScript.SHOT_MASK))
-	_check(not hit.is_empty() and str(hit["collider"].get("zone")) == "head", "Mannequin head must be hittable")
+	_check(not hit.is_empty() and str(hit["collider"].get("zone")) == "head", "01 head must be hittable")
 	var picks := {}
 	for i in 60:
 		picks[NetActorScript.bot_character("bot%d" % i)] = true
-	_check(picks.has("manequim") and picks.has("remy") and picks.has("avatar_ch31"), "Bots must use all three characters")
+	_check(picks.has("01"), "Bots must use the 01")
 	# Death: UAL1 Death01 drops the body and holds it lying down; revive stands it up.
 	var body: Node3D = actor.get("visual")
 	var body_skeleton: Skeleton3D = body.get("skeleton")

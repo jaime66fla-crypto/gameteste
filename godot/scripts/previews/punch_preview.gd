@@ -39,7 +39,7 @@ var hits := 0
 
 func _ready() -> void:
 	camera = Stage.build(self)
-	avatar = load("res://scenes/characters/avatar.tscn").instantiate()
+	avatar = load("res://scenes/characters/01.tscn").instantiate()
 	add_child(avatar)
 	dummy = DummyScript.new()
 	add_child(dummy)

@@ -32,7 +32,7 @@ func _run() -> void:
 	var specs := [["armado", true, false, 0.0], ["desarmado andando", false, false, 1.0], ["agachado armado", true, true, 0.0], ["agachado desarmado", false, true, 0.6]]
 	var avatars: Array = []
 	for i in specs.size():
-		var avatar: Node3D = load("res://scenes/characters/avatar.tscn").instantiate()
+		var avatar: Node3D = load("res://scenes/characters/01.tscn").instantiate()
 		world.add_child(avatar)
 		avatar.position = Vector3(-3.0 + i * 2.0, 0, 0)
 		avatar.rotation.y = -0.9 # três quartos, para ver joelho e braços

@@ -24,7 +24,7 @@ func _run() -> void:
         var registry = load("res://scripts/characters/character_registry.gd")
         swat_test_path = "user://sniper_swat_%s.cfg" % OS.get_process_id()
         registry.storage_path = swat_test_path
-        registry.select_character("jaime_swat")
+        registry.select_character("01")
     var scene = load("res://scenes/main.tscn").instantiate()
     root.add_child(scene)
     current_scene = scene

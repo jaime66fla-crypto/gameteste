@@ -8,8 +8,8 @@ func _run() -> void:
     var owned := arguments.is_empty()
     registry.storage_path = "user://character_restart_%s.cfg" % OS.get_process_id() if owned else arguments[0]
     if owned:
-        registry.select_character("jaime_swat")
-    var passed: bool = registry.load_selection() == "jaime_swat"
+        registry.select_character("01")
+    var passed: bool = registry.load_selection() == "01"
     var menu: Control = load(ProjectSettings.get_setting("application/run/main_scene")).instantiate()
     root.add_child(menu)
     current_scene = menu
@@ -19,7 +19,7 @@ func _run() -> void:
         await process_frame
         await process_frame
         var player := current_scene.get_node_or_null("Jaime")
-        passed = passed and player != null and player.get("character_id") == "jaime_swat"
+        passed = passed and player != null and player.get("character_id") == "01"
     else:
         passed = false
     current_scene.queue_free()

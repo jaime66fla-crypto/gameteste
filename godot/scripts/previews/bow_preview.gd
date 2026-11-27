@@ -15,7 +15,7 @@ func _ready() -> void:
 	camera = Stage.build(self)
 	avatar = Registry.create_visual(Registry.load_selection())
 	if avatar == null or not avatar.has_method("set_bow_state"):
-		avatar = load("res://scenes/characters/avatar.tscn").instantiate()
+		avatar = load("res://scenes/characters/01.tscn").instantiate()
 	add_child(avatar)
 	avatar.call("set_armed", false)
 	hint = Stage.hint(self, "ARCO E FLECHA · modelo Blender em escala real\nESPAÇO: puxar/relaxar | arco 1,25 m · flecha 0,85 m · avatar 1,80 m")

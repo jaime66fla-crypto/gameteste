@@ -5,8 +5,6 @@ extends SceneTree
 
 const MODELS := [
 	"res://assets/personagens/downloaded/avatar.fbx",
-	"res://assets/personagens/remy/remy_modelo.scn",
-	"res://assets/personagens/manequim/manequim_modelo.scn",
 	"res://assets/personagens/zumbi/zumbi_modelo.scn",
 ]
 

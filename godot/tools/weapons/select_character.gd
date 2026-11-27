@@ -1,5 +1,5 @@
 extends SceneTree
-## Explicit local operation: --script tools/weapons/select_character.gd -- jaime_swat
+## Explicit local operation: --script tools/weapons/select_character.gd -- 01
 func _initialize() -> void:
     var args := OS.get_cmdline_user_args()
     if args.size() != 1:

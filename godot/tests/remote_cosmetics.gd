@@ -60,9 +60,9 @@ func _run() -> void:
 	await _frames(3)
 	_check(not _gun_texture(actor).contains("/skins/"), "Skin do fuzil não deveria ir para a pistola: " + _gun_texture(actor))
 
-	# Trocar de personagem e voltar ao 01 mantém as roupas que ele mandou.
+	# Personagem que nao existe mais (cliente antigo) e voltar ao 01 mantém as roupas que ele mandou.
 	var remy := dressed.duplicate()
-	remy["ch"] = "remy"
+	remy["ch"] = "personagem_removido"
 	actor.call("apply_state", remy)
 	await _frames(5)
 	actor.call("apply_state", dressed)

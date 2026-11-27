@@ -114,12 +114,17 @@ test('store groups: every item has a known group, 01 is never sold', () => {
 test('paid characters are only shown to others when the account bought them', async () => {
 	const { allowedCharacter, ownedQuery, ownedFrom } = await import('../src/godot-accounts.js');
 	assert.equal(allowedCharacter('01', []), '01', 'padrão é livre');
-	assert.equal(allowedCharacter('remy', []), '');
-	assert.equal(allowedCharacter('remy', ['remy']), 'remy');
+	// Sem personagens pagos na loja (só o 01 desde a 1.51): nada a travar.
+	const paid = store.items.find((item) => item.grupo === 'personagens' && item.preco > 0);
+	if (paid) {
+		assert.equal(allowedCharacter(paid.id, []), '');
+		assert.equal(allowedCharacter(paid.id, [paid.id]), paid.id);
+	}
+	assert.equal(allowedCharacter('remy', []), 'remy', 'removido da loja: sem trava');
 	assert.equal(allowedCharacter('jaime_swat', []), 'jaime_swat', 'fora da loja: sem trava');
 	assert.equal(allowedCharacter('', []), '');
-	const url = new URL('https://internal/join?x=1' + ownedQuery({ owned: ['remy', 'rifle_deserto'] }) + '%2Cinventado');
-	assert.deepEqual(ownedFrom(url), ['remy', 'rifle_deserto']);
+	const url = new URL('https://internal/join?x=1' + ownedQuery({ owned: ['bone_vinho', 'rifle_deserto'] }) + '%2Cinventado');
+	assert.deepEqual(ownedFrom(url), ['bone_vinho', 'rifle_deserto']);
 	// A sessão interna leva os itens da conta até a sala.
 	const { accounts, data } = service();
 	const token = await register(accounts, 'Gil');

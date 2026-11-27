@@ -39,30 +39,30 @@ func _run() -> void:
 
 	# Sem conta: só o 01; personagem pago salvo volta para o 01.
 	_check(_ids(Registry.owned_characters()) == ["01"], "Sem login só o 01: %s" % [_ids(Registry.owned_characters())])
-	_check(Registry.select_character("remy") == ERR_UNAUTHORIZED, "Selecionar personagem não comprado deveria falhar")
+	_check(Registry.select_character("remy") == ERR_INVALID_PARAMETER, "Personagem removido não deveria ser selecionável")
 	Registry._save_values({"selected_id": "remy"})
-	_check(Registry.load_selection() == "01", "Personagem não comprado deveria voltar ao 01")
+	_check(Registry.load_selection() == "01", "Personagem removido salvo deveria voltar ao 01")
 	var store := StoreScreen.new()
 	root.add_child(store)
 	await process_frame
-	var buy := _find(store, "Buy_remy") as Button
+	var buy := _find(store, "Buy_rifle_deserto") as Button
 	_check(buy != null and buy.text == "Comprar" and buy.disabled, "Sem login, Comprar deveria estar desativado")
 	_check(_find(store, "Buy_bone") == null, "Item grátis não deveria estar à venda")
-	for group in ["personagens", "skins_armas", "skins_personagens"]:
+	_check(_find(store, "Grupo_personagens") == null, "Sem personagens à venda, o grupo não deveria aparecer")
+	for group in ["skins_armas", "skins_personagens"]:
 		_check(_find(store, "Grupo_" + group) != null, "Grupo faltando na loja: " + group)
 	store.queue_free()
 
-	# Conta com 300 Brasas que comprou o Remy, o fuzil deserto e o boné vinho.
+	# Conta com 300 Brasas que comprou o Remy (removido), o fuzil deserto e o boné vinho.
 	net.set("session_token", "0".repeat(64))
 	net.set("profile", {"name": "Teste", "brasas": 300, "owned": ["remy", "rifle_deserto", "bone_vinho"]})
-	_check("remy" in _ids(Registry.owned_characters()), "Remy comprado deveria aparecer no Cofre")
-	_check(Registry.select_character("remy") == OK and Registry.load_selection() == "remy", "Remy comprado deveria ser selecionável")
+	_check(_ids(Registry.owned_characters()) == ["01"], "Personagem removido não deveria aparecer no Cofre")
+	_check(Registry.load_selection() == "01", "Quem tinha o Remy volta para o 01")
 	store = StoreScreen.new()
 	root.add_child(store)
 	await process_frame
-	_check((_find(store, "Buy_remy") as Button).text == "Comprado", "Item da conta deveria aparecer como Comprado")
-	_check(not (_find(store, "Buy_manequim") as Button).disabled, "Com saldo (300), Manequim deveria estar à venda")
-	_check((_find(store, "Buy_pato") as Button).disabled, "Sem saldo (600 > 300), Pato deveria estar desativado")
+	_check((_find(store, "Buy_rifle_deserto") as Button).text == "Comprado", "Item da conta deveria aparecer como Comprado")
+	_check(not (_find(store, "Buy_tenis_noturno") as Button).disabled, "Com saldo (300), Tênis noturno deveria estar à venda")
 	_check((_find(store, "StoreBalance") as Label).text == "300 Brasas", "Saldo errado na loja")
 	store.queue_free()
 

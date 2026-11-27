@@ -18,10 +18,6 @@
     {"id": "skins_personagens", "nome": "Skins de personagens"}
   ],
   "items": [
-    {"id": "manequim", "grupo": "personagens", "nome": "Manequim", "tipo": "Personagem", "preco": 300},
-    {"id": "avatar_ch31", "grupo": "personagens", "nome": "Avatar CH31", "tipo": "Personagem", "preco": 400},
-    {"id": "remy", "grupo": "personagens", "nome": "Remy", "tipo": "Personagem", "preco": 500},
-    {"id": "pato", "grupo": "personagens", "nome": "Pato Tático", "tipo": "Personagem", "preco": 600},
 
     {"id": "pistol_oliva", "grupo": "skins_armas", "nome": "Pistola oliva", "tipo": "Pistola", "arma": "pistol", "preco": 120, "textura": "res://assets/weapons/skins/pistol_oliva.png"},
     {"id": "smg_azul_aco", "grupo": "skins_armas", "nome": "Submetralhadora azul-aço", "tipo": "Submetralhadora", "arma": "smg", "preco": 160, "textura": "res://assets/weapons/skins/smg_azul_aco.png"},

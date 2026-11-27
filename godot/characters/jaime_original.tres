@@ -1,9 +1,0 @@
-[gd_resource type="Resource" load_steps=2 format=3]
-[ext_resource type="Script" path="res://scripts/characters/character_definition.gd" id="1"]
-[resource]
-script = ExtResource("1")
-id = "jaime_original"
-display_name = "Jaime Original"
-description = "Jaime clássico, com o visual e os movimentos originais do Campo de Fogo."
-visual_scene = "res://scenes/characters/jaime_original.tscn"
-required_resources = PackedStringArray("res://scripts/avatar/avatar_controller.gd")

@@ -22,7 +22,7 @@ func _box(parent: Node3D, at: Vector3, size: Vector3) -> Target:
 func _run() -> void:
     var registry = load("res://scripts/characters/character_registry.gd")
     registry.storage_path = "user://obstruction_%s.cfg" % OS.get_process_id()
-    registry.select_character("jaime_swat")
+    registry.select_character("01")
     # Own empty world: map buildings must not intercept the synthetic targets.
     var scene := Node3D.new()
     root.add_child(scene)
