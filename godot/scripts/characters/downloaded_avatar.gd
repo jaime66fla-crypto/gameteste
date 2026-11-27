@@ -34,6 +34,17 @@ const UNARMED_RATE_MIN := 0.75
 const UNARMED_RATE_MAX := 1.45
 ## 1/s: quão rápido o ritmo dos ciclos acompanha a velocidade real.
 const CLIP_RATE_DAMP := 8.0
+## Velocidade de chão dos clipes armados (m/s, personagem de 1,8 m): a corrida
+## pelo deslocamento do quadril no arquivo original (2,81 m em 0,7 s); o andar
+## pelo pé apoiado, ~9% acima do walk_unarmed (1,48 m/s).
+const ARMED_RUN_GROUND_SPEED := 4.06
+const ARMED_WALK_GROUND_SPEED := 1.6
+## O andar com fuzil não passa disto (mais rápido vira marcha atlética).
+const ARMED_WALK_RATE_MAX := 1.7
+## Armado para a frente acima disto (m/s) corre em vez de andar; para voltar a
+## andar precisa cair ARMED_JOG_HYSTERESIS abaixo (sem piscar no limite).
+const ARMED_JOG_SPEED := 3.4
+const ARMED_JOG_HYSTERESIS := 0.4
 ## Clips whose own arm swing is kept (no procedural "relaxed arms" on top).
 const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed"]
 
@@ -303,13 +314,25 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_play_unarmed(moving, running, planar_velocity)
 		_finish_pose()
 		return
+	var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
+	# Armado para a frente rápido (o passo normal do jogo é 5 m/s): o andar com
+	# fuzil cobre só ~1,6 m/s, então ali ele virava "marcha atlética" a 1,8× com
+	# o pé escorregando ~40%. Acima de ARMED_JOG_SPEED usa a corrida com fuzil
+	# (4,06 m/s medidos), no ritmo da velocidade real. De lado/de ré continua a
+	# camada de pernas direcionais (_update_armed_legs) sobre o andar.
+	var forward := absf(rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))) <= 35.0
+	var jog_threshold := ARMED_JOG_SPEED - (ARMED_JOG_HYSTERESIS if current_clip == "run_in_place" else 0.0)
+	var armed_jog := moving and forward and speed > jog_threshold and crouch_weight < 0.5
 	if moving:
 		# Agachado não corre: anda devagar com as pernas dobradas.
-		clip = "run_in_place" if running and crouch_weight < 0.5 else "walk_with_rifle"
+		clip = "run_in_place" if (running or armed_jog) and crouch_weight < 0.5 else "walk_with_rifle"
 	elif current_clip == "run_in_place":
 		clip = "run_to_stop"
-	var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
-	var gait_rate := clampf(speed / (4.0 if running else 2.8), 0.75, 2.2) if moving else 1.0
+	var gait_rate := 1.0
+	if moving and clip == "run_in_place":
+		gait_rate = clampf(speed / ARMED_RUN_GROUND_SPEED, 0.75, 2.2)
+	elif moving:
+		gait_rate = clampf(speed / ARMED_WALK_GROUND_SPEED, 0.75, ARMED_WALK_RATE_MAX)
 	_play_clip(clip, gait_rate)
 	_finish_pose()
 
@@ -383,6 +406,10 @@ func _finish_pose() -> void:
 		_update_backpack()
 		return
 	_apply_armed_legs()
+	# Correndo armado e mirando: tronco quase em pé (a corrida inclina para a
+	# frente e a arma descia junto com o peito).
+	if current_clip == "run_in_place" and aim_weight > 0.001:
+		_limit_torso_lean(ARMED_LEGS_MAX_LEAN, aim_weight)
 	_apply_air()
 	_apply_crouch()
 	_apply_stand_pose()
@@ -1646,7 +1673,9 @@ func _apply_crouch() -> void:
 # outro pé sobe por IK. No ar os pés voltam ao clipe.
 const FOOT_PROBE := 0.6 # alcance do raio acima/abaixo da origem do personagem (m)
 const FOOT_STEP_LAYER := 8 # hitbox.gd LAYER_FOOT_PROBE
-var foot_ik_enabled := true
+## Pés no chão em degraus e rampas (raio por pé + IK de perna). Desligue para
+## comparar ou se pesar.
+@export var foot_ik_enabled := true
 var _foot_offsets := {"Left": 0.0, "Right": 0.0}
 var _airborne := false
 

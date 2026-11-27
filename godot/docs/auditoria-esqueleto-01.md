@@ -256,3 +256,62 @@ desligada pela variável exportada `rest_fixes_enabled`.
 Torção da mão contra o Ch31: esquerda 31° → 4,5°, direita 32° → 0,5°. A
 partir daqui, a auditoria mostra cerca de 19° de "desvio" no pé: é proposital,
 porque o pé do 01 fica plano em vez de copiar o ângulo do Ch31.
+
+## Etapas 4 e 5: camadas de animação e física (2026-11-26)
+
+### O que já existia (mantido, sem AnimationTree)
+
+O pedido era um AnimationTree com StateMachine e camadas. O 01 já faz isso em
+código no `downloaded_avatar.gd`, e trocar por um AnimationTree quebraria a
+mira, a recarga, as ações, o nado, o deitar e a pegada das armas, que dependem
+dessas camadas. Equivalência:
+
+| Pedido | Onde já está |
+|---|---|
+| idle / walk / run | `animate()` + `_play_unarmed()`: idle, andar e trote em 8 direções, sprint; armado: `idle_with_rifle` / `walk_with_rifle` / `run_in_place` |
+| jump / fall / land | `_update_air_state` + `_apply_air`: Jump_Start → Jump (loop) → Jump_Land, proporcional à queda; tolerância de 0,15 s em degraus |
+| Blend por velocidade | ritmo do ciclo = velocidade real / velocidade de chão do clipe, amortecido (`CLIP_RATE_DAMP`); troca de clipe com crossfade de 0,18–0,2 s; troca de direção mantém a fase do passo |
+| Camada do tronco com filtro de ossos | `_mask_weights("upper" / "arms" / "legs")` + `_blend_anim`: ações só no tronco, pernas laterais só nas pernas |
+| Parâmetro de mira | `set_aim_target` / `aim_weight` (entra e sai em ~0,15 s) + `_aim_mount`: o cano segue a mira, com IK de braço; a coluna divide a inclinação vertical com a cabeça |
+| IK de pé (opcional) | `_apply_foot_ik` (raio por pé + IK de perna); agora `@export var foot_ik_enabled` |
+| IK de mão na arma | `swat_grip.gd` + `_update_weapon_mount` (as duas mãos na arma) |
+| Aceleração / desaceleração / atrito | `player.gd`: 24 m/s² para acelerar e 30 m/s² para frear (para de 5 m/s em 0,17 s, sem deslizar); no ar mantém o impulso, com 35% de controle |
+| Giro suave | `player._update_body_facing`: `lerp_angle` (taxa 10/s) quando o corpo é livre (arma branca ou mãos vazias), com inclinação nas curvas; com arma de fogo o corpo segue a câmera (padrão de tiro em 3ª pessoa) |
+| Pulo | coyote time 0,12 s, buffer de 0,12 s, impacto na aterrissagem |
+
+### O que estava torto e foi corrigido
+
+**Armado, andando para a frente no passo normal (5 m/s), o personagem fazia
+"marcha atlética" com o pé escorregando.** O jogo tocava o andar com fuzil a
+1,79× supondo que ele cobria 2,8 m/s, mas o clipe cobre ~1,6 m/s. O pé
+escorregava ~43% em cada passo, e esse é o estado em que o jogador passa a
+maior parte do tempo.
+
+- Acima de 3,4 m/s (voltando abaixo de 3,0), armado para a frente agora usa a
+  corrida com fuzil (`run_in_place`, 4,06 m/s medidos no arquivo original) no
+  ritmo da velocidade real.
+- O andar com fuzil usa a velocidade de chão certa (1,6 m/s), limitado a 1,7×.
+- Mirando enquanto corre, o tronco fica quase em pé (máximo de 0,22 rad).
+
+| Situação (armado) | Antes | Depois |
+|---|---|---|
+| Andar (tecla), 1,6 m/s | andar 0,75× (pé escorrega ~25%) | andar 1,00× (0%) |
+| Escudo, 2,5 m/s | andar 0,89× (~43%) | andar 1,56× (0%) |
+| Agachado, 2,7 m/s | andar 0,96× (~43%) | andar 1,69× (0%) |
+| **Normal, 5 m/s** | **andar 1,79× (~43%)** | **corrida 1,23× (0%)** |
+| Sprint, 8 m/s | corrida 1,97× | igual |
+| De lado/de ré | pernas de trote/andar direcionais | igual |
+
+### O que não foi mexido, e por quê
+
+- **Velocidades (5 / 8 / 2,7 / 1,6 m/s), pulo (8,5 m/s) e gravidade (22):** o
+  anticheat do servidor confere velocidade, e as fases contam com esse pulo
+  (subir em bordas de até 1,25 m sem escalar). Mudar isso exige mudar o
+  servidor e as fases juntos.
+- **Aceleração e frenagem (24 / 30 m/s²):** já param sem deslizar e são o
+  ritmo de jogo de tiro atual. Ficam exportadas no `player.gd` para quem
+  quiser testar outros valores.
+- **Giro no lugar com arma de fogo:** o corpo segue a câmera instantaneamente,
+  e virar o mouse parado gira o personagem sem passo. Corrigir exige um giro
+  com atraso das pernas, que também mexe no yaw enviado pela rede e nas
+  hitboxes. Fica como pendência.
