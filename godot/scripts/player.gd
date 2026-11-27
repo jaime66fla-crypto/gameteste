@@ -139,6 +139,9 @@ var sound_fx: Node
 var muzzle_flare: MeshInstance3D
 var gun_kick := 0.0
 var current_weapon := "pistol"
+## Segundos que a pistola fica levantada depois de um tiro (depois baixa).
+const WEAPON_READY_HOLD := 1.6
+var _weapon_ready_left := 0.0
 var weapon_holstered := false
 ## Escudo no braço esquerdo (item da sobrevivência): id do item ("" = sem escudo)
 ## e a guarda alta, que liga/desliga no botão FIXA (ação "shield").
@@ -1355,6 +1358,11 @@ func _shoot() -> void:
     sound_fx.shot(current_weapon)
     if humanoid_avatar != null and humanoid_avatar.has_method("notify_shot"):
         humanoid_avatar.call("notify_shot")
+    # Pistola baixa: levanta já neste quadro, o tiro sai do cano apontado.
+    _weapon_ready_left = WEAPON_READY_HOLD
+    if humanoid_avatar != null and humanoid_avatar.has_method("raise_weapon_now"):
+        humanoid_avatar.call("set_aim_target", crosshair_point(), true)
+        humanoid_avatar.call("raise_weapon_now")
     var aim := _aim_setup()
     var origin: Vector3 = aim["origin"]
     var forward: Vector3 = aim["forward"]
@@ -1547,6 +1555,13 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
         if humanoid_avatar.has_method("set_aim_target"):
             # Third-person barrel follows the crosshair (not while sprinting/reloading).
             var aim_ready := not weapon_holstered and not reloading and not sprinting
+            # Pistola: só fica apontada mirando, atirando ou logo depois de um
+            # tiro; no resto do tempo vai baixa ao lado do quadril.
+            _weapon_ready_left = maxf(0.0, _weapon_ready_left - delta)
+            var weapon_ready := current_weapon != "pistol" or aiming or _weapon_ready_left > 0.0
+            aim_ready = aim_ready and weapon_ready
+            if humanoid_avatar.has_method("set_weapon_ready"):
+                humanoid_avatar.call("set_weapon_ready", weapon_ready)
             humanoid_avatar.call("set_aim_target", crosshair_point(), aim_ready)
         var running := sprinting
         if humanoid_avatar.has_method("set_prone"):

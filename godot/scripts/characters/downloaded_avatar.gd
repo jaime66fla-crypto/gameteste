@@ -31,7 +31,10 @@ const UNARMED_JOG_SPEED := 2.3
 ## Playback rate limits: past them the stride slides a little instead of the
 ## legs turning over unnaturally fast (the game moves at 5 m/s, a fast jog).
 const UNARMED_RATE_MIN := 0.75
-const UNARMED_RATE_MAX := 1.45
+const UNARMED_RATE_MAX := 1.25 # 1,45 dava 4,8 passos/s no trote: frenético
+## Teto do ritmo da corrida (sprint de 8 m/s): 1,5× = 4,3 passos/s; acima disso
+## as pernas giram rápido demais (o pé escorrega um pouco em vez disso).
+const RUN_RATE_MAX := 1.5
 ## 1/s: quão rápido o ritmo dos ciclos acompanha a velocidade real.
 const CLIP_RATE_DAMP := 8.0
 ## Velocidade de chão dos clipes armados (m/s, personagem de 1,8 m): a corrida
@@ -255,6 +258,57 @@ func bind_weapon(model: Node3D) -> void:
 func set_armed(value: bool) -> void:
 	armed = value
 
+# --- Pistola baixa -------------------------------------------------------
+# Sem mirar nem atirar, a pistola fica na mão direita ao lado do quadril, cano
+# para baixo e para a frente; a mão esquerda solta. Antes ela ficava sempre
+# esticada na frente do peito apontando para a mira (braços "levantados").
+# Quem controla diz se a arma está pronta (set_weapon_ready); no clique o
+# player chama raise_weapon_now() para o tiro já sair do cano levantado.
+const PISTOL_LOW_PITCH := deg_to_rad(62.0) # cano abaixo da horizontal
+const PISTOL_LOW_RATE := 7.0 # 1/s para baixar (subir é imediato no tiro)
+const PISTOL_RAISE_RATE := 12.0
+var weapon_ready := true
+var _pistol_low := 0.0
+
+func set_weapon_ready(value: bool) -> void:
+	weapon_ready = value
+
+## Levanta a arma já neste quadro (o tiro sai da ponta do cano).
+func raise_weapon_now() -> void:
+	weapon_ready = true
+	_pistol_low = 0.0
+	if aim_active:
+		aim_weight = 1.0
+	if ready_ok:
+		_update_weapon_mount()
+
+func _update_pistol_low(delta: float) -> void:
+	var low := armed and weapon_id == "pistol" and not weapon_ready
+	_pistol_low = move_toward(_pistol_low, 1.0 if low else 0.0, delta * (PISTOL_LOW_RATE if low else PISTOL_RAISE_RATE))
+
+## Pistola na mão direita ao lado do quadril (espaço do esqueleto).
+func _pistol_low_transform() -> Transform3D:
+	var hips := Grip._bone(skeleton, "Hips")
+	var chest := Grip._bone(skeleton, "Spine2")
+	var arm := Grip._bone(skeleton, "RightArm")
+	var grip := weapon_mount.get_node_or_null("RightGrip") as Marker3D
+	if hips < 0 or chest < 0 or arm < 0 or grip == null:
+		return weapon_mount.transform
+	var chest_pose := skeleton.get_bone_global_pose(chest)
+	var hip := skeleton.get_bone_global_pose(hips).origin
+	var lateral := skeleton.get_bone_global_pose(arm).origin - chest_pose.origin
+	lateral.y = 0.0
+	var forward := chest_pose.basis.orthonormalized() * Vector3.BACK # Mixamo: frente = +Z
+	forward.y = 0.0
+	if lateral.length_squared() < 0.000001 or forward.length_squared() < 0.000001:
+		return weapon_mount.transform
+	lateral = lateral.normalized()
+	forward = forward.normalized()
+	var barrel := (forward * cos(PISTOL_LOW_PITCH) + Vector3.DOWN * sin(PISTOL_LOW_PITCH)).normalized()
+	var basis := Basis.looking_at(barrel, forward)
+	var grip_point := hip + lateral * 0.21 + forward * 0.1 + Vector3.UP * 0.05
+	return Transform3D(basis, grip_point - basis * grip.position)
+
 ## World point the barrel should point at; inactive while sprinting/reloading.
 func set_aim_target(point: Vector3, active: bool) -> void:
 	aim_target = point
@@ -269,6 +323,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	_last_delta = delta
 	_update_air_state(airborne, planar_velocity.y)
 	_update_reload(reloading_now)
+	_update_pistol_low(delta)
 	_airborne = airborne
 	_planar_speed = Vector2(planar_velocity.x, planar_velocity.z).length()
 	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
@@ -330,7 +385,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		clip = "run_to_stop"
 	var gait_rate := 1.0
 	if moving and clip == "run_in_place":
-		gait_rate = clampf(speed / ARMED_RUN_GROUND_SPEED, 0.75, 2.2)
+		gait_rate = clampf(speed / ARMED_RUN_GROUND_SPEED, 0.75, RUN_RATE_MAX)
 	elif moving:
 		gait_rate = clampf(speed / ARMED_WALK_GROUND_SPEED, 0.75, ARMED_WALK_RATE_MAX)
 	_play_clip(clip, gait_rate)
@@ -350,8 +405,12 @@ func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> voi
 	_direction_sector = _pick_sector(angle)
 	var suffix: String = DIRECTION_SUFFIXES[_direction_sector]
 	# The sprint clip only runs forward; sideways/backward sprints jog that way.
-	if running and crouch_weight < 0.5 and absf(angle) <= 60.0:
-		_play_clip("run_in_place", clampf(speed / 4.0, 0.75, 2.2))
+	# Para a frente no passo normal (5 m/s) também corre: o trote tocava a
+	# 1,45× (4,8 passos/s, frenético) e ainda escorregava.
+	var run_threshold := ARMED_JOG_SPEED - (ARMED_JOG_HYSTERESIS if current_clip == "run_in_place" else 0.0)
+	var fast_forward := speed > run_threshold and absf(angle) <= 35.0
+	if (running and absf(angle) <= 60.0 or fast_forward) and crouch_weight < 0.5:
+		_play_clip("run_in_place", clampf(speed / ARMED_RUN_GROUND_SPEED, 0.75, RUN_RATE_MAX))
 		return
 	# Hysteresis so the gait does not flicker around the threshold.
 	var jog_threshold := UNARMED_JOG_SPEED - (0.3 if current_clip.begins_with("jog_unarmed") else 0.0)
@@ -2266,6 +2325,8 @@ const JUMP_START_UNTIL := 0.55 # s: depois disso, o ciclo Jump
 const AIR_FADE_IN := 0.1
 const AIR_GRACE := 0.15 # s no ar sem ter pulado antes de virar pose de queda
 const AIR_FADE_OUT := 0.07
+## Peso máximo das pernas do clipe de pulo (o resto fica da locomoção).
+const AIR_LEGS_MAX := 0.45
 const LAND_FROM := 0.04 # s: o Jump_Land começa um pouco acima do chão
 const LAND_END := 0.74 # s: quadril de volta à altura normal
 const LAND_RATE := 1.35 # amortece mais rápido que o clipe (jogo é ágil)
@@ -2297,7 +2358,10 @@ func _apply_air() -> void:
 		_air_weight = 0.0
 		_land_time = -1.0
 		return
-	var mask := "full" if unarmed_weight > 0.5 and not aim_active else "legs"
+	# Só quadril e pernas: no corpo todo o Jump da UAL1 abria os braços em cruz
+	# (pose de T) e afastava os joelhos ("sapo"). Os braços seguem a locomoção /
+	# a arma, e as pernas do clipe entram a AIR_LEGS_MAX (junta mais os joelhos).
+	var mask := "legs"
 	# Degrau, rampa e quina tiram o pé do chão por um ou dois quadros: só é
 	# "no ar" quem pulou ou já está caindo há AIR_GRACE.
 	var in_air := _airborne and (_air_jumped or _air_time > AIR_GRACE)
@@ -2305,10 +2369,10 @@ func _apply_air() -> void:
 	if _air_weight > 0.001:
 		var start_t := JUMP_START_FROM + _air_time
 		if _air_jumped and start_t < JUMP_START_UNTIL and ual_clips.has("jump_start"):
-			_blend_ual("jump_start", start_t, _smooth(_air_weight), mask)
+			_blend_ual("jump_start", start_t, _smooth(_air_weight) * AIR_LEGS_MAX, mask)
 		elif ual_clips.has("jump"):
 			var loop: Animation = ual_clips["jump"][0]
-			_blend_ual("jump", fmod(_air_time, loop.length), _smooth(_air_weight), mask)
+			_blend_ual("jump", fmod(_air_time, loop.length), _smooth(_air_weight) * AIR_LEGS_MAX, mask)
 	if _land_time >= 0.0:
 		_land_time += _last_delta * LAND_RATE
 		if _land_time >= LAND_END:
@@ -2421,6 +2485,9 @@ func _update_weapon_mount() -> void:
 	# The hand anchoring above only translates; re-aim from the final grip spot.
 	if aim_weight > 0.001 and current_clip not in ["punch", "elbow_punch"]:
 		_aim_mount()
+	# Pistola baixa (sem mirar/atirar): arma desce para o lado do quadril.
+	if is_pistol and _pistol_low > 0.001 and _reload_weight <= 0.001 and not _shield_in_hand():
+		weapon_mount.transform = weapon_mount.transform.interpolate_with(_pistol_low_transform(), _smooth(_pistol_low))
 	var reloading_hands := _reload_weight > 0.001 and not _shield_in_hand() and weapon_id != "bow"
 	if reloading_hands:
 		_reload_mount(is_pistol)
