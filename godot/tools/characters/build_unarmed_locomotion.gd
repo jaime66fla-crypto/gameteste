@@ -8,7 +8,7 @@ extends SceneTree
 ## cycle is measured from the planted foot and stored as "ground_speed" (m/s),
 ## so the game can play it at the rate that keeps the feet from sliding.
 ## Usage (from the repo root):
-##   godot --headless --path godot --script res://tools/characters/build_unarmed_locomotion.gd [-- <out_dir>]
+##   godot --headless --path godot --script res://tools/characters/build_unarmed_locomotion.gd [-- <out_dir> [clip names...]]
 const TARGET_MODEL := "res://assets/personagens/downloaded/avatar.fbx"
 const HUMAN := "res://assets/personagens/jaime/animacoes/Animations/Male/"
 const DEFAULT_OUT := "res://assets/personagens/downloaded/movements/"
@@ -27,7 +27,27 @@ static func sources() -> Dictionary:
 	for suffix in DIRECTIONS:
 		result["walk_unarmed" + suffix] = HUMAN + "Movement/Walk/HumanM@Walk01_%s.fbx" % DIRECTIONS[suffix]
 		result["jog_unarmed" + suffix] = HUMAN + "Movement/Run/HumanM@Run01_%s.fbx" % DIRECTIONS[suffix]
+	for output_name in REAL_CONTROLLER_CLIPS:
+		result[output_name] = REAL_CONTROLLER + REAL_CONTROLLER_CLIPS[output_name] + ".res"
 	return result
+## Addon real-controller (addons/real-controller, fora do export): mesmo pacote
+## HumanM, com o que faltava aqui — sprint e pulo/queda/pouso de corpo inteiro.
+const REAL_CONTROLLER := "res://addons/real-controller/animations/"
+const REAL_CONTROLLER_SCENE := "res://addons/real-controller/character.tscn"
+const REAL_CONTROLLER_CLIPS := {
+	"sprint_unarmed": "sprint_forward",
+	"jump_unarmed_start": "jump_begin", "fall_unarmed": "fall", "land_unarmed": "jump_land",
+}
+## Clips whose hips follow the source height instead of keeping a toe on the floor.
+## (sprint too: its flight phase has no planted foot, and pinning the lowest
+## toe to the floor dropped the hips into a crouch).
+const AIR_CLIPS := ["sprint_unarmed", "jump_unarmed_start", "fall_unarmed", "land_unarmed"]
+const HUMANOID_NAMES := {
+	"hips": "Hips", "spine": "Spine", "chest": "Chest", "neck": "Neck", "head": "Head",
+	"shoulder": "Shoulder", "upperArm": "UpperArm", "forearm": "LowerArm", "hand": "Hand",
+	"thigh": "UpperLeg", "shin": "LowerLeg", "foot": "Foot", "toe": "Toes",
+}
+const HUMANOID_FINGERS := {"Thumb": "Thumb", "Index": "Index", "Middle": "Middle", "Ring": "Ring", "Pinky": "Little"}
 ## Ch31 bone suffix -> HumanM bone. Spine1 has no source: it takes half of the
 ## spine-to-chest motion. Finger/head/toe end bones keep their rest pose.
 const BONE_MAP := {
@@ -57,7 +77,11 @@ func _build() -> void:
 		return
 	var failed := false
 	var all := sources()
+	# Optional names after the out dir rebuild only those clips.
+	var only := args.slice(1)
 	for output_name in all:
+		if not only.is_empty() and not output_name in only:
+			continue
 		failed = not _retarget(all[output_name], output_name, target) or failed
 	target_model.free()
 	print("UNARMED LOCOMOTION: ", "FAIL" if failed else "PASS")
@@ -95,7 +119,7 @@ func _target_child(target: Skeleton3D, bone: int) -> int:
 func _mapped_child(target: Skeleton3D, source: Skeleton3D, bone: int) -> int:
 	var child := _target_child(target, bone)
 	while child >= 0:
-		var mapped := source.find_bone(_source_name(String(target.get_bone_name(child))))
+		var mapped := _find(source, _source_name(String(target.get_bone_name(child))))
 		if mapped >= 0:
 			return mapped
 		child = _target_child(target, child)
@@ -117,34 +141,82 @@ func _frame(skeleton: Skeleton3D, bone: int, child: int) -> Basis:
 func _delta(skeleton: Skeleton3D, bone: int) -> Quaternion:
 	return (skeleton.get_bone_global_pose(bone).basis.orthonormalized() * skeleton.get_bone_global_rest(bone).basis.orthonormalized().inverse()).get_rotation_quaternion()
 
+## Source bone by HumanM name; the real-controller skeleton uses the Godot
+## humanoid names for the same bones (B-thigh.L = LeftUpperLeg).
+func _find(skeleton: Skeleton3D, name: String) -> int:
+	var bone := skeleton.find_bone(name)
+	if bone < 0 and name.begins_with("B-"):
+		bone = skeleton.find_bone(_humanoid_name(name))
+	return bone
+
+static func _humanoid_name(human_m: String) -> String:
+	var base := human_m.trim_prefix("B-")
+	var side := ""
+	if base.ends_with(".L") or base.ends_with(".R"):
+		side = "Left" if base.ends_with(".L") else "Right"
+		base = base.left(-2)
+	if HUMANOID_NAMES.has(base):
+		return side + String(HUMANOID_NAMES[base])
+	for finger in HUMANOID_FINGERS:
+		for index in range(1, 4):
+			if base == (FINGERS[finger] as String) % index:
+				return side + String(HUMANOID_FINGERS[finger]) + (["Metacarpal", "Proximal", "Distal"] if finger == "Thumb" else ["Proximal", "Intermediate", "Distal"])[index - 1]
+	return ""
+
+## Poses a skeleton from a bare Animation whose tracks are "<node>:<bone>".
+func _sample(animation: Animation, skeleton: Skeleton3D, time: float) -> void:
+	for track in animation.get_track_count():
+		var bone := skeleton.find_bone(String(animation.track_get_path(track).get_concatenated_subnames()))
+		if bone < 0:
+			continue
+		match animation.track_get_type(track):
+			Animation.TYPE_ROTATION_3D:
+				skeleton.set_bone_pose_rotation(bone, animation.rotation_track_interpolate(track, time))
+			Animation.TYPE_POSITION_3D:
+				skeleton.set_bone_pose_position(bone, animation.position_track_interpolate(track, time))
+			Animation.TYPE_SCALE_3D:
+				skeleton.set_bone_pose_scale(bone, animation.scale_track_interpolate(track, time))
+
 func _leg_length(skeleton: Skeleton3D, thigh: String, foot: String) -> float:
-	return skeleton.get_bone_global_rest(skeleton.find_bone(thigh)).origin.distance_to(skeleton.get_bone_global_rest(skeleton.find_bone(foot)).origin)
+	return skeleton.get_bone_global_rest(_find(skeleton, thigh)).origin.distance_to(skeleton.get_bone_global_rest(_find(skeleton, foot)).origin)
 
 func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> bool:
 	if not ResourceLoader.exists(source_path):
 		printerr("Missing source: ", source_path)
 		return false
-	var source_model := (load(source_path) as PackedScene).instantiate() as Node3D
+	# FBX: the clip comes with its own skeleton. real-controller .res: a bare
+	# Animation on the humanoid-named GeneralSkeleton of its character scene,
+	# sampled track by track (no AnimationPlayer path to resolve).
+	var from_res := source_path.ends_with(".res")
+	var source_model := (load(REAL_CONTROLLER_SCENE if from_res else source_path) as PackedScene).instantiate() as Node3D
 	root.add_child(source_model)
-	var source := source_model.find_child("Skeleton3D", true, false) as Skeleton3D
-	var player := source_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
-	var clip := String(player.get_animation_list()[0])
-	var source_animation := player.get_animation(clip)
+	var source := source_model.find_child("GeneralSkeleton" if from_res else "Skeleton3D", true, false) as Skeleton3D
+	var player: AnimationPlayer = null
+	var clip := ""
+	var source_animation: Animation
+	if from_res:
+		source_animation = load(source_path) as Animation
+	else:
+		player = source_model.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		clip = String(player.get_animation_list()[0])
+		source_animation = player.get_animation(clip)
+	var looping := not from_res or source_animation.loop_mode != Animation.LOOP_NONE
+	var air := output_name in AIR_CLIPS
 	var frames := int(round(source_animation.length * FPS))
 
 	var result := Animation.new()
 	result.resource_name = output_name
 	result.length = frames / FPS
-	result.loop_mode = Animation.LOOP_LINEAR
+	result.loop_mode = Animation.LOOP_LINEAR if looping else Animation.LOOP_NONE
 	result.set_meta("source", source_path.get_file())
 	var source_bones: Array[int] = []
 	var corrections: Array[Basis] = []
 	var tracks: Array[int] = []
-	var spine := source.find_bone("B-spine")
-	var chest := source.find_bone("B-chest")
+	var spine := _find(source, "B-spine")
+	var chest := _find(source, "B-chest")
 	for bone in target.get_bone_count():
 		var name := String(target.get_bone_name(bone))
-		var mapped := source.find_bone(_source_name(name))
+		var mapped := _find(source, _source_name(name))
 		var source_frame_bone := mapped
 		if name.ends_with("_Spine1"):
 			source_frame_bone = spine # half spine, half chest (see below)
@@ -163,16 +235,21 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 	result.track_set_path(hips_track, NodePath(TARGET_ROOT + "mixamorig9_Hips"))
 	var toes := [target.find_bone("mixamorig9_LeftToeBase"), target.find_bone("mixamorig9_RightToeBase")]
 	var rest_toe_y := minf(target.get_bone_global_rest(toes[0]).origin.y, target.get_bone_global_rest(toes[1]).origin.y)
-	var source_feet := [source.find_bone("B-foot.L"), source.find_bone("B-foot.R")]
-	var source_hips := source.find_bone("B-hips")
+	var source_feet := [_find(source, "B-foot.L"), _find(source, "B-foot.R")]
+	var source_hips := _find(source, "B-hips")
 	var scale := _leg_length(target, "mixamorig9_LeftUpLeg", "mixamorig9_LeftFoot") / _leg_length(source, "B-thigh.L", "B-foot.L")
 	var previous_feet := []
 	var travel := Vector2.ZERO
-	player.play(clip)
+	var source_rest_hips_y := source.get_bone_global_rest(source_hips).origin.y
+	if player != null:
+		player.play(clip)
 	for frame in frames + 1:
 		var time := minf(frame / FPS, source_animation.length)
 		source.reset_bone_poses()
-		player.seek(time, true)
+		if player != null:
+			player.seek(time, true)
+		else:
+			_sample(source_animation, source, time)
 		# Ground speed: the lower (planted) foot slides back under the hips.
 		var hips_origin := source.get_bone_global_pose(source_hips).origin
 		var feet := [source.get_bone_global_pose(source_feet[0]).origin - hips_origin, source.get_bone_global_pose(source_feet[1]).origin - hips_origin]
@@ -181,7 +258,7 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 			var step: Vector3 = (feet[planted] as Vector3) - (previous_feet[planted] as Vector3)
 			travel -= Vector2(step.x, step.z) # any direction: forward, sideways, backward
 		previous_feet = feet
-		if frame == frames:
+		if frame == frames and looping:
 			break # the last frame equals the first: only used for the speed
 		target.reset_bone_poses()
 		for bone in target.get_bone_count():
@@ -198,6 +275,10 @@ func _retarget(source_path: String, output_name: String, target: Skeleton3D) -> 
 			result.rotation_track_insert_key(tracks[bone], frame / FPS, local_rotation)
 		var toe_y := minf(target.get_bone_global_pose(toes[0]).origin.y, target.get_bone_global_pose(toes[1]).origin.y)
 		var hips_position := target.get_bone_rest(hips_bone).origin + Vector3.UP * (rest_toe_y - toe_y)
+		if air:
+			# Pulo/queda/pouso: pés fora do chão (pernas encolhidas no ar). O quadril
+			# segue a altura do clipe (escala da perna); quem sobe e desce é o corpo físico.
+			hips_position = target.get_bone_rest(hips_bone).origin + Vector3.UP * (hips_origin.y - source_rest_hips_y) * scale
 		result.position_track_insert_key(hips_track, frame / FPS, hips_position)
 	var speed := travel.length() * scale / source_animation.length
 	result.set_meta("ground_speed", speed)

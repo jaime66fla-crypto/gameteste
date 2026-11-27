@@ -49,7 +49,17 @@ const ARMED_WALK_RATE_MAX := 1.7
 const ARMED_JOG_SPEED := 3.4
 const ARMED_JOG_HYSTERESIS := 0.4
 ## Clips whose own arm swing is kept (no procedural "relaxed arms" on top).
-const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed"]
+const NATURAL_ARM_CLIPS := ["run_in_place", "run_to_stop", "idle_unarmed", "sprint_unarmed"]
+## Sprint de corpo inteiro (HumanM, addon real-controller): sem arma, Shift para
+## a frente acima de SPRINT_CLIP_SPEED. A medida do pé no clipe sai baixa (o
+## sprint tem fase de voo); 7 m/s dá 1,14× no sprint de 8 m/s (~4,3 passos/s).
+const SPRINT_CLIP_SPEED := 6.2
+const SPRINT_GROUND_SPEED := 7.0
+const SPRINT_RATE_MIN := 0.85
+const SPRINT_RATE_MAX := 1.2
+
+static func _is_stride_clip(clip: String) -> bool:
+	return clip in ["run_in_place", "sprint_unarmed", "walk_with_rifle"] or clip.begins_with("walk_unarmed") or clip.begins_with("jog_unarmed")
 
 static func _has_natural_arms(clip: String) -> bool:
 	return clip in NATURAL_ARM_CLIPS or clip.begins_with("walk_unarmed") or clip.begins_with("jog_unarmed")
@@ -121,6 +131,9 @@ func _ready() -> void:
 	var hip_anchor: Vector3 = skeleton.get_bone_rest(hip_bone).origin
 	# Shared run cycle (exported from Ch31's FBX): ~2.8 m per 0.7 s cycle (4 m/s).
 	var clips := {"run_in_place": RUN_IN_PLACE, "idle_with_rifle": IDLE_WITH_RIFLE, "walk_with_rifle": WALK_WITH_RIFLE, "run_to_stop": RUN_TO_STOP, "punch": PUNCH, "elbow_punch": ELBOW_PUNCH, "idle_unarmed": IDLE_UNARMED}
+	var sprint_clip := load(UNARMED_DIR + "sprint_unarmed.tres") as Animation
+	if sprint_clip != null:
+		clips["sprint_unarmed"] = sprint_clip
 	for gait in ["walk_unarmed", "jog_unarmed"]:
 		for suffix in DIRECTION_SUFFIXES:
 			var unarmed_clip := load(UNARMED_DIR + gait + suffix + ".tres") as Animation
@@ -411,6 +424,15 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	if current_clip == "run_to_stop" and animation_player.is_playing() and not moving:
 		_finish_pose()
 		return
+	# No ar andando: o passo que vinha (corrida/sprint) continua por baixo da
+	# camada do pulo. Antes "parado no ar" trocava para o freio (run_to_stop) ou
+	# o idle e o corpo endireitava de uma vez na decolagem.
+	if airborne and _planar_speed > 1.0 and _is_stride_clip(current_clip) and swim_weight <= 0.01 and prone_weight <= 0.5:
+		# Quase parado: os braços ficam perto da pose da decolagem (a toda velocidade
+		# pareciam correr no ar). No chão _play_clip volta ao ritmo amortecido.
+		animation_player.speed_scale = lerpf(animation_player.speed_scale, AIR_STRIDE_RATE, minf(1.0, delta * 10.0))
+		_finish_pose()
+		return
 	var clip := "idle_with_rifle"
 	swim_weight = move_toward(swim_weight, 1.0 if swim_requested else 0.0, delta * 3.5)
 	_swim_move = _damp(_swim_move, clampf(move_amount, 0.0, 1.0) if swim_requested else 0.0, 4.0)
@@ -462,7 +484,7 @@ func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> voi
 	var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
 	if not moving:
 		# Stopping from a sprint plays the brake clip first (handled in animate()).
-		_play_clip("run_to_stop" if current_clip == "run_in_place" else "idle_unarmed", 1.0)
+		_play_clip("run_to_stop" if current_clip in ["run_in_place", "sprint_unarmed"] else "idle_unarmed", 1.0)
 		return
 	# Movement angle in the character's frame (forward is -Z): 0 forward, +90 right.
 	var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
@@ -483,6 +505,12 @@ func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> voi
 	# 1,45× (4,8 passos/s, frenético) e ainda escorregava.
 	var run_threshold := ARMED_JOG_SPEED - (ARMED_JOG_HYSTERESIS if current_clip == "run_in_place" else 0.0)
 	var fast_forward := speed > run_threshold and absf(angle) <= 35.0
+	# Sem arma no Shift para a frente: o sprint de verdade (tronco inclinado,
+	# braços bombeando) no lugar da corrida acelerada.
+	var sprint_threshold := SPRINT_CLIP_SPEED - (0.5 if current_clip == "sprint_unarmed" else 0.0)
+	if running and not armed and speed > sprint_threshold and absf(angle) <= 35.0 and crouch_weight < 0.5 and animation_player.has_animation("sprint_unarmed"):
+		_play_clip("sprint_unarmed", clampf(speed / SPRINT_GROUND_SPEED, SPRINT_RATE_MIN, SPRINT_RATE_MAX))
+		return
 	if (running and absf(angle) <= 60.0 or fast_forward) and crouch_weight < 0.5:
 		_play_clip("run_in_place", clampf(speed / ARMED_RUN_GROUND_SPEED, 0.75, RUN_RATE_MAX))
 		return
@@ -2192,6 +2220,8 @@ func _load_ual_clips(skeleton_path: String, hip_scale: float, retarget: bool, hi
 			paths[clip_name] = UAL_DIR + clip_name + ".tres"
 		for clip_name in UAL1_CLIPS:
 			paths[clip_name] = UAL1_DIR + clip_name + ".tres"
+		for clip_name in HM_AIR_CLIPS:
+			paths[clip_name] = UNARMED_DIR + clip_name + ".tres"
 		for clip_name in paths:
 			var source := load(paths[clip_name]) as Animation
 			if source == null:
@@ -2232,6 +2262,18 @@ func _mask_weights(mask: String) -> PackedFloat32Array:
 					w = 0.7
 				elif suffix == "Spine":
 					w = 0.4
+			"air_body":
+				# Pulo HumanM: pernas, quadril, tronco e cabeça do clipe; os braços
+				# dele abrem em Y/cruz (vistos de frente), então só um pouco deles.
+				w = AIR_ARMS_WEIGHT if limb else 1.0
+			"air_body_run":
+				# Pulo correndo: o tronco fica em parte com a inclinação do passo.
+				if limb:
+					w = AIR_ARMS_WEIGHT
+				elif suffix.begins_with("Spine") or suffix in ["Neck", "Head"]:
+					w = AIR_RUN_TORSO_WEIGHT
+				else:
+					w = 1.0
 			"legs":
 				# Quadril e pernas; a coluna só um pouco (os braços seguem a arma/mira).
 				if suffix == "Hips" or suffix.contains("Leg") or suffix.contains("Foot") or suffix.contains("Toe"):
@@ -2446,6 +2488,26 @@ var _air_fall := 0.0 # maior velocidade de queda deste pulo (m/s)
 var _air_jumped := false # saiu do chão pulando (e não caindo de uma beirada)
 var _land_time := -1.0
 var _land_strength := 0.0
+## Sem arma, o pulo usa os clipes HumanM (addon real-controller,
+## tools/characters/build_unarmed_locomotion.gd): impulsão, queda em loop e
+## pouso com pernas, quadril e tronco do clipe; os braços do clipe abrem em Y
+## de frente, então entram só a AIR_ARMS_WEIGHT (máscara "air_body").
+const HM_AIR_CLIPS := ["jump_unarmed_start", "fall_unarmed", "land_unarmed"]
+const HM_START_FROM := 0.22 # s: depois do agachamento do jump_begin (o pulo do jogo é imediato)
+const HM_START_UNTIL := 0.62 # s: dali em diante, a queda em loop
+const HM_LAND_FROM := 0.03
+const HM_LAND_RATE := 1.3
+## Peso dos braços do clipe no pulo sem arma (o resto do braço vem da locomoção).
+const AIR_ARMS_WEIGHT := 0.15
+## Pulando correndo (acima de AIR_RUN_SPEED m/s), peso do tronco do clipe.
+const AIR_RUN_TORSO_WEIGHT := 0.4
+const AIR_RUN_SPEED := 3.0
+## Ritmo do passo por baixo do pulo enquanto no ar.
+const AIR_STRIDE_RATE := 0.15
+var _land_full := false # este pouso usa os clipes HumanM de corpo inteiro
+
+func _air_full_body() -> bool:
+	return not armed and not aim_active and not bow_active and not _shield_in_hand() and ual_clips.has("fall_unarmed")
 
 func _update_air_state(airborne: bool, vertical_speed: float) -> void:
 	if airborne and not _airborne:
@@ -2458,7 +2520,9 @@ func _update_air_state(airborne: bool, vertical_speed: float) -> void:
 		var by_speed := clampf((_air_fall - 2.5) / 8.0, 0.0, 1.0)
 		var by_time := clampf((_air_time - 0.25) / 0.9, 0.0, 1.0)
 		_land_strength = maxf(by_speed, by_time)
-		_land_time = LAND_FROM if _land_strength > 0.05 else -1.0
+		_land_full = _air_full_body()
+		var land_from := HM_LAND_FROM if _land_full else LAND_FROM
+		_land_time = land_from if _land_strength > 0.05 else -1.0
 	if airborne:
 		_air_time += _last_delta
 		_air_fall = maxf(_air_fall, -vertical_speed)
@@ -2476,6 +2540,9 @@ func _apply_air() -> void:
 	# "no ar" quem pulou ou já está caindo há AIR_GRACE.
 	var in_air := _airborne and (_air_jumped or _air_time > AIR_GRACE)
 	_air_weight = move_toward(_air_weight, 1.0 if in_air else 0.0, _last_delta / (AIR_FADE_IN if in_air else AIR_FADE_OUT))
+	if _air_full_body():
+		_apply_air_full()
+		return
 	if _air_weight > 0.001:
 		var start_t := JUMP_START_FROM + _air_time
 		if _air_jumped and start_t < JUMP_START_UNTIL and ual_clips.has("jump_start"):
@@ -2483,7 +2550,7 @@ func _apply_air() -> void:
 		elif ual_clips.has("jump"):
 			var loop: Animation = ual_clips["jump"][0]
 			_blend_ual("jump", fmod(_air_time, loop.length), _smooth(_air_weight) * AIR_LEGS_MAX, mask)
-	if _land_time >= 0.0:
+	if _land_time >= 0.0 and not _land_full:
 		_land_time += _last_delta * LAND_RATE
 		if _land_time >= LAND_END:
 			_land_time = -1.0
@@ -2492,6 +2559,37 @@ func _apply_air() -> void:
 			var fade := 1.0 - _smooth((p - 0.55) / 0.45)
 			var w := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0))
 			_blend_ual("jump_land", _land_time, w, mask)
+
+## Pulo sem arma (máscara "air_body"). Impulsão (sem o agachamento) e a queda em loop
+## no ar; ao tocar o chão, o pouso, mais fundo quanto maior a queda e mais leve
+## andando (a locomoção volta por baixo).
+func _apply_air_full() -> void:
+	var mask := "air_body_run" if _planar_speed > AIR_RUN_SPEED else "air_body"
+	var w := _smooth(_air_weight)
+	if w > 0.001:
+		var start_t := HM_START_FROM + _air_time
+		var fall: Animation = ual_clips["fall_unarmed"][0]
+		if _air_jumped and start_t < HM_START_UNTIL and ual_clips.has("jump_unarmed_start"):
+			_blend_ual("jump_unarmed_start", start_t, w, mask)
+		else:
+			# Pulando, a queda entra suave sobre o fim da impulsão.
+			var into := clampf((start_t - HM_START_UNTIL) / 0.15, 0.0, 1.0) if _air_jumped else 1.0
+			if into < 1.0:
+				_blend_ual("jump_unarmed_start", HM_START_UNTIL, w, mask)
+			_blend_ual("fall_unarmed", fmod(_air_time, fall.length), w * _smooth(into), mask)
+	if _land_time >= 0.0 and _land_full:
+		if not ual_clips.has("land_unarmed"):
+			_land_time = -1.0
+			return
+		var land: Animation = ual_clips["land_unarmed"][0]
+		_land_time += _last_delta * HM_LAND_RATE
+		if _land_time >= land.length:
+			_land_time = -1.0
+		else:
+			var p := (_land_time - HM_LAND_FROM) / (land.length - HM_LAND_FROM)
+			var fade := 1.0 - _smooth((p - 0.55) / 0.45)
+			var lw := lerpf(0.35, 1.0, _land_strength) * fade * (1.0 - 0.6 * clampf(_move_amount, 0.0, 1.0))
+			_blend_ual("land_unarmed", _land_time, lw, mask)
 
 ## Idle fidgets: standing still, unarmed and free for a while plays one idle
 ## variation (arms folded, phone call, leaning, head shake), cancelled by any input.

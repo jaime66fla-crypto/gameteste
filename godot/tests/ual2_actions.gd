@@ -33,7 +33,8 @@ func _run() -> void:
 		await process_frame
 		_check(bool(visual.call("is_visual_ready")), id + " visual must be ready")
 		var clips: Dictionary = visual.get("ual_clips")
-		_check(clips.size() == Avatar.UAL_CLIPS.size() + Avatar.UAL1_CLIPS.size(), "%s must load all %d UAL1+UAL2 clips (got %d)" % [id, Avatar.UAL_CLIPS.size() + Avatar.UAL1_CLIPS.size(), clips.size()])
+		var expected: int = Avatar.UAL_CLIPS.size() + Avatar.UAL1_CLIPS.size() + Avatar.HM_AIR_CLIPS.size()
+		_check(clips.size() == expected, "%s must load all %d UAL1+UAL2+HumanM air clips (got %d)" % [id, expected, clips.size()])
 		for clip_name in clips:
 			_check((clips[clip_name][1] as Array).size() >= 50, "%s/%s must drive the rig (%d tracks)" % [id, clip_name, (clips[clip_name][1] as Array).size()])
 		# Armed with a rifle: an action hides the gun while the hands are busy.
@@ -60,9 +61,12 @@ func _run() -> void:
 		_check(float(visual.get("_reload_weight")) > 0.9, id + ": reload must drive the hands")
 		await _step(visual, 40)
 		_check(float(visual.get("_reload_weight")) < 0.01, id + ": reload pose must end with the reload")
-		# Strafing armed: legs from the sideways cycle; forward keeps the rifle walk.
+		# Strafing armed: the forward cycle with the hips turned to the movement
+		# (the sideways clips did a split at 5 m/s; 7681ff1); the chest stays on aim.
 		await _step(visual, 30, 1.0, Vector3(5.0, 0, 0))
-		_check(float(visual.get("_armed_legs_weight")) > 0.9 and str(visual.get("_armed_legs_clip")).ends_with("_right"), id + ": strafing right must step sideways (%s)" % visual.get("_armed_legs_clip"))
+		var legs_clip := str(visual.get("_armed_legs_clip"))
+		_check(float(visual.get("_armed_legs_weight")) > 0.9 and legs_clip.begins_with("jog_unarmed") and not legs_clip.ends_with("_right"), id + ": strafing right must run the forward cycle (%s)" % legs_clip)
+		_check(float(visual.get("_armed_legs_hip_target")) > deg_to_rad(60.0), id + ": strafing right must turn the hips right (%.0f deg)" % rad_to_deg(float(visual.get("_armed_legs_hip_target"))))
 		await _step(visual, 30, 1.0, Vector3(0, 0, -5.0))
 		_check(float(visual.get("_armed_legs_weight")) < 0.01, id + ": walking forward armed keeps the rifle walk")
 		# Jump: air pose while up, landing cushion after a long fall.

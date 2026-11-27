@@ -1,7 +1,7 @@
 extends SceneTree
 ## Fotos de conferência do movimento do 01, de lado, em vários instantes:
 ## corrida sem arma e com fuzil a 5 m/s, pistola andando/parada/mirando e pulo
-## sem arma e com fuzil. Gera <out>_t0.png ... <out>_t4.png (uma linha de casos
+## sem arma e com fuzil, sprint sem arma. Gera <out>_t0.png ... <out>_t6.png (uma linha de casos
 ## por instante).
 ## godot --path godot --script res://tools/characters/capture_moves.gd -- --out=C:/pasta/mov
 const Registry = preload("res://scripts/characters/character_registry.gd")
@@ -10,9 +10,10 @@ const GRAVITY := 22.0
 const JUMP := 8.5
 const DT := 1.0 / 60.0
 
-# [rótulo, arma ("" = sem), velocidade local, pulando, mirando]
+# [rótulo, arma ("" = sem), velocidade local, pulando, mirando, (Shift)]
 const CASES := [
 	["sem arma 5 m/s", "", Vector3(0, 0, -5.0), false, false],
+	["sprint sem arma 8 m/s", "", Vector3(0, 0, -8.0), false, false, true],
 	["fuzil 5 m/s", "rifle", Vector3(0, 0, -5.0), false, false],
 	["pistola 5 m/s", "pistol", Vector3(0, 0, -5.0), false, false],
 	["pistola parada", "pistol", Vector3.ZERO, false, false],
@@ -81,7 +82,8 @@ func _run() -> void:
 		avatars.append(avatar)
 	camera.size = 1.6 * CASES.size() * 0.5
 	# Aquece os ciclos (fora do pulo) e depois fotografa 5 instantes.
-	var times := [0.0, 0.12, 0.24, 0.36, 0.5]
+	# 0,77 s no ar: os dois últimos pegam o pouso.
+	var times := [0.0, 0.12, 0.24, 0.36, 0.5, 0.82, 0.95]
 	var elapsed := 0.0
 	var shot := 0
 	var warm := 1.2
@@ -98,7 +100,7 @@ func _run() -> void:
 			var target: Vector3 = avatar.global_position + avatar.global_basis * Vector3(0, 1.3, -10)
 			avatar.call("set_aim_target", target, not str(spec[1]).is_empty() and (spec[1] != "pistol" or spec[4]))
 			var moving := 1.0 if velocity.length() > 0.1 else 0.0
-			avatar.call("animate", DT, moving, false, false, spec[4], jumping and avatar.position.y > 0.0, false, Vector2(0, -1), velocity)
+			avatar.call("animate", DT, moving, spec.size() > 5 and spec[5], false, spec[4], jumping and avatar.position.y > 0.0, false, Vector2(0, -1), velocity)
 		await process_frame
 		elapsed += DT
 		if elapsed >= warm + times[shot]:
