@@ -13,6 +13,8 @@ signal shot_fired(weapon_id: String, from: Vector3, to: Vector3)
 @export_range(0.24, 0.48, 0.01) var collision_radius: float = 0.34
 const SurfaceMaterials = preload("res://scripts/surface_materials.gd")
 const CROUCH_SPEED := 2.7
+## Andando mirando (m/s): o andar com arma toca a ~1,7× sem o pé escorregar.
+const AIM_MOVE_SPEED := 2.7
 ## Holding Alt walks (GTA-style); matches the natural unarmed walk cycle so the
 ## feet do not slide.
 const WALK_SPEED := 1.6
@@ -627,6 +629,9 @@ func _physics_process(delta: float) -> void:
     var water: Dictionary = water_query.call(global_position) if water_query.is_valid() else {}
     swimming = not water.is_empty() and float(water.get("surface", -100)) - global_position.y > 0.75
     var current_speed: float = PRONE_SPEED if prone else (CROUCH_SPEED if crouching else (speed * sprint_multiplier if Input.is_action_pressed("sprint") and not aiming else (WALK_SPEED if walking else speed)))
+    # Mirando (botão direito) anda em passo de mira, como nos jogos de mundo
+    # aberto: mais lento que o normal (o anticheat só barra quem passa do teto).
+    if aiming and not prone: current_speed = minf(current_speed, AIM_MOVE_SPEED)
     if swimming: current_speed = minf(current_speed, 2.6)
     if shield_raised:
         if swimming or prone or climbing or has_bow():
@@ -750,6 +755,8 @@ func _physics_process(delta: float) -> void:
 ## câmera como antes (passos laterais de quem mira).
 const BODY_TURN_RATE := 10.0
 const BODY_AIM_TURN_RATE := 28.0
+## 1/s: virada para a mira ao mirar/atirar (lerp por quadro; 30 = ~0,1 s).
+const BODY_SNAP_TURN_RATE := 30.0
 var _body_yaw := 0.0
 var _face_aim_left := 0.0
 
@@ -942,6 +949,10 @@ func _update_climb(delta: float) -> void:
         if sound_fx != null and sound_fx.has_method("landing"):
             sound_fx.call("landing", 0.1)
 
+## Arma de fogo na mão, baixa: não está mirando nem atirou há pouco.
+func _weapon_lowered() -> bool:
+    return not weapon_holstered and melee_weapon.is_empty() and not has_bow() and not aiming and _weapon_ready_left <= 0.0
+
 func face_aim(seconds: float) -> void:
     _face_aim_left = maxf(_face_aim_left, seconds)
 
@@ -956,10 +967,18 @@ func _update_body_facing(delta: float, planar_velocity: Vector3) -> void:
     _face_aim_left = maxf(0.0, _face_aim_left - delta)
     # Livre com arma branca ou de mãos vazias (arma guardada); com arma de
     # fogo na mão ou mirando, o corpo segue a câmera.
-    var free_facing := (not melee_weapon.is_empty() or weapon_holstered) and not aiming and not prone and not grenade_aiming
+    # Arma de fogo baixa (sem mirar, sem tiro recente) também, como nos jogos
+    # de mundo aberto: de lado/de ré com o corpo preso na câmera saíam os
+    # trotes direcionais (perna chutando, pulo de ré feio).
+    var free_facing := (not melee_weapon.is_empty() or weapon_holstered or _weapon_lowered()) and not aiming and not prone and not grenade_aiming
     if not free_facing:
-        _body_yaw = yaw
-        avatar.rotation.y = 0.0
+        # Mirar/atirar: o corpo gira rápido e suave para a mira (meia volta em
+        # ~0,1 s) em vez de estalar no mesmo quadro. Em primeira pessoa, direto.
+        if first_person_view:
+            _body_yaw = yaw
+        else:
+            _body_yaw = lerp_angle(_body_yaw, yaw, minf(1.0, delta * BODY_SNAP_TURN_RATE))
+        avatar.rotation.y = wrapf(_body_yaw - yaw, -PI, PI)
         turn_lean = lerpf(turn_lean, 0.0, minf(1.0, delta * 10.0))
         avatar.rotation.z = turn_lean
         return
@@ -1555,10 +1574,11 @@ func _animate_avatar(delta: float, input_amount: float, grounded: bool) -> void:
         if humanoid_avatar.has_method("set_aim_target"):
             # Third-person barrel follows the crosshair (not while sprinting/reloading).
             var aim_ready := not weapon_holstered and not reloading and not sprinting
-            # Pistola: só fica apontada mirando, atirando ou logo depois de um
-            # tiro; no resto do tempo vai baixa ao lado do quadril.
+            # Estilo mundo aberto: a arma só fica apontada mirando, atirando ou
+            # logo depois de um tiro; no resto do tempo vai baixa (pistola ao
+            # lado do quadril, arma longa no colo) e o corpo vira para onde anda.
             _weapon_ready_left = maxf(0.0, _weapon_ready_left - delta)
-            var weapon_ready := current_weapon != "pistol" or aiming or _weapon_ready_left > 0.0
+            var weapon_ready := aiming or _weapon_ready_left > 0.0
             aim_ready = aim_ready and weapon_ready
             if humanoid_avatar.has_method("set_weapon_ready"):
                 humanoid_avatar.call("set_weapon_ready", weapon_ready)

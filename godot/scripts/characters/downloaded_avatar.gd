@@ -286,28 +286,91 @@ func _update_pistol_low(delta: float) -> void:
 	var low := armed and weapon_id == "pistol" and not weapon_ready
 	_pistol_low = move_toward(_pistol_low, 1.0 if low else 0.0, delta * (PISTOL_LOW_RATE if low else PISTOL_RAISE_RATE))
 
-## Pistola na mão direita ao lado do quadril (espaço do esqueleto).
-func _pistol_low_transform() -> Transform3D:
+## Pistola baixa de verdade (já abaixada, sem recarga): o corpo usa a
+## locomoção sem arma (braços balançam soltos como sem arma) e a pistola vai
+## na mão direita do clipe. Antes o corpo seguia o clipe de fuzil e a IK
+## prendia a mão no quadril e dobrava a esquerda: braços "em cruz"/encolhidos.
+func _pistol_carry() -> bool:
+	return armed and weapon_id == "pistol" and not weapon_ready and not reloading and not _shield_in_hand()
+
+## Corpo (clipes, pernas, braços) no modo armado? A pistola (uma mão, leve)
+## usa sempre a locomoção sem arma: baixa, o braço balança com ela; pronta,
+## só os braços vão para a mira. Os clipes de fuzil torciam o tronco de lado.
+func _body_armed() -> bool:
+	return armed and weapon_id != "pistol"
+
+## Arma longa baixa andando/correndo: o walk_with_rifle anda com a arma no
+## ombro (mirando) e o run_in_place leva o cano reto na altura do peito. Sem mirar/atirar, o tronco e os braços vêm do idle_with_rifle
+## (arma no colo, cano para baixo), como quem anda com o fuzil baixo.
+const LONG_LOW_RATE := 6.0 # 1/s
+var _long_low := 0.0
+
+func _apply_long_gun_low() -> void:
+	var want := armed and weapon_id not in ["pistol", "bow"] and not weapon_ready and not aim_active and current_clip in ["walk_with_rifle", "run_in_place"] and _reload_weight <= 0.001 and not _shield_in_hand()
+	_long_low = move_toward(_long_low, 1.0 if want else 0.0, _last_delta * LONG_LOW_RATE)
+	if _long_low <= 0.001 or not animation_player.has_animation("idle_with_rifle"):
+		return
+	var clip := animation_player.get_animation("idle_with_rifle")
+	var t := fmod(Time.get_ticks_msec() / 1000.0, maxf(clip.length, 0.01))
+	_blend_anim(clip, _tracks_of("idle_with_rifle"), t, _smooth(_long_low), "upper", false)
+
+## Giro do quadril da pistola pronta andando de lado (ver _play_unarmed).
+var _aim_hip_target := 0.0
+var _aim_hip_yaw := 0.0
+
+func _apply_aim_hip_turn() -> void:
+	_aim_hip_yaw = lerp_angle(_aim_hip_yaw, _aim_hip_target, minf(1.0, _last_delta * ARMED_LEGS_HIP_RATE))
 	var hips := Grip._bone(skeleton, "Hips")
+	var left := Grip._bone(skeleton, "LeftArm")
+	var right := Grip._bone(skeleton, "RightArm")
+	if hips < 0 or left < 0 or right < 0:
+		return
+	if absf(_aim_hip_yaw) > 0.001:
+		skeleton.set_bone_pose_rotation(hips, (Quaternion(Vector3.UP, -_aim_hip_yaw) * skeleton.get_bone_pose_rotation(hips)).normalized())
+	# Pistola pronta: peito de frente para a mira (sem o giro do quadril nem o
+	# balanço de ombros da corrida, que levava a arma junto).
+	var ready_w := 0.0
+	if armed and weapon_id == "pistol" and not _pistol_carry():
+		ready_w = 1.0 - _smooth(_pistol_low)
+	if ready_w <= 0.001 and absf(_aim_hip_yaw) <= 0.001:
+		return
+	var rest := skeleton.get_bone_global_rest(right).origin - skeleton.get_bone_global_rest(left).origin
+	var now := skeleton.get_bone_global_pose(right).origin - skeleton.get_bone_global_pose(left).origin
+	var a := Vector2(rest.x, rest.z)
+	var b := Vector2(now.x, now.z)
+	if a.length_squared() < 0.000001 or b.length_squared() < 0.000001:
+		return
+	# Sem a pistola pronta, só desfaz o giro do quadril.
+	var yaw := lerpf(_aim_hip_yaw, -b.angle_to(a), ready_w)
+	var column: Array[int] = []
+	for bone_name in ["Spine", "Spine1", "Spine2"]:
+		var bone := Grip._bone(skeleton, bone_name)
+		if bone >= 0:
+			column.append(bone)
+	for bone in column:
+		Grip._set_global_rotation(skeleton, bone, Basis(Vector3.UP, yaw / column.size()) * skeleton.get_bone_global_pose(bone).basis)
+
+## Pistola na mão direita como o clipe a deixou, cano para baixo e para a
+## frente (espaço do esqueleto).
+func _pistol_low_transform() -> Transform3D:
 	var chest := Grip._bone(skeleton, "Spine2")
-	var arm := Grip._bone(skeleton, "RightArm")
+	var hand := Grip._bone(skeleton, "RightHand")
 	var grip := weapon_mount.get_node_or_null("RightGrip") as Marker3D
-	if hips < 0 or chest < 0 or arm < 0 or grip == null:
+	if chest < 0 or hand < 0 or grip == null:
 		return weapon_mount.transform
-	var chest_pose := skeleton.get_bone_global_pose(chest)
-	var hip := skeleton.get_bone_global_pose(hips).origin
-	var lateral := skeleton.get_bone_global_pose(arm).origin - chest_pose.origin
-	lateral.y = 0.0
-	var forward := chest_pose.basis.orthonormalized() * Vector3.BACK # Mixamo: frente = +Z
+	var forward := skeleton.get_bone_global_pose(chest).basis.orthonormalized() * Vector3.BACK # Mixamo: frente = +Z
 	forward.y = 0.0
-	if lateral.length_squared() < 0.000001 or forward.length_squared() < 0.000001:
+	if forward.length_squared() < 0.000001:
 		return weapon_mount.transform
-	lateral = lateral.normalized()
 	forward = forward.normalized()
 	var barrel := (forward * cos(PISTOL_LOW_PITCH) + Vector3.DOWN * sin(PISTOL_LOW_PITCH)).normalized()
-	var basis := Basis.looking_at(barrel, forward)
-	var grip_point := hip + lateral * 0.21 + forward * 0.1 + Vector3.UP * 0.05
-	return Transform3D(basis, grip_point - basis * grip.position)
+	var low := Transform3D(Basis.looking_at(barrel, forward), Vector3.ZERO)
+	var saved := weapon_mount.transform
+	weapon_mount.transform = low
+	var wrist := Grip.wrist_target(skeleton, weapon_mount, "Right")
+	weapon_mount.transform = saved
+	low.origin = skeleton.get_bone_global_pose(hand).origin - wrist
+	return low
 
 ## World point the barrel should point at; inactive while sprinting/reloading.
 func set_aim_target(point: Vector3, active: bool) -> void:
@@ -324,11 +387,12 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 	_update_air_state(airborne, planar_velocity.y)
 	_update_reload(reloading_now)
 	_update_pistol_low(delta)
+	_aim_hip_target = 0.0 # _play_unarmed liga de novo se ainda andar de lado
 	_airborne = airborne
 	_planar_speed = Vector2(planar_velocity.x, planar_velocity.z).length()
 	prone_weight = move_toward(prone_weight, 1.0 if prone_requested and not airborne else 0.0, delta * 3.0)
 	crouch_weight = move_toward(crouch_weight, 1.0 if crouched and not airborne and prone_weight < 0.01 and not prone_requested else 0.0, delta * 6.0)
-	unarmed_weight = move_toward(unarmed_weight, 0.0 if armed else 1.0, delta * 6.0)
+	unarmed_weight = move_toward(unarmed_weight, 0.0 if _body_armed() else 1.0, delta * 6.0)
 	animation_player.advance(delta)
 	var moving := move_amount > 0.08 and not airborne
 	locomotion_active = moving
@@ -363,7 +427,7 @@ func animate(delta: float, move_amount: float, running: bool, crouched: bool, _a
 		_play_clip("idle_with_rifle", 1.0)
 		_finish_pose()
 		return
-	if not armed or (showcase_ready and not moving):
+	if not _body_armed() or (showcase_ready and not moving):
 		# Vitrine armada: corpo em pé e reto (idle sem arma); só os braços vão
 		# para a arma (_showcase_ready_mount). O clipe armado é torto de frente.
 		_play_unarmed(moving, running, planar_velocity)
@@ -403,6 +467,16 @@ func _play_unarmed(moving: bool, running: bool, planar_velocity: Vector3) -> voi
 	# Movement angle in the character's frame (forward is -Z): 0 forward, +90 right.
 	var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
 	_direction_sector = _pick_sector(angle)
+	# Pistola pronta (corpo preso na mira): de lado/diagonal os clipes laterais
+	# abrem as pernas num espacate. As pernas correm para a frente ou de ré e o
+	# quadril vira para o movimento; a coluna volta o peito para a mira
+	# (_apply_aim_hip_turn).
+	if armed and weapon_id == "pistol" and _direction_sector != 0:
+		var backward := _direction_sector in [3, 4, 5]
+		var hip_angle := angle - (signf(angle) * 180.0 if backward else 0.0)
+		_aim_hip_target = deg_to_rad(clampf(hip_angle, -ARMED_LEGS_HIP_MAX, ARMED_LEGS_HIP_MAX))
+		angle = 180.0 if backward else 0.0
+		_direction_sector = 4 if backward else 0
 	var suffix: String = DIRECTION_SUFFIXES[_direction_sector]
 	# The sprint clip only runs forward; sideways/backward sprints jog that way.
 	# Para a frente no passo normal (5 m/s) também corre: o trote tocava a
@@ -465,6 +539,8 @@ func _finish_pose() -> void:
 		_update_backpack()
 		return
 	_apply_armed_legs()
+	_apply_aim_hip_turn()
+	_apply_long_gun_low()
 	# Correndo armado e mirando: tronco quase em pé (a corrida inclina para a
 	# frente e a arma descia junto com o peito).
 	if current_clip == "run_in_place" and aim_weight > 0.001:
@@ -490,7 +566,11 @@ func _finish_pose() -> void:
 	var hands_busy := _overlay_arm_weight() > 0.3
 	if is_instance_valid(bound_weapon):
 		bound_weapon.visible = armed and not hands_busy
-	_update_weapon_mount()
+	# Pistola baixa: primeiro os braços soltos (como sem arma), depois a arma
+	# vai para a mão direita onde ela ficou.
+	var carry := armed and weapon_id == "pistol"
+	if not carry:
+		_update_weapon_mount()
 	# Correndo desarmado, o próprio clipe de corrida já balança os braços
 	# naturalmente: só andando/parado os braços descem para o lado do corpo.
 	var running_clip := _has_natural_arms(current_clip)
@@ -499,6 +579,8 @@ func _finish_pose() -> void:
 		_prone_arms(unarmed_weight)
 	elif unarmed_weight * (1.0 - _run_arms) > 0.01:
 		_relax_arms(unarmed_weight * (1.0 - _run_arms))
+	if carry:
+		_update_weapon_mount()
 	_apply_shield()
 	_apply_overlay()
 	_place_shield()
@@ -2250,6 +2332,11 @@ var _armed_legs_weight := 0.0
 var _armed_legs_clip := ""
 var _armed_legs_phase := 0.0 # 0..1 do passo; trocar de direção mantém a fase
 var _armed_legs_speed := 1.0
+## Giro do quadril para a direção do movimento (rad, em volta da vertical).
+const ARMED_LEGS_HIP_MAX := 80.0 # graus
+const ARMED_LEGS_HIP_RATE := 10.0 # 1/s
+var _armed_legs_hip_target := 0.0
+var _armed_legs_hip_yaw := 0.0
 var _clip_tracks := {} # clipe da biblioteca -> [[track, bone, type], ...]
 
 func _tracks_of(clip_name: String) -> Array:
@@ -2265,7 +2352,7 @@ func _tracks_of(clip_name: String) -> Array:
 	return _clip_tracks[clip_name]
 
 func _update_armed_legs(moving: bool, running: bool, planar_velocity: Vector3) -> void:
-	var want := armed and moving and not (running and crouch_weight < 0.5) and swim_weight < 0.01 and prone_weight < 0.5 and work_action.is_empty() and not bow_active
+	var want := _body_armed() and moving and not (running and crouch_weight < 0.5) and swim_weight < 0.01 and prone_weight < 0.5 and work_action.is_empty() and not bow_active
 	if want:
 		var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
 		_direction_sector = _pick_sector(angle)
@@ -2276,7 +2363,15 @@ func _update_armed_legs(moving: bool, running: bool, planar_velocity: Vector3) -
 	if want:
 		var speed := Vector2(planar_velocity.x, planar_velocity.z).length()
 		var gait := "jog_unarmed" if speed > UNARMED_JOG_SPEED and crouch_weight < 0.5 else "walk_unarmed"
-		var clip: String = gait + DIRECTION_SUFFIXES[_direction_sector]
+		# Os clipes de lado/diagonal abrem as pernas num passo lateral enorme
+		# (espacate a 5 m/s). As pernas usam o ciclo para a frente ou para trás e
+		# o quadril gira para a direção do movimento (_armed_legs_hip_target);
+		# o tronco volta para a mira em _apply_armed_legs.
+		var angle := rad_to_deg(atan2(planar_velocity.x, -planar_velocity.z))
+		var backward := _direction_sector in [3, 4, 5]
+		var hip_angle := angle - (signf(angle) * 180.0 if backward else 0.0)
+		_armed_legs_hip_target = deg_to_rad(clampf(hip_angle, -ARMED_LEGS_HIP_MAX, ARMED_LEGS_HIP_MAX))
+		var clip: String = gait + ("_backward" if backward else "")
 		if not animation_player.has_animation(clip):
 			clip = gait
 		if animation_player.has_animation(clip):
@@ -2286,6 +2381,9 @@ func _update_armed_legs(moving: bool, running: bool, planar_velocity: Vector3) -
 		else:
 			want = false
 	_armed_legs_weight = move_toward(_armed_legs_weight, 1.0 if want else 0.0, _last_delta * ARMED_LEGS_RATE)
+	if not want:
+		_armed_legs_hip_target = 0.0
+	_armed_legs_hip_yaw = lerp_angle(_armed_legs_hip_yaw, _armed_legs_hip_target, minf(1.0, _last_delta * ARMED_LEGS_HIP_RATE))
 	if not _armed_legs_clip.is_empty():
 		var length := animation_player.get_animation(_armed_legs_clip).length
 		_armed_legs_phase = fposmod(_armed_legs_phase + _last_delta * _armed_legs_speed / maxf(length, 0.01), 1.0)
@@ -2302,16 +2400,28 @@ func _apply_armed_legs() -> void:
 		before = skeleton.get_bone_global_pose(right).origin - skeleton.get_bone_global_pose(left).origin
 	var w := _smooth(_armed_legs_weight)
 	_blend_anim(clip, _tracks_of(_armed_legs_clip), _armed_legs_phase * clip.length, w, "legs")
+	# Quadril (raiz) virado para onde ele anda.
+	var hips := Grip._bone(skeleton, "Hips")
+	if hips >= 0 and absf(_armed_legs_hip_yaw) > 0.001:
+		var turn := Quaternion(Vector3.UP, -_armed_legs_hip_yaw * w)
+		skeleton.set_bone_pose_rotation(hips, (turn * skeleton.get_bone_pose_rotation(hips)).normalized())
 	if spine < 0 or before.length_squared() < 0.000001:
 		return
-	# Peito de volta para a mesma direção (só o giro em volta da vertical).
+	# Peito de volta para a mesma direção (só o giro em volta da vertical),
+	# repartido pela coluna para a torção não quebrar num osso só.
 	var after := skeleton.get_bone_global_pose(right).origin - skeleton.get_bone_global_pose(left).origin
 	var a := Vector2(before.x, before.z)
 	var b := Vector2(after.x, after.z)
 	if a.length_squared() < 0.000001 or b.length_squared() < 0.000001:
 		return
 	var yaw := b.angle_to(a)
-	Grip._set_global_rotation(skeleton, spine, Basis(Vector3.UP, -yaw) * skeleton.get_bone_global_pose(spine).basis)
+	var column: Array[int] = []
+	for bone_name in ["Spine", "Spine1", "Spine2"]:
+		var bone := Grip._bone(skeleton, bone_name)
+		if bone >= 0:
+			column.append(bone)
+	for bone in column:
+		Grip._set_global_rotation(skeleton, bone, Basis(Vector3.UP, -yaw / column.size()) * skeleton.get_bone_global_pose(bone).basis)
 	# O trote de ré joga o tronco para trás (a arma subia): tronco quase em pé.
 	_limit_torso_lean(ARMED_LEGS_MAX_LEAN, w)
 
@@ -2495,9 +2605,10 @@ func _update_weapon_mount() -> void:
 			grip_sides.append("Left")
 	for side in grip_sides:
 		Grip.solve(skeleton, weapon_mount, side, true)
-	if is_pistol and not _shield_in_hand() and not reloading_hands:
-		_relax_left_arm()
-	elif not is_pistol:
+	# Pistola: o corpo usa a locomoção sem arma, então o braço esquerdo já vem
+	# solto do clipe (o _relax_left_arm era para o clipe de fuzil e, sobre o
+	# idle sem arma, dobrava o braço para trás das costas).
+	if not is_pistol:
 		_clear_stock_from_arm()
 
 # ------------------------------------------------------------ recarga ---

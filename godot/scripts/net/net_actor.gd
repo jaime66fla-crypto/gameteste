@@ -566,11 +566,11 @@ func _update_aim() -> void:
 		point = eye + Vector3(-sin(yaw) * cos(look_pitch), sin(look_pitch), -cos(yaw) * cos(look_pitch)) * 30.0
 	var running := _move_amount > 0.8 if controlled else bool(remote_state.get("r", false))
 	var reloading := false if controlled else bool(remote_state.get("rl", false))
-	# Pistola: levantada só mirando ("a" da rede / bot vendo o alvo) ou logo
-	# depois de um tiro; no resto do tempo vai baixa ao lado do quadril.
+	# Arma levantada só mirando ("a" da rede / bot vendo o alvo) ou logo depois
+	# de um tiro; no resto do tempo vai baixa (igual ao player.gd).
 	_weapon_ready_left = maxf(0.0, _weapon_ready_left - get_physics_process_delta_time())
 	var aiming := _sees_target if controlled else bool(remote_state.get("a", false))
-	var ready := weapon_id != "pistol" or aiming or _weapon_ready_left > 0.0
+	var ready := aiming or _weapon_ready_left > 0.0
 	if visual.has_method("set_weapon_ready"):
 		visual.call("set_weapon_ready", ready)
 	visual.call("set_aim_target", point, armed and not running and not reloading and ready)
