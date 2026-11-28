@@ -1,13 +1,10 @@
 extends "res://scripts/characters/downloaded_avatar.gd"
-## Soldado "defensor" do Linha de Fogo: humano realista do MakeHuman (pele, olhos, cabelo,
-## roupa do time) com colete de placas e capacete, gerado por fps-tatico/tools/build_soldiers.py
-## e convertido para o esqueleto Mixamo do jogo por
-## tools/characters/build_mannequin_model.gd -- --id=defensor.
-## Usa todos os clipes, IK e camadas de pose do adaptador Mixamo.
+## Personagem civil: camisa preta, jeans e sapatos pretos, sem equipamento tático.
+## Modelo exportado de personagens_civis.blend e convertido para o rig Mixamo.
 
 func _init() -> void:
 	model_path = "res://assets/personagens/defensor/defensor_modelo.scn"
-	# Topo da cabeça (com o capacete): normaliza para 1,8 m como os outros.
+	# Altura da malha em repouso: normaliza os dois personagens para 1,80 m.
 	# Anda como no Linha de Fogo: passos da UAL de frente, sem as passadas direcionais.
 	clean_locomotion = true
-	source_height = 1.967
+	source_height = 1.811492
