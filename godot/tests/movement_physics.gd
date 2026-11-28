@@ -66,7 +66,7 @@ func _run() -> void:
     var first_speed := Vector2(player.velocity.x, player.velocity.z).length()
     _check(first_speed > 0.0 and first_speed < 2.0, "Movement starts at full speed instead of accelerating")
     await _frames(40)
-    _check(absf(Vector2(player.velocity.x, player.velocity.z).length() - 5.0) < 0.1, "Walk speed not reached")
+    _check(absf(Vector2(player.velocity.x, player.velocity.z).length() - 5.76) < 0.1, "Pistol run speed not reached")
     Input.action_release("move_forward")
     await _frames(1)
     _check(Vector2(player.velocity.x, player.velocity.z).length() > 0.1, "Movement stops instantly instead of braking")

@@ -33,7 +33,7 @@ func _run() -> void:
 	var swapped := Controls.set_binding("interact", KEY_F)
 	_check(_key(KEY_F).is_action("interact") and not _key(KEY_E).is_action("interact"), "Interact moved to F")
 	_check(_key(KEY_E).is_action("heal") and swapped == "Curar", "Heal took the old key (swap): %s" % swapped)
-	_check(_key(KEY_E).is_action("lean_right"), "Lean right keeps E (not a conflict)")
+	_check(_key(KEY_F).is_action("lean_right") and not _key(KEY_E).is_action("lean_right"), "Lean follows interact so healing does not also lean")
 	# Botão do mouse também vale.
 	Controls.set_binding("grenade", -MOUSE_BUTTON_XBUTTON1)
 	var side := InputEventMouseButton.new()

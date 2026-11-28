@@ -157,6 +157,7 @@ var swimming := false
 var channel_label := ""
 var channel_total := 0.0
 var channel_left := 0.0
+var channel_locks_movement := false
 var _channel_done: Callable
 var last_shot_origin := Vector3.ZERO
 @export var character_id: String = ""
@@ -514,12 +515,8 @@ func _unhandled_input(event: InputEvent) -> void:
                 grenade_aiming = true
             return
         if event.is_action("interact"):
-            # Collects loot when a crate is in reach; otherwise elbow strike.
-            if interact_handler.is_valid() and bool(interact_handler.call()):
-                return
-            if humanoid_avatar != null and humanoid_avatar.has_method("play_action"):
-                face_aim(0.6)
-                humanoid_avatar.call("play_action", "elbow_punch")
+            if interact_handler.is_valid():
+                interact_handler.call()
             return
         if event.is_action("heal"):
             if heal_handler.is_valid():
@@ -590,14 +587,20 @@ func first_person_fov() -> float:
     var zoom: float = ADS_ZOOM.get(current_weapon, 1.15)
     return rad_to_deg(2.0 * atan(tan(deg_to_rad(BASE_FOV) * 0.5) / zoom))
 
-func _can_stand() -> bool:
+func _can_stand(probe_height: float = -1.0) -> bool:
+    if probe_height < 0.0:
+        probe_height = height
     var query := PhysicsShapeQueryParameters3D.new()
     query.shape = standing_probe
+    if not is_equal_approx(probe_height, height):
+        var capsule := standing_probe.duplicate() as CapsuleShape3D
+        capsule.height = probe_height
+        query.shape = capsule
     query.collision_mask = collision_mask
     query.exclude = [get_rid()]
     # Lift the probe just above floor contact, retaining conservative head clearance.
     query.transform = global_transform
-    query.transform.origin += global_basis.y * (height * 0.5 + 0.005)
+    query.transform.origin += global_basis.y * (probe_height * 0.5 + 0.005)
     return get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty()
 
 ## Ctrl alterna a postura: 1º toque agacha, 2º deita, 3º levanta (fica na
@@ -611,21 +614,31 @@ func _update_crouch(delta: float) -> void:
     elif stance > 0 and (Input.is_action_just_pressed("jump") or Input.is_action_just_pressed("sprint")):
         stance = 0
         stance_changed = true
-    var blocked := stance == 0 and body_capsule.height < height - 0.001 and not _can_stand()
+    var crouch_height := maxf(body_capsule.radius * 2.0, height * 0.86)
     prone = stance == 2
-    crouching = stance == 1 or blocked
+    crouching = stance == 1
     var target_height := height
     if prone:
         target_height = body_capsule.radius * 2.0
     elif crouching:
-        target_height = maxf(body_capsule.radius * 2.0, height * 0.86)
+        target_height = crouch_height
+    if target_height > body_capsule.height + 0.001 and not _can_stand(target_height):
+        # Debaixo de um teto muito baixo nem agachado cabe: continua deitado.
+        # A postura pedida fica pendente até existir espaço para ela.
+        crouching = _can_stand(crouch_height)
+        prone = not crouching
+        target_height = crouch_height if crouching else body_capsule.radius * 2.0
     body_capsule.height = move_toward(body_capsule.height, target_height, delta * 3.0)
     # Preserve the foot origin through every intermediate capsule size.
     body_collision.position.y = body_capsule.height * 0.5
 
 func _physics_process(delta: float) -> void:
+    var movement_locked := channel_left > 0.0 and channel_locks_movement
     aiming = not fishing_active and bool(bow_controller.get("draw").drawing) if has_bow() else (not fishing_active and has_sights() and Input.is_action_pressed("aim"))
-    _update_crouch(delta)
+    if movement_locked:
+        stance_changed = false
+    else:
+        _update_crouch(delta)
     rotation.y = yaw
     arm_pivot.rotation.x = pitch
     _grenade_cooldown = maxf(0.0, _grenade_cooldown - delta)
@@ -634,6 +647,7 @@ func _physics_process(delta: float) -> void:
         channel_left -= delta
         if channel_left <= 0.0:
             channel_left = 0.0
+            channel_locks_movement = false
             var done := _channel_done
             _channel_done = Callable()
             if done.is_valid():
@@ -670,7 +684,10 @@ func _physics_process(delta: float) -> void:
     if climbing:
         _update_climb(delta)
         return
-    var input_vec := Input.get_vector("move_left","move_right","move_forward","move_back")
+    var input_vec := Vector2.ZERO if movement_locked else Input.get_vector("move_left","move_right","move_forward","move_back")
+    if movement_locked:
+        velocity.x = 0.0
+        velocity.z = 0.0
     var movement := Vector3(input_vec.x,0,input_vec.y).rotated(Vector3.UP,yaw)
     var walking := InputMap.has_action("walk") and Input.is_action_pressed("walk") and not Input.is_action_pressed("sprint")
     var water: Dictionary = water_query.call(global_position) if water_query.is_valid() else {}
@@ -720,20 +737,20 @@ func _physics_process(delta: float) -> void:
     # pouco depois de sair da beirada (coyote time).
     _coyote_left = COYOTE_TIME if grounded_before else maxf(0.0, _coyote_left - delta)
     _jump_buffer_left = maxf(0.0, _jump_buffer_left - delta)
-    if Input.is_action_just_pressed("jump") and not stance_changed:
+    if Input.is_action_just_pressed("jump") and not stance_changed and not movement_locked:
         _jump_buffer_left = JUMP_BUFFER_TIME
     if grounded_before:
         _last_floor_y = global_position.y
     # Escalada: espaço de frente para uma borda alta (no chão), ou segurando a
     # direção contra ela no ar (perto do topo do pulo ou caindo).
-    var climb_ok := not crouching and not prone and not stance_changed
+    var climb_ok := not crouching and not prone and not stance_changed and not movement_locked
     if climb_ok and _jump_buffer_left > 0.0 and grounded_before and _try_climb(movement, true):
         _jump_buffer_left = 0.0
         return
     if climb_ok and not grounded_before and input_vec.length() > 0.3 and velocity.y < CLIMB_AIR_MAX_UP_SPEED and _try_climb(movement, false):
         _jump_buffer_left = 0.0
         return
-    var can_jump := _coyote_left > 0.0 and not crouching and not prone and velocity.y <= 0.5
+    var can_jump := _coyote_left > 0.0 and not crouching and not prone and velocity.y <= 0.5 and not movement_locked
     if _jump_buffer_left > 0.0 and can_jump:
         velocity.y = jump_velocity
         _jump_buffer_left = 0.0
@@ -1869,7 +1886,7 @@ func _reload() -> void:
     sound_fx.reload()
 
 ## Timed action with the on-screen clock (medkit): `done` runs after `seconds`.
-func start_channel(label: String, seconds: float, done: Callable) -> bool:
+func start_channel(label: String, seconds: float, done: Callable, lock_movement: bool = false) -> bool:
     if has_bow():
         bow_controller.call("cancel_draw")
     if channel_left > 0.0 or reloading:
@@ -1877,12 +1894,18 @@ func start_channel(label: String, seconds: float, done: Callable) -> bool:
     channel_label = label
     channel_total = seconds
     channel_left = seconds
+    channel_locks_movement = lock_movement
+    if lock_movement:
+        velocity.x = 0.0
+        velocity.z = 0.0
+        _jump_buffer_left = 0.0
     _channel_done = done
     Input.action_release("fire")
     return true
 
 func cancel_channel() -> void:
     channel_left = 0.0
+    channel_locks_movement = false
     _channel_done = Callable()
 
 ## For the HUD clock: {label, fraction 0..1, seconds left}, or {} when idle.

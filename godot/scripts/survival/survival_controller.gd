@@ -1090,7 +1090,7 @@ func _interact() -> bool:
 	elif _target["type"] == "repair":
 		driving_ctl.call("request_repair", id)
 	elif _target["type"] == "container":
-		if player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id})):
+		if player.call("start_channel", "REVISTANDO", SEARCH_TIME, func(): Net.send({"t": "search", "k": id}), true):
 			_timed_action("open", SEARCH_TIME)
 	else:
 		if bool(_target.get("missing", false)):
@@ -1102,7 +1102,7 @@ func _interact() -> bool:
 		var done := func():
 			Net.send({"t": "gather", "r": id})
 			_set_action("", "")
-		if player.call("start_channel", label, seconds, done):
+		if player.call("start_channel", label, seconds, done, true):
 			Net.send({"t": "gather_start", "r": id})
 			# Vira para o recurso e golpeia com a ferramenta (machado na árvore, pé de cabra na pedra/carro).
 			var to: Vector3 = (_target["pos"] as Vector3) - player.global_position

@@ -122,6 +122,12 @@ static func set_binding(action: String, code: int) -> String:
 		if other != action and int(_bindings[other]) == code and not _shares(action, other):
 			_bindings[other] = old
 			swapped = label_of(other)
+	# Se a tecla antiga era compartilhada, ela agora pertence à ação deslocada.
+	# Leva suas companheiras junto para não misturar curar/inclinar, por exemplo.
+	if not swapped.is_empty():
+		for other in _bindings:
+			if other != action and int(_bindings[other]) == old and _shares(action, other):
+				_bindings[other] = code
 	_bindings[action] = code
 	apply()
 	return swapped
